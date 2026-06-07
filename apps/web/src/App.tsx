@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Archive, Boxes, Check, ChevronLeft, CirclePlus, Download, Folder, FolderOpen, Grip, HardDrive, List, Loader2, LogOut, Maximize2, Minimize2, PanelRight, Plus, RefreshCw, Search, Share2, Tags, Upload, X } from "lucide-react";
+import { Archive, Boxes, Check, ChevronDown, ChevronLeft, ChevronRight, Circle, CirclePlus, Columns3, Download, FileText, Folder, FolderOpen, Globe2, Grip, HardDrive, Home, LayoutGrid, List, Loader2, LogOut, Maximize2, Minimize2, MoreHorizontal, PanelRight, Plus, Radio, RefreshCw, Search, Server, Share2, Smartphone, Tags, Trash2, Upload, X } from "lucide-react";
 import { api, downloadUrl } from "./api/client";
 import { useFileList, useMe, useRoots, useSaveWorkspace, useShelves, useTasks, useWorkspace } from "./api/hooks";
 import { useWorkspaceStore } from "./stores/workspace";
@@ -178,14 +178,28 @@ function Sidebar({ roots, userEmail }: { roots: Root[]; userEmail: string }) {
         <strong>Kago</strong>
       </div>
       <nav className="side-nav">
-        <button className="side-item active"><HardDrive /> Roots</button>
-        <button className="side-item"><RefreshCw /> Recent</button>
-        <button className="side-item"><Boxes /> Tasks</button>
-        <button className="side-item"><Share2 /> Shares</button>
-        <button className="side-item"><Tags /> Tags</button>
-        <button className="side-item"><Archive /> Trash</button>
+        <button className="side-item active"><RefreshCw /> 最近項目</button>
+        <button className="side-item"><Share2 /> 已共享</button>
+        <span className="side-section">喜好項目</span>
+        <button className="side-item"><LayoutGrid /> 應用程式</button>
+        <button className="side-item"><PanelRight /> 桌面</button>
+        <button className="side-item"><FileText /> 文件</button>
+        <button className="side-item"><Download /> 下載項目</button>
+        <button className="side-item"><Folder /> Repos</button>
+        <span className="side-section">位置</span>
+        <button className="side-item"><Home /> {userEmail.split("@")[0]}</button>
+        <button className="side-item"><Smartphone /> NAS 掛載點</button>
+        <button className="side-item"><Server /> Kago Roots</button>
+        <button className="side-item"><Radio /> AirDrop</button>
+        <button className="side-item"><Globe2 /> 網路</button>
+        <button className="side-item"><Trash2 /> 垃圾桶</button>
+        <span className="side-section">標籤</span>
+        <button className="side-item"><Circle className="tag-dot gray" /> 已觀看</button>
+        <button className="side-item"><Circle className="tag-dot red" /> 可刪除</button>
+        <button className="side-item"><Circle className="tag-dot blue" /> 好看</button>
       </nav>
       <div className="root-list">
+        <span className="side-section">Kago</span>
         {roots.map((root) => (
           <button key={root.id} className="root-button" onClick={() => store.openRoot(root)}>
             <FolderOpen />
@@ -212,13 +226,25 @@ function TopStrip() {
   const active = store.windows.find((window) => window.id === store.activeWindowId);
   return (
     <header className="top-strip">
-      <div>
-        <strong>{active ? `${active.rootSlug}:${active.logicalPath}` : "Workspace"}</strong>
-        <span>{store.windows.length}/12 windows</span>
+      <div className="finder-nav">
+        <button className="chrome-button"><ChevronLeft /></button>
+        <button className="chrome-button" disabled><ChevronRight /></button>
+        <strong>{active ? active.title : "Kago"}</strong>
+      </div>
+      <div className="view-segment" aria-label="View mode">
+        <button className={active?.viewMode === "grid" ? "selected" : ""} onClick={() => active && store.updateWindow(active.id, { viewMode: "grid" })}><LayoutGrid /></button>
+        <button className={active?.viewMode === "list" ? "selected" : ""} onClick={() => active && store.updateWindow(active.id, { viewMode: "list" })}><List /></button>
+        <button className={active?.viewMode === "columns" ? "selected" : ""} onClick={() => active && store.updateWindow(active.id, { viewMode: "columns" })}><Columns3 /></button>
+      </div>
+      <div className="toolbar-cluster">
+        <button className="chrome-button"><Boxes /><ChevronDown /></button>
+        <button className="chrome-button"><Share2 /></button>
+        <button className="chrome-button"><Tags /></button>
+        <button className="chrome-button"><MoreHorizontal /></button>
       </div>
       <div className="top-actions">
-        <button className="icon-button" title="New window" onClick={() => active && store.openWindow({ rootSlug: active.rootSlug, logicalPath: active.logicalPath, title: active.title })}><CirclePlus /></button>
-        <button className="icon-button" title="Inspector"><PanelRight /></button>
+        <label className="search-pill"><Search /><input placeholder="搜尋" /></label>
+        <button className="chrome-button" title="New window" onClick={() => active && store.openWindow({ rootSlug: active.rootSlug, logicalPath: active.logicalPath, title: active.title })}><CirclePlus /></button>
       </div>
     </header>
   );
@@ -337,6 +363,7 @@ function FileWindowView({ window }: { window: FileWindow }) {
         onMouseDown={(event) => setDrag({ startX: event.clientX, startY: event.clientY, x: window.x, y: window.y })}
         onDoubleClick={() => store.updateWindow(window.id, { maximized: !window.maximized })}
       >
+        <div className="traffic-lights"><span /><span /><span /></div>
         <Grip />
         <strong>{window.title}</strong>
         <span>{window.rootSlug}:{window.logicalPath}</span>
@@ -351,28 +378,39 @@ function FileWindowView({ window }: { window: FileWindow }) {
           <div className="window-toolbar">
             <button className="icon-button" disabled={window.logicalPath === "/"} onClick={() => store.updateWindow(window.id, { logicalPath: parentPath(window.logicalPath), selectedItems: [] })}><ChevronLeft /></button>
             <Breadcrumb window={window} />
-            <button className="tool-button" onClick={mkdir}><Folder /> New folder</button>
-            <label className="tool-button file-input"><Upload /> Upload<input type="file" multiple onChange={upload} /></label>
+            <button className="tool-button" onClick={mkdir}><Folder /> 新增資料夾</button>
+            <label className="tool-button file-input"><Upload /> 上傳<input type="file" multiple onChange={upload} /></label>
             <button className="icon-button" onClick={() => void queryClient.invalidateQueries({ queryKey: ["fs", "list", window.rootSlug, window.logicalPath] })}><RefreshCw /></button>
           </div>
           <div className={`file-list ${window.viewMode}`}>
+            {window.viewMode === "list" && (
+              <div className="file-header">
+                <span>名稱</span>
+                <span>大小</span>
+                <span>種類</span>
+                <span>加入日期</span>
+                <span />
+                <span />
+              </div>
+            )}
             {fileList.isLoading && <div className="empty-state"><Loader2 className="spin" /> Loading</div>}
             {fileList.error && <div className="empty-state error">{fileList.error.message}</div>}
             {!fileList.isLoading && sortedItems.length === 0 && <div className="empty-state">Empty folder</div>}
             {sortedItems.map((item) => <FileRow key={item.path} item={item} window={window} />)}
           </div>
           <div className="statusbar">
-            <span>{sortedItems.length} items</span>
-            <button onClick={() => store.updateWindow(window.id, { viewMode: window.viewMode === "list" ? "grid" : "list" })}><List /> {window.viewMode}</button>
+            <span className="pathbar"><HardDrive /> {window.rootSlug} <ChevronRight /> {window.logicalPath === "/" ? "Kago" : window.logicalPath.split("/").filter(Boolean).join(" › ")}</span>
+            <span>{sortedItems.length} 個項目</span>
+          <button onClick={() => store.updateWindow(window.id, { viewMode: window.viewMode === "list" ? "grid" : "list" })}><List /> {viewModeLabel(window.viewMode)}</button>
           </div>
           <div className="resize-handle" onMouseDown={(event) => setResize({ startX: event.clientX, startY: event.clientY, width: window.width, height: window.height })} />
         </>
       )}
       {dropChoice && (
         <div className="drop-popover">
-          <button onClick={() => void createTask("copy")}>Copy here</button>
-          <button onClick={() => void createTask("move")}>Move here</button>
-          <button onClick={() => setDropChoice(null)}>Cancel</button>
+          <button onClick={() => void createTask("copy")}>複製到這裡</button>
+          <button onClick={() => void createTask("move")}>搬移到這裡</button>
+          <button onClick={() => setDropChoice(null)}>取消</button>
         </div>
       )}
     </section>
@@ -422,8 +460,9 @@ function FileRow({ item, window }: { item: FileItem; window: FileWindow }) {
     >
       {item.kind === "folder" ? <FolderOpen /> : <FileIcon />}
       <span className="file-name">{item.name}</span>
-      <span>{item.kind}</span>
       <span>{formatSize(item.size)}</span>
+      <span>{item.kind === "folder" ? "檔案夾" : item.type}</span>
+      <span>{formatDate(item.mtime)}</span>
       <a className="icon-button" href={downloadUrl(window.rootSlug, item.path)} onClick={(event) => event.stopPropagation()}><Download /></a>
       <button className="icon-button" onClick={(event) => { event.stopPropagation(); void addToShelf(); }}><Archive /></button>
     </div>
@@ -456,11 +495,11 @@ function FloatingShelf() {
 
   return (
     <aside className="floating-shelf">
-      <header><Archive /> Shelf <span>{shelf?.items.length ?? 0}</span></header>
+      <header><Archive /> 中轉區 <span>{shelf?.items.length ?? 0}</span></header>
       <div className="shelf-items">
         {shelf?.items.map((item) => <div key={item.id}><span>{item.name}</span><small>{item.path}</small></div>)}
       </div>
-      <button className="tool-button" onClick={copyToActive}>Copy to active window</button>
+      <button className="tool-button" onClick={copyToActive}>複製到目前視窗</button>
     </aside>
   );
 }
@@ -469,7 +508,7 @@ function TaskCenter() {
   const tasks = useTasks();
   return (
     <aside className="task-center">
-      <header><Boxes /> Tasks</header>
+      <header><Boxes /> 任務</header>
       <div className="task-list">
         {tasks.data?.slice(0, 6).map((task) => (
           <div className="task-item" key={task.id}>
@@ -487,10 +526,10 @@ function TaskCenter() {
 function Inspector() {
   return (
     <aside className="inspector">
-      <header><Search /> Inspector</header>
+      <header><Search /> 檢閱器</header>
       <section>
         <h3>Metadata</h3>
-        <p>Select a file to inspect tags, permissions, share status and preview metadata.</p>
+        <p>選取檔案後可檢視標籤、權限、分享狀態與預覽資訊。</p>
       </section>
     </aside>
   );
@@ -506,4 +545,16 @@ function formatSize(size: number) {
   if (size < 1024) return `${size} B`;
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
   return `${(size / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function formatDate(mtime: number) {
+  return new Intl.DateTimeFormat("zh-TW", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(
+    new Date(mtime)
+  );
+}
+
+function viewModeLabel(mode: FileWindow["viewMode"]) {
+  if (mode === "grid") return "圖像";
+  if (mode === "columns") return "直欄";
+  return "列表";
 }
