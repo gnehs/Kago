@@ -1,5 +1,6 @@
 import fsp from "node:fs/promises";
 import path from "node:path";
+import { spawn } from "node:child_process";
 import AdmZip from "adm-zip";
 import { z } from "zod";
 import type { Db } from "../db/db.js";
@@ -18,9 +19,25 @@ const fileRefSchema = z.object({
 });
 
 export const taskInputSchema = z.object({
-  type: z.enum(["copy", "move", "delete_to_trash", "restore_trash", "compress", "extract"]),
-  sources: z.array(fileRefSchema).min(1),
-  destination: fileRefSchema.optional()
+  type: z.enum([
+    "copy",
+    "move",
+    "delete_to_trash",
+    "restore_trash",
+    "compress",
+    "extract",
+    "rsync_pull",
+    "rsync_push",
+    "thumbnail"
+  ]),
+  sources: z.array(fileRefSchema).default([]),
+  destination: fileRefSchema.optional(),
+  remote: z.string().min(1).optional(),
+  options: z.object({
+    archive: z.boolean().optional(),
+    delete: z.boolean().optional(),
+    dryRun: z.boolean().optional()
+  }).optional()
 });
 
 export class TaskService {
@@ -37,6 +54,23 @@ export class TaskService {
     if (["copy", "move", "compress", "extract"].includes(input.type) && !input.destination) {
       throw new AppError(400, "Destination required", "DESTINATION_REQUIRED");
     }
+    if (["copy", "move", "delete_to_trash", "compress", "extract", "thumbnail"].includes(input.type) && input.sources.length === 0) {
+      throw new AppError(400, "Sources required", "SOURCES_REQUIRED");
+    }
+    if (input.type === "rsync_pull" && (!input.remote || !input.destination)) {
+      throw new AppError(400, "Remote and destination are required", "RSYNC_INPUT_REQUIRED");
+    }
+    if (input.type === "rsync_push" && (!input.remote || input.sources.length === 0)) {
+      throw new AppError(400, "Remote and sources are required", "RSYNC_INPUT_REQUIRED");
+    }
+
+    const sources = input.type === "rsync_pull" ? [{ rootSlug: "remote", path: input.remote! }] : input.sources;
+    const destination =
+      input.type === "rsync_push"
+        ? JSON.stringify({ remote: input.remote, options: input.options ?? {} })
+        : input.destination
+          ? JSON.stringify({ ...input.destination, options: input.options ?? {} })
+          : null;
 
     const ts = now();
     const task: FileTask = {
@@ -44,9 +78,9 @@ export class TaskService {
       type: input.type,
       status: "queued",
       created_by: actor.id,
-      sources_json: JSON.stringify(input.sources),
-      destination: input.destination ? JSON.stringify(input.destination) : null,
-      total_files: input.sources.length,
+      sources_json: JSON.stringify(sources),
+      destination,
+      total_files: Math.max(sources.length, 1),
       processed_files: 0,
       total_bytes: 0,
       processed_bytes: 0,
@@ -158,6 +192,9 @@ export class TaskService {
       else if (task.type === "restore_trash") await this.runRestore(task);
       else if (task.type === "compress") await this.runCompress(task, actor);
       else if (task.type === "extract") await this.runExtract(task, actor);
+      else if (task.type === "rsync_pull") await this.runRsyncPull(task, actor);
+      else if (task.type === "rsync_push") await this.runRsyncPush(task, actor);
+      else if (task.type === "thumbnail") await this.runThumbnail(task, actor);
       this.finish(task.id, "done");
       this.events.publish({ type: "task.done", taskId: task.id });
     } catch (error) {
@@ -275,6 +312,43 @@ export class TaskService {
     }
   }
 
+  private async runRsyncPull(task: FileTask, actor: Actor): Promise<void> {
+    const sources = JSON.parse(task.sources_json) as Array<{ rootSlug: string; path: string }>;
+    const remote = sources[0]?.path;
+    const destination = JSON.parse(task.destination ?? "{}") as { rootSlug: string; path: string; options?: RsyncOptions };
+    if (!remote) throw new AppError(400, "Remote is required", "RSYNC_REMOTE_REQUIRED");
+    const dest = await this.paths.resolveExisting(destination.rootSlug, destination.path);
+    this.permissions.require(actor, "upload", dest.root, dest.logicalPath);
+    this.permissions.require(actor, "run_rsync", dest.root, dest.logicalPath);
+    await this.progress(task.id, remote);
+    await runRsync([...rsyncFlags(destination.options), ensureTrailingSlash(remote), ensureTrailingSlash(dest.absolutePath)]);
+    await this.bumpProcessed(task.id);
+  }
+
+  private async runRsyncPush(task: FileTask, actor: Actor): Promise<void> {
+    const sources = JSON.parse(task.sources_json) as Array<{ rootSlug: string; path: string }>;
+    const destination = JSON.parse(task.destination ?? "{}") as { remote: string; options?: RsyncOptions };
+    if (!destination.remote) throw new AppError(400, "Remote is required", "RSYNC_REMOTE_REQUIRED");
+    for (const source of sources) {
+      const safe = await this.paths.resolveExisting(source.rootSlug, source.path);
+      this.permissions.require(actor, "read", safe.root, safe.logicalPath);
+      this.permissions.require(actor, "run_rsync", safe.root, safe.logicalPath);
+      await this.progress(task.id, safe.logicalPath);
+      await runRsync([...rsyncFlags(destination.options), safe.absolutePath, ensureTrailingSlash(destination.remote)]);
+      await this.bumpProcessed(task.id);
+    }
+  }
+
+  private async runThumbnail(task: FileTask, actor: Actor): Promise<void> {
+    const sources = JSON.parse(task.sources_json) as Array<{ rootSlug: string; path: string }>;
+    for (const source of sources) {
+      const safe = await this.paths.resolveExisting(source.rootSlug, source.path);
+      this.permissions.require(actor, "read", safe.root, safe.logicalPath);
+      await this.progress(task.id, safe.logicalPath);
+      await this.bumpProcessed(task.id);
+    }
+  }
+
   private async progress(taskId: string, currentPath: string): Promise<void> {
     this.db.prepare("UPDATE tasks SET current_path = ?, updated_at = ? WHERE id = ?").run(currentPath, now(), taskId);
     this.events.publish({ type: "task.progress", taskId, patch: { current_path: currentPath } });
@@ -293,4 +367,37 @@ export class TaskService {
       .prepare("UPDATE tasks SET status = ?, error_message = ?, updated_at = ?, finished_at = ? WHERE id = ?")
       .run(status, error ?? null, now(), now(), taskId);
   }
+}
+
+type RsyncOptions = {
+  archive?: boolean;
+  delete?: boolean;
+  dryRun?: boolean;
+};
+
+function rsyncFlags(options: RsyncOptions = {}): string[] {
+  return [
+    options.archive === false ? "-r" : "-a",
+    ...(options.delete ? ["--delete"] : []),
+    ...(options.dryRun ? ["--dry-run"] : [])
+  ];
+}
+
+function ensureTrailingSlash(value: string): string {
+  return value.endsWith("/") ? value : `${value}/`;
+}
+
+function runRsync(args: string[]): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn("rsync", args, { stdio: ["ignore", "ignore", "pipe"] });
+    let stderr = "";
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderr += chunk.toString("utf8");
+    });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) resolve();
+      else reject(new AppError(500, stderr.trim() || `rsync exited with code ${code}`, "RSYNC_FAILED"));
+    });
+  });
 }
