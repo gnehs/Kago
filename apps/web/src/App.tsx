@@ -1,0 +1,509 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { Archive, Boxes, Check, ChevronLeft, CirclePlus, Download, Folder, FolderOpen, Grip, HardDrive, List, Loader2, LogOut, Maximize2, Minimize2, PanelRight, Plus, RefreshCw, Search, Share2, Tags, Upload, X } from "lucide-react";
+import { api, downloadUrl } from "./api/client";
+import { useFileList, useMe, useRoots, useSaveWorkspace, useShelves, useTasks, useWorkspace } from "./api/hooks";
+import { useWorkspaceStore } from "./stores/workspace";
+import type { FileItem, FileWindow, Root } from "./types/kago";
+
+export function App() {
+  const me = useMe();
+
+  if (me.isLoading) return <ShellLoading />;
+  if (!me.data?.user) return <Login />;
+  return <Workspace userEmail={me.data.user.email} />;
+}
+
+function ShellLoading() {
+  return (
+    <main className="loading-screen">
+      <Loader2 className="spin" />
+    </main>
+  );
+}
+
+function Login() {
+  const [email, setEmail] = useState("admin@kago.local");
+  const [password, setPassword] = useState("admin123");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const queryClient = useQueryClient();
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      await api("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
+      await queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "登入失敗");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <main className="login-screen">
+      <form className="login-panel" onSubmit={submit}>
+        <div className="brand-row">
+          <div className="brand-mark">K</div>
+          <div>
+            <h1>Kago</h1>
+            <p>NAS desktop workspace</p>
+          </div>
+        </div>
+        <label>
+          Email
+          <input value={email} onChange={(event) => setEmail(event.target.value)} />
+        </label>
+        <label>
+          Password
+          <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
+        </label>
+        {error && <div className="inline-error">{error}</div>}
+        <button className="primary-button" disabled={busy}>
+          {busy ? <Loader2 className="spin" /> : <Check />}
+          Sign in
+        </button>
+      </form>
+    </main>
+  );
+}
+
+function Workspace({ userEmail }: { userEmail: string }) {
+  const workspaceQuery = useWorkspace();
+  const roots = useRoots();
+  const saveWorkspace = useSaveWorkspace();
+  const store = useWorkspaceStore();
+  const queryClient = useQueryClient();
+  const saveTimer = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (workspaceQuery.data && !store.hydrated) store.hydrate(workspaceQuery.data);
+  }, [workspaceQuery.data, store]);
+
+  useEffect(() => {
+    if (!store.hydrated) return;
+    if (saveTimer.current) window.clearTimeout(saveTimer.current);
+    saveTimer.current = window.setTimeout(() => {
+      saveWorkspace.mutate(store.snapshot());
+    }, 700);
+  }, [store.windows, store.activeWindowId, store.sidebar, store.inspector, store.shelf]);
+
+  useEffect(() => {
+    const protocol = location.protocol === "https:" ? "wss" : "ws";
+    const ws = new WebSocket(`${protocol}://${location.host}/ws`);
+    ws.onmessage = (event) => {
+      const message = JSON.parse(event.data);
+      if (String(message.type).startsWith("task.")) void queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      if (message.type === "shelf.updated") void queryClient.invalidateQueries({ queryKey: ["shelves"] });
+    };
+    return () => ws.close();
+  }, [queryClient]);
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      const active = store.windows.find((window) => window.id === store.activeWindowId);
+      if (!active) return;
+      const mod = event.metaKey || event.ctrlKey;
+      if (mod && event.key.toLowerCase() === "w") {
+        event.preventDefault();
+        store.closeWindow(active.id);
+      }
+      if (mod && event.key.toLowerCase() === "n") {
+        event.preventDefault();
+        store.openWindow({ rootSlug: active.rootSlug, logicalPath: active.logicalPath, title: active.title });
+      }
+      if (event.key === "Backspace" && active.logicalPath !== "/") {
+        event.preventDefault();
+        store.updateWindow(active.id, { logicalPath: parentPath(active.logicalPath), selectedItems: [] });
+      }
+      if (mod && event.key.toLowerCase() === "a") {
+        event.preventDefault();
+        const items = document.querySelectorAll(`[data-window="${active.id}"] [data-file-path]`);
+        store.selectItems(active.id, Array.from(items).map((node) => (node as HTMLElement).dataset.filePath!).filter(Boolean));
+      }
+      if (event.key === "Escape") store.selectItems(active.id, []);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [store]);
+
+  if (workspaceQuery.isLoading || roots.isLoading) return <ShellLoading />;
+
+  return (
+    <main className="app-shell">
+      <Sidebar roots={roots.data ?? []} userEmail={userEmail} />
+      <section className="workspace-canvas">
+        <TopStrip />
+        {store.windows.length === 0 ? <RootPicker roots={roots.data ?? []} /> : null}
+        {store.windows.map((window) => (
+          <FileWindowView key={window.id} window={window} />
+        ))}
+        <FloatingShelf />
+        <TaskCenter />
+      </section>
+      <Inspector />
+    </main>
+  );
+}
+
+function Sidebar({ roots, userEmail }: { roots: Root[]; userEmail: string }) {
+  const store = useWorkspaceStore();
+  const queryClient = useQueryClient();
+  const [rootName, setRootName] = useState("");
+  const [rootSlug, setRootSlug] = useState("");
+
+  async function logout() {
+    await api("/api/auth/logout", { method: "POST" });
+    await queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
+  }
+
+  async function createRoot() {
+    if (!rootSlug) return;
+    await api("/api/roots", {
+      method: "POST",
+      body: JSON.stringify({ slug: rootSlug, name: rootName || rootSlug, basePath: `/data/${rootSlug}`, readonly: false })
+    });
+    setRootName("");
+    setRootSlug("");
+    await queryClient.invalidateQueries({ queryKey: ["roots"] });
+  }
+
+  return (
+    <aside className="sidebar">
+      <div className="brand-row compact">
+        <div className="brand-mark">K</div>
+        <strong>Kago</strong>
+      </div>
+      <nav className="side-nav">
+        <button className="side-item active"><HardDrive /> Roots</button>
+        <button className="side-item"><RefreshCw /> Recent</button>
+        <button className="side-item"><Boxes /> Tasks</button>
+        <button className="side-item"><Share2 /> Shares</button>
+        <button className="side-item"><Tags /> Tags</button>
+        <button className="side-item"><Archive /> Trash</button>
+      </nav>
+      <div className="root-list">
+        {roots.map((root) => (
+          <button key={root.id} className="root-button" onClick={() => store.openRoot(root)}>
+            <FolderOpen />
+            <span>{root.name}</span>
+            {root.readonly ? <span className="badge">RO</span> : null}
+          </button>
+        ))}
+      </div>
+      <div className="mini-form">
+        <input placeholder="root slug" value={rootSlug} onChange={(event) => setRootSlug(event.target.value)} />
+        <input placeholder="name" value={rootName} onChange={(event) => setRootName(event.target.value)} />
+        <button onClick={createRoot}><Plus /> Root</button>
+      </div>
+      <div className="sidebar-footer">
+        <span>{userEmail}</span>
+        <button className="icon-button" onClick={logout} title="Logout"><LogOut /></button>
+      </div>
+    </aside>
+  );
+}
+
+function TopStrip() {
+  const store = useWorkspaceStore();
+  const active = store.windows.find((window) => window.id === store.activeWindowId);
+  return (
+    <header className="top-strip">
+      <div>
+        <strong>{active ? `${active.rootSlug}:${active.logicalPath}` : "Workspace"}</strong>
+        <span>{store.windows.length}/12 windows</span>
+      </div>
+      <div className="top-actions">
+        <button className="icon-button" title="New window" onClick={() => active && store.openWindow({ rootSlug: active.rootSlug, logicalPath: active.logicalPath, title: active.title })}><CirclePlus /></button>
+        <button className="icon-button" title="Inspector"><PanelRight /></button>
+      </div>
+    </header>
+  );
+}
+
+function RootPicker({ roots }: { roots: Root[] }) {
+  const store = useWorkspaceStore();
+  return (
+    <section className="root-picker">
+      <div className="root-picker-inner">
+        <HardDrive />
+        <h2>Open a root</h2>
+        <div className="picker-grid">
+          {roots.map((root) => (
+            <button key={root.id} onClick={() => store.openRoot(root)}>
+              <FolderOpen />
+              <span>{root.name}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function FileWindowView({ window }: { window: FileWindow }) {
+  const store = useWorkspaceStore();
+  const queryClient = useQueryClient();
+  const fileList = useFileList(window.rootSlug, window.logicalPath);
+  const [drag, setDrag] = useState<{ startX: number; startY: number; x: number; y: number } | null>(null);
+  const [resize, setResize] = useState<{ startX: number; startY: number; width: number; height: number } | null>(null);
+  const [dropChoice, setDropChoice] = useState<{ items: Array<{ rootSlug: string; path: string }> } | null>(null);
+
+  useEffect(() => {
+    function move(event: MouseEvent) {
+      if (drag) {
+        store.updateWindow(window.id, {
+          x: Math.max(-window.width + 120, drag.x + event.clientX - drag.startX),
+          y: Math.max(0, drag.y + event.clientY - drag.startY)
+        });
+      }
+      if (resize) {
+        store.updateWindow(window.id, {
+          width: Math.max(360, resize.width + event.clientX - resize.startX),
+          height: Math.max(280, resize.height + event.clientY - resize.startY)
+        });
+      }
+    }
+    function up() {
+      setDrag(null);
+      setResize(null);
+    }
+    globalThis.addEventListener("mousemove", move);
+    globalThis.addEventListener("mouseup", up);
+    return () => {
+      globalThis.removeEventListener("mousemove", move);
+      globalThis.removeEventListener("mouseup", up);
+    };
+  }, [drag, resize, store, window.id, window.width]);
+
+  const sortedItems = useMemo(() => {
+    const items = [...(fileList.data?.items ?? [])];
+    const direction = window.sortDirection === "asc" ? 1 : -1;
+    items.sort((a, b) => {
+      const av = window.sortBy === "name" ? a.name : window.sortBy === "size" ? a.size : window.sortBy === "mtime" ? a.mtime : a.type;
+      const bv = window.sortBy === "name" ? b.name : window.sortBy === "size" ? b.size : window.sortBy === "mtime" ? b.mtime : b.type;
+      return String(av).localeCompare(String(bv), undefined, { numeric: true }) * direction;
+    });
+    return items;
+  }, [fileList.data, window.sortBy, window.sortDirection]);
+
+  async function createTask(type: "copy" | "move") {
+    if (!dropChoice) return;
+    await api("/api/tasks", {
+      method: "POST",
+      body: JSON.stringify({ type, sources: dropChoice.items, destination: { rootSlug: window.rootSlug, path: window.logicalPath } })
+    });
+    setDropChoice(null);
+    await queryClient.invalidateQueries({ queryKey: ["tasks"] });
+  }
+
+  async function mkdir() {
+    const name = prompt("Folder name");
+    if (!name) return;
+    await api("/api/fs/mkdir", { method: "POST", body: JSON.stringify({ rootSlug: window.rootSlug, path: window.logicalPath, name }) });
+    await queryClient.invalidateQueries({ queryKey: ["fs", "list", window.rootSlug, window.logicalPath] });
+  }
+
+  async function upload(event: React.ChangeEvent<HTMLInputElement>) {
+    const files = event.target.files;
+    if (!files?.length) return;
+    const form = new FormData();
+    form.append("rootSlug", window.rootSlug);
+    form.append("path", window.logicalPath);
+    for (const file of files) form.append("file", file);
+    await api("/api/fs/upload", { method: "POST", body: form });
+    event.target.value = "";
+    await queryClient.invalidateQueries({ queryKey: ["fs", "list", window.rootSlug, window.logicalPath] });
+  }
+
+  return (
+    <section
+      className={`file-window ${window.focused ? "focused" : ""} ${window.maximized ? "maximized" : ""}`}
+      style={window.maximized ? { zIndex: window.zIndex } : { left: window.x, top: window.y, width: window.width, height: window.height, zIndex: window.zIndex }}
+      onMouseDown={() => store.focusWindow(window.id)}
+      data-window={window.id}
+      onDragOver={(event) => event.preventDefault()}
+      onDrop={(event) => {
+        event.preventDefault();
+        const raw = event.dataTransfer.getData("application/kago-file");
+        if (raw) setDropChoice({ items: [JSON.parse(raw)] });
+      }}
+    >
+      <div
+        className="window-titlebar"
+        onMouseDown={(event) => setDrag({ startX: event.clientX, startY: event.clientY, x: window.x, y: window.y })}
+        onDoubleClick={() => store.updateWindow(window.id, { maximized: !window.maximized })}
+      >
+        <Grip />
+        <strong>{window.title}</strong>
+        <span>{window.rootSlug}:{window.logicalPath}</span>
+        <div className="window-controls">
+          <button className="icon-button" onClick={(event) => { event.stopPropagation(); store.updateWindow(window.id, { minimized: !window.minimized }); }}><Minimize2 /></button>
+          <button className="icon-button" onClick={(event) => { event.stopPropagation(); store.updateWindow(window.id, { maximized: !window.maximized }); }}><Maximize2 /></button>
+          <button className="icon-button danger" onClick={(event) => { event.stopPropagation(); store.closeWindow(window.id); }}><X /></button>
+        </div>
+      </div>
+      {!window.minimized && (
+        <>
+          <div className="window-toolbar">
+            <button className="icon-button" disabled={window.logicalPath === "/"} onClick={() => store.updateWindow(window.id, { logicalPath: parentPath(window.logicalPath), selectedItems: [] })}><ChevronLeft /></button>
+            <Breadcrumb window={window} />
+            <button className="tool-button" onClick={mkdir}><Folder /> New folder</button>
+            <label className="tool-button file-input"><Upload /> Upload<input type="file" multiple onChange={upload} /></label>
+            <button className="icon-button" onClick={() => void queryClient.invalidateQueries({ queryKey: ["fs", "list", window.rootSlug, window.logicalPath] })}><RefreshCw /></button>
+          </div>
+          <div className={`file-list ${window.viewMode}`}>
+            {fileList.isLoading && <div className="empty-state"><Loader2 className="spin" /> Loading</div>}
+            {fileList.error && <div className="empty-state error">{fileList.error.message}</div>}
+            {!fileList.isLoading && sortedItems.length === 0 && <div className="empty-state">Empty folder</div>}
+            {sortedItems.map((item) => <FileRow key={item.path} item={item} window={window} />)}
+          </div>
+          <div className="statusbar">
+            <span>{sortedItems.length} items</span>
+            <button onClick={() => store.updateWindow(window.id, { viewMode: window.viewMode === "list" ? "grid" : "list" })}><List /> {window.viewMode}</button>
+          </div>
+          <div className="resize-handle" onMouseDown={(event) => setResize({ startX: event.clientX, startY: event.clientY, width: window.width, height: window.height })} />
+        </>
+      )}
+      {dropChoice && (
+        <div className="drop-popover">
+          <button onClick={() => void createTask("copy")}>Copy here</button>
+          <button onClick={() => void createTask("move")}>Move here</button>
+          <button onClick={() => setDropChoice(null)}>Cancel</button>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function Breadcrumb({ window }: { window: FileWindow }) {
+  const store = useWorkspaceStore();
+  const parts = window.logicalPath.split("/").filter(Boolean);
+  return (
+    <div className="breadcrumb">
+      <button onClick={() => store.updateWindow(window.id, { logicalPath: "/" })}>{window.rootSlug}</button>
+      {parts.map((part, index) => {
+        const nextPath = `/${parts.slice(0, index + 1).join("/")}`;
+        return <button key={nextPath} onClick={() => store.updateWindow(window.id, { logicalPath: nextPath })}>{part}</button>;
+      })}
+    </div>
+  );
+}
+
+function FileRow({ item, window }: { item: FileItem; window: FileWindow }) {
+  const store = useWorkspaceStore();
+  const selected = window.selectedItems.includes(item.path);
+  const queryClient = useQueryClient();
+
+  async function addToShelf() {
+    const shelves = await api<Array<{ id: string }>>("/api/shelves");
+    const shelfId = shelves[0]?.id;
+    if (!shelfId) return;
+    await api(`/api/shelves/${shelfId}/items`, { method: "POST", body: JSON.stringify({ rootSlug: window.rootSlug, path: item.path }) });
+    await queryClient.invalidateQueries({ queryKey: ["shelves"] });
+  }
+
+  return (
+    <div
+      className={`file-row ${selected ? "selected" : ""}`}
+      data-file-path={item.path}
+      draggable
+      onDragStart={(event) => {
+        event.dataTransfer.setData("application/kago-file", JSON.stringify({ rootSlug: window.rootSlug, path: item.path }));
+      }}
+      onClick={() => store.selectItems(window.id, selected ? [] : [item.path])}
+      onDoubleClick={() => {
+        if (item.kind === "folder") store.updateWindow(window.id, { logicalPath: item.path, selectedItems: [] });
+        else globalThis.open(downloadUrl(window.rootSlug, item.path), "_blank");
+      }}
+    >
+      {item.kind === "folder" ? <FolderOpen /> : <FileIcon />}
+      <span className="file-name">{item.name}</span>
+      <span>{item.kind}</span>
+      <span>{formatSize(item.size)}</span>
+      <a className="icon-button" href={downloadUrl(window.rootSlug, item.path)} onClick={(event) => event.stopPropagation()}><Download /></a>
+      <button className="icon-button" onClick={(event) => { event.stopPropagation(); void addToShelf(); }}><Archive /></button>
+    </div>
+  );
+}
+
+function FileIcon() {
+  return <div className="file-icon" />;
+}
+
+function FloatingShelf() {
+  const shelves = useShelves();
+  const store = useWorkspaceStore();
+  const active = store.windows.find((window) => window.id === store.activeWindowId);
+  const queryClient = useQueryClient();
+  const shelf = shelves.data?.[0];
+
+  async function copyToActive() {
+    if (!shelf || !active || shelf.items.length === 0) return;
+    await api("/api/tasks", {
+      method: "POST",
+      body: JSON.stringify({
+        type: "copy",
+        sources: shelf.items.map((item) => ({ rootSlug: item.root_slug, path: item.path })),
+        destination: { rootSlug: active.rootSlug, path: active.logicalPath }
+      })
+    });
+    await queryClient.invalidateQueries({ queryKey: ["tasks"] });
+  }
+
+  return (
+    <aside className="floating-shelf">
+      <header><Archive /> Shelf <span>{shelf?.items.length ?? 0}</span></header>
+      <div className="shelf-items">
+        {shelf?.items.map((item) => <div key={item.id}><span>{item.name}</span><small>{item.path}</small></div>)}
+      </div>
+      <button className="tool-button" onClick={copyToActive}>Copy to active window</button>
+    </aside>
+  );
+}
+
+function TaskCenter() {
+  const tasks = useTasks();
+  return (
+    <aside className="task-center">
+      <header><Boxes /> Tasks</header>
+      <div className="task-list">
+        {tasks.data?.slice(0, 6).map((task) => (
+          <div className="task-item" key={task.id}>
+            <strong>{task.type}</strong>
+            <span className={`status ${task.status}`}>{task.status}</span>
+            <progress value={task.processed_files} max={Math.max(task.total_files, 1)} />
+            {task.error_message && <small>{task.error_message}</small>}
+          </div>
+        ))}
+      </div>
+    </aside>
+  );
+}
+
+function Inspector() {
+  return (
+    <aside className="inspector">
+      <header><Search /> Inspector</header>
+      <section>
+        <h3>Metadata</h3>
+        <p>Select a file to inspect tags, permissions, share status and preview metadata.</p>
+      </section>
+    </aside>
+  );
+}
+
+function parentPath(value: string) {
+  const parts = value.split("/").filter(Boolean);
+  parts.pop();
+  return parts.length ? `/${parts.join("/")}` : "/";
+}
+
+function formatSize(size: number) {
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${(size / 1024 / 1024).toFixed(1)} MB`;
+}

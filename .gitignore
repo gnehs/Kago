@@ -1,0 +1,12 @@
+node_modules
+.pnpm-store
+dist
+.DS_Store
+.env
+.env.*
+*.db
+*.db-shm
+*.db-wal
+app-data
+data
+coverage
