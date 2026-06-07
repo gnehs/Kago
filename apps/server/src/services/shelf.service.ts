@@ -90,8 +90,15 @@ export class ShelfService {
   itemsForTask(actor: Actor, shelfId: string) {
     const shelf = row<{ owner_id: string }>(this.db.prepare("SELECT owner_id FROM shelves WHERE id = ?").get(shelfId));
     if (!shelf || shelf.owner_id !== actor.id) throw new AppError(404, "Shelf not found", "SHELF_NOT_FOUND");
-    return rows<{ root_id: string; path: string }>(
-      this.db.prepare("SELECT root_id, path FROM shelf_items WHERE shelf_id = ?").all(shelfId)
+    return rows<{ root_slug: string; path: string }>(
+      this.db
+        .prepare(
+          `SELECT roots.slug AS root_slug, shelf_items.path
+          FROM shelf_items
+          JOIN roots ON roots.id = shelf_items.root_id
+          WHERE shelf_id = ?`
+        )
+        .all(shelfId)
     );
   }
 }

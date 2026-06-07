@@ -99,6 +99,15 @@ export class TaskService {
     );
   }
 
+  listTrash(actor: Actor) {
+    if (actor.role === "ADMIN") {
+      return this.db.prepare("SELECT * FROM trash_items WHERE restored_at IS NULL ORDER BY deleted_at DESC").all();
+    }
+    return this.db
+      .prepare("SELECT * FROM trash_items WHERE deleted_by = ? AND restored_at IS NULL ORDER BY deleted_at DESC")
+      .all(actor.id);
+  }
+
   get(taskId: string): FileTask {
     const task = row<FileTask>(this.db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId));
     if (!task) throw new AppError(404, "Task not found", "TASK_NOT_FOUND");
@@ -110,6 +119,13 @@ export class TaskService {
       .prepare("UPDATE tasks SET status = 'cancelled', updated_at = ?, finished_at = ? WHERE id = ? AND status = 'queued'")
       .run(now(), now(), taskId);
     return this.get(taskId);
+  }
+
+  createRestoreTrash(actor: Actor, trashItemId: string): FileTask {
+    return this.create(actor, {
+      type: "restore_trash",
+      sources: [{ rootSlug: "trash", path: trashItemId }]
+    });
   }
 
   claimNext(): FileTask | null {

@@ -151,4 +151,12 @@ export class ShareService {
     });
     return safe;
   }
+
+  async publicUploadTarget(token: string) {
+    const share = this.resolveToken(token);
+    const mode = (JSON.parse(share.permission_json) as { mode: string }).mode;
+    if (mode !== "upload_only") throw new AppError(403, "Upload is not allowed for this share", "SHARE_UPLOAD_FORBIDDEN");
+    const safe = await this.paths.resolveRootById(share.root_id, share.path);
+    return { share, safe };
+  }
 }

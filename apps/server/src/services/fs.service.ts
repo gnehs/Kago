@@ -21,6 +21,12 @@ export const mkdirSchema = z.object({
   name: z.string().min(1).max(255).refine((value) => !value.includes("/") && value !== ".." && !value.includes("\0"))
 });
 
+export const renameSchema = z.object({
+  rootSlug: z.string().min(1),
+  path: z.string().min(1),
+  name: z.string().min(1).max(255).refine((value) => !value.includes("/") && value !== ".." && !value.includes("\0"))
+});
+
 export class FsService {
   constructor(
     private readonly paths: PathService,
@@ -104,6 +110,30 @@ export class FsService {
     return this.meta(actor, rootSlug, targetLogical);
   }
 
+  async rename(actor: Actor, rootSlug: string, logicalPath: string, name: string) {
+    const source = await this.paths.resolveExisting(rootSlug, logicalPath);
+    this.permissions.require(actor, "rename", source.root, source.logicalPath);
+    const targetLogical = path.posix.join(path.posix.dirname(source.logicalPath), name);
+    const target = await this.paths.resolveForCreate(rootSlug, targetLogical);
+    try {
+      await fsp.access(target.absolutePath);
+      throw new AppError(409, "Target already exists", "TARGET_EXISTS");
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+    }
+    await fsp.rename(source.absolutePath, target.absolutePath);
+    this.audit.write({
+      actorType: "user",
+      actorId: actor.id,
+      action: "rename",
+      rootId: source.root.id,
+      path: source.logicalPath,
+      target: { to: target.logicalPath },
+      result: "success"
+    });
+    return this.meta(actor, rootSlug, target.logicalPath);
+  }
+
   async upload(actor: Actor, rootSlug: string, parentPath: string, fileName: string, stream: NodeJS.ReadableStream) {
     if (!fileName || fileName.includes("/") || fileName.includes("..") || fileName.includes("\0") || fileName.length > 255) {
       throw new AppError(400, "Invalid filename", "INVALID_FILENAME");
@@ -122,5 +152,23 @@ export class FsService {
       result: "success"
     });
     return this.meta(actor, rootSlug, target.logicalPath);
+  }
+
+  async publicUpload(rootSlug: string, parentPath: string, fileName: string, stream: NodeJS.ReadableStream) {
+    if (!fileName || fileName.includes("/") || fileName.includes("..") || fileName.includes("\0") || fileName.length > 255) {
+      throw new AppError(400, "Invalid filename", "INVALID_FILENAME");
+    }
+    const parent = await this.paths.resolveExisting(rootSlug, parentPath);
+    const target = await this.paths.resolveForCreate(rootSlug, path.posix.join(parent.logicalPath, fileName));
+    const writeStream = fs.createWriteStream(target.absolutePath, { flags: "wx", mode: 0o644 });
+    await pipeline(stream, writeStream);
+    this.audit.write({
+      actorType: "share_link",
+      action: "upload_via_share",
+      rootId: target.root.id,
+      path: target.logicalPath,
+      result: "success"
+    });
+    return { rootSlug, path: target.logicalPath, name: fileName };
   }
 }

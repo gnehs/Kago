@@ -11,7 +11,7 @@ import { openDb } from "./db/db.js";
 import { AppError, publicError } from "./lib/errors.js";
 import { AuditService } from "./services/audit.service.js";
 import { AuthService, createUserSchema, loginSchema } from "./services/auth.service.js";
-import { FsService, fsQuerySchema, mkdirSchema } from "./services/fs.service.js";
+import { FsService, fsQuerySchema, mkdirSchema, renameSchema } from "./services/fs.service.js";
 import { createGroupSchema, GroupService } from "./services/group.service.js";
 import { PathService } from "./services/path.service.js";
 import { permissionInputSchema, PermissionService } from "./services/permission.service.js";
@@ -245,6 +245,11 @@ function registerApi(app: FastifyInstance, services: Services) {
     const input = mkdirSchema.parse(request.body);
     return services.fsService.mkdir(actor, input.rootSlug, input.path, input.name);
   });
+  app.post("/api/fs/rename", async (request) => {
+    const actor = requireActor(request);
+    const input = renameSchema.parse(request.body);
+    return services.fsService.rename(actor, input.rootSlug, input.path, input.name);
+  });
   app.post("/api/fs/upload", async (request) => {
     const actor = requireActor(request);
     const parts = request.parts();
@@ -266,6 +271,13 @@ function registerApi(app: FastifyInstance, services: Services) {
   app.post("/api/tasks/:id/pause", async () => ({ ok: false, reason: "Pause is reserved for a later worker version" }));
   app.post("/api/tasks/:id/resume", async () => ({ ok: false, reason: "Task resume is not part of MVP" }));
 
+  app.get("/api/trash", async (request) => services.tasks.listTrash(requireActor(request)));
+  app.post("/api/trash/:id/restore", async (request) => {
+    const actor = requireActor(request);
+    const params = z.object({ id: z.string() }).parse(request.params);
+    return services.tasks.createRestoreTrash(actor, params.id);
+  });
+
   app.get("/api/shelves", async (request) => services.shelves.list(requireActor(request)));
   app.post("/api/shelves", async (request) => {
     const actor = requireActor(request);
@@ -283,6 +295,20 @@ function registerApi(app: FastifyInstance, services: Services) {
     const params = z.object({ id: z.string(), itemId: z.string() }).parse(request.params);
     services.shelves.removeItem(actor, params.id, params.itemId);
     return { ok: true };
+  });
+  app.post("/api/shelves/:id/tasks", async (request) => {
+    const actor = requireActor(request);
+    const params = z.object({ id: z.string() }).parse(request.params);
+    const body = z.object({
+      type: z.enum(["copy", "move", "compress"]),
+      destination: z.object({ rootSlug: z.string(), path: z.string() })
+    }).parse(request.body);
+    const items = services.shelves.itemsForTask(actor, params.id);
+    return services.tasks.create(actor, {
+      type: body.type,
+      sources: items.map((item) => ({ rootSlug: item.root_slug, path: item.path })),
+      destination: body.destination
+    });
   });
 
   app.get("/api/tags", async (request) => services.tags.list(requireActor(request)));
@@ -343,5 +369,18 @@ function registerApi(app: FastifyInstance, services: Services) {
     const safe = await services.shares.publicDownload(params.token);
     reply.header("Content-Disposition", `attachment; filename="${path.basename(safe.absolutePath).replaceAll('"', "")}"`);
     return fs.createReadStream(safe.absolutePath);
+  });
+
+  app.post("/s/:token/upload", async (request) => {
+    const params = z.object({ token: z.string().min(1) }).parse(request.params);
+    const target = await services.shares.publicUploadTarget(params.token);
+    const parts = request.parts();
+    const uploaded = [];
+    for await (const part of parts) {
+      if (part.type === "file") {
+        uploaded.push(await services.fsService.publicUpload(target.safe.root.slug, target.safe.logicalPath, part.filename, part.file));
+      }
+    }
+    return { items: uploaded };
   });
 }
