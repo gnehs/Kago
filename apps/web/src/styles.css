@@ -34,7 +34,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -122,7 +123,8 @@ label {
   font-size: 13px;
 }
 
-input {
+input,
+select {
   min-height: 40px;
   border: 1px solid var(--kago-border);
   border-radius: var(--kago-radius-md);
@@ -135,6 +137,11 @@ input {
 input:focus {
   border-color: var(--kago-accent);
   box-shadow: 0 0 0 2px rgba(94, 106, 210, 0.35);
+}
+
+select:focus {
+  border-color: var(--kago-accent);
+  box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.2);
 }
 
 .inline-error {
@@ -250,6 +257,24 @@ input:focus {
   color: var(--kago-text-muted);
   font-size: 13px;
   line-height: 1.5;
+}
+
+.inspector-card {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+  padding-top: 14px;
+}
+
+.inline-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.inline-form select {
+  min-width: 0;
 }
 
 .side-nav,
@@ -581,7 +606,7 @@ input:focus {
 
 .file-row {
   display: grid;
-  grid-template-columns: 24px minmax(150px, 1fr) 92px 150px 124px 32px 32px;
+  grid-template-columns: 22px minmax(110px, 1fr) 56px 84px 82px 28px 28px 28px 28px;
   align-items: center;
   gap: 6px;
   min-height: 34px;
@@ -596,7 +621,7 @@ input:focus {
   top: 0;
   z-index: 1;
   display: grid;
-  grid-template-columns: minmax(174px, 1fr) 92px 150px 124px 32px 32px;
+  grid-template-columns: minmax(132px, 1fr) 56px 84px 82px 28px 28px 28px 28px;
   align-items: center;
   min-height: 34px;
   border-bottom: 1px solid rgba(0, 0, 0, 0.08);

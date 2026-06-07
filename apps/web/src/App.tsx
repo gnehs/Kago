@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Archive, Boxes, Check, ChevronDown, ChevronLeft, ChevronRight, Circle, CirclePlus, Columns3, Download, FileText, Folder, FolderOpen, Globe2, Grip, HardDrive, Home, LayoutGrid, List, Loader2, LogOut, Maximize2, Minimize2, MoreHorizontal, PanelRight, Plus, Radio, RefreshCw, Search, Server, Share2, Smartphone, Tags, Trash2, Upload, X } from "lucide-react";
+import { Archive, Boxes, Check, ChevronDown, ChevronLeft, ChevronRight, Circle, CirclePlus, Columns3, Download, FileText, Folder, FolderOpen, Globe2, Grip, HardDrive, Home, LayoutGrid, List, Loader2, LogOut, Maximize2, Minimize2, MoreHorizontal, PanelRight, Pencil, Plus, Radio, RefreshCw, Search, Server, Share2, Smartphone, Tags, Trash2, Upload, X } from "lucide-react";
 import { api, downloadUrl } from "./api/client";
 import { useFileList, useMe, useRoots, useSaveWorkspace, useShelves, useTasks, useWorkspace } from "./api/hooks";
 import { useWorkspaceStore } from "./stores/workspace";
@@ -391,6 +391,8 @@ function FileWindowView({ window }: { window: FileWindow }) {
                 <span>加入日期</span>
                 <span />
                 <span />
+                <span />
+                <span />
               </div>
             )}
             {fileList.isLoading && <div className="empty-state"><Loader2 className="spin" /> Loading</div>}
@@ -464,9 +466,30 @@ function FileRow({ item, window }: { item: FileItem; window: FileWindow }) {
       <span>{item.kind === "folder" ? "檔案夾" : item.type}</span>
       <span>{formatDate(item.mtime)}</span>
       <a className="icon-button" href={downloadUrl(window.rootSlug, item.path)} onClick={(event) => event.stopPropagation()}><Download /></a>
-      <button className="icon-button" onClick={(event) => { event.stopPropagation(); void addToShelf(); }}><Archive /></button>
+      <button className="icon-button" onClick={(event) => { event.stopPropagation(); void renameItem(); }} title="重新命名"><Pencil /></button>
+      <button className="icon-button" onClick={(event) => { event.stopPropagation(); void addToShelf(); }} title="加入中轉區"><Archive /></button>
+      <button className="icon-button danger" onClick={(event) => { event.stopPropagation(); void trashItem(); }} title="移到垃圾桶"><Trash2 /></button>
     </div>
   );
+
+  async function renameItem() {
+    const nextName = prompt("新的名稱", item.name);
+    if (!nextName || nextName === item.name) return;
+    await api("/api/fs/rename", {
+      method: "POST",
+      body: JSON.stringify({ rootSlug: window.rootSlug, path: item.path, name: nextName })
+    });
+    await queryClient.invalidateQueries({ queryKey: ["fs", "list", window.rootSlug, window.logicalPath] });
+  }
+
+  async function trashItem() {
+    await api("/api/tasks", {
+      method: "POST",
+      body: JSON.stringify({ type: "delete_to_trash", sources: [{ rootSlug: window.rootSlug, path: item.path }] })
+    });
+    await queryClient.invalidateQueries({ queryKey: ["tasks"] });
+    await queryClient.invalidateQueries({ queryKey: ["fs", "list", window.rootSlug, window.logicalPath] });
+  }
 }
 
 function FileIcon() {
@@ -524,12 +547,119 @@ function TaskCenter() {
 }
 
 function Inspector() {
+  const store = useWorkspaceStore();
+  const roots = useRoots();
+  const queryClient = useQueryClient();
+  const activeWindow = store.windows.find((window) => window.id === store.activeWindowId);
+  const selectedPath = activeWindow?.selectedItems[0] ?? null;
+  const [tagName, setTagName] = useState("");
+  const [shareMode, setShareMode] = useState<"download" | "view_only" | "upload_only">("download");
+  const [shareUrl, setShareUrl] = useState("");
+  const [userEmail, setUserEmail] = useState("");
+  const [groupName, setGroupName] = useState("");
+  const [permissionUserId, setPermissionUserId] = useState("");
+  const [permissionRootId, setPermissionRootId] = useState("");
+
+  async function addTag() {
+    if (!activeWindow || !selectedPath || !tagName) return;
+    const tag = await api<{ id: string }>("/api/tags", { method: "POST", body: JSON.stringify({ name: tagName, color: "#007aff" }) });
+    await api("/api/tags/file", {
+      method: "PUT",
+      body: JSON.stringify({ rootSlug: activeWindow.rootSlug, path: selectedPath, tagIds: [tag.id] })
+    });
+    setTagName("");
+  }
+
+  async function createShare() {
+    if (!activeWindow || !selectedPath) return;
+    const share = await api<{ token: string }>("/api/shares", {
+      method: "POST",
+      body: JSON.stringify({ rootSlug: activeWindow.rootSlug, path: selectedPath, mode: shareMode })
+    });
+    setShareUrl(`${location.origin}/s/${share.token}`);
+  }
+
+  async function createUser() {
+    if (!userEmail) return;
+    await api("/api/users", {
+      method: "POST",
+      body: JSON.stringify({ email: userEmail, password: "change-me-123", displayName: userEmail.split("@")[0], role: "USER" })
+    });
+    setUserEmail("");
+  }
+
+  async function createGroup() {
+    if (!groupName) return;
+    await api("/api/groups", { method: "POST", body: JSON.stringify({ name: groupName }) });
+    setGroupName("");
+  }
+
+  async function grantReadPermission() {
+    if (!permissionUserId || !permissionRootId) return;
+    await api("/api/permissions", {
+      method: "POST",
+      body: JSON.stringify({
+        principalType: "user",
+        principalId: permissionUserId,
+        rootId: permissionRootId,
+        pathPrefix: "/",
+        allow: ["list", "read", "download"],
+        deny: [],
+        recursive: true
+      })
+    });
+    setPermissionUserId("");
+    setPermissionRootId("");
+    await queryClient.invalidateQueries({ queryKey: ["roots"] });
+  }
+
   return (
     <aside className="inspector">
       <header><Search /> 檢閱器</header>
       <section>
         <h3>Metadata</h3>
-        <p>選取檔案後可檢視標籤、權限、分享狀態與預覽資訊。</p>
+        <p>{selectedPath ? `${activeWindow?.rootSlug}:${selectedPath}` : "選取檔案後可檢視標籤、權限、分享狀態與預覽資訊。"}</p>
+      </section>
+      <section className="inspector-card">
+        <h3>標籤</h3>
+        <div className="inline-form">
+          <input placeholder="標籤名稱" value={tagName} onChange={(event) => setTagName(event.target.value)} />
+          <button className="tool-button" onClick={addTag}><Tags /> 套用</button>
+        </div>
+      </section>
+      <section className="inspector-card">
+        <h3>分享</h3>
+        <div className="inline-form">
+          <select value={shareMode} onChange={(event) => setShareMode(event.target.value as "download" | "view_only" | "upload_only")}>
+            <option value="download">下載</option>
+            <option value="view_only">檢視</option>
+            <option value="upload_only">只允許上傳</option>
+          </select>
+          <button className="tool-button" onClick={createShare}><Share2 /> 建立</button>
+        </div>
+        {shareUrl && <input readOnly value={shareUrl} />}
+      </section>
+      <section className="inspector-card">
+        <h3>管理</h3>
+        <div className="inline-form">
+          <input placeholder="user@example.com" value={userEmail} onChange={(event) => setUserEmail(event.target.value)} />
+          <button className="tool-button" onClick={createUser}>新增使用者</button>
+        </div>
+        <div className="inline-form">
+          <input placeholder="群組名稱" value={groupName} onChange={(event) => setGroupName(event.target.value)} />
+          <button className="tool-button" onClick={createGroup}>新增群組</button>
+        </div>
+      </section>
+      <section className="inspector-card">
+        <h3>權限</h3>
+        <div className="inline-form">
+          <input placeholder="使用者 ID" value={permissionUserId} onChange={(event) => setPermissionUserId(event.target.value)} />
+          <select value={permissionRootId} onChange={(event) => setPermissionRootId(event.target.value)}>
+            <option value="">Root</option>
+            {roots.data?.map((root) => <option key={root.id} value={root.id}>{root.name}</option>)}
+          </select>
+          <button className="tool-button" onClick={grantReadPermission}>讀取</button>
+        </div>
       </section>
     </aside>
   );
