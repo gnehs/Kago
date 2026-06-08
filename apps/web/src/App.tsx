@@ -505,6 +505,7 @@ function FileWindowView({ window }: { window: FileWindow }) {
   const [dropChoice, setDropChoice] = useState<{ items: Array<{ rootSlug: string; path: string }> } | null>(null);
   const [contextMenu, setContextMenu] = useState<{ item: FileItem; x: number; y: number } | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [lastSelectedPath, setLastSelectedPath] = useState<string | null>(null);
 
   useEffect(() => {
     function move(event: MouseEvent) {
@@ -641,7 +642,10 @@ function FileWindowView({ window }: { window: FileWindow }) {
   function openContextMenu(event: React.MouseEvent<HTMLElement>, item: FileItem) {
     event.preventDefault();
     event.stopPropagation();
-    store.selectItems(window.id, [item.path]);
+    if (!window.selectedItems.includes(item.path)) {
+      store.selectItems(window.id, [item.path]);
+      setLastSelectedPath(item.path);
+    }
     const host = event.currentTarget.closest(".file-window") as HTMLElement | null;
     const rect = host?.getBoundingClientRect();
     const x = rect ? event.clientX - rect.left : event.clientX;
@@ -688,6 +692,28 @@ function FileWindowView({ window }: { window: FileWindow }) {
     await queryClient.invalidateQueries({ queryKey: ["fs", "list", window.rootSlug, window.logicalPath] });
   }
 
+  function selectItem(event: React.MouseEvent<HTMLElement>, item: FileItem) {
+    const visiblePaths = visibleItems.map((entry) => entry.path);
+    const selected = window.selectedItems.includes(item.path);
+    if (event.shiftKey && visiblePaths.length > 0) {
+      const anchor = lastSelectedPath ?? window.selectedItems.at(-1) ?? item.path;
+      const anchorIndex = Math.max(0, visiblePaths.indexOf(anchor));
+      const itemIndex = visiblePaths.indexOf(item.path);
+      if (itemIndex !== -1) {
+        const [start, end] = anchorIndex < itemIndex ? [anchorIndex, itemIndex] : [itemIndex, anchorIndex];
+        store.selectItems(window.id, visiblePaths.slice(start, end + 1));
+        return;
+      }
+    }
+    if (event.metaKey || event.ctrlKey) {
+      store.selectItems(window.id, selected ? window.selectedItems.filter((path) => path !== item.path) : [...window.selectedItems, item.path]);
+      setLastSelectedPath(item.path);
+      return;
+    }
+    store.selectItems(window.id, selected && window.selectedItems.length === 1 ? [] : [item.path]);
+    setLastSelectedPath(item.path);
+  }
+
   function updateSort(sortBy: FileWindow["sortBy"]) {
     const sameField = window.sortBy === sortBy;
     store.updateWindow(window.id, {
@@ -724,8 +750,16 @@ function FileWindowView({ window }: { window: FileWindow }) {
       onDrop={(event) => {
         event.preventDefault();
         if (readonly) return;
-        const raw = event.dataTransfer.getData("application/kago-file");
-        if (raw) setDropChoice({ items: [JSON.parse(raw)] });
+        const rawItems = event.dataTransfer.getData("application/kago-files");
+        const rawItem = event.dataTransfer.getData("application/kago-file");
+        try {
+          const items = rawItems
+            ? JSON.parse(rawItems) as Array<{ rootSlug: string; path: string }>
+            : rawItem ? [JSON.parse(rawItem) as { rootSlug: string; path: string }] : [];
+          if (items.length > 0) setDropChoice({ items });
+        } catch {
+          setDropChoice(null);
+        }
       }}
     >
       <div
@@ -771,6 +805,7 @@ function FileWindowView({ window }: { window: FileWindow }) {
                       onChange={(event) => {
                         setSearchQuery(event.target.value);
                         store.selectItems(window.id, []);
+                        setLastSelectedPath(null);
                       }}
                     />
                     {searchQuery ? (
@@ -781,6 +816,7 @@ function FileWindowView({ window }: { window: FileWindow }) {
                         onClick={() => {
                           setSearchQuery("");
                           store.selectItems(window.id, []);
+                          setLastSelectedPath(null);
                         }}
                       >
                         <X />
@@ -835,7 +871,14 @@ function FileWindowView({ window }: { window: FileWindow }) {
                   </div>
                 )}
                 {visibleItems.map((item) => (
-                  <FileRow key={item.path} item={item} window={window} readonly={readonly} onOpenContext={openContextMenu} />
+                  <FileRow
+                    key={item.path}
+                    item={item}
+                    window={window}
+                    readonly={readonly}
+                    onOpenContext={openContextMenu}
+                    onSelect={selectItem}
+                  />
                 ))}
               </div>
               <div className="statusbar">
@@ -857,6 +900,7 @@ function FileWindowView({ window }: { window: FileWindow }) {
       )}
       {dropChoice && (
         <div className="drop-popover">
+          <strong>{dropChoice.items.length} 個項目</strong>
           {readonly ? <span>這個視窗是唯讀目的地</span> : null}
           <button onClick={() => void createTask("copy")} disabled={readonly}>複製到這裡</button>
           <button onClick={() => void createTask("move")} disabled={readonly}>搬移到這裡</button>
@@ -921,7 +965,19 @@ function Breadcrumb({ window }: { window: FileWindow }) {
   );
 }
 
-function FileRow({ item, window, readonly, onOpenContext }: { item: FileItem; window: FileWindow; readonly: boolean; onOpenContext: (event: React.MouseEvent<HTMLElement>, item: FileItem) => void }) {
+function FileRow({
+  item,
+  window,
+  readonly,
+  onOpenContext,
+  onSelect
+}: {
+  item: FileItem;
+  window: FileWindow;
+  readonly: boolean;
+  onOpenContext: (event: React.MouseEvent<HTMLElement>, item: FileItem) => void;
+  onSelect: (event: React.MouseEvent<HTMLElement>, item: FileItem) => void;
+}) {
   const store = useWorkspaceStore();
   const selected = window.selectedItems.includes(item.path);
   const queryClient = useQueryClient();
@@ -943,9 +999,12 @@ function FileRow({ item, window, readonly, onOpenContext }: { item: FileItem; wi
       data-download-url={item.kind === "file" ? downloadUrl(window.rootSlug, item.path) : undefined}
       draggable
       onDragStart={(event) => {
-        event.dataTransfer.setData("application/kago-file", JSON.stringify({ rootSlug: window.rootSlug, path: item.path }));
+        const paths = selected && window.selectedItems.length > 0 ? window.selectedItems : [item.path];
+        const items = paths.map((path) => ({ rootSlug: window.rootSlug, path }));
+        event.dataTransfer.setData("application/kago-files", JSON.stringify(items));
+        event.dataTransfer.setData("application/kago-file", JSON.stringify(items[0]));
       }}
-      onClick={() => store.selectItems(window.id, selected ? [] : [item.path])}
+      onClick={(event) => onSelect(event, item)}
       onContextMenu={(event) => onOpenContext(event, item)}
       onDoubleClick={() => {
         if (item.kind === "folder") store.updateWindow(window.id, { logicalPath: item.path, selectedItems: [] });
