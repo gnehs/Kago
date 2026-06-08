@@ -11,7 +11,7 @@ import { openDb } from "./db/db.js";
 import { AppError, publicError } from "./lib/errors.js";
 import { AuditService } from "./services/audit.service.js";
 import { AuthService, createUserSchema, loginSchema } from "./services/auth.service.js";
-import { FsService, fsQuerySchema, mkdirSchema, renameSchema } from "./services/fs.service.js";
+import { FsService, fsQuerySchema, maxUploadFileBytes, maxUploadFiles, mkdirSchema, renameSchema } from "./services/fs.service.js";
 import { createGroupSchema, GroupService } from "./services/group.service.js";
 import { PathService } from "./services/path.service.js";
 import { permissionInputSchema, PermissionService } from "./services/permission.service.js";
@@ -43,7 +43,7 @@ export async function buildApp(env: Env) {
   const workers = new WorkerManager(tasks, auth);
 
   await app.register(cookie, { secret: env.sessionSecret });
-  await app.register(multipart);
+  await app.register(multipart, { limits: { fileSize: maxUploadFileBytes, files: maxUploadFiles } });
   await app.register(websocket);
 
   app.setErrorHandler((error, _request, reply) => {
@@ -272,10 +272,15 @@ function registerApi(app: FastifyInstance, services: Services) {
     let rootSlug = "";
     let uploadPath = "/";
     const uploaded = [];
+    let fileCount = 0;
     for await (const part of parts) {
       if (part.type === "field" && part.fieldname === "rootSlug") rootSlug = String(part.value);
       if (part.type === "field" && part.fieldname === "path") uploadPath = String(part.value);
-      if (part.type === "file") uploaded.push(await services.fsService.upload(actor, rootSlug, uploadPath, part.filename, part.file));
+      if (part.type === "file") {
+        fileCount += 1;
+        if (fileCount > maxUploadFiles) throw new AppError(413, "Too many files in one upload", "TOO_MANY_UPLOAD_FILES");
+        uploaded.push(await services.fsService.upload(actor, rootSlug, uploadPath, part.filename, part.file));
+      }
     }
     return { items: uploaded };
   });
@@ -435,8 +440,11 @@ function registerApi(app: FastifyInstance, services: Services) {
     const target = await services.shares.publicUploadTarget(params.token, shareAccessCookie(request, params.token));
     const parts = request.parts();
     const uploaded = [];
+    let fileCount = 0;
     for await (const part of parts) {
       if (part.type === "file") {
+        fileCount += 1;
+        if (fileCount > maxUploadFiles) throw new AppError(413, "Too many files in one upload", "TOO_MANY_UPLOAD_FILES");
         uploaded.push(await services.fsService.publicUpload(target.safe.root.slug, target.safe.logicalPath, part.filename, part.file));
       }
     }

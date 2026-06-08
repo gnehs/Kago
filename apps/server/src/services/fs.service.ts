@@ -2,6 +2,7 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import { createHash } from "node:crypto";
 import path from "node:path";
+import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { lookup } from "mime-types";
 import { z } from "zod";
@@ -27,6 +28,9 @@ export const renameSchema = z.object({
   path: z.string().min(1),
   name: z.string().min(1).max(255).refine((value) => !value.includes("/") && value !== ".." && !value.includes("\0"))
 });
+
+export const maxUploadFiles = 20;
+export const maxUploadFileBytes = 1024 * 1024 * 512;
 
 export class FsService {
   constructor(
@@ -144,7 +148,7 @@ export class FsService {
     this.permissions.require(actor, "upload", parent.root, parent.logicalPath);
     const target = await this.paths.resolveForCreate(rootSlug, path.posix.join(parent.logicalPath, fileName));
     const writeStream = fs.createWriteStream(target.absolutePath, { flags: "wx", mode: 0o644 });
-    await pipeline(stream, writeStream);
+    await this.writeUploadStream(stream, writeStream, target.absolutePath);
     this.audit.write({
       actorType: "user",
       actorId: actor.id,
@@ -163,7 +167,7 @@ export class FsService {
     const parent = await this.paths.resolveExisting(rootSlug, parentPath);
     const target = await this.paths.resolveForCreate(rootSlug, path.posix.join(parent.logicalPath, fileName));
     const writeStream = fs.createWriteStream(target.absolutePath, { flags: "wx", mode: 0o644 });
-    await pipeline(stream, writeStream);
+    await this.writeUploadStream(stream, writeStream, target.absolutePath);
     this.audit.write({
       actorType: "share_link",
       action: "upload_via_share",
@@ -227,6 +231,39 @@ export class FsService {
       result: "success"
     });
   }
+
+  private async writeUploadStream(stream: NodeJS.ReadableStream, writeStream: fs.WriteStream, targetPath: string): Promise<void> {
+    let opened = false;
+    writeStream.on("open", () => {
+      opened = true;
+    });
+    try {
+      await pipeline(stream, limitUploadBytes(), writeStream);
+    } catch (error) {
+      if (opened) {
+        try {
+          await fsp.unlink(targetPath);
+        } catch {
+          // Best-effort cleanup for partial uploads.
+        }
+      }
+      throw error;
+    }
+  }
+}
+
+function limitUploadBytes(): Transform {
+  let total = 0;
+  return new Transform({
+    transform(chunk: Buffer, _encoding, callback) {
+      total += chunk.length;
+      if (total > maxUploadFileBytes) {
+        callback(new AppError(413, "Uploaded file is too large", "UPLOAD_TOO_LARGE"));
+        return;
+      }
+      callback(null, chunk);
+    }
+  });
 }
 
 function renderPlaceholderThumbnail(input: { name: string; kind: "folder" | "file"; type: string }): string {
