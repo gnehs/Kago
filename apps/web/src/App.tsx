@@ -111,10 +111,16 @@ function PublicSharePage({ token }: { token: string }) {
           )}
           {share && !needsPassword && (
             <div className="share-actions">
-              {(share.mode === "download" || share.mode === "view_only") && (
+              {share.mode === "download" && (
                 <a className="primary-button" href={`/s/${token}/download`}>
                   <Download />
                   下載
+                </a>
+              )}
+              {share.mode === "view_only" && (
+                <a className="primary-button" href={`/s/${token}/preview`} target="_blank" rel="noreferrer">
+                  <FileText />
+                  檢視
                 </a>
               )}
               {share.mode === "upload_only" && (

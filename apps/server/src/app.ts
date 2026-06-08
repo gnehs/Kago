@@ -5,6 +5,7 @@ import multipart from "@fastify/multipart";
 import fastifyStatic from "@fastify/static";
 import websocket from "@fastify/websocket";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
+import { lookup } from "mime-types";
 import { z } from "zod";
 import type { Env } from "./config/env.js";
 import { openDb } from "./db/db.js";
@@ -436,7 +437,22 @@ function registerApi(app: FastifyInstance, services: Services) {
   app.get("/s/:token/download", async (request, reply) => {
     const params = z.object({ token: z.string().min(1) }).parse(request.params);
     const safe = await services.shares.publicDownload(params.token, shareAccessCookie(request, params.token));
+    const stat = await fs.promises.stat(safe.absolutePath);
+    if (!stat.isFile()) throw new AppError(400, "Path is not a file", "NOT_FILE");
+    reply.header("Content-Type", lookup(safe.absolutePath) || "application/octet-stream");
+    reply.header("Content-Length", String(stat.size));
     reply.header("Content-Disposition", `attachment; filename="${path.basename(safe.absolutePath).replaceAll('"', "")}"`);
+    return fs.createReadStream(safe.absolutePath);
+  });
+
+  app.get("/s/:token/preview", async (request, reply) => {
+    const params = z.object({ token: z.string().min(1) }).parse(request.params);
+    const safe = await services.shares.publicPreview(params.token, shareAccessCookie(request, params.token));
+    const stat = await fs.promises.stat(safe.absolutePath);
+    if (!stat.isFile()) throw new AppError(400, "Path is not a file", "NOT_FILE");
+    reply.header("Content-Type", lookup(safe.absolutePath) || "application/octet-stream");
+    reply.header("Content-Length", String(stat.size));
+    reply.header("Content-Disposition", `inline; filename="${path.basename(safe.absolutePath).replaceAll('"', "")}"`);
     return fs.createReadStream(safe.absolutePath);
   });
 

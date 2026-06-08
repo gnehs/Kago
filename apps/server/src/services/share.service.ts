@@ -201,7 +201,7 @@ export class ShareService {
     const share = this.resolveToken(token);
     this.assertPublicAccess(share, accessToken);
     const mode = (JSON.parse(share.permission_json) as { mode: string }).mode;
-    if (mode !== "download" && mode !== "view_only") {
+    if (mode !== "download") {
       throw new AppError(403, "Download is not allowed for this share", "SHARE_DOWNLOAD_FORBIDDEN");
     }
     const safe = await this.paths.resolveRootById(share.root_id, share.path);
@@ -218,6 +218,16 @@ export class ShareService {
       result: "success"
     });
     return safe;
+  }
+
+  async publicPreview(token: string, accessToken?: string) {
+    const share = this.resolveToken(token);
+    this.assertPublicAccess(share, accessToken);
+    const mode = (JSON.parse(share.permission_json) as { mode: string }).mode;
+    if (mode !== "download" && mode !== "view_only") {
+      throw new AppError(403, "Preview is not allowed for this share", "SHARE_PREVIEW_FORBIDDEN");
+    }
+    return this.paths.resolveRootById(share.root_id, share.path);
   }
 
   async publicUploadTarget(token: string, accessToken?: string) {
