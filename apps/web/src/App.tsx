@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Archive, Boxes, Check, ChevronDown, ChevronLeft, ChevronRight, Circle, CirclePlus, Columns3, Download, FileText, Folder, FolderOpen, Globe2, Grip, HardDrive, Home, LayoutGrid, List, Loader2, LogOut, Maximize2, Minimize2, MoreHorizontal, PanelRight, Pencil, Plus, Radio, RefreshCw, Search, Server, Share2, Smartphone, Tags, Trash2, Upload, X } from "lucide-react";
+import { AppWindow, Archive, Boxes, Check, ChevronDown, ChevronLeft, ChevronRight, Circle, CirclePlus, Columns3, Download, FileText, Folder, FolderOpen, Globe2, HardDrive, HelpCircle, Home, LayoutGrid, List, Loader2, LogOut, Maximize2, MessageCircle, Minimize2, MoreHorizontal, PanelRight, Pencil, Plus, Radio, RefreshCw, Search, Server, Settings2, Share2, SlidersHorizontal, Smartphone, Star, Tags, Trash2, Upload, UserRound, X } from "lucide-react";
 import { api, downloadUrl } from "./api/client";
 import { useFileList, useMe, useRoots, useSaveWorkspace, useShelves, useTasks, useWorkspace } from "./api/hooks";
 import { useWorkspaceStore } from "./stores/workspace";
@@ -132,20 +132,66 @@ function Workspace({ userEmail }: { userEmail: string }) {
 
   if (workspaceQuery.isLoading || roots.isLoading) return <ShellLoading />;
 
+  const rootList = roots.data ?? [];
+
   return (
     <main className="app-shell">
-      <Sidebar roots={roots.data ?? []} userEmail={userEmail} />
-      <section className="workspace-canvas">
-        <TopStrip />
-        {store.windows.length === 0 ? <RootPicker roots={roots.data ?? []} /> : null}
-        {store.windows.map((window) => (
-          <FileWindowView key={window.id} window={window} />
-        ))}
-        <FloatingShelf />
-        <TaskCenter />
+      <DesktopTopBar userEmail={userEmail} />
+      <DesktopIcons roots={rootList} />
+      <section className="desktop-window desktop-window-background">
+        <Sidebar roots={rootList} userEmail={userEmail} />
+        <section className="workspace-canvas">
+          <TopStrip />
+          {store.windows.length === 0 ? <RootPicker roots={rootList} /> : null}
+          {store.windows.map((window) => (
+            <FileWindowView key={window.id} window={window} />
+          ))}
+          <FloatingShelf />
+          <TaskCenter />
+        </section>
+        <Inspector />
       </section>
-      <Inspector />
     </main>
+  );
+}
+
+function DesktopTopBar({ userEmail }: { userEmail: string }) {
+  return (
+    <header className="desktop-topbar">
+      <div className="desktop-launcher">
+        <button title="主選單"><LayoutGrid /></button>
+        <button title="File Station"><FolderOpen /></button>
+        <button title="套件中心"><Boxes /></button>
+      </div>
+      <div className="desktop-status">
+        <button title="通知"><MessageCircle /></button>
+        <button title={userEmail}><UserRound /></button>
+        <button title="控制台"><SlidersHorizontal /></button>
+        <button title="搜尋"><Search /></button>
+      </div>
+    </header>
+  );
+}
+
+function DesktopIcons({ roots }: { roots: Root[] }) {
+  const store = useWorkspaceStore();
+  const firstRoot = roots[0];
+  const iconItems = [
+    { label: "套件中心", icon: <Boxes />, action: undefined },
+    { label: "控制台", icon: <SlidersHorizontal />, action: undefined },
+    { label: "File Station", icon: <FolderOpen />, action: firstRoot ? () => store.openRoot(firstRoot) : undefined },
+    { label: "DSM 說明", icon: <HelpCircle />, action: undefined }
+  ];
+
+  return (
+    <nav className="desktop-icons" aria-label="NAS desktop apps">
+      {iconItems.map((item) => (
+        <button key={item.label} onClick={item.action}>
+          <span className="desktop-icon-tile">{item.icon}</span>
+          <span>{item.label}</span>
+        </button>
+      ))}
+    </nav>
   );
 }
 
@@ -364,9 +410,9 @@ function FileWindowView({ window }: { window: FileWindow }) {
         onDoubleClick={() => store.updateWindow(window.id, { maximized: !window.maximized })}
       >
         <div className="traffic-lights"><span /><span /><span /></div>
-        <Grip />
-        <strong>{window.title}</strong>
-        <span>{window.rootSlug}:{window.logicalPath}</span>
+        <Folder className="title-folder" />
+        <strong>File Station</strong>
+        <span>{window.title} · {window.rootSlug}:{window.logicalPath}</span>
         <div className="window-controls">
           <button className="icon-button" onClick={(event) => { event.stopPropagation(); store.updateWindow(window.id, { minimized: !window.minimized }); }}><Minimize2 /></button>
           <button className="icon-button" onClick={(event) => { event.stopPropagation(); store.updateWindow(window.id, { maximized: !window.maximized }); }}><Maximize2 /></button>
@@ -377,16 +423,34 @@ function FileWindowView({ window }: { window: FileWindow }) {
         <>
           <div className="finder-window-body">
             <aside className="window-finder-sidebar">
-              <MiniFinderSidebar activeLabel={window.title} />
+              <MiniFinderSidebar activeLabel={window.title} rootSlug={window.rootSlug} />
             </aside>
             <div className="window-content">
-              <div className="window-toolbar">
-                <button className="icon-button" disabled={window.logicalPath === "/"} onClick={() => store.updateWindow(window.id, { logicalPath: parentPath(window.logicalPath), selectedItems: [] })}><ChevronLeft /></button>
-                <button className="icon-button" disabled><ChevronRight /></button>
-                <Breadcrumb window={window} />
-                <button className="tool-button" onClick={mkdir}><Folder /> 新增資料夾</button>
-                <label className="tool-button file-input"><Upload /> 上傳<input type="file" multiple onChange={upload} /></label>
-                <button className="icon-button" onClick={() => void queryClient.invalidateQueries({ queryKey: ["fs", "list", window.rootSlug, window.logicalPath] })}><RefreshCw /></button>
+              <div className="file-station-toolbar">
+                <div className="address-row">
+                  <div className="nav-cluster">
+                    <button className="icon-button" disabled={window.logicalPath === "/"} onClick={() => store.updateWindow(window.id, { logicalPath: parentPath(window.logicalPath), selectedItems: [] })}><ChevronLeft /></button>
+                    <button className="icon-button" disabled><ChevronRight /></button>
+                    <button className="icon-button" onClick={() => void queryClient.invalidateQueries({ queryKey: ["fs", "list", window.rootSlug, window.logicalPath] })}><RefreshCw /></button>
+                  </div>
+                  <div className="address-field">
+                    <Breadcrumb window={window} />
+                    <Star />
+                  </div>
+                  <label className="search-pill window-search"><Search /><input placeholder="搜尋" /></label>
+                </div>
+                <div className="action-row">
+                  <button className="tool-button" onClick={mkdir}><Folder /> 建立 <ChevronDown /></button>
+                  <label className="tool-button file-input"><Upload /> 上傳 <ChevronDown /><input type="file" multiple onChange={upload} /></label>
+                  <button className="tool-button"><MoreHorizontal /> 操作 <ChevronDown /></button>
+                  <button className="tool-button"><Settings2 /> 工具 <ChevronDown /></button>
+                  <button className="tool-button"><SlidersHorizontal /> 設定</button>
+                  <div className="window-view-tools">
+                    <button className={window.viewMode === "list" ? "selected" : ""} onClick={() => store.updateWindow(window.id, { viewMode: "list" })}><List /></button>
+                    <button className={window.viewMode === "grid" ? "selected" : ""} onClick={() => store.updateWindow(window.id, { viewMode: "grid" })}><LayoutGrid /></button>
+                    <button className={window.viewMode === "columns" ? "selected" : ""} onClick={() => store.updateWindow(window.id, { viewMode: "columns" })}><Columns3 /></button>
+                  </div>
+                </div>
               </div>
               <div className={`file-list ${window.viewMode}`}>
                 {window.viewMode === "list" && (
@@ -413,7 +477,11 @@ function FileWindowView({ window }: { window: FileWindow }) {
               </div>
             </div>
             <aside className="window-preview-pane">
-              <label className="search-pill window-search"><Search /><input placeholder="搜尋" /></label>
+              <div className="preview-empty">
+                <AppWindow />
+                <strong>預覽</strong>
+                <span>選取檔案後顯示詳細資訊</span>
+              </div>
             </aside>
           </div>
           <div className="resize-handle" onMouseDown={(event) => setResize({ startX: event.clientX, startY: event.clientY, width: window.width, height: window.height })} />
@@ -430,27 +498,22 @@ function FileWindowView({ window }: { window: FileWindow }) {
   );
 }
 
-function MiniFinderSidebar({ activeLabel }: { activeLabel: string }) {
+function MiniFinderSidebar({ activeLabel, rootSlug }: { activeLabel: string; rootSlug: string }) {
   return (
     <nav className="window-side-nav">
-      <button><RefreshCw /> 最近項目</button>
+      <button className="tree-root"><Server /> gnehsNAS</button>
+      <button className="tree-child selected"><ChevronRight /> <Folder /> {rootSlug || activeLabel || "data"}</button>
+      <button className="tree-child"><ChevronRight /> <Folder /> docker</button>
+      <button className="tree-child"><ChevronRight /> <Folder /> download</button>
+      <button className="tree-child"><ChevronRight /> <Folder /> home</button>
+      <button className="tree-child"><ChevronRight /> <Folder /> photo</button>
+      <button className="tree-child"><ChevronRight /> <Folder /> video</button>
+      <span>遠端資料夾</span>
+      <button className="tree-child muted"><ChevronRight /> <Folder /> media</button>
+      <button className="tree-child muted"><ChevronRight /> <Folder /> photos</button>
+      <span>系統</span>
       <button><Share2 /> 已共享</button>
-      <span>喜好項目</span>
-      <button><LayoutGrid /> 應用程式</button>
-      <button><PanelRight /> 桌面</button>
-      <button><FileText /> 文件</button>
-      <button className="selected"><Download /> {activeLabel || "下載項目"}</button>
-      <button><Folder /> Repos</button>
-      <span>位置</span>
-      <button><Home /> gnehs</button>
-      <button><Server /> Kago Roots</button>
-      <button><Radio /> AirDrop</button>
-      <button><Globe2 /> 網路</button>
       <button><Trash2 /> 垃圾桶</button>
-      <span>標籤</span>
-      <button><Circle className="tag-dot gray" /> 已觀看</button>
-      <button><Circle className="tag-dot red" /> 可刪除</button>
-      <button><Circle className="tag-dot blue" /> 好看</button>
     </nav>
   );
 }
@@ -496,7 +559,7 @@ function FileRow({ item, window }: { item: FileItem; window: FileWindow }) {
         else globalThis.open(downloadUrl(window.rootSlug, item.path), "_blank");
       }}
     >
-      {item.kind === "folder" ? <FolderOpen /> : <FileIcon />}
+      {item.kind === "folder" ? <FolderOpen className="folder-glyph" /> : <FileIcon />}
       <span className="file-name">{item.name}</span>
       <span>{formatSize(item.size)}</span>
       <span>{item.kind === "folder" ? "檔案夾" : item.type}</span>
