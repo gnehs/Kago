@@ -22,10 +22,11 @@ export function useSaveWorkspace() {
   });
 }
 
-export function useFileList(rootSlug: string, path: string) {
+export function useFileList(rootSlug: string, path: string, enabled = true) {
   return useQuery({
     queryKey: ["fs", "list", rootSlug, path],
-    queryFn: () => api<FileList>(`/api/fs/list?${new URLSearchParams({ rootSlug, path }).toString()}`)
+    queryFn: () => api<FileList>(`/api/fs/list?${new URLSearchParams({ rootSlug, path }).toString()}`),
+    enabled
   });
 }
 

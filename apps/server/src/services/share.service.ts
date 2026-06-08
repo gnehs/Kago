@@ -34,6 +34,9 @@ export class ShareService {
   async create(actor: Actor, input: z.infer<typeof shareSchema>) {
     const safe = await this.paths.resolveExisting(input.rootSlug, input.path);
     this.permissions.require(actor, "share", safe.root, safe.logicalPath);
+    if (safe.root.readonly && input.mode === "upload_only") {
+      throw new AppError(403, "Readonly roots cannot accept upload-only shares", "ROOT_READONLY");
+    }
     const token = randomToken();
     const ts = now();
     const share = {
@@ -183,6 +186,7 @@ export class ShareService {
     const mode = (JSON.parse(share.permission_json) as { mode: string }).mode;
     if (mode !== "upload_only") throw new AppError(403, "Upload is not allowed for this share", "SHARE_UPLOAD_FORBIDDEN");
     const safe = await this.paths.resolveRootById(share.root_id, share.path);
+    if (safe.root.readonly) throw new AppError(403, "Root is readonly", "ROOT_READONLY");
     return { share, safe };
   }
 

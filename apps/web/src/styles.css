@@ -986,6 +986,24 @@ select:focus {
   white-space: nowrap;
 }
 
+.readonly-pill,
+.readonly-note {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(125, 145, 164, 0.2);
+  border-radius: 999px;
+  background: rgba(125, 145, 164, 0.12);
+  color: #63717e;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.readonly-pill {
+  flex: 0 0 auto;
+  padding: 2px 7px;
+}
+
 .window-controls {
   display: flex;
   gap: 6px;
@@ -1111,6 +1129,10 @@ select:focus {
 .file-input {
   position: relative;
   overflow: hidden;
+}
+
+.file-input.disabled {
+  pointer-events: none;
 }
 
 .file-input input {
@@ -1322,6 +1344,12 @@ select:focus {
   background: var(--kago-surface);
 }
 
+.drop-popover span {
+  color: var(--kago-text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .floating-shelf,
 .task-center {
   position: absolute;
@@ -1514,11 +1542,18 @@ select:focus {
 }
 
 .shelf-items small,
-.task-item small {
+.task-item small,
+.readonly-note {
   overflow: hidden;
   color: var(--kago-text-muted);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.readonly-note {
+  justify-self: start;
+  margin-bottom: 8px;
+  padding: 3px 8px;
 }
 
 .task-item {

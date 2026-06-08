@@ -461,6 +461,7 @@ function FileWindowView({ window }: { window: FileWindow }) {
   const store = useWorkspaceStore();
   const queryClient = useQueryClient();
   const fileList = useFileList(window.rootSlug, window.logicalPath);
+  const readonly = Boolean(fileList.data?.readonly);
   const [drag, setDrag] = useState<{ startX: number; startY: number; x: number; y: number } | null>(null);
   const [resize, setResize] = useState<{ startX: number; startY: number; width: number; height: number } | null>(null);
   const [dropChoice, setDropChoice] = useState<{ items: Array<{ rootSlug: string; path: string }> } | null>(null);
@@ -504,7 +505,7 @@ function FileWindowView({ window }: { window: FileWindow }) {
   }, [fileList.data, window.sortBy, window.sortDirection]);
 
   async function createTask(type: "copy" | "move") {
-    if (!dropChoice) return;
+    if (!dropChoice || readonly) return;
     await api("/api/tasks", {
       method: "POST",
       body: JSON.stringify({ type, sources: dropChoice.items, destination: { rootSlug: window.rootSlug, path: window.logicalPath } })
@@ -514,6 +515,7 @@ function FileWindowView({ window }: { window: FileWindow }) {
   }
 
   async function mkdir() {
+    if (readonly) return;
     const name = prompt("Folder name");
     if (!name) return;
     await api("/api/fs/mkdir", { method: "POST", body: JSON.stringify({ rootSlug: window.rootSlug, path: window.logicalPath, name }) });
@@ -521,7 +523,7 @@ function FileWindowView({ window }: { window: FileWindow }) {
   }
 
   async function compressSelection() {
-    if (window.selectedItems.length === 0) return;
+    if (readonly || window.selectedItems.length === 0) return;
     const name = prompt("壓縮檔名稱", `${window.title || "archive"}.zip`);
     if (!name) return;
     await api("/api/tasks", {
@@ -537,7 +539,7 @@ function FileWindowView({ window }: { window: FileWindow }) {
   }
 
   async function extractSelection() {
-    if (window.selectedItems.length === 0) return;
+    if (readonly || window.selectedItems.length === 0) return;
     await api("/api/tasks", {
       method: "POST",
       body: JSON.stringify({
@@ -551,6 +553,10 @@ function FileWindowView({ window }: { window: FileWindow }) {
   }
 
   async function upload(event: React.ChangeEvent<HTMLInputElement>) {
+    if (readonly) {
+      event.target.value = "";
+      return;
+    }
     const files = event.target.files;
     if (!files?.length) return;
     const form = new FormData();
@@ -571,6 +577,7 @@ function FileWindowView({ window }: { window: FileWindow }) {
       onDragOver={(event) => event.preventDefault()}
       onDrop={(event) => {
         event.preventDefault();
+        if (readonly) return;
         const raw = event.dataTransfer.getData("application/kago-file");
         if (raw) setDropChoice({ items: [JSON.parse(raw)] });
       }}
@@ -584,6 +591,7 @@ function FileWindowView({ window }: { window: FileWindow }) {
         <Folder className="title-folder" />
         <strong>File Station</strong>
         <span>{window.title} · {window.rootSlug}:{window.logicalPath}</span>
+        {readonly ? <span className="readonly-pill">唯讀</span> : null}
         <div className="window-controls">
           <button className="icon-button" onClick={(event) => { event.stopPropagation(); store.updateWindow(window.id, { minimized: !window.minimized }); }}><Minimize2 /></button>
           <button className="icon-button" onClick={(event) => { event.stopPropagation(); store.updateWindow(window.id, { maximized: !window.maximized }); }}><Maximize2 /></button>
@@ -611,13 +619,15 @@ function FileWindowView({ window }: { window: FileWindow }) {
                   <label className="search-pill window-search"><Search /><input placeholder="搜尋" /></label>
                 </div>
                 <div className="action-row">
-                  <button className="tool-button" onClick={mkdir}><Folder /> 建立 <ChevronDown /></button>
-                  <label className="tool-button file-input"><Upload /> 上傳 <ChevronDown /><input type="file" multiple onChange={upload} /></label>
+                  <button className="tool-button" onClick={mkdir} disabled={readonly}><Folder /> 建立 <ChevronDown /></button>
+                  <label className={`tool-button file-input ${readonly ? "disabled" : ""}`} aria-disabled={readonly}>
+                    <Upload /> 上傳 <ChevronDown /><input type="file" multiple onChange={upload} disabled={readonly} />
+                  </label>
                   <button className="tool-button"><MoreHorizontal /> 操作 <ChevronDown /></button>
                   {window.selectedItems.length > 0 ? (
                     <>
-                      <button className="tool-button" onClick={() => void compressSelection()}><Archive /> 壓縮</button>
-                      <button className="tool-button" onClick={() => void extractSelection()}><FolderOpen /> 解壓縮</button>
+                      <button className="tool-button" onClick={() => void compressSelection()} disabled={readonly}><Archive /> 壓縮</button>
+                      <button className="tool-button" onClick={() => void extractSelection()} disabled={readonly}><FolderOpen /> 解壓縮</button>
                     </>
                   ) : null}
                   <button className="tool-button"><Settings2 /> 工具 <ChevronDown /></button>
@@ -647,10 +657,10 @@ function FileWindowView({ window }: { window: FileWindow }) {
                   <div className="empty-state file-empty">
                     <FolderOpen />
                     <strong>資料夾是空的</strong>
-                    <span>你可以建立資料夾或上傳檔案。</span>
+                    <span>{readonly ? "這個 root 是唯讀模式。" : "你可以建立資料夾或上傳檔案。"}</span>
                   </div>
                 )}
-                {sortedItems.map((item) => <FileRow key={item.path} item={item} window={window} />)}
+                {sortedItems.map((item) => <FileRow key={item.path} item={item} window={window} readonly={readonly} />)}
               </div>
               <div className="statusbar">
                 <span className="pathbar"><HardDrive /> {window.rootSlug} <ChevronRight /> {window.logicalPath === "/" ? window.title : window.logicalPath.split("/").filter(Boolean).join(" › ")}</span>
@@ -671,8 +681,9 @@ function FileWindowView({ window }: { window: FileWindow }) {
       )}
       {dropChoice && (
         <div className="drop-popover">
-          <button onClick={() => void createTask("copy")}>複製到這裡</button>
-          <button onClick={() => void createTask("move")}>搬移到這裡</button>
+          {readonly ? <span>這個視窗是唯讀目的地</span> : null}
+          <button onClick={() => void createTask("copy")} disabled={readonly}>複製到這裡</button>
+          <button onClick={() => void createTask("move")} disabled={readonly}>搬移到這裡</button>
           <button onClick={() => setDropChoice(null)}>取消</button>
         </div>
       )}
@@ -714,10 +725,11 @@ function Breadcrumb({ window }: { window: FileWindow }) {
   );
 }
 
-function FileRow({ item, window }: { item: FileItem; window: FileWindow }) {
+function FileRow({ item, window, readonly }: { item: FileItem; window: FileWindow; readonly: boolean }) {
   const store = useWorkspaceStore();
   const selected = window.selectedItems.includes(item.path);
   const queryClient = useQueryClient();
+  const canWrite = !readonly && !item.readonly;
 
   async function addToShelf() {
     const shelves = await api<Array<{ id: string }>>("/api/shelves");
@@ -747,13 +759,14 @@ function FileRow({ item, window }: { item: FileItem; window: FileWindow }) {
       <span>{item.kind === "folder" ? "檔案夾" : item.type}</span>
       <span>{formatDate(item.mtime)}</span>
       <a className="icon-button" href={downloadUrl(window.rootSlug, item.path)} onClick={(event) => event.stopPropagation()}><Download /></a>
-      <button className="icon-button" onClick={(event) => { event.stopPropagation(); void renameItem(); }} title="重新命名"><Pencil /></button>
+      <button className="icon-button" disabled={!canWrite} onClick={(event) => { event.stopPropagation(); void renameItem(); }} title={canWrite ? "重新命名" : "唯讀項目"}><Pencil /></button>
       <button className="icon-button" onClick={(event) => { event.stopPropagation(); void addToShelf(); }} title="加入中轉區"><Archive /></button>
-      <button className="icon-button danger" onClick={(event) => { event.stopPropagation(); void trashItem(); }} title="移到垃圾桶"><Trash2 /></button>
+      <button className="icon-button danger" disabled={!canWrite} onClick={(event) => { event.stopPropagation(); void trashItem(); }} title={canWrite ? "移到垃圾桶" : "唯讀項目"}><Trash2 /></button>
     </div>
   );
 
   async function renameItem() {
+    if (!canWrite) return;
     const nextName = prompt("新的名稱", item.name);
     if (!nextName || nextName === item.name) return;
     await api("/api/fs/rename", {
@@ -764,6 +777,7 @@ function FileRow({ item, window }: { item: FileItem; window: FileWindow }) {
   }
 
   async function trashItem() {
+    if (!canWrite) return;
     await api("/api/tasks", {
       method: "POST",
       body: JSON.stringify({ type: "delete_to_trash", sources: [{ rootSlug: window.rootSlug, path: item.path }] })
@@ -792,12 +806,14 @@ function FloatingShelf() {
   const shelves = useShelves();
   const store = useWorkspaceStore();
   const active = store.windows.find((window) => window.id === store.activeWindowId);
+  const activeList = useFileList(active?.rootSlug ?? "", active?.logicalPath ?? "/", Boolean(active));
+  const activeReadonly = Boolean(activeList.data?.readonly);
   const queryClient = useQueryClient();
   const shelf = shelves.data?.[0];
   if (!shelf || shelf.items.length === 0) return null;
 
   async function copyToActive() {
-    if (!shelf || !active || shelf.items.length === 0) return;
+    if (!shelf || !active || activeReadonly || shelf.items.length === 0) return;
     await api("/api/tasks", {
       method: "POST",
       body: JSON.stringify({
@@ -810,7 +826,7 @@ function FloatingShelf() {
   }
 
   async function compressToActive() {
-    if (!shelf || !active || shelf.items.length === 0) return;
+    if (!shelf || !active || activeReadonly || shelf.items.length === 0) return;
     const name = prompt("壓縮檔名稱", "shelf.zip");
     if (!name) return;
     await api("/api/tasks", {
@@ -830,8 +846,9 @@ function FloatingShelf() {
       <div className="shelf-items">
         {shelf?.items.map((item) => <div key={item.id}><span>{item.name}</span><small>{item.path}</small></div>)}
       </div>
-      <button className="tool-button" onClick={copyToActive}>複製到目前視窗</button>
-      <button className="tool-button" onClick={compressToActive}>壓縮到目前視窗</button>
+      {activeReadonly ? <small className="readonly-note">目前視窗是唯讀目的地</small> : null}
+      <button className="tool-button" onClick={copyToActive} disabled={!active || activeReadonly}>複製到目前視窗</button>
+      <button className="tool-button" onClick={compressToActive} disabled={!active || activeReadonly}>壓縮到目前視窗</button>
     </aside>
   );
 }
