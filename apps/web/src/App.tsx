@@ -213,6 +213,12 @@ function Workspace({ userEmail }: { userEmail: string }) {
   const noticeTimer = useRef<number | null>(null);
   const [trashOpen, setTrashOpen] = useState(false);
   const [auditOpen, setAuditOpen] = useState(false);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [commandPaletteQuery, setCommandPaletteQuery] = useState("");
+  const [commandPaletteIndex, setCommandPaletteIndex] = useState(0);
+  const rootList = roots.data ?? [];
+  const activeWindow = store.windows.find((window) => window.id === store.activeWindowId) ?? null;
+  const commandPaletteItems = getCommandPaletteSuggestions(commandPaletteQuery, rootList, activeWindow);
 
   useEffect(() => {
     if (workspaceQuery.data && !store.hydrated) store.hydrate(workspaceQuery.data);
@@ -317,9 +323,44 @@ function Workspace({ userEmail }: { userEmail: string }) {
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       const active = store.windows.find((window) => window.id === store.activeWindowId);
+      const mod = event.metaKey || event.ctrlKey;
+
+      if (commandPaletteOpen) {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          setCommandPaletteOpen(false);
+          return;
+        }
+        if (event.key === "ArrowDown" && commandPaletteItems.length > 0) {
+          event.preventDefault();
+          setCommandPaletteIndex((previous) => (previous + 1) % commandPaletteItems.length);
+          return;
+        }
+        if (event.key === "ArrowUp" && commandPaletteItems.length > 0) {
+          event.preventDefault();
+          setCommandPaletteIndex((previous) => (previous - 1 + commandPaletteItems.length) % commandPaletteItems.length);
+          return;
+        }
+        if (event.key === "Enter" && commandPaletteItems.length > 0) {
+          event.preventDefault();
+          const selected = commandPaletteItems[commandPaletteIndex];
+          if (!selected) return;
+          openCommandPaletteTarget(selected, setCommandPaletteOpen, setCommandPaletteQuery, store);
+          return;
+        }
+        return;
+      }
+
+      if (mod && event.key.toLowerCase() === "p") {
+        event.preventDefault();
+        setCommandPaletteQuery("");
+        setCommandPaletteIndex(0);
+        setCommandPaletteOpen(true);
+        return;
+      }
+
       if (!active) return;
       if (isEditableTarget(event.target) && event.key !== "Escape") return;
-      const mod = event.metaKey || event.ctrlKey;
       if (mod && event.key.toLowerCase() === "w") {
         event.preventDefault();
         store.closeWindow(active.id);
@@ -378,12 +419,10 @@ function Workspace({ userEmail }: { userEmail: string }) {
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [queryClient, store]);
+  }, [queryClient, store, commandPaletteOpen, commandPaletteItems, commandPaletteIndex]);
 
   if (workspaceQuery.isLoading || roots.isLoading) return <ShellLoading />;
 
-  const rootList = roots.data ?? [];
-  const activeWindow = store.windows.find((window) => window.id === store.activeWindowId);
   const showInspector = Boolean(activeWindow?.selectedItems.length && store.inspector.open !== false);
   const sidebarCollapsed = Boolean(store.sidebar.collapsed);
 
@@ -394,10 +433,33 @@ function Workspace({ userEmail }: { userEmail: string }) {
 
   return (
     <main className="app-shell">
-      <DesktopTopBar userEmail={userEmail} onOpenAudit={() => setAuditOpen(true)} onLogout={logout} />
+      <DesktopTopBar
+        userEmail={userEmail}
+        onOpenAudit={() => setAuditOpen(true)}
+        onOpenCommandPalette={() => {
+          setCommandPaletteQuery("");
+          setCommandPaletteIndex(0);
+          setCommandPaletteOpen(true);
+        }}
+        onLogout={logout}
+      />
       <DesktopIcons roots={rootList} onOpenTrash={() => setTrashOpen(true)} onOpenAudit={() => setAuditOpen(true)} />
       <section className={`workspace-canvas desktop-canvas ${showInspector ? "inspector-visible" : ""} ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
         {store.notice ? <div className="workspace-notice">{store.notice}</div> : null}
+        {commandPaletteOpen ? (
+          <CommandPalette
+            roots={rootList}
+            activeWindow={activeWindow ?? null}
+            query={commandPaletteQuery}
+            onClose={() => setCommandPaletteOpen(false)}
+            onQueryChange={(nextQuery) => {
+              setCommandPaletteQuery(nextQuery);
+              setCommandPaletteIndex(0);
+            }}
+            onOpen={(target) => openCommandPaletteTarget(target, setCommandPaletteOpen, setCommandPaletteQuery, store)}
+            selectedIndex={commandPaletteIndex}
+          />
+        ) : null}
         {store.windows.length === 0 ? <RootPicker roots={rootList} /> : null}
         {store.windows.map((window) => (
           <FileWindowView key={window.id} window={window} />
@@ -412,7 +474,140 @@ function Workspace({ userEmail }: { userEmail: string }) {
   );
 }
 
-function DesktopTopBar({ userEmail, onOpenAudit, onLogout }: { userEmail: string; onOpenAudit: () => void; onLogout: () => void }) {
+type CommandPaletteTarget = {
+  rootSlug: string;
+  logicalPath: string;
+  label: string;
+};
+
+function CommandPalette({
+  roots,
+  activeWindow,
+  query,
+  onQueryChange,
+  onClose,
+  onOpen,
+  selectedIndex
+}: {
+  roots: Root[];
+  activeWindow: FileWindow | null;
+  query: string;
+  onQueryChange: (query: string) => void;
+  onClose: () => void;
+  onOpen: (target: CommandPaletteTarget) => void;
+  selectedIndex: number;
+}) {
+  const suggestions = getCommandPaletteSuggestions(query, roots, activeWindow);
+
+  return (
+    <div className="command-palette-overlay" onMouseDown={onClose}>
+      <section className="command-palette" onMouseDown={(event) => event.stopPropagation()}>
+        <header>
+          <Search />
+          <input autoFocus value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="輸入 root 或 root:/path 開啟" />
+        </header>
+        <div className="command-palette-list">
+          {suggestions.length === 0 ? <div className="command-palette-empty">找不到可開啟的目標</div> : null}
+          {suggestions.map((suggestion, index) => (
+            <button
+              key={`${suggestion.rootSlug}:${suggestion.logicalPath}`}
+              className={selectedIndex === index ? "selected" : ""}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => onOpen(suggestion)}
+            >
+              <span>{suggestion.label}</span>
+              <small>{`${suggestion.rootSlug}:${suggestion.logicalPath}`}</small>
+            </button>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function getCommandPaletteSuggestions(
+  query: string,
+  roots: Root[],
+  activeWindow: FileWindow | null
+): CommandPaletteTarget[] {
+  const trimmed = query.trim();
+  const result: CommandPaletteTarget[] = [];
+  const lower = trimmed.toLowerCase();
+  const seen = new Set<string>();
+
+  const pushSuggestion = (rootSlug: string, logicalPath: string) => {
+    const path = normalizeCommandPalettePath(logicalPath);
+    if (!path) return;
+    const key = `${rootSlug}:${path}`;
+    if (seen.has(key)) return;
+    const label = path === "/" ? rootSlug : path.split("/").filter(Boolean).at(-1) ?? rootSlug;
+    seen.add(key);
+    result.push({ rootSlug, logicalPath: path, label });
+  };
+
+  const rootsBySlug = roots.map((root) => root.slug);
+
+  if (trimmed === "") {
+    for (const root of roots) {
+      pushSuggestion(root.slug, "/");
+    }
+    return result;
+  }
+
+  const colonIndex = trimmed.indexOf(":");
+  if (colonIndex > 0) {
+    const left = trimmed.slice(0, colonIndex).trim();
+    const right = trimmed.slice(colonIndex + 1).trim();
+    if (right && rootsBySlug.includes(left)) {
+      pushSuggestion(left, `/${right}`);
+    }
+  }
+
+  for (const root of roots) {
+    if ((root.name.toLowerCase().includes(lower) || root.slug.includes(lower)) && root.slug !== "s") {
+      pushSuggestion(root.slug, "/");
+    }
+  }
+
+  if (activeWindow && trimmed.startsWith("/")) {
+    pushSuggestion(activeWindow.rootSlug, trimmed);
+  }
+
+  return result;
+}
+
+function openCommandPaletteTarget(
+  target: CommandPaletteTarget,
+  setPaletteOpen: (value: boolean) => void,
+  setPaletteQuery: (value: string) => void,
+  store: ReturnType<typeof useWorkspaceStore.getState>
+) {
+  store.openWindow({
+    rootSlug: target.rootSlug,
+    logicalPath: target.logicalPath,
+    title: target.label
+  });
+  setPaletteOpen(false);
+  setPaletteQuery("");
+}
+
+function normalizeCommandPalettePath(value: string): string | null {
+  const trimmed = value.trim().replaceAll("\\", "/");
+  if (!trimmed || trimmed === "/") return "/";
+  if (trimmed.includes("..")) return null;
+  const withLeading = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+  const parts = withLeading.split("/").filter(Boolean);
+  if (!parts.length) return "/";
+  const sanitized = parts.join("/");
+  return `/${sanitized}`;
+}
+
+function DesktopTopBar({
+  userEmail,
+  onOpenAudit,
+  onOpenCommandPalette,
+  onLogout
+}: { userEmail: string; onOpenAudit: () => void; onOpenCommandPalette: () => void; onLogout: () => void }) {
   return (
     <header className="desktop-topbar">
       <div className="desktop-launcher">
@@ -424,7 +619,7 @@ function DesktopTopBar({ userEmail, onOpenAudit, onLogout }: { userEmail: string
         <button title="通知"><MessageCircle /></button>
         <button title={`登出 ${userEmail}`} onClick={onLogout}><UserRound /></button>
         <button title="稽核紀錄" onClick={onOpenAudit}><SlidersHorizontal /></button>
-        <button title="搜尋"><Search /></button>
+        <button title="搜尋" onClick={onOpenCommandPalette}><Search /></button>
       </div>
     </header>
   );
@@ -1017,6 +1212,7 @@ function FileWindowView({ window }: { window: FileWindow }) {
                     readonly={readonly}
                     onOpenContext={openContextMenu}
                     onSelect={selectItem}
+                    onOpen={openItem}
                   />
                 ))}
                 {window.viewMode === "columns" ? (
@@ -1162,13 +1358,15 @@ function FileRow({
   window,
   readonly,
   onOpenContext,
-  onSelect
+  onSelect,
+  onOpen
 }: {
   item: FileItem;
   window: FileWindow;
   readonly: boolean;
   onOpenContext: (event: React.MouseEvent<HTMLElement>, item: FileItem) => void;
   onSelect: (event: React.MouseEvent<HTMLElement>, item: FileItem) => void;
+  onOpen: (item: FileItem, newWindow?: boolean) => void;
 }) {
   const store = useWorkspaceStore();
   const selected = window.selectedItems.includes(item.path);
@@ -1199,13 +1397,13 @@ function FileRow({
       onMouseDown={(event) => {
         if (event.button === 1 && item.kind === "folder") {
           event.preventDefault();
-          openItem(item, true);
+          onOpen(item, true);
         }
       }}
       onClick={(event) => onSelect(event, item)}
       onContextMenu={(event) => onOpenContext(event, item)}
       onDoubleClick={() => {
-        if (item.kind === "folder") store.updateWindow(window.id, { logicalPath: item.path, selectedItems: [] });
+        if (item.kind === "folder") onOpen(item);
         else globalThis.open(downloadUrl(window.rootSlug, item.path), "_blank");
       }}
     >
