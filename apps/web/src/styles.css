@@ -1667,6 +1667,24 @@ select:focus {
   font-size: 12px;
 }
 
+.shelf-items .shelf-item {
+  grid-template-columns: minmax(0, 1fr) 24px;
+  align-items: center;
+}
+
+.shelf-item span,
+.shelf-item small {
+  grid-column: 1;
+}
+
+.shelf-item .icon-button {
+  grid-column: 2;
+  grid-row: 1 / span 3;
+  align-self: center;
+  width: 24px;
+  height: 24px;
+}
+
 .shelf-items .shelf-empty {
   border-style: dashed;
   background: rgba(247, 250, 252, 0.78);

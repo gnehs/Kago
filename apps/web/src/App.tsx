@@ -1099,32 +1099,35 @@ function FloatingShelf() {
     }
   }
 
-  async function copyToActive() {
+  async function createShelfTask(type: "copy" | "move" | "compress", destinationPath: string) {
     if (!active || activeReadonly || shelfItems.length === 0) return;
-    await api("/api/tasks", {
+    await api(`/api/shelves/${shelfId}/tasks`, {
       method: "POST",
-      body: JSON.stringify({
-        type: "copy",
-        sources: shelfItems.map((item) => ({ rootSlug: item.root_slug, path: item.path })),
-        destination: { rootSlug: active.rootSlug, path: active.logicalPath }
-      })
+      body: JSON.stringify({ type, destination: { rootSlug: active.rootSlug, path: destinationPath } })
     });
     await queryClient.invalidateQueries({ queryKey: ["tasks"] });
+  }
+
+  async function copyToActive() {
+    if (!active) return;
+    await createShelfTask("copy", active.logicalPath);
+  }
+
+  async function moveToActive() {
+    if (!active) return;
+    await createShelfTask("move", active.logicalPath);
   }
 
   async function compressToActive() {
     if (!active || activeReadonly || shelfItems.length === 0) return;
     const name = prompt("壓縮檔名稱", "shelf.zip");
     if (!name) return;
-    await api("/api/tasks", {
-      method: "POST",
-      body: JSON.stringify({
-        type: "compress",
-        sources: shelfItems.map((item) => ({ rootSlug: item.root_slug, path: item.path })),
-        destination: { rootSlug: active.rootSlug, path: joinLogicalPath(active.logicalPath, ensureZipName(name)) }
-      })
-    });
-    await queryClient.invalidateQueries({ queryKey: ["tasks"] });
+    await createShelfTask("compress", joinLogicalPath(active.logicalPath, ensureZipName(name)));
+  }
+
+  async function removeShelfItem(itemId: string) {
+    await api(`/api/shelves/${shelfId}/items/${itemId}`, { method: "DELETE" });
+    await queryClient.invalidateQueries({ queryKey: ["shelves"] });
   }
 
   return (
@@ -1144,12 +1147,20 @@ function FloatingShelf() {
         {shelfItems.length === 0 ? (
           <div className="shelf-empty"><span>拖放檔案到這裡</span><small>中轉區只保存 reference，不會立即複製。</small></div>
         ) : null}
-        {shelfItems.map((item) => <div key={item.id}><span>{item.name}</span><small>{item.path}</small></div>)}
+        {shelfItems.map((item) => (
+          <div className="shelf-item" key={item.id}>
+            <span>{item.name}</span>
+            <small>{item.kind === "folder" ? "資料夾" : "檔案"} · {formatSize(item.size)}</small>
+            <small>{item.root_slug}:{item.path}</small>
+            <button className="icon-button" title="從中轉區移除" onClick={() => void removeShelfItem(item.id)}><X /></button>
+          </div>
+        ))}
       </div>
       {dropError ? <small className="readonly-note">{dropError}</small> : null}
       {activeReadonly ? <small className="readonly-note">目前視窗是唯讀目的地</small> : null}
-      <button className="tool-button" onClick={copyToActive} disabled={!active || activeReadonly}>複製到目前視窗</button>
-      <button className="tool-button" onClick={compressToActive} disabled={!active || activeReadonly}>壓縮到目前視窗</button>
+      <button className="tool-button" onClick={copyToActive} disabled={!active || activeReadonly || shelfItems.length === 0}>複製到目前視窗</button>
+      <button className="tool-button" onClick={moveToActive} disabled={!active || activeReadonly || shelfItems.length === 0}>搬移到目前視窗</button>
+      <button className="tool-button" onClick={compressToActive} disabled={!active || activeReadonly || shelfItems.length === 0}>壓縮到目前視窗</button>
     </aside>
   );
 }
