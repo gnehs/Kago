@@ -1117,6 +1117,12 @@ function FileRow({
         event.dataTransfer.setData("application/kago-files", JSON.stringify(items));
         event.dataTransfer.setData("application/kago-file", JSON.stringify(items[0]));
       }}
+      onMouseDown={(event) => {
+        if (event.button === 1 && item.kind === "folder") {
+          event.preventDefault();
+          openItem(item, true);
+        }
+      }}
       onClick={(event) => onSelect(event, item)}
       onContextMenu={(event) => onOpenContext(event, item)}
       onDoubleClick={() => {
