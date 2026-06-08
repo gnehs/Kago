@@ -1067,12 +1067,33 @@ function MiniFinderSidebar({ activeLabel, rootSlug }: { activeLabel: string; roo
 function Breadcrumb({ window }: { window: FileWindow }) {
   const store = useWorkspaceStore();
   const parts = window.logicalPath.split("/").filter(Boolean);
+  function openInCurrentWindow(nextPath: string) {
+    store.updateWindow(window.id, { logicalPath: nextPath });
+  }
+  function openInNewWindow(nextPath: string, title: string) {
+    store.openWindow({ rootSlug: window.rootSlug, logicalPath: nextPath, title });
+  }
   return (
     <div className="breadcrumb">
-      <button onClick={() => store.updateWindow(window.id, { logicalPath: "/" })}>{window.rootSlug}</button>
+      <button
+        onClick={(event) =>
+          (event.metaKey || event.ctrlKey) ? openInNewWindow("/", window.rootSlug) : openInCurrentWindow("/")
+        }
+      >
+        {window.rootSlug}
+      </button>
       {parts.map((part, index) => {
         const nextPath = `/${parts.slice(0, index + 1).join("/")}`;
-        return <button key={nextPath} onClick={() => store.updateWindow(window.id, { logicalPath: nextPath })}>{part}</button>;
+        return (
+          <button
+            key={nextPath}
+            onClick={(event) =>
+              (event.metaKey || event.ctrlKey) ? openInNewWindow(nextPath, part) : openInCurrentWindow(nextPath)
+            }
+          >
+            {part}
+          </button>
+        );
       })}
     </div>
   );
