@@ -551,9 +551,16 @@ function FileWindowView({ window }: { window: FileWindow }) {
     const items = [...(fileList.data?.items ?? [])];
     const direction = window.sortDirection === "asc" ? 1 : -1;
     items.sort((a, b) => {
-      const av = window.sortBy === "name" ? a.name : window.sortBy === "size" ? a.size : window.sortBy === "mtime" ? a.mtime : a.type;
-      const bv = window.sortBy === "name" ? b.name : window.sortBy === "size" ? b.size : window.sortBy === "mtime" ? b.mtime : b.type;
-      return String(av).localeCompare(String(bv), undefined, { numeric: true }) * direction;
+      let result = 0;
+      if (window.sortBy === "size") result = a.size - b.size;
+      else if (window.sortBy === "mtime") result = a.mtime - b.mtime;
+      else {
+        const av = window.sortBy === "type" ? a.type : a.name;
+        const bv = window.sortBy === "type" ? b.type : b.name;
+        result = av.localeCompare(bv, undefined, { numeric: true, sensitivity: "base" });
+      }
+      if (result === 0) result = a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
+      return result * direction;
     });
     return items;
   }, [fileList.data, window.sortBy, window.sortDirection]);
@@ -681,6 +688,32 @@ function FileWindowView({ window }: { window: FileWindow }) {
     await queryClient.invalidateQueries({ queryKey: ["fs", "list", window.rootSlug, window.logicalPath] });
   }
 
+  function updateSort(sortBy: FileWindow["sortBy"]) {
+    const sameField = window.sortBy === sortBy;
+    store.updateWindow(window.id, {
+      sortBy,
+      sortDirection: sameField ? (window.sortDirection === "asc" ? "desc" : "asc") : defaultSortDirection(sortBy),
+      selectedItems: []
+    });
+  }
+
+  function sortHeader(sortBy: FileWindow["sortBy"], label: string) {
+    const active = window.sortBy === sortBy;
+    const nextDirection = active ? (window.sortDirection === "asc" ? "desc" : "asc") : defaultSortDirection(sortBy);
+    return (
+      <button
+        type="button"
+        className={`sort-header ${active ? "active" : ""}`}
+        aria-sort={active ? (window.sortDirection === "asc" ? "ascending" : "descending") : "none"}
+        aria-label={`依${label}${nextDirection === "asc" ? "升冪" : "降冪"}排序`}
+        onClick={() => updateSort(sortBy)}
+      >
+        <span>{label}</span>
+        <span className="sort-indicator">{active ? (window.sortDirection === "asc" ? "↑" : "↓") : "↕"}</span>
+      </button>
+    );
+  }
+
   return (
     <section
       className={`file-window ${window.focused ? "focused" : ""} ${window.maximized ? "maximized" : ""}`}
@@ -778,10 +811,10 @@ function FileWindowView({ window }: { window: FileWindow }) {
               <div className={`file-list ${window.viewMode}`}>
                 {window.viewMode === "list" && (
                   <div className="file-header">
-                    <span>名稱</span>
-                    <span>大小</span>
-                    <span>種類</span>
-                    <span>加入日期</span>
+                    {sortHeader("name", "名稱")}
+                    {sortHeader("size", "大小")}
+                    {sortHeader("type", "種類")}
+                    {sortHeader("mtime", "加入日期")}
                     <span />
                     <span />
                     <span />
@@ -1270,6 +1303,10 @@ function joinLogicalPath(parent: string, name: string) {
 function ensureZipName(value: string) {
   const trimmed = value.trim() || "archive";
   return trimmed.toLowerCase().endsWith(".zip") ? trimmed : `${trimmed}.zip`;
+}
+
+function defaultSortDirection(sortBy: FileWindow["sortBy"]): FileWindow["sortDirection"] {
+  return sortBy === "size" || sortBy === "mtime" ? "desc" : "asc";
 }
 
 function formatSize(size: number) {

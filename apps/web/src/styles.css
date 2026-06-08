@@ -1209,6 +1209,40 @@ select:focus {
   font-weight: 700;
 }
 
+.sort-header {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 5px;
+  min-width: 0;
+  height: 28px;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  padding: 0 4px;
+  font: inherit;
+  text-align: left;
+}
+
+.sort-header:hover,
+.sort-header.active {
+  background: rgba(36, 48, 62, 0.07);
+  color: #414952;
+}
+
+.sort-header > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sort-indicator {
+  flex: 0 0 auto;
+  color: #7c8791;
+  font-size: 11px;
+}
+
 .file-list.list .file-row:nth-of-type(even) {
   background: rgba(36, 48, 62, 0.035);
 }
@@ -1871,8 +1905,8 @@ select:focus {
 
   .file-row > span:nth-of-type(3),
   .file-row > span:nth-of-type(4),
-  .file-header span:nth-child(3),
-  .file-header span:nth-child(4) {
+  .file-header .sort-header:nth-child(3),
+  .file-header .sort-header:nth-child(4) {
     display: none;
   }
 
