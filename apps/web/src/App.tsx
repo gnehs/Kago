@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { AppWindow, Archive, Boxes, Check, ChevronDown, ChevronLeft, ChevronRight, Circle, CirclePlus, Columns3, Download, FileText, Folder, FolderOpen, Globe2, HardDrive, HelpCircle, Home, LayoutGrid, List, Loader2, LogOut, Maximize2, MessageCircle, Minimize2, MoreHorizontal, PanelRight, Pencil, Plus, Radio, RefreshCw, Search, Server, Settings2, Share2, SlidersHorizontal, Smartphone, Star, Tags, Trash2, Upload, UserRound, X } from "lucide-react";
 import { api, downloadUrl, previewUrl, thumbnailUrl } from "./api/client";
-import { useAudit, useFileList, useFileMeta, useFileTags, useMe, usePermissions, useRoots, useSaveWorkspace, useShares, useShelves, useTasks, useTrash, useWorkspace } from "./api/hooks";
+import { useAudit, useFileList, useFileMeta, useFileTags, useMe, usePathPermissions, useRoots, useSaveWorkspace, useShares, useShelves, useTasks, useTrash, useWorkspace } from "./api/hooks";
 import { useWorkspaceStore } from "./stores/workspace";
 import type { FileItem, FileWindow, Root } from "./types/kago";
 
@@ -1379,8 +1379,8 @@ function Inspector() {
   const shares = useShares();
   const activeRoot = roots.data?.find((root) => root.slug === activeWindow?.rootSlug);
   const selectedShares = (shares.data ?? []).filter((share) => share.root_id === activeRoot?.id && share.path === selectedPath);
-  const permissions = usePermissions(activeRoot?.id, Boolean(activeRoot));
-  const selectedPermissionRules = (permissions.data ?? []).filter((rule) => selectedPath && permissionRuleMatchesPath(rule.path_prefix, Boolean(rule.recursive), selectedPath));
+  const permissions = usePathPermissions(activeWindow?.rootSlug ?? "", selectedPath ?? "/", Boolean(activeWindow && selectedPath));
+  const selectedPermissionRules = permissions.data ?? [];
   const [tagName, setTagName] = useState("");
   const [shareMode, setShareMode] = useState<"download" | "view_only" | "upload_only">("download");
   const [shareUrl, setShareUrl] = useState("");
@@ -1480,12 +1480,12 @@ function Inspector() {
     setPermissionUserId("");
     setPermissionRootId("");
     await queryClient.invalidateQueries({ queryKey: ["roots"] });
-    await queryClient.invalidateQueries({ queryKey: ["permissions", permissionRootId] });
+    await queryClient.invalidateQueries({ queryKey: ["permissions"] });
   }
 
   async function deletePermissionRule(ruleId: string) {
     await api(`/api/permissions/${ruleId}`, { method: "DELETE" });
-    if (activeRoot) await queryClient.invalidateQueries({ queryKey: ["permissions", activeRoot.id] });
+    await queryClient.invalidateQueries({ queryKey: ["permissions"] });
   }
 
   return (
@@ -1693,12 +1693,6 @@ function parseJsonArray(value: string): string[] {
   } catch {
     return [];
   }
-}
-
-function permissionRuleMatchesPath(prefix: string, recursive: boolean, logicalPath: string) {
-  if (logicalPath === prefix) return true;
-  if (!recursive) return false;
-  return logicalPath.startsWith(prefix.endsWith("/") ? prefix : `${prefix}/`);
 }
 
 function summarizeAuditTarget(value: string | null) {

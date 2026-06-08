@@ -58,6 +58,14 @@ export function usePermissions(rootId?: string, enabled = true) {
   });
 }
 
+export function usePathPermissions(rootSlug: string, path: string, enabled = true) {
+  return useQuery({
+    queryKey: ["permissions", "path", rootSlug, path],
+    queryFn: () => api<PermissionRule[]>(`/api/permissions?${new URLSearchParams({ rootSlug, path }).toString()}`),
+    enabled
+  });
+}
+
 export function useTasks() {
   return useQuery({ queryKey: ["tasks"], queryFn: () => api<FileTask[]>("/api/tasks"), refetchInterval: 4000 });
 }

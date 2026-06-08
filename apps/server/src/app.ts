@@ -352,8 +352,15 @@ function registerApi(app: FastifyInstance, services: Services) {
 
   app.get("/api/permissions", async (request) => {
     requireAdmin(request);
-    const query = z.object({ rootId: z.string().optional() }).parse(request.query);
-    return services.permissions.list(query.rootId);
+    const query = z.object({
+      rootId: z.string().optional(),
+      rootSlug: z.string().optional(),
+      path: z.string().optional()
+    }).parse(request.query);
+    const rootId = query.rootSlug ? services.roots.getBySlug(query.rootSlug).id : query.rootId;
+    if (query.path && !rootId) throw new AppError(400, "rootId or rootSlug is required for path lookups", "ROOT_REQUIRED");
+    if (query.path && rootId) return services.permissions.listForPath(rootId, services.paths.normalizeLogicalPath(query.path));
+    return services.permissions.list(rootId);
   });
   app.post("/api/permissions", async (request) => {
     const actor = requireAdmin(request);

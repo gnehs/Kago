@@ -98,6 +98,14 @@ export class PermissionService {
     return this.db.prepare("SELECT * FROM permission_rules ORDER BY created_at DESC").all();
   }
 
+  listForPath(rootId: string, logicalPath: string) {
+    return rows<PermissionRule>(
+      this.db
+        .prepare("SELECT * FROM permission_rules WHERE root_id = ? ORDER BY length(path_prefix) DESC, created_at DESC")
+        .all(rootId)
+    ).filter((rule) => this.pathMatches(rule, logicalPath));
+  }
+
   create(input: z.infer<typeof permissionInputSchema>) {
     const ts = now();
     const item = {
