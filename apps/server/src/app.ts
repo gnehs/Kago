@@ -361,19 +361,33 @@ function registerApi(app: FastifyInstance, services: Services) {
 
   app.get("/s/:token", async (request) => {
     const params = z.object({ token: z.string().min(1) }).parse(request.params);
-    return services.shares.publicInfo(params.token);
+    return services.shares.publicInfo(params.token, shareAccessCookie(request, params.token));
+  });
+
+  app.post("/s/:token/auth", async (request, reply) => {
+    const params = z.object({ token: z.string().min(1) }).parse(request.params);
+    const body = z.object({ password: z.string().min(1) }).parse(request.body);
+    const auth = await services.shares.authenticatePublicShare(params.token, body.password);
+    reply.setCookie(shareAccessCookieName(params.token), auth.accessToken, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: request.protocol === "https",
+      path: `/s/${params.token}`,
+      maxAge: 60 * 60 * 12
+    });
+    return { ok: true, shareId: auth.shareId };
   });
 
   app.get("/s/:token/download", async (request, reply) => {
     const params = z.object({ token: z.string().min(1) }).parse(request.params);
-    const safe = await services.shares.publicDownload(params.token);
+    const safe = await services.shares.publicDownload(params.token, shareAccessCookie(request, params.token));
     reply.header("Content-Disposition", `attachment; filename="${path.basename(safe.absolutePath).replaceAll('"', "")}"`);
     return fs.createReadStream(safe.absolutePath);
   });
 
   app.post("/s/:token/upload", async (request) => {
     const params = z.object({ token: z.string().min(1) }).parse(request.params);
-    const target = await services.shares.publicUploadTarget(params.token);
+    const target = await services.shares.publicUploadTarget(params.token, shareAccessCookie(request, params.token));
     const parts = request.parts();
     const uploaded = [];
     for await (const part of parts) {
@@ -383,4 +397,12 @@ function registerApi(app: FastifyInstance, services: Services) {
     }
     return { items: uploaded };
   });
+}
+
+function shareAccessCookie(request: FastifyRequest, token: string): string | undefined {
+  return request.cookies[shareAccessCookieName(token)];
+}
+
+function shareAccessCookieName(token: string): string {
+  return `kago_share_${token.slice(0, 16)}`;
 }

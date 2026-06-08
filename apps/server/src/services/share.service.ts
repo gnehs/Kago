@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { Db } from "../db/db.js";
 import { row, rows } from "../db/db.js";
-import { hashPassword, randomToken, sha256 } from "../lib/crypto.js";
+import { hashPassword, randomToken, sha256, verifyPassword } from "../lib/crypto.js";
 import { AppError } from "../lib/errors.js";
 import { id, now } from "../lib/ids.js";
 import type { AuditService } from "./audit.service.js";
@@ -118,7 +118,7 @@ export class ShareService {
     return share;
   }
 
-  async publicInfo(token: string) {
+  async publicInfo(token: string, accessToken?: string) {
     const share = this.resolveToken(token);
     const safe = await this.paths.resolveRootById(share.root_id, share.path);
     return {
@@ -126,12 +126,37 @@ export class ShareService {
       mode: (JSON.parse(share.permission_json) as { mode: string }).mode,
       path: share.path,
       rootSlug: safe.root.slug,
-      requiresPassword: Boolean(share.password_hash)
+      requiresPassword: Boolean(share.password_hash),
+      authenticated: !share.password_hash || accessToken === this.accessTokenForShare(share)
     };
   }
 
-  async publicDownload(token: string) {
+  async authenticatePublicShare(token: string, password: string): Promise<{ shareId: string; accessToken: string }> {
     const share = this.resolveToken(token);
+    if (!share.password_hash) return { shareId: share.id, accessToken: this.accessTokenForShare(share) };
+    if (!(await verifyPassword(password, share.password_hash))) {
+      this.audit.write({
+        actorType: "share_link",
+        actorId: share.id,
+        action: "share_auth_failed",
+        rootId: share.root_id,
+        path: share.path,
+        result: "failure"
+      });
+      throw new AppError(401, "Invalid share password", "INVALID_SHARE_PASSWORD");
+    }
+    return { shareId: share.id, accessToken: this.accessTokenForShare(share) };
+  }
+
+  assertPublicAccess(share: ResolvedShare, accessToken?: string): void {
+    if (!share.password_hash) return;
+    if (accessToken && accessToken === this.accessTokenForShare(share)) return;
+    throw new AppError(401, "Share password required", "SHARE_PASSWORD_REQUIRED");
+  }
+
+  async publicDownload(token: string, accessToken?: string) {
+    const share = this.resolveToken(token);
+    this.assertPublicAccess(share, accessToken);
     const mode = (JSON.parse(share.permission_json) as { mode: string }).mode;
     if (mode !== "download" && mode !== "view_only") {
       throw new AppError(403, "Download is not allowed for this share", "SHARE_DOWNLOAD_FORBIDDEN");
@@ -152,11 +177,32 @@ export class ShareService {
     return safe;
   }
 
-  async publicUploadTarget(token: string) {
+  async publicUploadTarget(token: string, accessToken?: string) {
     const share = this.resolveToken(token);
+    this.assertPublicAccess(share, accessToken);
     const mode = (JSON.parse(share.permission_json) as { mode: string }).mode;
     if (mode !== "upload_only") throw new AppError(403, "Upload is not allowed for this share", "SHARE_UPLOAD_FORBIDDEN");
     const safe = await this.paths.resolveRootById(share.root_id, share.path);
     return { share, safe };
   }
+
+  private accessTokenForShare(share: ResolvedShare): string {
+    return sha256(`share-access:${share.id}:${share.password_hash ?? "none"}`);
+  }
 }
+
+type ResolvedShare = {
+  id: string;
+  token_hash: string;
+  root_id: string;
+  path: string;
+  permission_json: string;
+  expires_at: number | null;
+  max_downloads: number | null;
+  download_count: number;
+  password_hash: string | null;
+  created_by: string;
+  disabled: number;
+  created_at: number;
+  updated_at: number;
+};
