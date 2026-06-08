@@ -230,6 +230,7 @@ export class TaskService {
   }
 
   createRestoreTrash(actor: Actor, trashItemId: string): FileTask {
+    this.getRestorableTrashItem(actor, trashItemId);
     return this.create(actor, {
       type: "restore_trash",
       sources: [{ rootSlug: "trash", path: trashItemId }]
@@ -355,13 +356,14 @@ export class TaskService {
 
   private async runRestore(task: FileTask, actor: Actor): Promise<void> {
     const sources = JSON.parse(task.sources_json) as Array<{ rootSlug: string; path: string }>;
+    const trashDir = path.join(this.appDataDir, "trash");
     for (const source of sources) {
-      const item = row<{ id: string; original_path: string; trash_path: string; original_root_id: string }>(
-        this.db.prepare("SELECT * FROM trash_items WHERE id = ? AND restored_at IS NULL").get(source.path)
-      );
-      if (!item) throw new AppError(404, "Trash item not found", "TRASH_ITEM_NOT_FOUND");
+      const item = this.getRestorableTrashItem(actor, source.path);
       const safe = await this.paths.resolveRootById(item.original_root_id, path.posix.dirname(item.original_path));
+      this.permissions.require(actor, "upload", safe.root, safe.logicalPath);
       const target = path.join(safe.absolutePath, path.basename(item.original_path));
+      await assertRealPathInside(trashDir, item.trash_path);
+      await assertPathDoesNotExist(target);
       await fsp.rename(item.trash_path, target);
       this.db.prepare("UPDATE trash_items SET restored_at = ? WHERE id = ?").run(now(), item.id);
       this.audit.write({
@@ -374,6 +376,17 @@ export class TaskService {
       });
       await this.bumpProcessed(task.id);
     }
+  }
+
+  private getRestorableTrashItem(actor: Actor, trashItemId: string): RestorableTrashItem {
+    const item = row<RestorableTrashItem>(
+      this.db.prepare("SELECT * FROM trash_items WHERE id = ? AND restored_at IS NULL").get(trashItemId)
+    );
+    if (!item) throw new AppError(404, "Trash item not found", "TRASH_ITEM_NOT_FOUND");
+    if (actor.role !== "ADMIN" && item.deleted_by !== actor.id) {
+      throw new AppError(404, "Trash item not found", "TRASH_ITEM_NOT_FOUND");
+    }
+    return item;
   }
 
   private async runCompress(task: FileTask, actor: Actor): Promise<void> {
@@ -570,6 +583,14 @@ type RsyncOptions = {
   archive?: boolean;
   delete?: boolean;
   dryRun?: boolean;
+};
+
+type RestorableTrashItem = {
+  id: string;
+  original_path: string;
+  trash_path: string;
+  original_root_id: string;
+  deleted_by: string;
 };
 
 function rsyncFlags(options: RsyncOptions = {}): string[] {
