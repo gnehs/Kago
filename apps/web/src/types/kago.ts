@@ -89,3 +89,17 @@ export type TrashItem = {
   deleted_at: number;
   restored_at: number | null;
 };
+
+export type AuditLog = {
+  id: string;
+  actor_type: "user" | "share_link" | "system";
+  actor_id: string | null;
+  action: string;
+  root_id: string | null;
+  path: string | null;
+  target_json: string | null;
+  result: "success" | "failure" | "denied";
+  ip: string | null;
+  user_agent: string | null;
+  created_at: number;
+};

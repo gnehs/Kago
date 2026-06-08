@@ -148,10 +148,14 @@ function registerApi(app: FastifyInstance, services: Services) {
     return user;
   });
   app.patch("/api/users/:id", async (request) => {
-    requireAdmin(request);
+    const actor = requireAdmin(request);
     const params = z.object({ id: z.string() }).parse(request.params);
     const body = z.object({ displayName: z.string().optional(), role: z.string().optional(), disabled: z.boolean().optional() }).parse(request.body);
-    return services.auth.patchUser(params.id, body);
+    const user = services.auth.patchUser(params.id, body);
+    if (body.disabled !== undefined) {
+      services.audit.write({ actorType: "user", actorId: actor.id, action: "user_disable", target: { userId: params.id, disabled: body.disabled }, result: "success" });
+    }
+    return user;
   });
 
   app.get("/api/groups", async (request) => {
@@ -159,20 +163,24 @@ function registerApi(app: FastifyInstance, services: Services) {
     return services.groups.list();
   });
   app.post("/api/groups", async (request) => {
-    requireAdmin(request);
-    return services.groups.create(createGroupSchema.parse(request.body).name);
+    const actor = requireAdmin(request);
+    const group = services.groups.create(createGroupSchema.parse(request.body).name);
+    services.audit.write({ actorType: "user", actorId: actor.id, action: "group_create", target: group, result: "success" });
+    return group;
   });
   app.post("/api/groups/:id/members", async (request) => {
-    requireAdmin(request);
+    const actor = requireAdmin(request);
     const params = z.object({ id: z.string() }).parse(request.params);
     const body = z.object({ userId: z.string() }).parse(request.body);
     services.groups.addMember(params.id, body.userId);
+    services.audit.write({ actorType: "user", actorId: actor.id, action: "group_member_add", target: { groupId: params.id, userId: body.userId }, result: "success" });
     return { ok: true };
   });
   app.delete("/api/groups/:id/members/:userId", async (request) => {
-    requireAdmin(request);
+    const actor = requireAdmin(request);
     const params = z.object({ id: z.string(), userId: z.string() }).parse(request.params);
     services.groups.removeMember(params.id, params.userId);
+    services.audit.write({ actorType: "user", actorId: actor.id, action: "group_member_remove", target: { groupId: params.id, userId: params.userId }, result: "success" });
     return { ok: true };
   });
 
@@ -338,13 +346,16 @@ function registerApi(app: FastifyInstance, services: Services) {
     return services.permissions.list(query.rootId);
   });
   app.post("/api/permissions", async (request) => {
-    requireAdmin(request);
+    const actor = requireAdmin(request);
     const item = services.permissions.create(permissionInputSchema.parse(request.body));
+    services.audit.write({ actorType: "user", actorId: actor.id, action: "permission_change", rootId: item.root_id, target: item, result: "success" });
     return item;
   });
   app.delete("/api/permissions/:id", async (request) => {
-    requireAdmin(request);
-    services.permissions.delete(z.object({ id: z.string() }).parse(request.params).id);
+    const actor = requireAdmin(request);
+    const params = z.object({ id: z.string() }).parse(request.params);
+    services.permissions.delete(params.id);
+    services.audit.write({ actorType: "user", actorId: actor.id, action: "permission_change", target: { ruleId: params.id, deleted: true }, result: "success" });
     return { ok: true };
   });
 

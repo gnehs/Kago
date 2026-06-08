@@ -191,7 +191,7 @@ export class TaskService {
       if (task.type === "copy") await this.runCopyLike(task, actor, false);
       else if (task.type === "move") await this.runCopyLike(task, actor, true);
       else if (task.type === "delete_to_trash") await this.runTrash(task, actor);
-      else if (task.type === "restore_trash") await this.runRestore(task);
+      else if (task.type === "restore_trash") await this.runRestore(task, actor);
       else if (task.type === "compress") await this.runCompress(task, actor);
       else if (task.type === "extract") await this.runExtract(task, actor);
       else if (task.type === "rsync_pull") await this.runRsyncPull(task, actor);
@@ -226,6 +226,17 @@ export class TaskService {
       await this.progress(task.id, safeSource.logicalPath);
       if (move) await fsp.rename(safeSource.absolutePath, target);
       else await fsp.cp(safeSource.absolutePath, target, { recursive: true, errorOnExist: false });
+      if (move) {
+        this.audit.write({
+          actorType: "user",
+          actorId: actor.id,
+          action: "move",
+          rootId: safeSource.root.id,
+          path: safeSource.logicalPath,
+          target: { rootSlug: destination.rootSlug, path: path.posix.join(destination.path, path.basename(safeSource.logicalPath)) },
+          result: "success"
+        });
+      }
       await this.bumpProcessed(task.id);
     }
   }
@@ -261,7 +272,7 @@ export class TaskService {
     }
   }
 
-  private async runRestore(task: FileTask): Promise<void> {
+  private async runRestore(task: FileTask, actor: Actor): Promise<void> {
     const sources = JSON.parse(task.sources_json) as Array<{ rootSlug: string; path: string }>;
     for (const source of sources) {
       const item = row<{ id: string; original_path: string; trash_path: string; original_root_id: string }>(
@@ -272,6 +283,14 @@ export class TaskService {
       const target = path.join(safe.absolutePath, path.basename(item.original_path));
       await fsp.rename(item.trash_path, target);
       this.db.prepare("UPDATE trash_items SET restored_at = ? WHERE id = ?").run(now(), item.id);
+      this.audit.write({
+        actorType: "user",
+        actorId: actor.id,
+        action: "restore_trash",
+        rootId: item.original_root_id,
+        path: item.original_path,
+        result: "success"
+      });
       await this.bumpProcessed(task.id);
     }
   }

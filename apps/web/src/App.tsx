@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { AppWindow, Archive, Boxes, Check, ChevronDown, ChevronLeft, ChevronRight, Circle, CirclePlus, Columns3, Download, FileText, Folder, FolderOpen, Globe2, HardDrive, HelpCircle, Home, LayoutGrid, List, Loader2, LogOut, Maximize2, MessageCircle, Minimize2, MoreHorizontal, PanelRight, Pencil, Plus, Radio, RefreshCw, Search, Server, Settings2, Share2, SlidersHorizontal, Smartphone, Star, Tags, Trash2, Upload, UserRound, X } from "lucide-react";
 import { api, downloadUrl, thumbnailUrl } from "./api/client";
-import { useFileList, useMe, useRoots, useSaveWorkspace, useShelves, useTasks, useTrash, useWorkspace } from "./api/hooks";
+import { useAudit, useFileList, useMe, useRoots, useSaveWorkspace, useShelves, useTasks, useTrash, useWorkspace } from "./api/hooks";
 import { useWorkspaceStore } from "./stores/workspace";
 import type { FileItem, FileWindow, Root } from "./types/kago";
 
@@ -204,6 +204,7 @@ function Workspace({ userEmail }: { userEmail: string }) {
   const queryClient = useQueryClient();
   const saveTimer = useRef<number | null>(null);
   const [trashOpen, setTrashOpen] = useState(false);
+  const [auditOpen, setAuditOpen] = useState(false);
 
   useEffect(() => {
     if (workspaceQuery.data && !store.hydrated) store.hydrate(workspaceQuery.data);
@@ -262,10 +263,10 @@ function Workspace({ userEmail }: { userEmail: string }) {
 
   return (
     <main className="app-shell">
-      <DesktopTopBar userEmail={userEmail} />
-      <DesktopIcons roots={rootList} onOpenTrash={() => setTrashOpen(true)} />
+      <DesktopTopBar userEmail={userEmail} onOpenAudit={() => setAuditOpen(true)} />
+      <DesktopIcons roots={rootList} onOpenTrash={() => setTrashOpen(true)} onOpenAudit={() => setAuditOpen(true)} />
       <section className="desktop-window desktop-window-background">
-        <Sidebar roots={rootList} userEmail={userEmail} onOpenTrash={() => setTrashOpen(true)} />
+        <Sidebar roots={rootList} userEmail={userEmail} onOpenTrash={() => setTrashOpen(true)} onOpenAudit={() => setAuditOpen(true)} />
         <section className="workspace-canvas">
           <TopStrip />
           {store.windows.length === 0 ? <RootPicker roots={rootList} /> : null}
@@ -275,6 +276,7 @@ function Workspace({ userEmail }: { userEmail: string }) {
           <FloatingShelf />
           <TaskCenter />
           <TrashCenter open={trashOpen} onClose={() => setTrashOpen(false)} />
+          <AuditCenter open={auditOpen} onClose={() => setAuditOpen(false)} />
         </section>
         <Inspector />
       </section>
@@ -282,7 +284,7 @@ function Workspace({ userEmail }: { userEmail: string }) {
   );
 }
 
-function DesktopTopBar({ userEmail }: { userEmail: string }) {
+function DesktopTopBar({ userEmail, onOpenAudit }: { userEmail: string; onOpenAudit: () => void }) {
   return (
     <header className="desktop-topbar">
       <div className="desktop-launcher">
@@ -293,19 +295,19 @@ function DesktopTopBar({ userEmail }: { userEmail: string }) {
       <div className="desktop-status">
         <button title="通知"><MessageCircle /></button>
         <button title={userEmail}><UserRound /></button>
-        <button title="控制台"><SlidersHorizontal /></button>
+        <button title="稽核紀錄" onClick={onOpenAudit}><SlidersHorizontal /></button>
         <button title="搜尋"><Search /></button>
       </div>
     </header>
   );
 }
 
-function DesktopIcons({ roots, onOpenTrash }: { roots: Root[]; onOpenTrash: () => void }) {
+function DesktopIcons({ roots, onOpenTrash, onOpenAudit }: { roots: Root[]; onOpenTrash: () => void; onOpenAudit: () => void }) {
   const store = useWorkspaceStore();
   const firstRoot = roots[0];
   const iconItems = [
     { label: "套件中心", icon: <Boxes />, action: undefined },
-    { label: "控制台", icon: <SlidersHorizontal />, action: undefined },
+    { label: "稽核紀錄", icon: <SlidersHorizontal />, action: onOpenAudit },
     { label: "File Station", icon: <FolderOpen />, action: firstRoot ? () => store.openRoot(firstRoot) : undefined },
     { label: "垃圾桶", icon: <Trash2 />, action: onOpenTrash },
     { label: "DSM 說明", icon: <HelpCircle />, action: undefined }
@@ -323,7 +325,7 @@ function DesktopIcons({ roots, onOpenTrash }: { roots: Root[]; onOpenTrash: () =
   );
 }
 
-function Sidebar({ roots, userEmail, onOpenTrash }: { roots: Root[]; userEmail: string; onOpenTrash: () => void }) {
+function Sidebar({ roots, userEmail, onOpenTrash, onOpenAudit }: { roots: Root[]; userEmail: string; onOpenTrash: () => void; onOpenAudit: () => void }) {
   const store = useWorkspaceStore();
   const queryClient = useQueryClient();
   const [rootName, setRootName] = useState("");
@@ -364,6 +366,7 @@ function Sidebar({ roots, userEmail, onOpenTrash }: { roots: Root[]; userEmail: 
         <button className="side-item"><Home /> {userEmail.split("@")[0]}</button>
         <button className="side-item"><Smartphone /> NAS 掛載點</button>
         <button className="side-item"><Server /> Kago Roots</button>
+        <button className="side-item" onClick={onOpenAudit}><SlidersHorizontal /> 稽核紀錄</button>
         <button className="side-item"><Radio /> AirDrop</button>
         <button className="side-item"><Globe2 /> 網路</button>
         <button className="side-item" onClick={onOpenTrash}><Trash2 /> 垃圾桶</button>
@@ -825,6 +828,37 @@ function TrashCenter({ open, onClose }: { open: boolean; onClose: () => void }) 
   );
 }
 
+function AuditCenter({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const audit = useAudit(open);
+  if (!open) return null;
+
+  return (
+    <aside className="audit-center">
+      <header>
+        <div className="traffic-lights"><span /><span /><span /></div>
+        <strong><SlidersHorizontal /> 稽核紀錄</strong>
+        <button className="icon-button" onClick={onClose} title="關閉"><X /></button>
+      </header>
+      <div className="audit-list">
+        {audit.isLoading && <div className="empty-state"><Loader2 className="spin" /> Loading</div>}
+        {audit.error && <div className="empty-state error">{audit.error.message}</div>}
+        {!audit.isLoading && !audit.data?.length && <div className="empty-state">目前沒有稽核紀錄</div>}
+        {audit.data?.map((item) => (
+          <div className="audit-item" key={item.id}>
+            <span className={`audit-result ${item.result}`}>{item.result}</span>
+            <div>
+              <strong>{item.action}</strong>
+              <span>{item.path ?? summarizeAuditTarget(item.target_json)}</span>
+            </div>
+            <span>{item.actor_type}</span>
+            <time>{formatUnixDate(item.created_at)}</time>
+          </div>
+        ))}
+      </div>
+    </aside>
+  );
+}
+
 function Inspector() {
   const store = useWorkspaceStore();
   const roots = useRoots();
@@ -966,6 +1000,18 @@ function formatUnixDate(value: number) {
   return new Intl.DateTimeFormat("zh-TW", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(
     new Date(value * 1000)
   );
+}
+
+function summarizeAuditTarget(value: string | null) {
+  if (!value) return "—";
+  try {
+    const parsed = JSON.parse(value) as Record<string, unknown>;
+    const first = Object.entries(parsed)[0];
+    if (!first) return "—";
+    return `${first[0]}: ${String(first[1])}`;
+  } catch {
+    return value;
+  }
 }
 
 function viewModeLabel(mode: FileWindow["viewMode"]) {

@@ -1229,7 +1229,8 @@ select:focus {
   top: 64px;
 }
 
-.trash-center {
+.trash-center,
+.audit-center {
   position: absolute;
   z-index: 850;
   top: 86px;
@@ -1246,7 +1247,14 @@ select:focus {
   backdrop-filter: blur(22px);
 }
 
-.trash-center header {
+.audit-center {
+  left: 28px;
+  right: auto;
+  width: min(760px, calc(100vw - 160px));
+}
+
+.trash-center header,
+.audit-center header {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1255,7 +1263,8 @@ select:focus {
   padding: 0 10px;
 }
 
-.trash-center header strong {
+.trash-center header strong,
+.audit-center header strong {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -1263,11 +1272,13 @@ select:focus {
   font-size: 14px;
 }
 
-.trash-center header .icon-button {
+.trash-center header .icon-button,
+.audit-center header .icon-button {
   margin-left: auto;
 }
 
-.trash-list {
+.trash-list,
+.audit-list {
   display: grid;
   align-content: start;
   overflow: auto;
@@ -1307,6 +1318,64 @@ select:focus {
 .trash-item > span {
   color: var(--kago-text-muted);
   font-size: 12px;
+}
+
+.audit-item {
+  display: grid;
+  grid-template-columns: 72px minmax(180px, 1fr) 82px 104px;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  border-radius: 6px;
+  padding: 6px 8px;
+  color: #36414c;
+  font-size: 13px;
+}
+
+.audit-item:nth-child(even) {
+  background: rgba(61, 74, 89, 0.045);
+}
+
+.audit-item > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.audit-item strong,
+.audit-item span,
+.audit-item time {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audit-item > div span,
+.audit-item > span,
+.audit-item time {
+  color: var(--kago-text-muted);
+  font-size: 12px;
+}
+
+.audit-result {
+  justify-self: start;
+  border-radius: 999px;
+  background: rgba(142, 142, 147, 0.14);
+  color: #6a737c;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.audit-result.success {
+  background: rgba(52, 199, 89, 0.14);
+  color: #22863a;
+}
+
+.audit-result.failure,
+.audit-result.denied {
+  background: rgba(255, 59, 48, 0.13);
+  color: #c22b24;
 }
 
 .shelf-items,
@@ -1420,11 +1489,26 @@ select:focus {
     max-height: calc(100vh - 112px);
   }
 
+  .audit-center {
+    right: 10px;
+    left: -72px;
+    width: auto;
+    max-height: calc(100vh - 112px);
+  }
+
   .trash-item {
     grid-template-columns: 22px minmax(120px, 1fr) auto;
   }
 
   .trash-item > span {
+    display: none;
+  }
+
+  .audit-item {
+    grid-template-columns: 68px minmax(120px, 1fr) 92px;
+  }
+
+  .audit-item > span:not(.audit-result) {
     display: none;
   }
 
