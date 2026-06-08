@@ -14,6 +14,11 @@ import type { PathService } from "./path.service.js";
 import type { PermissionService } from "./permission.service.js";
 import type { Actor, FileTask } from "./types.js";
 
+const maxExtractEntries = 10_000;
+const maxExtractBytes = 1024 * 1024 * 1024 * 2;
+const symlinkFileType = 0o120000;
+const unixFileTypeMask = 0o170000;
+
 const fileRefSchema = z.object({
   rootSlug: z.string().min(1),
   path: z.string().min(1)
@@ -390,14 +395,56 @@ export class TaskService {
       const safe = await this.paths.resolveExisting(source.rootSlug, source.path);
       this.permissions.require(actor, "read", safe.root, safe.logicalPath);
       const zip = new AdmZip(safe.absolutePath);
-      for (const entry of zip.getEntries()) {
-        if (entry.entryName.startsWith("/") || entry.entryName.includes("..")) {
-          throw new AppError(400, "Unsafe zip entry", "UNSAFE_ZIP_ENTRY");
-        }
+      const entries = zip.getEntries();
+      this.validateExtractEntries(entries);
+      for (const entry of entries) {
+        await this.extractEntry(entry, dest.absolutePath);
       }
-      zip.extractAllTo(dest.absolutePath, false);
       await this.bumpProcessed(task.id);
     }
+  }
+
+  private validateExtractEntries(entries: AdmZip.IZipEntry[]): void {
+    if (entries.length > maxExtractEntries) {
+      throw new AppError(413, "Zip contains too many entries", "ZIP_ENTRY_LIMIT");
+    }
+    let totalBytes = 0;
+    for (const entry of entries) {
+      this.safeZipEntrySegments(entry);
+      if (isZipSymlink(entry)) throw new AppError(400, "Symlink zip entries are not allowed", "ZIP_SYMLINK_FORBIDDEN");
+      if (!entry.isDirectory) {
+        totalBytes += entry.header.size;
+        if (totalBytes > maxExtractBytes) throw new AppError(413, "Zip is too large to extract", "ZIP_SIZE_LIMIT");
+      }
+    }
+  }
+
+  private async extractEntry(entry: AdmZip.IZipEntry, destinationPath: string): Promise<void> {
+    const segments = this.safeZipEntrySegments(entry);
+    const target = safeJoin(destinationPath, segments);
+    if (entry.isDirectory) {
+      await fsp.mkdir(target, { recursive: true });
+      await assertRealPathInside(destinationPath, target);
+      return;
+    }
+    const parent = path.dirname(target);
+    await fsp.mkdir(parent, { recursive: true });
+    await assertRealPathInside(destinationPath, parent);
+    const data = entry.getData();
+    if (data.length > maxExtractBytes) throw new AppError(413, "Zip is too large to extract", "ZIP_SIZE_LIMIT");
+    await fsp.writeFile(target, data, { flag: "wx", mode: 0o644 });
+  }
+
+  private safeZipEntrySegments(entry: AdmZip.IZipEntry): string[] {
+    const name = entry.entryName.replaceAll("\\", "/");
+    if (!name || name.includes("\0") || name.startsWith("/") || /^[A-Za-z]:\//.test(name)) {
+      throw new AppError(400, "Unsafe zip entry", "UNSAFE_ZIP_ENTRY");
+    }
+    const segments = name.split("/").filter(Boolean);
+    if (segments.length === 0 || segments.some((segment) => segment === "." || segment === "..")) {
+      throw new AppError(400, "Unsafe zip entry", "UNSAFE_ZIP_ENTRY");
+    }
+    return segments;
   }
 
   private async runRsyncPull(task: FileTask, actor: Actor): Promise<void> {
@@ -540,4 +587,27 @@ function runRsync(args: string[]): Promise<void> {
       else reject(new AppError(500, stderr.trim() || `rsync exited with code ${code}`, "RSYNC_FAILED"));
     });
   });
+}
+
+function isZipSymlink(entry: AdmZip.IZipEntry): boolean {
+  const unixMode = (entry.header.attr >>> 16) & unixFileTypeMask;
+  return unixMode === symlinkFileType;
+}
+
+function safeJoin(rootPath: string, segments: string[]): string {
+  const target = path.resolve(rootPath, ...segments);
+  const relative = path.relative(rootPath, target);
+  if (relative === "" || relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new AppError(400, "Unsafe zip entry", "UNSAFE_ZIP_ENTRY");
+  }
+  return target;
+}
+
+async function assertRealPathInside(rootPath: string, targetPath: string): Promise<void> {
+  const rootReal = await fsp.realpath(rootPath);
+  const targetReal = await fsp.realpath(targetPath);
+  const relative = path.relative(rootReal, targetReal);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new AppError(403, "Extract target escapes destination", "ZIP_TARGET_ESCAPES_DESTINATION");
+  }
 }
