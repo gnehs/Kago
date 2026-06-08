@@ -1056,6 +1056,12 @@ select:focus {
   padding: 0 8px;
 }
 
+.address-field:focus-visible {
+  border-color: rgba(29, 115, 212, 0.45);
+  box-shadow: 0 0 0 3px rgba(29, 115, 212, 0.14);
+  outline: none;
+}
+
 .address-field > svg {
   color: #bdc7d1;
 }

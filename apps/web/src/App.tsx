@@ -236,6 +236,7 @@ function Workspace({ userEmail }: { userEmail: string }) {
     function onKeyDown(event: KeyboardEvent) {
       const active = store.windows.find((window) => window.id === store.activeWindowId);
       if (!active) return;
+      if (isEditableTarget(event.target) && event.key !== "Escape") return;
       const mod = event.metaKey || event.ctrlKey;
       if (mod && event.key.toLowerCase() === "w") {
         event.preventDefault();
@@ -244,6 +245,15 @@ function Workspace({ userEmail }: { userEmail: string }) {
       if (mod && event.key.toLowerCase() === "n") {
         event.preventDefault();
         store.openWindow({ rootSlug: active.rootSlug, logicalPath: active.logicalPath, title: active.title });
+      }
+      if (mod && event.key.toLowerCase() === "r") {
+        event.preventDefault();
+        void queryClient.invalidateQueries({ queryKey: ["fs", "list", active.rootSlug, active.logicalPath] });
+      }
+      if (mod && event.key.toLowerCase() === "l") {
+        event.preventDefault();
+        const address = document.querySelector<HTMLElement>(`[data-window="${active.id}"] [data-address-target]`);
+        address?.focus();
       }
       if (event.key === "Backspace" && active.logicalPath !== "/") {
         event.preventDefault();
@@ -254,11 +264,39 @@ function Workspace({ userEmail }: { userEmail: string }) {
         const items = document.querySelectorAll(`[data-window="${active.id}"] [data-file-path]`);
         store.selectItems(active.id, Array.from(items).map((node) => (node as HTMLElement).dataset.filePath!).filter(Boolean));
       }
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        const rows = Array.from(document.querySelectorAll<HTMLElement>(`[data-window="${active.id}"] [data-file-path]`));
+        if (rows.length === 0) return;
+        event.preventDefault();
+        const selectedPath = active.selectedItems[0];
+        const selectedIndex = rows.findIndex((row) => row.dataset.filePath === selectedPath);
+        const nextIndex =
+          event.key === "ArrowDown"
+            ? Math.min(selectedIndex + 1, rows.length - 1)
+            : Math.max(selectedIndex === -1 ? rows.length - 1 : selectedIndex - 1, 0);
+        const nextPath = rows[nextIndex]?.dataset.filePath;
+        if (nextPath) store.selectItems(active.id, [nextPath]);
+      }
+      if (event.key === "Enter") {
+        const selectedPath = active.selectedItems[0];
+        if (!selectedPath) return;
+        const row = Array.from(document.querySelectorAll<HTMLElement>(`[data-window="${active.id}"] [data-file-path]`)).find(
+          (item) => item.dataset.filePath === selectedPath
+        );
+        if (!row) return;
+        event.preventDefault();
+        if (row.dataset.fileKind === "folder") {
+          if (mod) store.openWindow({ rootSlug: active.rootSlug, logicalPath: selectedPath, title: selectedPath.split("/").filter(Boolean).at(-1) ?? active.title });
+          else store.updateWindow(active.id, { logicalPath: selectedPath, selectedItems: [] });
+        } else if (row.dataset.downloadUrl) {
+          globalThis.open(row.dataset.downloadUrl, "_blank");
+        }
+      }
       if (event.key === "Escape") store.selectItems(active.id, []);
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [store]);
+  }, [queryClient, store]);
 
   if (workspaceQuery.isLoading || roots.isLoading) return <ShellLoading />;
 
@@ -612,7 +650,7 @@ function FileWindowView({ window }: { window: FileWindow }) {
                     <button className="icon-button" disabled><ChevronRight /></button>
                     <button className="icon-button" onClick={() => void queryClient.invalidateQueries({ queryKey: ["fs", "list", window.rootSlug, window.logicalPath] })}><RefreshCw /></button>
                   </div>
-                  <div className="address-field">
+                  <div className="address-field" tabIndex={0} data-address-target>
                     <Breadcrumb window={window} />
                     <Star />
                   </div>
@@ -743,6 +781,8 @@ function FileRow({ item, window, readonly }: { item: FileItem; window: FileWindo
     <div
       className={`file-row ${selected ? "selected" : ""}`}
       data-file-path={item.path}
+      data-file-kind={item.kind}
+      data-download-url={item.kind === "file" ? downloadUrl(window.rootSlug, item.path) : undefined}
       draggable
       onDragStart={(event) => {
         event.dataTransfer.setData("application/kago-file", JSON.stringify({ rootSlug: window.rootSlug, path: item.path }));
@@ -1087,6 +1127,12 @@ function parentPath(value: string) {
   const parts = value.split("/").filter(Boolean);
   parts.pop();
   return parts.length ? `/${parts.join("/")}` : "/";
+}
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable) return true;
+  return ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
 }
 
 function joinLogicalPath(parent: string, name: string) {
