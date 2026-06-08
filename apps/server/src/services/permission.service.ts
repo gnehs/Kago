@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { Db } from "../db/db.js";
-import { rows } from "../db/db.js";
+import { row, rows } from "../db/db.js";
 import { AppError } from "../lib/errors.js";
 import { id, now } from "../lib/ids.js";
 import type { AuditService } from "./audit.service.js";
@@ -122,6 +122,7 @@ export class PermissionService {
   }
 
   create(input: z.infer<typeof permissionInputSchema>) {
+    this.assertPrincipalExists(input.principalType, input.principalId);
     const ts = now();
     const item = {
       id: id("perm"),
@@ -165,6 +166,17 @@ export class PermissionService {
       this.db.prepare("SELECT group_id FROM group_members WHERE user_id = ?").all(userId)
     );
     return [{ type: "user", id: userId }, ...groups.map((group) => ({ type: "group" as const, id: group.group_id }))];
+  }
+
+  private assertPrincipalExists(principalType: "user" | "group" | "share_link", principalId: string): void {
+    const table =
+      principalType === "user"
+        ? "users"
+        : principalType === "group"
+          ? "groups"
+          : "share_links";
+    const existing = row<{ id: string }>(this.db.prepare(`SELECT id FROM ${table} WHERE id = ?`).get(principalId));
+    if (!existing) throw new AppError(400, "Permission principal not found", "PRINCIPAL_NOT_FOUND");
   }
 
   private pathMatches(rule: PermissionRule, logicalPath: string): boolean {
