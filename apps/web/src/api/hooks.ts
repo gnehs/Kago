@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./client";
-import type { Actor, AuditLog, FileList, FileTask, Root, Shelf, TrashItem, WorkspaceState } from "../types/kago";
+import type { Actor, AuditLog, FileList, FileMeta, FileTask, Root, Shelf, TrashItem, WorkspaceState } from "../types/kago";
 
 export function useMe() {
   return useQuery({ queryKey: ["auth", "me"], queryFn: () => api<{ user: Actor | null }>("/api/auth/me") });
@@ -26,6 +26,14 @@ export function useFileList(rootSlug: string, path: string, enabled = true) {
   return useQuery({
     queryKey: ["fs", "list", rootSlug, path],
     queryFn: () => api<FileList>(`/api/fs/list?${new URLSearchParams({ rootSlug, path }).toString()}`),
+    enabled
+  });
+}
+
+export function useFileMeta(rootSlug: string, path: string, enabled = true) {
+  return useQuery({
+    queryKey: ["fs", "meta", rootSlug, path],
+    queryFn: () => api<FileMeta>(`/api/fs/meta?${new URLSearchParams({ rootSlug, path }).toString()}`),
     enabled
   });
 }

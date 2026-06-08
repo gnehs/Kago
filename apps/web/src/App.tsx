@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { AppWindow, Archive, Boxes, Check, ChevronDown, ChevronLeft, ChevronRight, Circle, CirclePlus, Columns3, Download, FileText, Folder, FolderOpen, Globe2, HardDrive, HelpCircle, Home, LayoutGrid, List, Loader2, LogOut, Maximize2, MessageCircle, Minimize2, MoreHorizontal, PanelRight, Pencil, Plus, Radio, RefreshCw, Search, Server, Settings2, Share2, SlidersHorizontal, Smartphone, Star, Tags, Trash2, Upload, UserRound, X } from "lucide-react";
-import { api, downloadUrl, thumbnailUrl } from "./api/client";
-import { useAudit, useFileList, useMe, useRoots, useSaveWorkspace, useShelves, useTasks, useTrash, useWorkspace } from "./api/hooks";
+import { api, downloadUrl, previewUrl, thumbnailUrl } from "./api/client";
+import { useAudit, useFileList, useFileMeta, useMe, useRoots, useSaveWorkspace, useShelves, useTasks, useTrash, useWorkspace } from "./api/hooks";
 import { useWorkspaceStore } from "./stores/workspace";
 import type { FileItem, FileWindow, Root } from "./types/kago";
 
@@ -1282,6 +1282,8 @@ function Inspector() {
   const queryClient = useQueryClient();
   const activeWindow = store.windows.find((window) => window.id === store.activeWindowId);
   const selectedPath = activeWindow?.selectedItems[0] ?? null;
+  const selectedCount = activeWindow?.selectedItems.length ?? 0;
+  const meta = useFileMeta(activeWindow?.rootSlug ?? "", selectedPath ?? "/", Boolean(activeWindow && selectedPath));
   const [tagName, setTagName] = useState("");
   const [shareMode, setShareMode] = useState<"download" | "view_only" | "upload_only">("download");
   const [shareUrl, setShareUrl] = useState("");
@@ -1346,9 +1348,32 @@ function Inspector() {
   return (
     <aside className="inspector">
       <header><Search /> 檢閱器</header>
-      <section>
-        <h3>Metadata</h3>
-        <p>{selectedPath ? `${activeWindow?.rootSlug}:${selectedPath}` : "選取檔案後可檢視標籤、權限、分享狀態與預覽資訊。"}</p>
+      <section className="inspector-card inspector-summary">
+        <h3>Preview</h3>
+        {meta.isLoading ? <div className="inspector-preview"><Loader2 className="spin" /></div> : null}
+        {meta.error ? <div className="inline-error">{meta.error.message}</div> : null}
+        {meta.data && (
+          <>
+            <div className="inspector-preview">
+              {meta.data.kind === "file" && meta.data.type.startsWith("image/") ? (
+                <img alt="" src={previewUrl(meta.data.rootSlug, meta.data.path)} />
+              ) : meta.data.kind === "folder" ? (
+                <FolderOpen />
+              ) : (
+                <FileText />
+              )}
+            </div>
+            <strong>{meta.data.name}</strong>
+            <p>{meta.data.rootSlug}:{meta.data.path}</p>
+            <dl className="meta-grid">
+              <dt>種類</dt><dd>{meta.data.kind === "folder" ? "資料夾" : meta.data.type}</dd>
+              <dt>大小</dt><dd>{formatSize(meta.data.size)}</dd>
+              <dt>修改時間</dt><dd>{formatDate(meta.data.mtime)}</dd>
+              <dt>選取數</dt><dd>{selectedCount}</dd>
+            </dl>
+          </>
+        )}
+        {!selectedPath ? <p>選取檔案後可檢視標籤、權限、分享狀態與預覽資訊。</p> : null}
       </section>
       <section className="inspector-card">
         <h3>標籤</h3>

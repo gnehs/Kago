@@ -526,6 +526,62 @@ select:focus {
   padding-top: 14px;
 }
 
+.inspector-summary {
+  margin-top: 0;
+  border-top: 0;
+  padding-top: 0;
+}
+
+.inspector-summary > strong {
+  overflow: hidden;
+  color: #25313c;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inspector-preview {
+  display: grid;
+  min-height: 136px;
+  overflow: hidden;
+  place-items: center;
+  border: 1px solid rgba(36, 48, 62, 0.12);
+  border-radius: 12px;
+  background: rgba(247, 250, 252, 0.86);
+}
+
+.inspector-preview img {
+  width: 100%;
+  max-height: 180px;
+  object-fit: contain;
+}
+
+.inspector-preview svg {
+  width: 42px;
+  height: 42px;
+  color: #87919b;
+}
+
+.meta-grid {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 6px 10px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.meta-grid dt {
+  color: var(--kago-text-muted);
+}
+
+.meta-grid dd {
+  min-width: 0;
+  overflow: hidden;
+  margin: 0;
+  color: #39424b;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .inline-form {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

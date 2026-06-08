@@ -23,3 +23,6 @@ export const downloadUrl = (rootSlug: string, path: string) =>
 
 export const thumbnailUrl = (rootSlug: string, path: string) =>
   `/api/fs/thumbnail?${new URLSearchParams({ rootSlug, path }).toString()}`;
+
+export const previewUrl = (rootSlug: string, path: string) =>
+  `/api/fs/preview?${new URLSearchParams({ rootSlug, path }).toString()}`;

@@ -62,6 +62,16 @@ export type FileList = {
   items: FileItem[];
 };
 
+export type FileMeta = {
+  rootSlug: string;
+  path: string;
+  name: string;
+  kind: "file" | "folder";
+  size: number;
+  mtime: number;
+  type: string;
+};
+
 export type FileTask = {
   id: string;
   type: string;
