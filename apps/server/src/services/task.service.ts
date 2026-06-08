@@ -159,11 +159,51 @@ export class TaskService {
   cancel(actor: Actor, taskId: string): FileTask {
     const task = this.get(taskId);
     this.requireTaskAccess(actor, task);
+    if (task.status === "cancelled") return task;
+    if (!["queued", "paused"].includes(task.status)) {
+      throw new AppError(409, "Only queued or paused tasks can be cancelled", "TASK_CANCEL_NOT_ALLOWED");
+    }
     this.db
-      .prepare("UPDATE tasks SET status = 'cancelled', updated_at = ?, finished_at = ? WHERE id = ? AND status = 'queued'")
+      .prepare("UPDATE tasks SET status = 'cancelled', updated_at = ?, finished_at = ? WHERE id = ? AND status IN ('queued', 'paused')")
       .run(now(), now(), taskId);
     this.audit.write({ actorType: "user", actorId: actor.id, action: "task_cancel", target: { taskId }, result: "success" });
-    return this.get(taskId);
+    const cancelled = this.get(taskId);
+    this.events.publish({ type: "task.progress", taskId, patch: { status: cancelled.status, finished_at: cancelled.finished_at } });
+    return cancelled;
+  }
+
+  pause(actor: Actor, taskId: string): FileTask {
+    const task = this.get(taskId);
+    this.requireTaskAccess(actor, task);
+    if (task.status === "paused") return task;
+    if (task.status !== "queued") {
+      throw new AppError(409, "Only queued tasks can be paused", "TASK_PAUSE_NOT_ALLOWED");
+    }
+    this.db
+      .prepare("UPDATE tasks SET status = 'paused', updated_at = ? WHERE id = ? AND status = 'queued'")
+      .run(now(), taskId);
+    const paused = this.get(taskId);
+    if (paused.status !== "paused") throw new AppError(409, "Task can no longer be paused", "TASK_PAUSE_NOT_ALLOWED");
+    this.audit.write({ actorType: "user", actorId: actor.id, action: "task_pause", target: { taskId }, result: "success" });
+    this.events.publish({ type: "task.progress", taskId, patch: { status: paused.status } });
+    return paused;
+  }
+
+  resume(actor: Actor, taskId: string): FileTask {
+    const task = this.get(taskId);
+    this.requireTaskAccess(actor, task);
+    if (task.status === "queued") return task;
+    if (task.status !== "paused") {
+      throw new AppError(409, "Only paused tasks can be resumed", "TASK_RESUME_NOT_ALLOWED");
+    }
+    this.db
+      .prepare("UPDATE tasks SET status = 'queued', updated_at = ? WHERE id = ? AND status = 'paused'")
+      .run(now(), taskId);
+    const resumed = this.get(taskId);
+    if (resumed.status !== "queued") throw new AppError(409, "Task can no longer be resumed", "TASK_RESUME_NOT_ALLOWED");
+    this.audit.write({ actorType: "user", actorId: actor.id, action: "task_resume", target: { taskId }, result: "success" });
+    this.events.publish({ type: "task.progress", taskId, patch: { status: resumed.status } });
+    return resumed;
   }
 
   retry(actor: Actor, taskId: string): FileTask {

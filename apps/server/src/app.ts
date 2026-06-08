@@ -294,8 +294,14 @@ function registerApi(app: FastifyInstance, services: Services) {
     const actor = requireActor(request);
     return services.tasks.retry(actor, z.object({ id: z.string() }).parse(request.params).id);
   });
-  app.post("/api/tasks/:id/pause", async () => ({ ok: false, reason: "Pause is reserved for a later worker version" }));
-  app.post("/api/tasks/:id/resume", async () => ({ ok: false, reason: "Task resume is not part of MVP" }));
+  app.post("/api/tasks/:id/pause", async (request) => {
+    const actor = requireActor(request);
+    return services.tasks.pause(actor, z.object({ id: z.string() }).parse(request.params).id);
+  });
+  app.post("/api/tasks/:id/resume", async (request) => {
+    const actor = requireActor(request);
+    return services.tasks.resume(actor, z.object({ id: z.string() }).parse(request.params).id);
+  });
 
   app.get("/api/trash", async (request) => services.tasks.listTrash(requireActor(request)));
   app.post("/api/trash/:id/restore", async (request) => {

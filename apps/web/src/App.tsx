@@ -1266,6 +1266,16 @@ function TaskCenter() {
     await queryClient.invalidateQueries({ queryKey: ["tasks"] });
   }
 
+  async function pauseTask(taskId: string) {
+    await api(`/api/tasks/${taskId}/pause`, { method: "POST" });
+    await queryClient.invalidateQueries({ queryKey: ["tasks"] });
+  }
+
+  async function resumeTask(taskId: string) {
+    await api(`/api/tasks/${taskId}/resume`, { method: "POST" });
+    await queryClient.invalidateQueries({ queryKey: ["tasks"] });
+  }
+
   async function retryTask(taskId: string) {
     await api(`/api/tasks/${taskId}/retry`, { method: "POST" });
     await queryClient.invalidateQueries({ queryKey: ["tasks"] });
@@ -1284,7 +1294,16 @@ function TaskCenter() {
             {task.error_message && <small>{task.error_message}</small>}
             <div className="task-actions">
               {task.status === "queued" ? (
-                <button className="task-action" onClick={() => void cancelTask(task.id)}><X /> 取消</button>
+                <>
+                  <button className="task-action" onClick={() => void pauseTask(task.id)}><Minimize2 /> 暫停</button>
+                  <button className="task-action" onClick={() => void cancelTask(task.id)}><X /> 取消</button>
+                </>
+              ) : null}
+              {task.status === "paused" ? (
+                <>
+                  <button className="task-action" onClick={() => void resumeTask(task.id)}><RefreshCw /> 繼續</button>
+                  <button className="task-action" onClick={() => void cancelTask(task.id)}><X /> 取消</button>
+                </>
               ) : null}
               {["failed", "cancelled", "interrupted"].includes(task.status) ? (
                 <button className="task-action" onClick={() => void retryTask(task.id)}><RefreshCw /> 重試</button>
