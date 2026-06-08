@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { Db } from "../db/db.js";
-import { row, rows } from "../db/db.js";
+import { row } from "../db/db.js";
 import { hashPassword, randomToken, sha256, verifyPassword } from "../lib/crypto.js";
 import { AppError } from "../lib/errors.js";
 import { id, now } from "../lib/ids.js";
@@ -8,6 +8,7 @@ import type { AuditService } from "./audit.service.js";
 import type { PathService } from "./path.service.js";
 import type { PermissionService } from "./permission.service.js";
 import type { Actor } from "./types.js";
+import type { EventHub } from "../ws/events.js";
 
 export const shareSchema = z.object({
   rootSlug: z.string().min(1),
@@ -23,7 +24,8 @@ export class ShareService {
     private readonly db: Db,
     private readonly paths: PathService,
     private readonly permissions: PermissionService,
-    private readonly audit: AuditService
+    private readonly audit: AuditService,
+    private readonly events: EventHub
   ) {}
 
   list(actor: Actor) {
@@ -82,19 +84,53 @@ export class ShareService {
       path: safe.logicalPath,
       result: "success"
     });
+    this.events.publish({ type: "share.updated" });
     return { ...share, token };
   }
 
   patch(actor: Actor, shareId: string, input: { disabled?: boolean }) {
+    const existing = this.getForActor(actor, shareId);
     this.db
       .prepare("UPDATE share_links SET disabled = COALESCE(?, disabled), updated_at = ? WHERE id = ?")
       .run(input.disabled === undefined ? null : input.disabled ? 1 : 0, now(), shareId);
-    this.audit.write({ actorType: "user", actorId: actor.id, action: "disable_share", target: { shareId }, result: "success" });
-    return rows(this.db.prepare("SELECT * FROM share_links WHERE id = ?").all(shareId))[0];
+    this.audit.write({
+      actorType: "user",
+      actorId: actor.id,
+      action: "disable_share",
+      rootId: existing.root_id,
+      path: existing.path,
+      target: { shareId, disabled: input.disabled },
+      result: "success"
+    });
+    this.events.publish({ type: "share.updated" });
+    return this.get(shareId);
   }
 
-  delete(shareId: string): void {
+  delete(actor: Actor, shareId: string): void {
+    const existing = this.getForActor(actor, shareId);
     this.db.prepare("DELETE FROM share_links WHERE id = ?").run(shareId);
+    this.audit.write({
+      actorType: "user",
+      actorId: actor.id,
+      action: "delete_share",
+      rootId: existing.root_id,
+      path: existing.path,
+      target: { shareId },
+      result: "success"
+    });
+    this.events.publish({ type: "share.updated" });
+  }
+
+  get(shareId: string): ResolvedShare {
+    const share = row<ResolvedShare>(this.db.prepare("SELECT * FROM share_links WHERE id = ?").get(shareId));
+    if (!share) throw new AppError(404, "Share not found", "SHARE_NOT_FOUND");
+    return share;
+  }
+
+  getForActor(actor: Actor, shareId: string): ResolvedShare {
+    const share = this.get(shareId);
+    if (actor.role === "ADMIN" || share.created_by === actor.id) return share;
+    throw new AppError(403, "Share access denied", "SHARE_ACCESS_DENIED");
   }
 
   resolveToken(token: string) {

@@ -38,7 +38,7 @@ export async function buildApp(env: Env) {
   const tasks = new TaskService(db, paths, permissions, audit, events, env.appDataDir, fsService);
   const shelves = new ShelfService(db, paths, permissions, events);
   const tags = new TagService(db, paths, permissions);
-  const shares = new ShareService(db, paths, permissions, audit);
+  const shares = new ShareService(db, paths, permissions, audit, events);
   const groups = new GroupService(db);
   const workers = new WorkerManager(tasks, auth);
 
@@ -391,8 +391,8 @@ function registerApi(app: FastifyInstance, services: Services) {
     return services.shares.patch(actor, params.id, body);
   });
   app.delete("/api/shares/:id", async (request) => {
-    requireActor(request);
-    services.shares.delete(z.object({ id: z.string() }).parse(request.params).id);
+    const actor = requireActor(request);
+    services.shares.delete(actor, z.object({ id: z.string() }).parse(request.params).id);
     return { ok: true };
   });
 

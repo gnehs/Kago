@@ -700,6 +700,13 @@ select:focus {
   font-size: 12px;
 }
 
+.share-status-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
 .permission-rule-list {
   display: grid;
   gap: 8px;
@@ -2123,6 +2130,10 @@ select:focus {
 
 .task-action:hover {
   background: rgba(222, 235, 245, 0.95);
+}
+
+.task-action.danger {
+  color: #b42318;
 }
 
 .task-action svg {

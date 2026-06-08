@@ -228,6 +228,7 @@ function Workspace({ userEmail }: { userEmail: string }) {
         if (message.type === "task.done") void queryClient.invalidateQueries({ queryKey: ["fs"] });
       }
       if (message.type === "shelf.updated") void queryClient.invalidateQueries({ queryKey: ["shelves"] });
+      if (message.type === "share.updated") void queryClient.invalidateQueries({ queryKey: ["shares"] });
     };
     return () => ws.close();
   }, [queryClient]);
@@ -1467,6 +1468,11 @@ function Inspector() {
     await queryClient.invalidateQueries({ queryKey: ["shares"] });
   }
 
+  async function deleteShare(shareId: string) {
+    await api(`/api/shares/${shareId}`, { method: "DELETE" });
+    await queryClient.invalidateQueries({ queryKey: ["shares"] });
+  }
+
   async function createUser() {
     if (!userEmail) return;
     await api("/api/users", {
@@ -1574,9 +1580,12 @@ function Inspector() {
                 <small>{share.disabled ? "已停用" : "啟用中"} · {share.download_count}{share.max_downloads ? `/${share.max_downloads}` : ""} 次下載</small>
                 <small>建立於 {formatUnixDate(share.created_at)}</small>
               </div>
-              <button className="task-action" onClick={() => void setShareDisabled(share.id, !share.disabled)}>
-                {share.disabled ? "啟用" : "停用"}
-              </button>
+              <div className="share-status-actions">
+                <button className="task-action" onClick={() => void setShareDisabled(share.id, !share.disabled)}>
+                  {share.disabled ? "啟用" : "停用"}
+                </button>
+                <button className="task-action danger" onClick={() => void deleteShare(share.id)}>刪除</button>
+              </div>
             </div>
           ))}
         </div>
