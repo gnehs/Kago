@@ -1067,16 +1067,45 @@ function FloatingShelf() {
   const activeList = useFileList(active?.rootSlug ?? "", active?.logicalPath ?? "/", Boolean(active));
   const activeReadonly = Boolean(activeList.data?.readonly);
   const queryClient = useQueryClient();
+  const [dropActive, setDropActive] = useState(false);
+  const [dropError, setDropError] = useState("");
   const shelf = shelves.data?.[0];
-  if (!shelf || shelf.items.length === 0) return null;
+  if (!shelf) return null;
+  const shelfId = shelf.id;
+  const shelfItems = shelf.items;
+
+  async function addDroppedItems(event: React.DragEvent<HTMLElement>) {
+    event.preventDefault();
+    setDropActive(false);
+    setDropError("");
+    const rawItems = event.dataTransfer.getData("application/kago-files");
+    const rawItem = event.dataTransfer.getData("application/kago-file");
+    try {
+      const items = rawItems
+        ? JSON.parse(rawItems) as Array<{ rootSlug: string; path: string }>
+        : rawItem ? [JSON.parse(rawItem) as { rootSlug: string; path: string }] : [];
+      if (items.length === 0) return;
+      await Promise.all(
+        items.map((item) =>
+          api(`/api/shelves/${shelfId}/items`, {
+            method: "POST",
+            body: JSON.stringify({ rootSlug: item.rootSlug, path: item.path })
+          })
+        )
+      );
+      await queryClient.invalidateQueries({ queryKey: ["shelves"] });
+    } catch (error) {
+      setDropError(error instanceof Error ? error.message : "無法加入中轉區");
+    }
+  }
 
   async function copyToActive() {
-    if (!shelf || !active || activeReadonly || shelf.items.length === 0) return;
+    if (!active || activeReadonly || shelfItems.length === 0) return;
     await api("/api/tasks", {
       method: "POST",
       body: JSON.stringify({
         type: "copy",
-        sources: shelf.items.map((item) => ({ rootSlug: item.root_slug, path: item.path })),
+        sources: shelfItems.map((item) => ({ rootSlug: item.root_slug, path: item.path })),
         destination: { rootSlug: active.rootSlug, path: active.logicalPath }
       })
     });
@@ -1084,14 +1113,14 @@ function FloatingShelf() {
   }
 
   async function compressToActive() {
-    if (!shelf || !active || activeReadonly || shelf.items.length === 0) return;
+    if (!active || activeReadonly || shelfItems.length === 0) return;
     const name = prompt("壓縮檔名稱", "shelf.zip");
     if (!name) return;
     await api("/api/tasks", {
       method: "POST",
       body: JSON.stringify({
         type: "compress",
-        sources: shelf.items.map((item) => ({ rootSlug: item.root_slug, path: item.path })),
+        sources: shelfItems.map((item) => ({ rootSlug: item.root_slug, path: item.path })),
         destination: { rootSlug: active.rootSlug, path: joinLogicalPath(active.logicalPath, ensureZipName(name)) }
       })
     });
@@ -1099,11 +1128,25 @@ function FloatingShelf() {
   }
 
   return (
-    <aside className="floating-shelf">
-      <header><Archive /> 中轉區 <span>{shelf?.items.length ?? 0}</span></header>
+    <aside
+      className={`floating-shelf ${dropActive ? "drop-active" : ""}`}
+      onDragOver={(event) => {
+        event.preventDefault();
+        setDropActive(true);
+      }}
+      onDragLeave={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropActive(false);
+      }}
+      onDrop={(event) => void addDroppedItems(event)}
+    >
+      <header><Archive /> 中轉區 <span>{shelfItems.length}</span></header>
       <div className="shelf-items">
-        {shelf?.items.map((item) => <div key={item.id}><span>{item.name}</span><small>{item.path}</small></div>)}
+        {shelfItems.length === 0 ? (
+          <div className="shelf-empty"><span>拖放檔案到這裡</span><small>中轉區只保存 reference，不會立即複製。</small></div>
+        ) : null}
+        {shelfItems.map((item) => <div key={item.id}><span>{item.name}</span><small>{item.path}</small></div>)}
       </div>
+      {dropError ? <small className="readonly-note">{dropError}</small> : null}
       {activeReadonly ? <small className="readonly-note">目前視窗是唯讀目的地</small> : null}
       <button className="tool-button" onClick={copyToActive} disabled={!active || activeReadonly}>複製到目前視窗</button>
       <button className="tool-button" onClick={compressToActive} disabled={!active || activeReadonly}>壓縮到目前視窗</button>

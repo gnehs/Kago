@@ -1487,6 +1487,12 @@ select:focus {
   bottom: 16px;
 }
 
+.floating-shelf.drop-active {
+  border-color: rgba(29, 115, 212, 0.42);
+  background: rgba(238, 247, 255, 0.94);
+  box-shadow: 0 18px 48px rgba(29, 115, 212, 0.18);
+}
+
 .task-center {
   z-index: 700;
   top: 64px;
@@ -1659,6 +1665,12 @@ select:focus {
   background: rgba(246, 246, 246, 0.86);
   padding: 8px;
   font-size: 12px;
+}
+
+.shelf-items .shelf-empty {
+  border-style: dashed;
+  background: rgba(247, 250, 252, 0.78);
+  color: #39424b;
 }
 
 .shelf-items small,
