@@ -150,10 +150,19 @@ export class TaskService {
     return task;
   }
 
-  cancel(taskId: string): FileTask {
+  getForActor(actor: Actor, taskId: string): FileTask {
+    const task = this.get(taskId);
+    this.requireTaskAccess(actor, task);
+    return task;
+  }
+
+  cancel(actor: Actor, taskId: string): FileTask {
+    const task = this.get(taskId);
+    this.requireTaskAccess(actor, task);
     this.db
       .prepare("UPDATE tasks SET status = 'cancelled', updated_at = ?, finished_at = ? WHERE id = ? AND status = 'queued'")
       .run(now(), now(), taskId);
+    this.audit.write({ actorType: "user", actorId: actor.id, action: "task_cancel", target: { taskId }, result: "success" });
     return this.get(taskId);
   }
 
@@ -386,6 +395,11 @@ export class TaskService {
     this.db
       .prepare("UPDATE tasks SET status = ?, error_message = ?, updated_at = ?, finished_at = ? WHERE id = ?")
       .run(status, error ?? null, now(), now(), taskId);
+  }
+
+  private requireTaskAccess(actor: Actor, task: FileTask): void {
+    if (actor.role === "ADMIN" || task.created_by === actor.id) return;
+    throw new AppError(403, "Task access denied", "TASK_ACCESS_DENIED");
   }
 }
 

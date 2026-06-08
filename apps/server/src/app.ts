@@ -282,8 +282,14 @@ function registerApi(app: FastifyInstance, services: Services) {
 
   app.get("/api/tasks", async (request) => services.tasks.list(requireActor(request)));
   app.post("/api/tasks", async (request) => services.tasks.create(requireActor(request), taskInputSchema.parse(request.body)));
-  app.get("/api/tasks/:id", async (request) => services.tasks.get(z.object({ id: z.string() }).parse(request.params).id));
-  app.post("/api/tasks/:id/cancel", async (request) => services.tasks.cancel(z.object({ id: z.string() }).parse(request.params).id));
+  app.get("/api/tasks/:id", async (request) => {
+    const actor = requireActor(request);
+    return services.tasks.getForActor(actor, z.object({ id: z.string() }).parse(request.params).id);
+  });
+  app.post("/api/tasks/:id/cancel", async (request) => {
+    const actor = requireActor(request);
+    return services.tasks.cancel(actor, z.object({ id: z.string() }).parse(request.params).id);
+  });
   app.post("/api/tasks/:id/pause", async () => ({ ok: false, reason: "Pause is reserved for a later worker version" }));
   app.post("/api/tasks/:id/resume", async () => ({ ok: false, reason: "Task resume is not part of MVP" }));
 
