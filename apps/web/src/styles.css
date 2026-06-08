@@ -741,6 +741,27 @@ select:focus {
   padding: 0;
 }
 
+.search-clear {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  place-items: center;
+  border-radius: 9999px;
+  background: rgba(36, 48, 62, 0.08);
+  color: #6a737c;
+  padding: 0;
+}
+
+.search-clear:hover {
+  background: rgba(36, 48, 62, 0.14);
+}
+
+.search-clear svg {
+  width: 13px;
+  height: 13px;
+}
+
 .root-picker {
   display: grid;
   height: 100%;

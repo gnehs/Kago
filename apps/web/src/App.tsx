@@ -504,6 +504,7 @@ function FileWindowView({ window }: { window: FileWindow }) {
   const [resize, setResize] = useState<{ startX: number; startY: number; width: number; height: number } | null>(null);
   const [dropChoice, setDropChoice] = useState<{ items: Array<{ rootSlug: string; path: string }> } | null>(null);
   const [contextMenu, setContextMenu] = useState<{ item: FileItem; x: number; y: number } | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     function move(event: MouseEvent) {
@@ -556,6 +557,15 @@ function FileWindowView({ window }: { window: FileWindow }) {
     });
     return items;
   }, [fileList.data, window.sortBy, window.sortDirection]);
+
+  const visibleItems = useMemo(() => {
+    const query = searchQuery.trim().toLocaleLowerCase();
+    if (!query) return sortedItems;
+    return sortedItems.filter((item) => {
+      const haystack = `${item.name} ${item.path} ${item.kind} ${item.type}`.toLocaleLowerCase();
+      return haystack.includes(query);
+    });
+  }, [searchQuery, sortedItems]);
 
   async function createTask(type: "copy" | "move") {
     if (!dropChoice || readonly) return;
@@ -719,7 +729,31 @@ function FileWindowView({ window }: { window: FileWindow }) {
                     <Breadcrumb window={window} />
                     <Star />
                   </div>
-                  <label className="search-pill window-search"><Search /><input placeholder="搜尋" /></label>
+                  <label className="search-pill window-search">
+                    <Search />
+                    <input
+                      aria-label="搜尋目前資料夾"
+                      placeholder="搜尋目前資料夾"
+                      value={searchQuery}
+                      onChange={(event) => {
+                        setSearchQuery(event.target.value);
+                        store.selectItems(window.id, []);
+                      }}
+                    />
+                    {searchQuery ? (
+                      <button
+                        type="button"
+                        className="search-clear"
+                        aria-label="清除搜尋"
+                        onClick={() => {
+                          setSearchQuery("");
+                          store.selectItems(window.id, []);
+                        }}
+                      >
+                        <X />
+                      </button>
+                    ) : null}
+                  </label>
                 </div>
                 <div className="action-row">
                   <button className="tool-button" onClick={mkdir} disabled={readonly}><Folder /> 建立 <ChevronDown /></button>
@@ -756,20 +790,24 @@ function FileWindowView({ window }: { window: FileWindow }) {
                 )}
                 {fileList.isLoading && <div className="empty-state"><Loader2 className="spin" /> Loading</div>}
                 {fileList.error && <div className="empty-state error">{fileList.error.message}</div>}
-                {!fileList.isLoading && sortedItems.length === 0 && (
+                {!fileList.isLoading && fileList.data && visibleItems.length === 0 && (
                   <div className="empty-state file-empty">
                     <FolderOpen />
-                    <strong>資料夾是空的</strong>
-                    <span>{readonly ? "這個 root 是唯讀模式。" : "你可以建立資料夾或上傳檔案。"}</span>
+                    <strong>{searchQuery ? "沒有符合的項目" : "資料夾是空的"}</strong>
+                    <span>
+                      {searchQuery
+                        ? `找不到符合「${searchQuery.trim()}」的檔案或資料夾。`
+                        : readonly ? "這個 root 是唯讀模式。" : "你可以建立資料夾或上傳檔案。"}
+                    </span>
                   </div>
                 )}
-                {sortedItems.map((item) => (
+                {visibleItems.map((item) => (
                   <FileRow key={item.path} item={item} window={window} readonly={readonly} onOpenContext={openContextMenu} />
                 ))}
               </div>
               <div className="statusbar">
                 <span className="pathbar"><HardDrive /> {window.rootSlug} <ChevronRight /> {window.logicalPath === "/" ? window.title : window.logicalPath.split("/").filter(Boolean).join(" › ")}</span>
-                <span>{sortedItems.length} 個項目</span>
+                <span>{searchQuery ? `${visibleItems.length} / ${sortedItems.length} 個項目` : `${sortedItems.length} 個項目`}</span>
                 <button onClick={() => store.updateWindow(window.id, { viewMode: window.viewMode === "list" ? "grid" : "list" })}><List /> {viewModeLabel(window.viewMode)}</button>
               </div>
             </div>
