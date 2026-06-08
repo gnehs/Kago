@@ -263,12 +263,14 @@ function Workspace({ userEmail }: { userEmail: string }) {
   if (workspaceQuery.isLoading || roots.isLoading) return <ShellLoading />;
 
   const rootList = roots.data ?? [];
+  const activeWindow = store.windows.find((window) => window.id === store.activeWindowId);
+  const showInspector = Boolean(activeWindow?.selectedItems.length);
 
   return (
     <main className="app-shell">
       <DesktopTopBar userEmail={userEmail} onOpenAudit={() => setAuditOpen(true)} />
       <DesktopIcons roots={rootList} onOpenTrash={() => setTrashOpen(true)} onOpenAudit={() => setAuditOpen(true)} />
-      <section className="desktop-window desktop-window-background">
+      <section className={`desktop-window desktop-window-background ${showInspector ? "inspector-visible" : ""}`}>
         <Sidebar roots={rootList} userEmail={userEmail} onOpenTrash={() => setTrashOpen(true)} onOpenAudit={() => setAuditOpen(true)} />
         <section className="workspace-canvas">
           <TopStrip />
@@ -281,7 +283,7 @@ function Workspace({ userEmail }: { userEmail: string }) {
           <TrashCenter open={trashOpen} onClose={() => setTrashOpen(false)} />
           <AuditCenter open={auditOpen} onClose={() => setAuditOpen(false)} />
         </section>
-        <Inspector />
+        {showInspector ? <Inspector /> : null}
       </section>
     </main>
   );
@@ -411,21 +413,25 @@ function TopStrip() {
         <button className="chrome-button" disabled><ChevronRight /></button>
         <strong>{active ? active.title : "Kago"}</strong>
       </div>
-      <div className="view-segment" aria-label="View mode">
-        <button className={active?.viewMode === "grid" ? "selected" : ""} onClick={() => active && store.updateWindow(active.id, { viewMode: "grid" })}><LayoutGrid /></button>
-        <button className={active?.viewMode === "list" ? "selected" : ""} onClick={() => active && store.updateWindow(active.id, { viewMode: "list" })}><List /></button>
-        <button className={active?.viewMode === "columns" ? "selected" : ""} onClick={() => active && store.updateWindow(active.id, { viewMode: "columns" })}><Columns3 /></button>
-      </div>
-      <div className="toolbar-cluster">
-        <button className="chrome-button"><Boxes /><ChevronDown /></button>
-        <button className="chrome-button"><Share2 /></button>
-        <button className="chrome-button"><Tags /></button>
-        <button className="chrome-button"><MoreHorizontal /></button>
-      </div>
-      <div className="top-actions">
-        <label className="search-pill"><Search /><input placeholder="搜尋" /></label>
-        <button className="chrome-button" title="New window" onClick={() => active && store.openWindow({ rootSlug: active.rootSlug, logicalPath: active.logicalPath, title: active.title })}><CirclePlus /></button>
-      </div>
+      {active ? (
+        <>
+          <div className="view-segment" aria-label="View mode">
+            <button className={active.viewMode === "grid" ? "selected" : ""} onClick={() => store.updateWindow(active.id, { viewMode: "grid" })}><LayoutGrid /></button>
+            <button className={active.viewMode === "list" ? "selected" : ""} onClick={() => store.updateWindow(active.id, { viewMode: "list" })}><List /></button>
+            <button className={active.viewMode === "columns" ? "selected" : ""} onClick={() => store.updateWindow(active.id, { viewMode: "columns" })}><Columns3 /></button>
+          </div>
+          <div className="toolbar-cluster">
+            <button className="chrome-button"><Boxes /><ChevronDown /></button>
+            <button className="chrome-button"><Share2 /></button>
+            <button className="chrome-button"><Tags /></button>
+            <button className="chrome-button"><MoreHorizontal /></button>
+          </div>
+          <div className="top-actions">
+            <label className="search-pill"><Search /><input placeholder="搜尋" /></label>
+            <button className="chrome-button" title="New window" onClick={() => store.openWindow({ rootSlug: active.rootSlug, logicalPath: active.logicalPath, title: active.title })}><CirclePlus /></button>
+          </div>
+        </>
+      ) : null}
     </header>
   );
 }
@@ -435,8 +441,9 @@ function RootPicker({ roots }: { roots: Root[] }) {
   return (
     <section className="root-picker">
       <div className="root-picker-inner">
-        <HardDrive />
-        <h2>Open a root</h2>
+        <div className="root-picker-mark"><HardDrive /></div>
+        <h2>選擇一個 Root</h2>
+        <p>從左側建立或開啟 NAS 掛載點，檔案視窗會以 Finder 風格浮在桌面上。</p>
         <div className="picker-grid">
           {roots.map((root) => (
             <button key={root.id} onClick={() => store.openRoot(root)}>
@@ -607,10 +614,13 @@ function FileWindowView({ window }: { window: FileWindow }) {
                   <button className="tool-button" onClick={mkdir}><Folder /> 建立 <ChevronDown /></button>
                   <label className="tool-button file-input"><Upload /> 上傳 <ChevronDown /><input type="file" multiple onChange={upload} /></label>
                   <button className="tool-button"><MoreHorizontal /> 操作 <ChevronDown /></button>
-                  <button className="tool-button" onClick={() => void compressSelection()} disabled={window.selectedItems.length === 0}><Archive /> 壓縮</button>
-                  <button className="tool-button" onClick={() => void extractSelection()} disabled={window.selectedItems.length === 0}><FolderOpen /> 解壓縮</button>
+                  {window.selectedItems.length > 0 ? (
+                    <>
+                      <button className="tool-button" onClick={() => void compressSelection()}><Archive /> 壓縮</button>
+                      <button className="tool-button" onClick={() => void extractSelection()}><FolderOpen /> 解壓縮</button>
+                    </>
+                  ) : null}
                   <button className="tool-button"><Settings2 /> 工具 <ChevronDown /></button>
-                  <button className="tool-button"><SlidersHorizontal /> 設定</button>
                   <div className="window-view-tools">
                     <button className={window.viewMode === "list" ? "selected" : ""} onClick={() => store.updateWindow(window.id, { viewMode: "list" })}><List /></button>
                     <button className={window.viewMode === "grid" ? "selected" : ""} onClick={() => store.updateWindow(window.id, { viewMode: "grid" })}><LayoutGrid /></button>
@@ -633,7 +643,13 @@ function FileWindowView({ window }: { window: FileWindow }) {
                 )}
                 {fileList.isLoading && <div className="empty-state"><Loader2 className="spin" /> Loading</div>}
                 {fileList.error && <div className="empty-state error">{fileList.error.message}</div>}
-                {!fileList.isLoading && sortedItems.length === 0 && <div className="empty-state">Empty folder</div>}
+                {!fileList.isLoading && sortedItems.length === 0 && (
+                  <div className="empty-state file-empty">
+                    <FolderOpen />
+                    <strong>資料夾是空的</strong>
+                    <span>你可以建立資料夾或上傳檔案。</span>
+                  </div>
+                )}
                 {sortedItems.map((item) => <FileRow key={item.path} item={item} window={window} />)}
               </div>
               <div className="statusbar">

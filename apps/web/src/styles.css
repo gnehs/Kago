@@ -1,14 +1,16 @@
 :root {
-  --kago-bg: #f5f5f4;
-  --kago-surface: rgba(255, 255, 255, 0.78);
-  --kago-surface-elevated: rgba(246, 246, 246, 0.9);
+  --kago-bg: #edf1f5;
+  --kago-surface: rgba(255, 255, 255, 0.76);
+  --kago-surface-elevated: rgba(248, 250, 252, 0.92);
   --kago-surface-strong: #ffffff;
-  --kago-border: rgba(0, 0, 0, 0.11);
-  --kago-border-strong: rgba(0, 0, 0, 0.2);
-  --kago-text: #2d2d2f;
-  --kago-text-muted: #7b7b80;
-  --kago-accent: #007aff;
+  --kago-border: rgba(36, 48, 62, 0.12);
+  --kago-border-strong: rgba(36, 48, 62, 0.22);
+  --kago-text: #20252b;
+  --kago-text-muted: #737b86;
+  --kago-accent: #1d73d4;
   --kago-accent-hover: #0a84ff;
+  --kago-teal: #1f9d9a;
+  --kago-amber: #f4b23c;
   --kago-danger: #ff3b30;
   --kago-warning: #ff9f0a;
   --kago-success: #34c759;
@@ -28,7 +30,7 @@
 body {
   margin: 0;
   min-width: 360px;
-  background: #2a415f;
+  background: #182431;
   letter-spacing: 0;
   overflow: hidden;
 }
@@ -100,7 +102,7 @@ svg {
 }
 
 .brand-row.compact {
-  padding: 12px;
+  padding: 10px 12px 14px;
 }
 
 .brand-row h1 {
@@ -327,9 +329,10 @@ select:focus {
   overflow: hidden;
   padding: 0;
   background:
-    radial-gradient(circle at 82% 12%, rgba(255, 215, 150, 0.82), transparent 18%),
-    linear-gradient(136deg, rgba(12, 29, 55, 0.35) 0 28%, transparent 28% 100%),
-    linear-gradient(155deg, #203b63 0%, #426e9e 34%, #9fb8cf 52%, #2d4052 72%, #101a29 100%);
+    radial-gradient(circle at 82% 14%, rgba(255, 219, 145, 0.82), transparent 16%),
+    radial-gradient(circle at 18% 78%, rgba(74, 182, 174, 0.5), transparent 23%),
+    linear-gradient(132deg, rgba(10, 20, 34, 0.55) 0 24%, transparent 24% 100%),
+    linear-gradient(156deg, #1c2b3c 0%, #4c708d 34%, #b8c7d3 54%, #51616d 72%, #111923 100%);
   background-size: cover;
 }
 
@@ -337,8 +340,8 @@ select:focus {
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(120deg, rgba(255, 255, 255, 0.12), transparent 28%),
-    linear-gradient(18deg, rgba(5, 12, 22, 0.75) 0 18%, transparent 18% 100%);
+    linear-gradient(120deg, rgba(255, 255, 255, 0.14), transparent 30%),
+    linear-gradient(18deg, rgba(5, 12, 22, 0.64) 0 16%, transparent 16% 100%);
   content: "";
 }
 
@@ -362,18 +365,22 @@ select:focus {
 }
 
 .desktop-launcher {
-  margin-left: 10px;
-  border-radius: 0 0 5px 5px;
-  background: rgba(18, 27, 40, 0.72);
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.12) inset;
+  margin-left: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-top: 0;
+  border-radius: 0 0 8px 8px;
+  background: rgba(25, 35, 49, 0.76);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18), 0 1px 0 rgba(255, 255, 255, 0.12) inset;
   backdrop-filter: blur(18px);
 }
 
 .desktop-status {
-  margin-right: 10px;
-  border-radius: 0 0 5px 5px;
-  background: rgba(24, 26, 32, 0.74);
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.1) inset;
+  margin-right: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-top: 0;
+  border-radius: 0 0 8px 8px;
+  background: rgba(25, 28, 35, 0.74);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18), 0 1px 0 rgba(255, 255, 255, 0.1) inset;
   backdrop-filter: blur(18px);
 }
 
@@ -401,33 +408,35 @@ select:focus {
 .desktop-icons {
   position: absolute;
   z-index: 20;
-  top: 72px;
-  left: 34px;
+  top: 74px;
+  left: 42px;
   display: grid;
-  gap: 28px;
-  width: 96px;
+  gap: 22px;
+  width: 104px;
 }
 
 .desktop-icons button {
   display: grid;
   justify-items: center;
-  gap: 8px;
+  gap: 9px;
   background: transparent;
   color: white;
   text-shadow: 0 1px 8px rgba(0, 0, 0, 0.55);
   font-size: 13px;
   font-weight: 700;
+  line-height: 1.2;
 }
 
 .desktop-icon-tile {
   display: grid;
-  width: 58px;
-  height: 58px;
+  width: 60px;
+  height: 60px;
   place-items: center;
-  border-radius: 14px;
-  background: linear-gradient(180deg, #f7fbff 0%, #78c7ff 48%, #ffbd22 49%, #f68f12 100%);
-  box-shadow: 0 11px 22px rgba(0, 0, 0, 0.24), 0 1px 0 rgba(255, 255, 255, 0.8) inset;
-  color: #115a93;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 15px;
+  background: linear-gradient(180deg, #fafdff 0%, #dcecff 44%, #ffc94d 45%, #f19925 100%);
+  box-shadow: 0 14px 26px rgba(0, 0, 0, 0.28), 0 1px 0 rgba(255, 255, 255, 0.9) inset;
+  color: #246189;
 }
 
 .desktop-icon-tile svg {
@@ -438,21 +447,21 @@ select:focus {
 .desktop-window {
   position: absolute;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.48);
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.84);
-  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.24);
-  backdrop-filter: blur(18px);
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.52);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(26px);
 }
 
 .desktop-window-background {
-  top: 78px;
-  right: 52px;
-  bottom: 36px;
-  left: 220px;
+  top: 64px;
+  right: 42px;
+  bottom: 28px;
+  left: 184px;
   z-index: 10;
   display: grid;
-  grid-template-columns: 260px minmax(0, 1fr) 300px;
+  grid-template-columns: 232px minmax(0, 1fr);
   overflow: visible;
 }
 
@@ -466,17 +475,26 @@ select:focus {
 
 .sidebar {
   overflow: auto;
-  border-radius: 0;
-  padding: 10px 10px 14px;
+  border-radius: 20px 0 0 20px;
+  padding: 12px 10px 14px;
 }
 
 .inspector {
+  position: absolute;
+  z-index: 720;
+  top: 82px;
+  right: 20px;
   min-width: 0;
+  width: min(320px, calc(100vw - 48px));
+  max-height: calc(100% - 110px);
+  overflow: auto;
+  border: 1px solid rgba(36, 48, 62, 0.14);
   border-right: 0;
-  border-left: 1px solid var(--kago-border);
-  border-radius: 0;
-  padding: 22px;
-  background: rgba(255, 255, 255, 0.88);
+  border-radius: 18px;
+  padding: 18px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 18px 52px rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(22px);
 }
 
 .inspector header,
@@ -522,7 +540,7 @@ select:focus {
 .root-list,
 .mini-form {
   display: grid;
-  gap: 6px;
+  gap: 5px;
   padding: 6px;
 }
 
@@ -531,21 +549,22 @@ select:focus {
   justify-content: flex-start;
   width: 100%;
   background: transparent;
-  color: #222;
-  padding: 7px 10px;
-  font-weight: 600;
+  color: #2b333b;
+  padding: 7px 9px;
+  font-size: 13px;
+  font-weight: 650;
 }
 
 .side-item.active,
 .side-item:hover,
 .root-button:hover {
-  background: rgba(0, 0, 0, 0.08);
+  background: rgba(36, 48, 62, 0.08);
   color: var(--kago-text);
 }
 
 .side-section {
   display: block;
-  margin: 18px 8px 6px;
+  margin: 16px 8px 5px;
   color: #8a8a8e;
   font-size: 12px;
   font-weight: 700;
@@ -575,7 +594,17 @@ select:focus {
 }
 
 .mini-form {
-  margin-top: auto;
+  gap: 7px;
+  margin-top: 10px;
+  border-top: 1px solid rgba(36, 48, 62, 0.08);
+  padding-top: 12px;
+}
+
+.mini-form input {
+  min-height: 34px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.64);
+  font-size: 12px;
 }
 
 .mini-form button {
@@ -584,8 +613,11 @@ select:focus {
   gap: 8px;
   min-height: 34px;
   border: 1px solid var(--kago-border);
-  border-radius: var(--kago-radius-md);
-  background: rgba(255, 255, 255, 0.74);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.7);
+  color: #334250;
+  font-size: 13px;
+  font-weight: 650;
 }
 
 .sidebar-footer {
@@ -603,7 +635,8 @@ select:focus {
   position: relative;
   overflow: visible;
   min-height: 0;
-  background: rgba(255, 255, 255, 0.94);
+  border-radius: 0 20px 20px 0;
+  background: rgba(248, 251, 253, 0.72);
 }
 
 .top-strip {
@@ -618,9 +651,24 @@ select:focus {
   gap: 18px;
   height: 66px;
   border-bottom: 1px solid var(--kago-border);
-  background: rgba(250, 252, 254, 0.9);
+  border-radius: 0 20px 0 0;
+  background: rgba(250, 252, 254, 0.72);
   padding: 0 18px;
   backdrop-filter: blur(24px);
+  overflow: hidden;
+}
+
+.top-strip .toolbar-cluster {
+  display: none;
+}
+
+.top-strip .top-actions {
+  margin-left: auto;
+}
+
+.top-strip .search-pill {
+  min-width: 180px;
+  width: 210px;
 }
 
 .finder-nav,
@@ -646,8 +694,9 @@ select:focus {
   gap: 4px;
   min-width: 38px;
   height: 38px;
-  border-radius: 9999px;
-  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(36, 48, 62, 0.08);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.68);
   color: #59595d;
   padding: 0 10px;
 }
@@ -659,8 +708,9 @@ select:focus {
 }
 
 .view-segment {
-  border-radius: 9999px;
-  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(36, 48, 62, 0.08);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.62);
   padding: 4px;
 }
 
@@ -675,8 +725,9 @@ select:focus {
   gap: 8px;
   min-width: min(340px, 28vw);
   height: 38px;
+  border: 1px solid rgba(36, 48, 62, 0.08);
   border-radius: 9999px;
-  background: rgba(244, 244, 244, 0.9);
+  background: rgba(255, 255, 255, 0.66);
   color: #777;
   padding: 0 14px;
 }
@@ -698,15 +749,45 @@ select:focus {
 }
 
 .root-picker-inner {
-  width: min(560px, calc(100vw - 80px));
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  border-radius: 24px;
-  background: rgba(255, 255, 255, 0.82);
-  padding: 24px;
+  display: grid;
+  justify-items: center;
+  width: min(520px, calc(100vw - 80px));
+  gap: 12px;
+  border: 1px dashed rgba(36, 48, 62, 0.18);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.52);
+  padding: 28px;
+  text-align: center;
 }
 
 .root-picker-inner h2 {
-  margin: 12px 0;
+  margin: 0;
+  color: #25313d;
+  font-size: 24px;
+}
+
+.root-picker-inner p {
+  max-width: 380px;
+  margin: 0;
+  color: var(--kago-text-muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.root-picker-mark {
+  display: grid;
+  width: 58px;
+  height: 58px;
+  place-items: center;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #ffffff, #e5eef6);
+  color: #597188;
+  box-shadow: 0 12px 28px rgba(40, 60, 80, 0.14), 0 1px 0 rgba(255, 255, 255, 0.96) inset;
+}
+
+.root-picker-mark svg {
+  width: 28px;
+  height: 28px;
 }
 
 .picker-grid {
@@ -721,46 +802,46 @@ select:focus {
   gap: 10px;
   min-height: 72px;
   border: 1px solid rgba(0, 0, 0, 0.08);
-  border-radius: 16px;
-  background: rgba(246, 246, 246, 0.82);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.72);
   padding: 12px;
 }
 
 .file-window {
   position: absolute;
   display: grid;
-  grid-template-rows: 44px minmax(0, 1fr);
-  min-width: 860px;
+  grid-template-rows: 42px minmax(0, 1fr);
+  min-width: 760px;
   min-height: 500px;
   overflow: hidden;
-  border: 1px solid rgba(0, 0, 0, 0.18);
+  border: 1px solid rgba(36, 48, 62, 0.16);
   border-radius: 18px;
-  background: rgba(252, 253, 254, 0.94);
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.22);
-  backdrop-filter: blur(22px);
+  background: rgba(252, 253, 254, 0.96);
+  box-shadow: 0 22px 58px rgba(0, 0, 0, 0.24);
+  backdrop-filter: blur(24px);
 }
 
 .file-window.focused {
-  border-color: rgba(0, 0, 0, 0.16);
-  box-shadow: 0 30px 86px rgba(0, 0, 0, 0.32);
+  border-color: rgba(36, 48, 62, 0.18);
+  box-shadow: 0 32px 92px rgba(0, 0, 0, 0.34);
 }
 
 .file-window.maximized {
-  inset: 54px -250px 18px -320px;
+  inset: 48px 18px 18px 18px;
   width: auto;
   height: auto;
 }
 
 .finder-window-body {
   display: grid;
-  grid-template-columns: 190px minmax(0, 1fr) 230px;
+  grid-template-columns: 196px minmax(0, 1fr) 200px;
   min-height: 0;
 }
 
 .window-finder-sidebar {
   overflow: auto;
-  border-right: 1px solid rgba(0, 0, 0, 0.08);
-  background: rgba(239, 248, 255, 0.82);
+  border-right: 1px solid rgba(36, 48, 62, 0.1);
+  background: linear-gradient(180deg, rgba(239, 247, 252, 0.9), rgba(230, 244, 249, 0.84));
   padding: 14px 10px;
 }
 
@@ -784,7 +865,7 @@ select:focus {
   min-height: 31px;
   border-radius: 9px;
   background: transparent;
-  color: #1f1f21;
+  color: #27313a;
   padding: 0 10px;
   font-weight: 650;
 }
@@ -805,18 +886,18 @@ select:focus {
 
 .window-side-nav button:hover,
 .window-side-nav button.selected {
-  background: rgba(92, 146, 202, 0.15);
+  background: rgba(29, 115, 212, 0.12);
 }
 
 .window-content {
   display: grid;
-  grid-template-rows: 96px minmax(0, 1fr) 32px;
+  grid-template-rows: 88px minmax(0, 1fr) 32px;
   min-width: 0;
 }
 
 .window-preview-pane {
-  border-left: 1px solid rgba(0, 0, 0, 0.08);
-  background: rgba(246, 251, 255, 0.78);
+  border-left: 1px solid rgba(36, 48, 62, 0.09);
+  background: rgba(249, 252, 253, 0.8);
   padding: 10px 14px;
 }
 
@@ -865,7 +946,7 @@ select:focus {
 
 .window-titlebar {
   cursor: grab;
-  background: rgba(249, 250, 251, 0.94);
+  background: linear-gradient(180deg, rgba(253, 254, 255, 0.95), rgba(241, 244, 247, 0.92));
   color: #404850;
 }
 
@@ -918,22 +999,23 @@ select:focus {
 
 .file-station-toolbar {
   display: grid;
-  grid-template-rows: 48px 48px;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.09);
-  background: rgba(252, 254, 255, 0.9);
+  grid-template-rows: 44px 44px;
+  border-bottom: 1px solid rgba(36, 48, 62, 0.1);
+  background: rgba(252, 254, 255, 0.82);
+  backdrop-filter: blur(14px);
 }
 
 .address-row,
 .action-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   min-width: 0;
-  padding: 6px 12px;
+  padding: 5px 12px;
 }
 
 .address-row {
-  border-bottom: 1px solid rgba(0, 0, 0, 0.07);
+  border-bottom: 1px solid rgba(36, 48, 62, 0.07);
 }
 
 .nav-cluster,
@@ -950,9 +1032,9 @@ select:focus {
   min-width: 180px;
   flex: 1;
   height: 34px;
-  border: 1px solid rgba(150, 166, 180, 0.35);
-  border-radius: 5px;
-  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(125, 145, 164, 0.28);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.86);
   padding: 0 8px;
 }
 
@@ -962,31 +1044,34 @@ select:focus {
 
 .action-row .tool-button {
   flex: 0 0 auto;
-  min-height: 34px;
-  border-color: rgba(145, 164, 181, 0.28);
-  border-radius: 5px;
-  background: #eef4f8;
-  color: #394652;
-  font-weight: 700;
+  min-height: 32px;
+  border-color: rgba(125, 145, 164, 0.24);
+  border-radius: 8px;
+  background: rgba(237, 244, 249, 0.86);
+  color: #334250;
+  font-size: 13px;
+  font-weight: 650;
   white-space: nowrap;
 }
 
 .action-row .tool-button:hover {
-  background: #e4edf4;
+  background: rgba(222, 235, 245, 0.95);
 }
 
 .window-view-tools {
   margin-left: auto;
-  border-radius: 5px;
-  background: #eef4f8;
+  border: 1px solid rgba(125, 145, 164, 0.24);
+  border-radius: 9px;
+  background: rgba(237, 244, 249, 0.86);
+  overflow: hidden;
 }
 
 .window-view-tools button {
   display: grid;
-  width: 34px;
-  height: 34px;
+  width: 33px;
+  height: 32px;
   place-items: center;
-  border-left: 1px solid rgba(145, 164, 181, 0.22);
+  border-left: 1px solid rgba(125, 145, 164, 0.2);
   background: transparent;
   color: #3f4b56;
 }
@@ -997,7 +1082,7 @@ select:focus {
 
 .window-view-tools button:hover,
 .window-view-tools .selected {
-  background: #dae7f0;
+  background: rgba(202, 223, 239, 0.78);
 }
 
 .breadcrumb {
@@ -1036,8 +1121,8 @@ select:focus {
 
 .file-list {
   overflow: auto;
-  padding: 0 12px 8px;
-  background: rgba(255, 255, 255, 0.94);
+  padding: 0 10px 8px;
+  background: rgba(255, 255, 255, 0.96);
 }
 
 .file-list.grid {
@@ -1049,13 +1134,13 @@ select:focus {
 
 .file-row {
   display: grid;
-  grid-template-columns: 22px minmax(110px, 1fr) 56px 84px 82px 28px 28px 28px 28px;
+  grid-template-columns: 24px minmax(140px, 1fr) 68px 100px 102px 30px 30px 30px 30px;
   align-items: center;
-  gap: 6px;
-  min-height: 34px;
-  border-radius: 3px;
-  color: #3f3f43;
-  padding: 0 6px;
+  gap: 7px;
+  min-height: 35px;
+  border-radius: 7px;
+  color: #39424b;
+  padding: 0 8px;
   font-size: 13px;
 }
 
@@ -1064,27 +1149,27 @@ select:focus {
   top: 0;
   z-index: 1;
   display: grid;
-  grid-template-columns: minmax(132px, 1fr) 56px 84px 82px 28px 28px 28px 28px;
+  grid-template-columns: minmax(164px, 1fr) 68px 100px 102px 30px 30px 30px 30px;
   align-items: center;
-  min-height: 34px;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  min-height: 35px;
+  border-bottom: 1px solid rgba(36, 48, 62, 0.09);
   background: rgba(255, 255, 255, 0.96);
   color: #8a8a8e;
-  padding: 0 6px 0 30px;
+  padding: 0 8px 0 32px;
   font-size: 12px;
   font-weight: 700;
 }
 
 .file-list.list .file-row:nth-of-type(even) {
-  background: rgba(61, 74, 89, 0.045);
+  background: rgba(36, 48, 62, 0.035);
 }
 
 .file-list.grid .file-row {
   grid-template-columns: 1fr;
   justify-items: center;
   min-height: 152px;
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  background: rgba(246, 246, 246, 0.8);
+  border: 1px solid rgba(36, 48, 62, 0.08);
+  background: rgba(247, 250, 252, 0.86);
   text-align: center;
 }
 
@@ -1113,8 +1198,17 @@ select:focus {
 
 .file-row:hover,
 .file-row.selected {
-  background: rgba(64, 142, 214, 0.16);
+  background: rgba(29, 115, 212, 0.12);
   color: #111;
+}
+
+.file-list.list .file-row .icon-button {
+  opacity: 0.2;
+}
+
+.file-list.list .file-row:hover .icon-button,
+.file-list.list .file-row.selected .icon-button {
+  opacity: 1;
 }
 
 .file-name {
@@ -1140,7 +1234,28 @@ select:focus {
   display: grid;
   min-height: 180px;
   place-items: center;
+  border-radius: 14px;
   color: var(--kago-text-muted);
+  font-size: 13px;
+}
+
+.file-empty {
+  align-content: center;
+  gap: 8px;
+  margin-top: 36px;
+  border: 1px dashed rgba(36, 48, 62, 0.14);
+  background: linear-gradient(180deg, rgba(248, 251, 253, 0.76), rgba(255, 255, 255, 0.9));
+}
+
+.file-empty svg {
+  width: 34px;
+  height: 34px;
+  color: #d99a1b;
+  fill: rgba(244, 178, 60, 0.2);
+}
+
+.file-empty strong {
+  color: #39424b;
 }
 
 .empty-state.error {
@@ -1552,6 +1667,82 @@ select:focus {
   .file-row a.icon-button,
   .file-header span:nth-last-child(-n + 4) {
     display: none;
+  }
+}
+
+@media (max-width: 520px) {
+  .desktop-window-background {
+    left: 72px;
+  }
+
+  .top-strip .view-segment,
+  .address-row .window-search {
+    display: none;
+  }
+
+  .finder-nav strong {
+    min-width: 0;
+    max-width: 110px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .file-window {
+    left: -128px !important;
+    width: calc(100vw - 30px) !important;
+  }
+
+  .file-window.maximized {
+    inset: 44px 14px 10px -128px;
+  }
+
+  .address-row {
+    padding-right: 10px;
+  }
+
+  .address-field {
+    min-width: 0;
+  }
+
+  .action-row {
+    gap: 6px;
+    padding-right: 10px;
+  }
+
+  .action-row .tool-button {
+    min-width: max-content;
+  }
+
+  .action-row > button.tool-button:nth-of-type(n + 3),
+  .action-row .window-view-tools {
+    display: none;
+  }
+
+  .file-row,
+  .file-header {
+    grid-template-columns: 22px minmax(130px, 1fr) 64px;
+  }
+
+  .file-row > span:nth-of-type(3),
+  .file-row > span:nth-of-type(4),
+  .file-header span:nth-child(3),
+  .file-header span:nth-child(4) {
+    display: none;
+  }
+
+  .statusbar {
+    gap: 8px;
+  }
+
+  .pathbar {
+    max-width: 170px;
+  }
+
+  .inspector {
+    right: 10px;
+    left: 10px;
+    width: auto;
   }
 }
 

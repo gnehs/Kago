@@ -18,12 +18,14 @@ const ts = () => Date.now();
 const titleFromPath = (logicalPath: string, rootSlug: string) => logicalPath === "/" ? rootSlug : logicalPath.split("/").filter(Boolean).at(-1) ?? rootSlug;
 const initialGeometry = (index: number) => {
   const viewportWidth = typeof globalThis.innerWidth === "number" ? globalThis.innerWidth : 1280;
-  const width = Math.max(760, Math.min(980, viewportWidth - 560));
+  const viewportHeight = typeof globalThis.innerHeight === "number" ? globalThis.innerHeight : 820;
+  const width = Math.max(760, Math.min(1180, viewportWidth - 440));
+  const height = Math.max(560, Math.min(720, viewportHeight - 150));
   return {
-    x: 60 + index * 32,
-    y: 220 + index * 28,
+    x: Math.max(-180, Math.round((viewportWidth - width) / 2) - 420 + index * 30),
+    y: 74 + index * 26,
     width,
-    height: 620
+    height
   };
 };
 
