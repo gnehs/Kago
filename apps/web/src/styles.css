@@ -2557,6 +2557,25 @@ body {
   background: transparent;
 }
 
+.workspace-notice {
+  position: absolute;
+  z-index: 980;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  min-height: 38px;
+  border: 1px solid rgba(255, 255, 255, 0.56);
+  border-radius: 999px;
+  background: rgba(248, 251, 253, 0.86);
+  box-shadow: 0 18px 40px rgba(5, 12, 20, 0.18);
+  backdrop-filter: blur(24px) saturate(1.18);
+  color: #31404c;
+  padding: 9px 16px;
+  font-size: 13px;
+  font-weight: 680;
+  pointer-events: none;
+}
+
 .root-picker {
   height: 100%;
   padding: 0 24px 0 156px;

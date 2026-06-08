@@ -209,6 +209,7 @@ function Workspace({ userEmail }: { userEmail: string }) {
   const store = useWorkspaceStore();
   const queryClient = useQueryClient();
   const saveTimer = useRef<number | null>(null);
+  const noticeTimer = useRef<number | null>(null);
   const [trashOpen, setTrashOpen] = useState(false);
   const [auditOpen, setAuditOpen] = useState(false);
 
@@ -223,6 +224,17 @@ function Workspace({ userEmail }: { userEmail: string }) {
       saveWorkspace.mutate(store.snapshot());
     }, 700);
   }, [store.windows, store.activeWindowId, store.sidebar, store.inspector, store.shelf]);
+
+  useEffect(() => {
+    if (noticeTimer.current) window.clearTimeout(noticeTimer.current);
+    if (!store.notice) return;
+    noticeTimer.current = window.setTimeout(() => {
+      store.clearNotice();
+    }, 2600);
+    return () => {
+      if (noticeTimer.current) window.clearTimeout(noticeTimer.current);
+    };
+  }, [store, store.notice]);
 
   useEffect(() => {
     const protocol = location.protocol === "https:" ? "wss" : "ws";
@@ -327,6 +339,7 @@ function Workspace({ userEmail }: { userEmail: string }) {
       <DesktopTopBar userEmail={userEmail} onOpenAudit={() => setAuditOpen(true)} onLogout={logout} />
       <DesktopIcons roots={rootList} onOpenTrash={() => setTrashOpen(true)} onOpenAudit={() => setAuditOpen(true)} />
       <section className={`workspace-canvas desktop-canvas ${showInspector ? "inspector-visible" : ""} ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
+        {store.notice ? <div className="workspace-notice">{store.notice}</div> : null}
         {store.windows.length === 0 ? <RootPicker roots={rootList} /> : null}
         {store.windows.map((window) => (
           <FileWindowView key={window.id} window={window} />

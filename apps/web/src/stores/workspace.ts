@@ -4,6 +4,7 @@ import type { FileWindow, Root, WorkspaceState } from "../types/kago";
 type WorkspaceStore = WorkspaceState & {
   hydrated: boolean;
   nextZ: number;
+  notice: string | null;
   hydrate: (workspace: WorkspaceState) => void;
   openRoot: (root: Root) => void;
   openWindow: (partial: Pick<FileWindow, "rootSlug" | "logicalPath" | "title">) => void;
@@ -13,6 +14,7 @@ type WorkspaceStore = WorkspaceState & {
   updateSidebar: (patch: Partial<WorkspaceState["sidebar"]>) => void;
   updateInspector: (patch: Partial<WorkspaceState["inspector"]>) => void;
   updateShelf: (patch: Partial<WorkspaceState["shelf"]>) => void;
+  clearNotice: () => void;
   selectItems: (id: string, items: string[]) => void;
   snapshot: () => WorkspaceState;
 };
@@ -56,12 +58,14 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   inspector: { open: true, width: 320 },
   shelf: { collapsed: false, x: 360, y: 680 },
   nextZ: 120,
+  notice: null,
   hydrate: (workspace) =>
     set({
       ...workspace,
       windows: workspace.windows.map(fitGeometry),
       hydrated: true,
-      nextZ: Math.max(120, ...workspace.windows.map((window) => window.zIndex + 1))
+      nextZ: Math.max(120, ...workspace.windows.map((window) => window.zIndex + 1)),
+      notice: null
     }),
   openRoot: (root) => {
     const existing = get().windows.find((window) => window.rootSlug === root.slug && window.logicalPath === "/");
@@ -73,7 +77,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   },
   openWindow: (partial) =>
     set((state) => {
-      if (state.windows.length >= 12) return state;
+      if (state.windows.length >= 12) return { notice: "已達視窗數量上限" };
       const index = state.windows.length;
       const id = `win_${crypto.randomUUID()}`;
       const geometry = initialGeometry(index);
@@ -100,7 +104,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       return {
         windows: [...state.windows.map((item) => ({ ...item, focused: false })), window],
         activeWindowId: id,
-        nextZ: state.nextZ + 1
+        nextZ: state.nextZ + 1,
+        notice: null
       };
     }),
   closeWindow: (id) =>
@@ -139,6 +144,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     set((state) => ({
       shelf: { ...state.shelf, ...patch }
     })),
+  clearNotice: () => set({ notice: null }),
   selectItems: (id, items) =>
     set((state) => ({
       windows: state.windows.map((window) => (window.id === id ? { ...window, selectedItems: items } : window))
