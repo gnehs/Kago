@@ -503,6 +503,7 @@ function FileWindowView({ window }: { window: FileWindow }) {
   const [drag, setDrag] = useState<{ startX: number; startY: number; x: number; y: number } | null>(null);
   const [resize, setResize] = useState<{ startX: number; startY: number; width: number; height: number } | null>(null);
   const [dropChoice, setDropChoice] = useState<{ items: Array<{ rootSlug: string; path: string }> } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ item: FileItem; x: number; y: number } | null>(null);
 
   useEffect(() => {
     function move(event: MouseEvent) {
@@ -530,6 +531,20 @@ function FileWindowView({ window }: { window: FileWindow }) {
       globalThis.removeEventListener("mouseup", up);
     };
   }, [drag, resize, store, window.id, window.width]);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    function closeMenu(event: MouseEvent | KeyboardEvent) {
+      if (event instanceof KeyboardEvent && event.key !== "Escape") return;
+      setContextMenu(null);
+    }
+    globalThis.addEventListener("click", closeMenu);
+    globalThis.addEventListener("keydown", closeMenu);
+    return () => {
+      globalThis.removeEventListener("click", closeMenu);
+      globalThis.removeEventListener("keydown", closeMenu);
+    };
+  }, [contextMenu]);
 
   const sortedItems = useMemo(() => {
     const items = [...(fileList.data?.items ?? [])];
@@ -603,6 +618,56 @@ function FileWindowView({ window }: { window: FileWindow }) {
     for (const file of files) form.append("file", file);
     await api("/api/fs/upload", { method: "POST", body: form });
     event.target.value = "";
+    await queryClient.invalidateQueries({ queryKey: ["fs", "list", window.rootSlug, window.logicalPath] });
+  }
+
+  function openContextMenu(event: React.MouseEvent<HTMLElement>, item: FileItem) {
+    event.preventDefault();
+    event.stopPropagation();
+    store.selectItems(window.id, [item.path]);
+    const host = event.currentTarget.closest(".file-window") as HTMLElement | null;
+    const rect = host?.getBoundingClientRect();
+    const x = rect ? event.clientX - rect.left : event.clientX;
+    const y = rect ? event.clientY - rect.top : event.clientY;
+    setContextMenu({ item, x: Math.max(8, Math.min(x, window.width - 190)), y: Math.max(44, Math.min(y, window.height - 250)) });
+  }
+
+  function openItem(item: FileItem, newWindow = false) {
+    setContextMenu(null);
+    if (item.kind === "folder") {
+      if (newWindow) store.openWindow({ rootSlug: window.rootSlug, logicalPath: item.path, title: item.name });
+      else store.updateWindow(window.id, { logicalPath: item.path, selectedItems: [] });
+      return;
+    }
+    globalThis.open(downloadUrl(window.rootSlug, item.path), "_blank");
+  }
+
+  async function addItemToShelf(item: FileItem) {
+    setContextMenu(null);
+    const shelves = await api<Array<{ id: string }>>("/api/shelves");
+    const shelfId = shelves[0]?.id;
+    if (!shelfId) return;
+    await api(`/api/shelves/${shelfId}/items`, { method: "POST", body: JSON.stringify({ rootSlug: window.rootSlug, path: item.path }) });
+    await queryClient.invalidateQueries({ queryKey: ["shelves"] });
+  }
+
+  async function renameContextItem(item: FileItem) {
+    setContextMenu(null);
+    if (readonly || item.readonly) return;
+    const nextName = prompt("新的名稱", item.name);
+    if (!nextName || nextName === item.name) return;
+    await api("/api/fs/rename", { method: "POST", body: JSON.stringify({ rootSlug: window.rootSlug, path: item.path, name: nextName }) });
+    await queryClient.invalidateQueries({ queryKey: ["fs", "list", window.rootSlug, window.logicalPath] });
+  }
+
+  async function trashContextItem(item: FileItem) {
+    setContextMenu(null);
+    if (readonly || item.readonly) return;
+    await api("/api/tasks", {
+      method: "POST",
+      body: JSON.stringify({ type: "delete_to_trash", sources: [{ rootSlug: window.rootSlug, path: item.path }] })
+    });
+    await queryClient.invalidateQueries({ queryKey: ["tasks"] });
     await queryClient.invalidateQueries({ queryKey: ["fs", "list", window.rootSlug, window.logicalPath] });
   }
 
@@ -698,7 +763,9 @@ function FileWindowView({ window }: { window: FileWindow }) {
                     <span>{readonly ? "這個 root 是唯讀模式。" : "你可以建立資料夾或上傳檔案。"}</span>
                   </div>
                 )}
-                {sortedItems.map((item) => <FileRow key={item.path} item={item} window={window} readonly={readonly} />)}
+                {sortedItems.map((item) => (
+                  <FileRow key={item.path} item={item} window={window} readonly={readonly} onOpenContext={openContextMenu} />
+                ))}
               </div>
               <div className="statusbar">
                 <span className="pathbar"><HardDrive /> {window.rootSlug} <ChevronRight /> {window.logicalPath === "/" ? window.title : window.logicalPath.split("/").filter(Boolean).join(" › ")}</span>
@@ -725,6 +792,26 @@ function FileWindowView({ window }: { window: FileWindow }) {
           <button onClick={() => setDropChoice(null)}>取消</button>
         </div>
       )}
+      {contextMenu ? (
+        <div
+          className="context-menu"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <button onClick={() => openItem(contextMenu.item)}>
+            {contextMenu.item.kind === "folder" ? <FolderOpen /> : <Download />} 開啟
+          </button>
+          {contextMenu.item.kind === "folder" ? (
+            <button onClick={() => openItem(contextMenu.item, true)}><CirclePlus /> 在新視窗開啟</button>
+          ) : (
+            <a href={downloadUrl(window.rootSlug, contextMenu.item.path)}><Download /> 下載</a>
+          )}
+          <button onClick={() => void addItemToShelf(contextMenu.item)}><Archive /> 加入中轉區</button>
+          <span />
+          <button disabled={readonly || contextMenu.item.readonly} onClick={() => void renameContextItem(contextMenu.item)}><Pencil /> 重新命名</button>
+          <button className="danger" disabled={readonly || contextMenu.item.readonly} onClick={() => void trashContextItem(contextMenu.item)}><Trash2 /> 移到垃圾桶</button>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -763,7 +850,7 @@ function Breadcrumb({ window }: { window: FileWindow }) {
   );
 }
 
-function FileRow({ item, window, readonly }: { item: FileItem; window: FileWindow; readonly: boolean }) {
+function FileRow({ item, window, readonly, onOpenContext }: { item: FileItem; window: FileWindow; readonly: boolean; onOpenContext: (event: React.MouseEvent<HTMLElement>, item: FileItem) => void }) {
   const store = useWorkspaceStore();
   const selected = window.selectedItems.includes(item.path);
   const queryClient = useQueryClient();
@@ -788,6 +875,7 @@ function FileRow({ item, window, readonly }: { item: FileItem; window: FileWindo
         event.dataTransfer.setData("application/kago-file", JSON.stringify({ rootSlug: window.rootSlug, path: item.path }));
       }}
       onClick={() => store.selectItems(window.id, selected ? [] : [item.path])}
+      onContextMenu={(event) => onOpenContext(event, item)}
       onDoubleClick={() => {
         if (item.kind === "folder") store.updateWindow(window.id, { logicalPath: item.path, selectedItems: [] });
         else globalThis.open(downloadUrl(window.rootSlug, item.path), "_blank");

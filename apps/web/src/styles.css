@@ -1356,6 +1356,60 @@ select:focus {
   line-height: 1.4;
 }
 
+.context-menu {
+  position: absolute;
+  z-index: 800;
+  display: grid;
+  min-width: 188px;
+  gap: 3px;
+  border: 1px solid rgba(36, 48, 62, 0.18);
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.24);
+  padding: 6px;
+  backdrop-filter: blur(22px);
+}
+
+.context-menu button,
+.context-menu a {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  min-height: 30px;
+  border-radius: 7px;
+  background: transparent;
+  color: #26313c;
+  padding: 0 9px;
+  font-size: 13px;
+  font-weight: 650;
+  text-align: left;
+  text-decoration: none;
+}
+
+.context-menu button:hover,
+.context-menu a:hover {
+  background: rgba(29, 115, 212, 0.11);
+}
+
+.context-menu button:disabled {
+  color: #a0a8b0;
+}
+
+.context-menu button:disabled:hover {
+  background: transparent;
+}
+
+.context-menu .danger:not(:disabled) {
+  color: #b42318;
+}
+
+.context-menu > span {
+  height: 1px;
+  margin: 3px 4px;
+  background: rgba(36, 48, 62, 0.1);
+}
+
 .floating-shelf,
 .task-center {
   position: absolute;
