@@ -1409,6 +1409,9 @@ function Inspector() {
   const [tagName, setTagName] = useState("");
   const [shareMode, setShareMode] = useState<"download" | "view_only" | "upload_only">("download");
   const [shareUrl, setShareUrl] = useState("");
+  const [sharePassword, setSharePassword] = useState("");
+  const [shareExpiresDays, setShareExpiresDays] = useState("");
+  const [shareMaxDownloads, setShareMaxDownloads] = useState("");
   const [userEmail, setUserEmail] = useState("");
   const [groupName, setGroupName] = useState("");
   const [permissionUserId, setPermissionUserId] = useState("");
@@ -1460,13 +1463,28 @@ function Inspector() {
 
   async function createShare() {
     if (!activeWindow || !selectedPath) return;
+    const expiresDays = Number(shareExpiresDays);
+    const maxDownloads = Number(shareMaxDownloads);
+    const body = {
+      rootSlug: activeWindow.rootSlug,
+      path: selectedPath,
+      mode: shareMode,
+      ...(sharePassword ? { password: sharePassword } : {}),
+      ...(Number.isFinite(expiresDays) && expiresDays > 0 ? { expiresAt: Math.floor(Date.now() / 1000) + expiresDays * 86400 } : {}),
+      ...(Number.isFinite(maxDownloads) && maxDownloads > 0 ? { maxDownloads } : {})
+    };
     const share = await api<{ token: string }>("/api/shares", {
       method: "POST",
-      body: JSON.stringify({ rootSlug: activeWindow.rootSlug, path: selectedPath, mode: shareMode })
+      body: JSON.stringify(body)
     });
     setShareUrl(`${location.origin}/s/${share.token}`);
+    setSharePassword("");
+    setShareExpiresDays("");
+    setShareMaxDownloads("");
     await queryClient.invalidateQueries({ queryKey: ["shares"] });
   }
+
+  const sharePasswordInvalid = Boolean(sharePassword && sharePassword.length < 8);
 
   async function setShareDisabled(shareId: string, disabled: boolean) {
     await api(`/api/shares/${shareId}`, { method: "PATCH", body: JSON.stringify({ disabled }) });
@@ -1600,7 +1618,29 @@ function Inspector() {
             <option value="view_only">檢視</option>
             <option value="upload_only">只允許上傳</option>
           </select>
-          <button className="tool-button" onClick={createShare} disabled={!selectedPath}><Share2 /> 建立</button>
+          <button className="tool-button" onClick={createShare} disabled={!selectedPath || sharePasswordInvalid}><Share2 /> 建立</button>
+        </div>
+        <div className="share-options-grid">
+          <input
+            type="password"
+            placeholder="密碼（至少 8 字）"
+            value={sharePassword}
+            onChange={(event) => setSharePassword(event.target.value)}
+          />
+          <input
+            type="number"
+            min="1"
+            placeholder="有效天數"
+            value={shareExpiresDays}
+            onChange={(event) => setShareExpiresDays(event.target.value)}
+          />
+          <input
+            type="number"
+            min="1"
+            placeholder="下載上限"
+            value={shareMaxDownloads}
+            onChange={(event) => setShareMaxDownloads(event.target.value)}
+          />
         </div>
         {shareUrl && <input readOnly value={shareUrl} />}
       </section>
