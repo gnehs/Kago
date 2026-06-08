@@ -22,13 +22,29 @@ const titleFromPath = (logicalPath: string, rootSlug: string) => logicalPath ===
 const initialGeometry = (index: number) => {
   const viewportWidth = typeof globalThis.innerWidth === "number" ? globalThis.innerWidth : 1280;
   const viewportHeight = typeof globalThis.innerHeight === "number" ? globalThis.innerHeight : 820;
-  const width = Math.max(760, Math.min(1180, viewportWidth - 440));
-  const height = Math.max(560, Math.min(720, viewportHeight - 150));
+  const width = Math.max(820, Math.min(1220, viewportWidth - 220));
+  const height = Math.max(580, Math.min(760, viewportHeight - 150));
   return {
-    x: Math.max(-180, Math.round((viewportWidth - width) / 2) - 420 + index * 30),
-    y: 74 + index * 26,
+    x: Math.max(132, Math.round((viewportWidth - width) / 2) + index * 34),
+    y: 86 + index * 28,
     width,
     height
+  };
+};
+
+const fitGeometry = (window: FileWindow): FileWindow => {
+  const viewportWidth = typeof globalThis.innerWidth === "number" ? globalThis.innerWidth : 1280;
+  const viewportHeight = typeof globalThis.innerHeight === "number" ? globalThis.innerHeight : 820;
+  const minX = viewportWidth > 980 ? 156 : 12;
+  const preferredMinWidth = viewportWidth > 980 ? Math.min(1040, viewportWidth - minX - 28) : 760;
+  const width = Math.max(preferredMinWidth, Math.min(window.width, Math.max(760, viewportWidth - minX - 20)));
+  const height = Math.max(520, Math.min(window.height, Math.max(520, viewportHeight - 78)));
+  return {
+    ...window,
+    width,
+    height,
+    x: Math.max(minX, Math.min(window.x, viewportWidth - Math.min(280, width))),
+    y: Math.max(54, Math.min(window.y, viewportHeight - 120))
   };
 };
 
@@ -43,6 +59,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   hydrate: (workspace) =>
     set({
       ...workspace,
+      windows: workspace.windows.map(fitGeometry),
       hydrated: true,
       nextZ: Math.max(120, ...workspace.windows.map((window) => window.zIndex + 1))
     }),

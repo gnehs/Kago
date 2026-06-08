@@ -311,30 +311,31 @@ function Workspace({ userEmail }: { userEmail: string }) {
   const showInspector = Boolean(activeWindow?.selectedItems.length && store.inspector.open !== false);
   const sidebarCollapsed = Boolean(store.sidebar.collapsed);
 
+  async function logout() {
+    await api("/api/auth/logout", { method: "POST" });
+    await queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
+  }
+
   return (
     <main className="app-shell">
-      <DesktopTopBar userEmail={userEmail} onOpenAudit={() => setAuditOpen(true)} />
+      <DesktopTopBar userEmail={userEmail} onOpenAudit={() => setAuditOpen(true)} onLogout={logout} />
       <DesktopIcons roots={rootList} onOpenTrash={() => setTrashOpen(true)} onOpenAudit={() => setAuditOpen(true)} />
-      <section className={`desktop-window desktop-window-background ${showInspector ? "inspector-visible" : ""} ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
-        <Sidebar roots={rootList} userEmail={userEmail} onOpenTrash={() => setTrashOpen(true)} onOpenAudit={() => setAuditOpen(true)} />
-        <section className="workspace-canvas">
-          <TopStrip />
-          {store.windows.length === 0 ? <RootPicker roots={rootList} /> : null}
-          {store.windows.map((window) => (
-            <FileWindowView key={window.id} window={window} />
-          ))}
-          <FloatingShelf />
-          <TaskCenter />
-          <TrashCenter open={trashOpen} onClose={() => setTrashOpen(false)} />
-          <AuditCenter open={auditOpen} onClose={() => setAuditOpen(false)} />
-        </section>
-        {showInspector ? <Inspector /> : null}
+      <section className={`workspace-canvas desktop-canvas ${showInspector ? "inspector-visible" : ""} ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
+        {store.windows.length === 0 ? <RootPicker roots={rootList} /> : null}
+        {store.windows.map((window) => (
+          <FileWindowView key={window.id} window={window} />
+        ))}
+        <FloatingShelf />
+        <TaskCenter />
+        <TrashCenter open={trashOpen} onClose={() => setTrashOpen(false)} />
+        <AuditCenter open={auditOpen} onClose={() => setAuditOpen(false)} />
       </section>
+      {showInspector ? <Inspector /> : null}
     </main>
   );
 }
 
-function DesktopTopBar({ userEmail, onOpenAudit }: { userEmail: string; onOpenAudit: () => void }) {
+function DesktopTopBar({ userEmail, onOpenAudit, onLogout }: { userEmail: string; onOpenAudit: () => void; onLogout: () => void }) {
   return (
     <header className="desktop-topbar">
       <div className="desktop-launcher">
@@ -344,7 +345,7 @@ function DesktopTopBar({ userEmail, onOpenAudit }: { userEmail: string; onOpenAu
       </div>
       <div className="desktop-status">
         <button title="通知"><MessageCircle /></button>
-        <button title={userEmail}><UserRound /></button>
+        <button title={`登出 ${userEmail}`} onClick={onLogout}><UserRound /></button>
         <button title="稽核紀錄" onClick={onOpenAudit}><SlidersHorizontal /></button>
         <button title="搜尋"><Search /></button>
       </div>
@@ -494,6 +495,22 @@ function TopStrip() {
 
 function RootPicker({ roots }: { roots: Root[] }) {
   const store = useWorkspaceStore();
+  const queryClient = useQueryClient();
+  const [rootName, setRootName] = useState("");
+  const [rootSlug, setRootSlug] = useState("");
+
+  async function createRoot(event: React.FormEvent) {
+    event.preventDefault();
+    if (!rootSlug) return;
+    await api("/api/roots", {
+      method: "POST",
+      body: JSON.stringify({ slug: rootSlug, name: rootName || rootSlug, basePath: `/data/${rootSlug}`, readonly: false })
+    });
+    setRootName("");
+    setRootSlug("");
+    await queryClient.invalidateQueries({ queryKey: ["roots"] });
+  }
+
   return (
     <section className="root-picker">
       <div className="root-picker-inner">
@@ -508,6 +525,11 @@ function RootPicker({ roots }: { roots: Root[] }) {
             </button>
           ))}
         </div>
+        <form className="root-create-form" onSubmit={createRoot}>
+          <input placeholder="root slug" value={rootSlug} onChange={(event) => setRootSlug(event.target.value)} />
+          <input placeholder="顯示名稱" value={rootName} onChange={(event) => setRootName(event.target.value)} />
+          <button className="tool-button" disabled={!rootSlug.trim()}><Plus /> 新增 Root</button>
+        </form>
       </div>
     </section>
   );
