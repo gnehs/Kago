@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { AppWindow, Archive, Boxes, Check, ChevronDown, ChevronLeft, ChevronRight, Circle, CirclePlus, Columns3, Download, FileText, Folder, FolderOpen, Globe2, HardDrive, HelpCircle, Home, LayoutGrid, List, Loader2, LogOut, Maximize2, MessageCircle, Minimize2, MoreHorizontal, PanelRight, Pencil, Plus, Radio, RefreshCw, Search, Server, Settings2, Share2, SlidersHorizontal, Smartphone, Star, Tags, Trash2, Upload, UserRound, X } from "lucide-react";
 import { api, downloadUrl, previewUrl, thumbnailUrl } from "./api/client";
-import { useAudit, useFileList, useFileMeta, useFileTags, useMe, useRoots, useSaveWorkspace, useShelves, useTasks, useTrash, useWorkspace } from "./api/hooks";
+import { useAudit, useFileList, useFileMeta, useFileTags, useMe, useRoots, useSaveWorkspace, useShares, useShelves, useTasks, useTrash, useWorkspace } from "./api/hooks";
 import { useWorkspaceStore } from "./stores/workspace";
 import type { FileItem, FileWindow, Root } from "./types/kago";
 
@@ -1285,6 +1285,9 @@ function Inspector() {
   const selectedCount = activeWindow?.selectedItems.length ?? 0;
   const meta = useFileMeta(activeWindow?.rootSlug ?? "", selectedPath ?? "/", Boolean(activeWindow && selectedPath));
   const fileTags = useFileTags(activeWindow?.rootSlug ?? "", selectedPath ?? "/", Boolean(activeWindow && selectedPath));
+  const shares = useShares();
+  const activeRoot = roots.data?.find((root) => root.slug === activeWindow?.rootSlug);
+  const selectedShares = (shares.data ?? []).filter((share) => share.root_id === activeRoot?.id && share.path === selectedPath);
   const [tagName, setTagName] = useState("");
   const [shareMode, setShareMode] = useState<"download" | "view_only" | "upload_only">("download");
   const [shareUrl, setShareUrl] = useState("");
@@ -1325,6 +1328,12 @@ function Inspector() {
       body: JSON.stringify({ rootSlug: activeWindow.rootSlug, path: selectedPath, mode: shareMode })
     });
     setShareUrl(`${location.origin}/s/${share.token}`);
+    await queryClient.invalidateQueries({ queryKey: ["shares"] });
+  }
+
+  async function setShareDisabled(shareId: string, disabled: boolean) {
+    await api(`/api/shares/${shareId}`, { method: "PATCH", body: JSON.stringify({ disabled }) });
+    await queryClient.invalidateQueries({ queryKey: ["shares"] });
   }
 
   async function createUser() {
@@ -1411,13 +1420,29 @@ function Inspector() {
       </section>
       <section className="inspector-card">
         <h3>分享</h3>
+        <div className="share-status-list">
+          {shares.isLoading ? <span className="tag-empty">讀取分享狀態...</span> : null}
+          {!shares.isLoading && selectedPath && selectedShares.length === 0 ? <span className="tag-empty">此項目尚未建立分享</span> : null}
+          {selectedShares.map((share) => (
+            <div className="share-status-item" key={share.id}>
+              <div>
+                <strong>{shareModeLabel(parseShareMode(share.permission_json))}</strong>
+                <small>{share.disabled ? "已停用" : "啟用中"} · {share.download_count}{share.max_downloads ? `/${share.max_downloads}` : ""} 次下載</small>
+                <small>建立於 {formatUnixDate(share.created_at)}</small>
+              </div>
+              <button className="task-action" onClick={() => void setShareDisabled(share.id, !share.disabled)}>
+                {share.disabled ? "啟用" : "停用"}
+              </button>
+            </div>
+          ))}
+        </div>
         <div className="inline-form">
           <select value={shareMode} onChange={(event) => setShareMode(event.target.value as "download" | "view_only" | "upload_only")}>
             <option value="download">下載</option>
             <option value="view_only">檢視</option>
             <option value="upload_only">只允許上傳</option>
           </select>
-          <button className="tool-button" onClick={createShare}><Share2 /> 建立</button>
+          <button className="tool-button" onClick={createShare} disabled={!selectedPath}><Share2 /> 建立</button>
         </div>
         {shareUrl && <input readOnly value={shareUrl} />}
       </section>
@@ -1490,6 +1515,22 @@ function formatUnixDate(value: number) {
   return new Intl.DateTimeFormat("zh-TW", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(
     new Date(value * 1000)
   );
+}
+
+function parseShareMode(value: string): "download" | "view_only" | "upload_only" {
+  try {
+    const parsed = JSON.parse(value) as { mode?: unknown };
+    if (parsed.mode === "download" || parsed.mode === "view_only" || parsed.mode === "upload_only") return parsed.mode;
+  } catch {
+    return "download";
+  }
+  return "download";
+}
+
+function shareModeLabel(mode: "download" | "view_only" | "upload_only") {
+  if (mode === "view_only") return "檢視";
+  if (mode === "upload_only") return "只允許上傳";
+  return "下載";
 }
 
 function summarizeAuditTarget(value: string | null) {

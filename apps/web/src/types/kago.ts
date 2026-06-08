@@ -81,6 +81,21 @@ export type Tag = {
   updated_at: number;
 };
 
+export type ShareLink = {
+  id: string;
+  root_id: string;
+  path: string;
+  permission_json: string;
+  expires_at: number | null;
+  max_downloads: number | null;
+  download_count: number;
+  password_hash: string | null;
+  created_by: string;
+  disabled: number;
+  created_at: number;
+  updated_at: number;
+};
+
 export type FileTask = {
   id: string;
   type: string;
