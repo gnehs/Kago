@@ -14,6 +14,8 @@
   --kago-danger: #ff3b30;
   --kago-warning: #ff9f0a;
   --kago-success: #34c759;
+  --kago-glass: rgba(244, 248, 252, 0.8);
+  --kago-divider: rgba(34, 49, 63, 0.18);
   --kago-radius-sm: 4px;
   --kago-radius-md: 10px;
   --kago-radius-lg: 18px;
@@ -2450,24 +2452,22 @@ select:focus {
 }
 
 body {
-  background: #111923;
+  background: #101c2a;
 }
 
 .app-shell {
   isolation: isolate;
   background:
-    linear-gradient(116deg, rgba(7, 15, 27, 0.72) 0 21%, rgba(7, 15, 27, 0) 21% 100%),
-    linear-gradient(154deg, rgba(255, 200, 98, 0) 0 54%, rgba(255, 210, 120, 0.72) 55% 68%, rgba(255, 210, 120, 0) 69% 100%),
-    linear-gradient(26deg, rgba(23, 78, 105, 0.7) 0 21%, rgba(23, 78, 105, 0) 22% 100%),
-    linear-gradient(168deg, #0c1423 0%, #254369 35%, #7390ad 58%, #d0d8df 72%, #293746 100%);
+    linear-gradient(180deg, #1c3145 0 45%, #142338 45% 100%),
+    radial-gradient(circle at 78% 20%, rgba(138, 187, 240, 0.2) 0 12%, transparent 13%);
 }
 
 .app-shell::before {
   z-index: -2;
   background:
-    linear-gradient(18deg, rgba(6, 12, 20, 0.58) 0 18%, transparent 18% 100%),
-    linear-gradient(132deg, transparent 0 48%, rgba(255, 255, 255, 0.22) 49% 53%, transparent 54% 100%),
-    linear-gradient(0deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0));
+    linear-gradient(18deg, rgba(9, 15, 24, 0.72) 0 18%, transparent 18% 100%),
+    linear-gradient(132deg, transparent 0 48%, rgba(255, 255, 255, 0.18) 49% 53%, transparent 54% 100%),
+    linear-gradient(0deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.02));
 }
 
 .app-shell::after {
@@ -2482,7 +2482,7 @@ body {
 }
 
 .desktop-topbar {
-  height: 42px;
+  height: 38px;
 }
 
 .desktop-launcher,
@@ -2491,9 +2491,17 @@ body {
   margin: 0;
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-top: 0;
-  background: rgba(22, 29, 39, 0.72);
-  box-shadow: 0 16px 38px rgba(0, 0, 0, 0.24), 0 1px 0 rgba(255, 255, 255, 0.12) inset;
+  background: rgba(35, 49, 68, 0.86);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28), 0 1px 0 rgba(255, 255, 255, 0.12) inset;
   backdrop-filter: blur(22px) saturate(1.25);
+}
+
+.desktop-launcher {
+  border-radius: 0 0 10px 10px;
+}
+
+.desktop-status {
+  border-radius: 0 0 10px 10px;
 }
 
 .desktop-launcher {
@@ -2509,7 +2517,7 @@ body {
 .desktop-launcher button,
 .desktop-status button {
   width: 48px;
-  height: 42px;
+  height: 38px;
   color: rgba(235, 242, 248, 0.86);
 }
 
@@ -2542,9 +2550,16 @@ body {
   height: 66px;
   border-radius: 13px;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0 34%, rgba(210, 235, 250, 0.98) 35% 52%, rgba(255, 207, 61, 0.98) 53% 100%);
-  box-shadow: 0 15px 28px rgba(0, 0, 0, 0.32), 0 1px 0 rgba(255, 255, 255, 0.95) inset;
-  color: #2770a5;
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0 34%, rgba(210, 235, 250, 0.94) 35% 52%, rgba(255, 207, 61, 0.9) 53% 100%);
+  box-shadow: 0 13px 24px rgba(0, 0, 0, 0.2), 0 1px 0 rgba(255, 255, 255, 0.95) inset;
+  color: #246189;
+}
+
+.desktop-window {
+  background: rgba(247, 250, 252, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.36);
+  border-radius: 20px;
+  box-shadow: 0 26px 64px rgba(0, 0, 0, 0.25);
 }
 
 .desktop-canvas,
@@ -2574,6 +2589,96 @@ body {
   font-size: 13px;
   font-weight: 680;
   pointer-events: none;
+}
+
+.command-palette-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 980;
+  display: grid;
+  place-items: center;
+  background: rgba(9, 11, 16, 0.34);
+}
+
+.command-palette {
+  width: min(560px, calc(100vw - 48px));
+  border: 1px solid rgba(255, 255, 255, 0.48);
+  border-radius: 16px;
+  background: rgba(244, 247, 249, 0.97);
+  box-shadow: 0 24px 64px rgba(3, 7, 16, 0.32);
+  backdrop-filter: blur(18px);
+  overflow: hidden;
+}
+
+.command-palette header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+}
+
+.command-palette header svg {
+  color: #667083;
+}
+
+.command-palette input {
+  min-width: 0;
+  width: 100%;
+  height: 34px;
+  border: 1px solid rgba(34, 48, 62, 0.2);
+  border-radius: 8px;
+  padding: 0 10px;
+  background: rgba(255, 255, 255, 0.95);
+  color: #1f2b37;
+}
+
+.command-palette-list {
+  max-height: 300px;
+  overflow: auto;
+  display: grid;
+  gap: 2px;
+  padding: 6px;
+}
+
+.command-palette-empty,
+.command-palette button {
+  border: 0;
+  border-radius: 8px;
+  text-align: left;
+}
+
+.command-palette-empty {
+  min-height: 36px;
+  padding: 8px 12px;
+  color: rgba(47, 62, 79, 0.76);
+  font-size: 13px;
+}
+
+.command-palette button {
+  min-height: 42px;
+  padding: 8px 12px;
+  display: grid;
+  align-items: center;
+  gap: 3px;
+  color: #1f2a35;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.command-palette button.selected,
+.command-palette button:hover {
+  background: rgba(29, 115, 212, 0.14);
+}
+
+.command-palette button span,
+.command-palette button small {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.command-palette button small {
+  color: #667083;
+  font-size: 12px;
 }
 
 .root-picker {
@@ -3015,6 +3120,225 @@ body {
   background: rgba(255, 255, 255, 0.8);
 }
 
+/* Final MacOS-style polish */
+.app-shell {
+  background:
+    linear-gradient(180deg, #1c2f42 0%, #15263a 58%, #121f2e 100%),
+    radial-gradient(circle at 78% 20%, rgba(137, 183, 238, 0.16) 0 14%, transparent 15%);
+}
+
+.app-shell::before {
+  background:
+    linear-gradient(18deg, rgba(6, 11, 18, 0.56) 0 18%, transparent 18% 100%),
+    linear-gradient(132deg, transparent 0 48%, rgba(255, 255, 255, 0.18) 49% 53%, transparent 54% 100%),
+    linear-gradient(0deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0));
+}
+
+.desktop-topbar {
+  height: 36px;
+  z-index: 1200;
+}
+
+.desktop-launcher,
+.desktop-status {
+  height: 36px;
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(24, 34, 48, 0.84);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.24), 0 1px 0 rgba(255, 255, 255, 0.12) inset;
+}
+
+.desktop-launcher button,
+.desktop-status button {
+  width: 46px;
+  height: 36px;
+}
+
+.desktop-launcher button:first-child,
+.desktop-status button:first-child {
+  border-left: 0;
+}
+
+.desktop-icons {
+  top: 84px;
+  left: 34px;
+  width: 108px;
+  gap: 24px;
+}
+
+.desktop-icons button:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.desktop-icon-tile {
+  width: 62px;
+  height: 62px;
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0 34%, rgba(205, 230, 248, 0.94) 35% 54%, rgba(255, 205, 57, 0.94) 55% 100%);
+  box-shadow: 0 14px 26px rgba(0, 0, 0, 0.22), 0 1px 0 rgba(255, 255, 255, 0.95) inset;
+}
+
+.workspace-canvas.desktop-canvas {
+  background: linear-gradient(180deg, rgba(240, 246, 252, 0.3), rgba(219, 231, 243, 0.2));
+  border-radius: 0;
+}
+
+.top-strip {
+  height: 64px;
+  border-bottom: 1px solid rgba(36, 48, 62, 0.12);
+  background: linear-gradient(180deg, rgba(248, 252, 255, 0.9), rgba(237, 244, 249, 0.78));
+  backdrop-filter: blur(28px);
+}
+
+.top-strip .toolbar-cluster,
+.top-strip .top-actions {
+  margin-left: auto;
+}
+
+.finder-nav strong {
+  min-width: 86px;
+  font-size: 17px;
+  font-weight: 680;
+}
+
+.chrome-button,
+.view-segment button,
+.action-row .tool-button,
+.window-view-tools {
+  min-height: 34px;
+  border-radius: 9px;
+}
+
+.chrome-button {
+  width: 34px;
+}
+
+.chrome-button,
+.view-segment button,
+.window-view-tools,
+.window-side-nav button,
+.tool-button,
+.icon-button,
+.file-window .tool-button,
+.search-pill,
+.address-field,
+.side-item,
+.root-button,
+.floatin-shelf,
+.task-center,
+.inspector,
+.trash-center,
+.audit-center,
+.file-list,
+.column-detail,
+.file-window {
+  border-color: rgba(96, 112, 128, 0.2);
+}
+
+.file-window {
+  border-color: rgba(255, 255, 255, 0.7);
+  border-radius: 16px;
+  background: rgba(252, 254, 255, 0.9);
+  box-shadow: 0 26px 74px rgba(8, 14, 22, 0.32), 0 1px 0 rgba(255, 255, 255, 0.85) inset;
+  backdrop-filter: blur(30px) saturate(1.1);
+}
+
+.file-window.focused {
+  border-color: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 32px 94px rgba(6, 12, 20, 0.38), 0 1px 0 rgba(255, 255, 255, 0.86) inset;
+}
+
+.window-titlebar {
+  height: 44px;
+  border-bottom: 1px solid rgba(30, 44, 60, 0.12);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(242, 247, 251, 0.82));
+}
+
+.window-titlebar strong {
+  font-size: 13px;
+}
+
+.window-titlebar span {
+  color: rgba(86, 96, 109, 0.78);
+}
+
+.window-titlebar .traffic-lights span {
+  box-shadow: none;
+  background: #8e8e93;
+}
+
+.window-titlebar .traffic-lights span:nth-child(1),
+.share-window .traffic-lights span:nth-child(1),
+.trash-center .traffic-lights span:nth-child(1),
+.audit-center .traffic-lights span:nth-child(1) {
+  background: #ff5f57;
+}
+
+.window-titlebar .traffic-lights span:nth-child(2),
+.share-window .traffic-lights span:nth-child(2),
+.trash-center .traffic-lights span:nth-child(2),
+.audit-center .traffic-lights span:nth-child(2) {
+  background: #ffbd2e;
+}
+
+.window-titlebar .traffic-lights span:nth-child(3),
+.share-window .traffic-lights span:nth-child(3),
+.trash-center .traffic-lights span:nth-child(3),
+.audit-center .traffic-lights span:nth-child(3) {
+  background: #28c840;
+}
+
+.finder-window-body {
+  background: rgba(255, 255, 255, 0.74);
+}
+
+.window-finder-sidebar {
+  border-right: 1px solid rgba(54, 70, 86, 0.12);
+  background: linear-gradient(180deg, rgba(238, 246, 252, 0.95), rgba(226, 239, 247, 0.88));
+}
+
+.file-station-toolbar {
+  border-bottom-color: rgba(54, 70, 86, 0.09);
+  background: rgba(250, 253, 255, 0.84);
+}
+
+.file-list {
+  background: rgba(255, 255, 255, 0.94);
+}
+
+.file-header {
+  border-bottom-color: rgba(30, 44, 60, 0.1);
+  background: rgba(251, 253, 254, 0.95);
+  color: #7f8994;
+}
+
+.file-row {
+  color: #27313b;
+}
+
+.file-row:hover {
+  background: rgba(10, 132, 255, 0.1);
+}
+
+.file-row.selected {
+  background: rgba(10, 132, 255, 0.16);
+  color: #151c24;
+}
+
+.window-preview-pane,
+.statusbar,
+.address-field {
+  background: rgba(250, 252, 254, 0.88);
+}
+
+.statusbar {
+  color: #667181;
+}
+
+.statusbar button {
+  border-color: transparent;
+}
+
 @media (max-width: 980px) {
   .desktop-icons {
     left: 12px;
@@ -3105,4 +3429,424 @@ body {
   .file-header .sort-header:nth-child(4) {
     display: none;
   }
+}
+
+/* Visual upgrade pass: cohesive macOS-inspired desktop shell */
+:root {
+  --kago-bg: #0a1420;
+  --kago-surface: rgba(245, 248, 252, 0.88);
+  --kago-surface-elevated: rgba(252, 253, 254, 0.96);
+  --kago-surface-strong: #f8fbff;
+  --kago-border: rgba(126, 148, 173, 0.22);
+  --kago-border-strong: rgba(126, 148, 173, 0.32);
+  --kago-text: #ebf2f8;
+  --kago-text-muted: #97a4b0;
+  --kago-accent: #0a84ff;
+  --kago-accent-hover: #4aa0ff;
+  --kago-divider: rgba(152, 170, 190, 0.22);
+  --kago-glass: rgba(13, 24, 39, 0.72);
+}
+
+body {
+  overflow: hidden;
+  color: var(--kago-text);
+}
+
+button:focus-visible {
+  outline: 2px solid rgba(74, 160, 255, 0.4);
+  outline-offset: 2px;
+}
+
+.app-shell {
+  background:
+    radial-gradient(circle at 18% 18%, rgba(98, 166, 255, 0.16) 0 15%, transparent 16%),
+    linear-gradient(145deg, #0a1524 0%, #121e2f 50%, #0c1520 100%);
+}
+
+.app-shell::before {
+  background:
+    linear-gradient(118deg, rgba(255, 255, 255, 0.08), transparent 28%),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.018) 0 1px, transparent 1px 90px);
+}
+
+.loading-screen,
+.login-screen {
+  background:
+    radial-gradient(circle at 18% 22%, rgba(92, 162, 255, 0.15), transparent 42%),
+    linear-gradient(150deg, #0a1524 0%, #0f1b2a 100%);
+}
+
+.login-panel,
+.share-window,
+.workspace-notice {
+  color: #e9f0f8;
+  background: linear-gradient(180deg, rgba(232, 240, 252, 0.95), rgba(209, 224, 238, 0.72));
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  box-shadow: 0 26px 74px rgba(1, 8, 16, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(28px) saturate(1.2);
+}
+
+.brand-mark {
+  background: linear-gradient(180deg, #2e8cf6, #1475e3);
+  color: #fff;
+}
+
+label,
+.inline-error {
+  color: #dae4ec;
+}
+
+input,
+select,
+textarea {
+  color: #0b1a2c;
+}
+
+input:focus,
+select:focus {
+  border-color: rgba(74, 160, 255, 0.66);
+  box-shadow: 0 0 0 3px rgba(74, 160, 255, 0.2);
+}
+
+.inline-error {
+  border-color: rgba(255, 149, 149, 0.55);
+  background: rgba(255, 110, 110, 0.15);
+  color: #ffb6b6;
+}
+
+.desktop-topbar {
+  backdrop-filter: blur(18px);
+  pointer-events: none;
+}
+
+.desktop-launcher,
+.desktop-status {
+  pointer-events: auto;
+  height: 36px;
+  border-color: rgba(255, 255, 255, 0.22);
+  border-radius: 0 0 8px 8px;
+  background: var(--kago-glass);
+  box-shadow: 0 16px 36px rgba(2, 8, 16, 0.45), 0 1px 0 rgba(255, 255, 255, 0.14) inset;
+}
+
+.desktop-launcher {
+  margin-left: 10px;
+}
+
+.desktop-status {
+  margin-right: 10px;
+}
+
+.desktop-launcher button,
+.desktop-status button {
+  width: 42px;
+  height: 36px;
+  color: #ebf2f8;
+  border-left-color: rgba(255, 255, 255, 0.12);
+}
+
+.desktop-launcher button:hover,
+.desktop-status button:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.desktop-icons {
+  top: 72px;
+}
+
+.desktop-icons button {
+  color: #edf4fb;
+  text-shadow: 0 1px 2px rgba(1, 7, 15, 0.48);
+}
+
+.desktop-icon-tile {
+  width: 58px;
+  height: 58px;
+  border-radius: 15px;
+  border-color: rgba(255, 255, 255, 0.5);
+  background:
+    linear-gradient(180deg, #f7fcff 0 36%, #d6e9ff 36% 56%, #ffcf44 57% 100%);
+}
+
+.workspace-canvas.desktop-canvas {
+  position: absolute;
+  inset: 34px 0 0;
+  background:
+    radial-gradient(circle at 80% 12%, rgba(82, 158, 255, 0.17), transparent 28%),
+    linear-gradient(180deg, rgba(11, 26, 43, 0.38), rgba(6, 16, 28, 0));
+}
+
+.workspace-notice {
+  color: #f0f6ff;
+  border-color: rgba(255, 255, 255, 0.54);
+  background: rgba(13, 24, 39, 0.84);
+}
+
+.command-palette-overlay {
+  backdrop-filter: blur(4px);
+  background: rgba(3, 9, 16, 0.45);
+}
+
+.command-palette,
+.root-picker-inner,
+.floating-shelf,
+.task-center,
+.trash-center,
+.audit-center,
+.file-window,
+.inspector,
+.task-list {
+  border: 1px solid rgba(255, 255, 255, 0.36) !important;
+  background: rgba(248, 252, 255, 0.93) !important;
+  backdrop-filter: blur(28px) saturate(1.12);
+}
+
+.command-palette {
+  max-height: 75vh;
+  min-height: 220px;
+}
+
+.command-palette input,
+.search-pill,
+.address-field,
+.desktop-topbar input,
+.window-search input,
+.root-create-form input,
+.inline-form input {
+  color: #0d1d30;
+  background: rgba(255, 255, 255, 0.84) !important;
+}
+
+.file-window {
+  border-color: rgba(255, 255, 255, 0.58);
+  border-radius: 16px;
+  box-shadow: 0 28px 90px rgba(0, 9, 18, 0.45), 0 1px 0 rgba(255, 255, 255, 0.82) inset;
+}
+
+.file-window.focused {
+  box-shadow: 0 34px 110px rgba(0, 12, 22, 0.5), 0 1px 0 rgba(255, 255, 255, 0.9) inset;
+}
+
+.window-titlebar {
+  height: 44px;
+  border-bottom-color: rgba(255, 255, 255, 0.3);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.93), rgba(238, 245, 250, 0.9));
+}
+
+.window-titlebar strong {
+  color: #172737;
+}
+
+.traffic-lights span {
+  width: 12px;
+  height: 12px;
+}
+
+.window-titlebar .traffic-lights span:nth-child(1) {
+  background: #ff5f57;
+}
+
+.window-titlebar .traffic-lights span:nth-child(2) {
+  background: #ffbe2e;
+}
+
+.window-titlebar .traffic-lights span:nth-child(3) {
+  background: #28ca40;
+}
+
+.window-controls .icon-button {
+  width: 28px;
+  height: 28px;
+  border-color: transparent;
+  color: #778089;
+}
+
+.window-controls .icon-button:hover {
+  color: #1a2532;
+  background: rgba(16, 25, 35, 0.08);
+}
+
+.finder-window-body {
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.window-finder-sidebar,
+.side-nav,
+.root-list {
+  color: #263141;
+}
+
+.window-finder-sidebar {
+  border-right-color: rgba(45, 73, 102, 0.22);
+}
+
+.window-side-nav button {
+  color: #23364b;
+}
+
+.window-side-nav button:hover,
+.window-side-nav button.selected,
+.side-item:hover,
+.side-item.active,
+.root-button:hover {
+  background: rgba(0, 102, 204, 0.14);
+}
+
+.window-content {
+  background: transparent;
+}
+
+.file-station-toolbar {
+  border-bottom-color: rgba(45, 73, 102, 0.16);
+}
+
+.address-row,
+.action-row {
+  gap: 8px;
+}
+
+.tool-button,
+.icon-button,
+.chrome-button,
+.window-view-tools,
+.side-item,
+.root-button,
+.search-clear,
+.statusbar button,
+.window-view-tools button,
+.nav-cluster .icon-button {
+  min-height: 30px;
+  border-color: rgba(98, 125, 150, 0.24);
+  background: rgba(244, 249, 253, 0.88);
+  color: #28384a;
+}
+
+.tool-button:hover,
+.icon-button:hover,
+.chrome-button:hover,
+.window-view-tools button:hover,
+.side-item:hover,
+.root-button:hover,
+.search-clear:hover {
+  background: rgba(210, 227, 242, 0.95);
+}
+
+.tool-button.selected,
+.action-row .tool-button:focus-visible {
+  background: rgba(0, 116, 255, 0.14);
+}
+
+.tool-button.danger:hover {
+  color: #d95c57;
+}
+
+.file-header {
+  background: rgba(237, 244, 250, 0.95);
+}
+
+.sort-header {
+  color: #617182;
+}
+
+.file-row {
+  color: #24313e;
+  border-radius: 8px;
+}
+
+.file-row:hover {
+  background: rgba(0, 116, 255, 0.1);
+}
+
+.file-row.selected {
+  background: rgba(0, 122, 255, 0.2);
+  color: #0d1b2a;
+}
+
+.file-list.list .file-row:nth-of-type(even) {
+  background: rgba(232, 241, 248, 0.38);
+}
+
+.file-row .icon-button {
+  border-color: rgba(98, 125, 150, 0.14);
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.file-row .icon-button:hover {
+  background: rgba(210, 227, 242, 0.95);
+}
+
+.window-preview-pane,
+.statusbar {
+  background: rgba(246, 251, 254, 0.84);
+}
+
+.statusbar {
+  border-top-color: rgba(45, 73, 102, 0.16);
+}
+
+.statusbar button:hover {
+  background: rgba(211, 227, 243, 0.95);
+}
+
+.thumbnail-frame,
+.inspector-preview,
+.column-detail-icon {
+  background: rgba(255, 255, 255, 0.86);
+  border-color: rgba(106, 133, 161, 0.36);
+}
+
+.context-menu,
+.drop-popover,
+.floating-shelf,
+.task-center,
+.task-item,
+.trash-item,
+.audit-item,
+.permission-rule-item,
+.share-status-item {
+  background: rgba(251, 254, 255, 0.98);
+}
+
+.context-menu button,
+.context-menu a,
+.floating-shelf header,
+.task-item,
+.trash-item,
+.audit-item {
+  color: #243141;
+}
+
+.context-menu button:hover,
+.context-menu a:hover {
+  background: rgba(10, 132, 255, 0.14);
+}
+
+.share-password label,
+.inline-form {
+  color: #1f3044;
+}
+
+.share-file-mark,
+.root-picker-mark {
+  box-shadow:
+    0 12px 30px rgba(0, 0, 0, 0.28),
+    0 1px 0 rgba(255, 255, 255, 0.85) inset;
+}
+
+.sidebar {
+  background: rgba(241, 246, 250, 0.84);
+}
+
+.inspector,
+.task-center,
+.floating-shelf,
+.trash-center,
+.audit-center {
+  background: rgba(250, 253, 255, 0.94) !important;
+  box-shadow: 0 20px 70px rgba(6, 14, 22, 0.35);
+}
+
+.desktop-icons button .traffic-lights,
+.window-titlebar .traffic-lights {
+  margin-right: 2px;
 }
