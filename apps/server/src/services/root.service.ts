@@ -67,6 +67,7 @@ export class RootService {
     }
     const basePath = this.resolveBasePath(input.basePath);
     fs.mkdirSync(basePath, { recursive: true });
+    this.assertBasePathInsideData(basePath);
     const ts = now();
     const root: Root = {
       id: id("root"),
@@ -93,6 +94,7 @@ export class RootService {
       readonly: input.readonly === undefined ? root.readonly : input.readonly ? 1 : 0
     };
     fs.mkdirSync(next.basePath, { recursive: true });
+    this.assertBasePathInsideData(next.basePath);
     this.db
       .prepare("UPDATE roots SET name = ?, base_path = ?, readonly = ?, updated_at = ? WHERE id = ?")
       .run(next.name, next.basePath, next.readonly, now(), rootId);
@@ -105,8 +107,28 @@ export class RootService {
   }
 
   private resolveBasePath(basePath: string): string {
-    if (basePath === "/data") return path.resolve(this.dataDir);
-    if (basePath.startsWith("/data/")) return path.resolve(this.dataDir, basePath.slice("/data/".length));
-    return path.resolve(basePath);
+    if (basePath !== "/data" && !basePath.startsWith("/data/")) {
+      throw new AppError(400, "Root base path must be inside /data", "ROOT_PATH_OUTSIDE_DATA");
+    }
+
+    const dataRoot = path.resolve(this.dataDir);
+    const candidate = basePath === "/data" ? dataRoot : path.resolve(dataRoot, basePath.slice("/data/".length));
+    if (!isInside(dataRoot, candidate)) {
+      throw new AppError(400, "Root base path escapes /data", "ROOT_PATH_ESCAPES_DATA");
+    }
+    return candidate;
   }
+
+  private assertBasePathInsideData(candidate: string): void {
+    const dataRoot = fs.realpathSync(this.dataDir);
+    const target = fs.realpathSync(candidate);
+    if (!isInside(dataRoot, target)) {
+      throw new AppError(400, "Root base path escapes /data", "ROOT_PATH_ESCAPES_DATA");
+    }
+  }
+}
+
+function isInside(rootPath: string, targetPath: string): boolean {
+  const relative = path.relative(rootPath, targetPath);
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
 }
