@@ -64,7 +64,7 @@ export async function buildApp(env: Env) {
   });
 
   await auth.ensureAdmin();
-  registerApi(app, { auth, audit, roots, paths, permissions, fsService, workspace, tasks, shelves, tags, shares, groups, db });
+  registerApi(app, { auth, audit, roots, paths, permissions, fsService, workspace, tasks, shelves, tags, shares, groups, events, db });
 
   app.get("/ws", { websocket: true }, (socket) => {
     events.add(socket);
@@ -105,6 +105,7 @@ type Services = {
   tags: TagService;
   shares: ShareService;
   groups: GroupService;
+  events: EventHub;
   db: ReturnType<typeof openDb>;
 };
 
@@ -377,6 +378,7 @@ function registerApi(app: FastifyInstance, services: Services) {
     const actor = requireAdmin(request);
     const item = services.permissions.create(permissionInputSchema.parse(request.body));
     services.audit.write({ actorType: "user", actorId: actor.id, action: "permission_change", rootId: item.root_id, target: item, result: "success" });
+    services.events.publish({ type: "permission.updated" });
     return item;
   });
   app.delete("/api/permissions/:id", async (request) => {
@@ -384,6 +386,7 @@ function registerApi(app: FastifyInstance, services: Services) {
     const params = z.object({ id: z.string() }).parse(request.params);
     services.permissions.delete(params.id);
     services.audit.write({ actorType: "user", actorId: actor.id, action: "permission_change", target: { ruleId: params.id, deleted: true }, result: "success" });
+    services.events.publish({ type: "permission.updated" });
     return { ok: true };
   });
 

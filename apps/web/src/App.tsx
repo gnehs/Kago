@@ -229,6 +229,11 @@ function Workspace({ userEmail }: { userEmail: string }) {
       }
       if (message.type === "shelf.updated") void queryClient.invalidateQueries({ queryKey: ["shelves"] });
       if (message.type === "share.updated") void queryClient.invalidateQueries({ queryKey: ["shares"] });
+      if (message.type === "permission.updated") {
+        void queryClient.invalidateQueries({ queryKey: ["permissions"] });
+        void queryClient.invalidateQueries({ queryKey: ["roots"] });
+        void queryClient.invalidateQueries({ queryKey: ["fs"] });
+      }
     };
     return () => ws.close();
   }, [queryClient]);
