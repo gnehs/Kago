@@ -976,10 +976,33 @@ select:focus {
 .file-list.grid .file-row {
   grid-template-columns: 1fr;
   justify-items: center;
-  min-height: 116px;
+  min-height: 152px;
   border: 1px solid rgba(0, 0, 0, 0.08);
   background: rgba(246, 246, 246, 0.8);
   text-align: center;
+}
+
+.file-list.grid .file-row > span:not(.file-name):not(.thumbnail-frame),
+.file-list.grid .file-row > a,
+.file-list.grid .file-row > button {
+  display: none;
+}
+
+.thumbnail-frame {
+  display: grid;
+  width: 112px;
+  height: 86px;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid rgba(160, 174, 188, 0.32);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.thumbnail-frame img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .file-row:hover,

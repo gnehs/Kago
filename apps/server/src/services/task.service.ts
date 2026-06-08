@@ -9,6 +9,7 @@ import { AppError } from "../lib/errors.js";
 import { id, now } from "../lib/ids.js";
 import type { EventHub } from "../ws/events.js";
 import type { AuditService } from "./audit.service.js";
+import type { FsService } from "./fs.service.js";
 import type { PathService } from "./path.service.js";
 import type { PermissionService } from "./permission.service.js";
 import type { Actor, FileTask } from "./types.js";
@@ -47,7 +48,8 @@ export class TaskService {
     private readonly permissions: PermissionService,
     private readonly audit: AuditService,
     private readonly events: EventHub,
-    private readonly appDataDir: string
+    private readonly appDataDir: string,
+    private readonly fsService: FsService
   ) {}
 
   create(actor: Actor, input: z.infer<typeof taskInputSchema>): FileTask {
@@ -342,9 +344,8 @@ export class TaskService {
   private async runThumbnail(task: FileTask, actor: Actor): Promise<void> {
     const sources = JSON.parse(task.sources_json) as Array<{ rootSlug: string; path: string }>;
     for (const source of sources) {
-      const safe = await this.paths.resolveExisting(source.rootSlug, source.path);
-      this.permissions.require(actor, "read", safe.root, safe.logicalPath);
-      await this.progress(task.id, safe.logicalPath);
+      await this.progress(task.id, source.path);
+      await this.fsService.warmThumbnail(actor, source.rootSlug, source.path);
       await this.bumpProcessed(task.id);
     }
   }

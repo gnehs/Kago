@@ -33,9 +33,9 @@ export async function buildApp(env: Env) {
   const paths = new PathService(roots);
   const permissions = new PermissionService(db);
   const auth = new AuthService(db, env);
-  const fsService = new FsService(paths, permissions, audit);
+  const fsService = new FsService(paths, permissions, audit, env.appDataDir);
   const workspace = new WorkspaceService(db, roots);
-  const tasks = new TaskService(db, paths, permissions, audit, events, env.appDataDir);
+  const tasks = new TaskService(db, paths, permissions, audit, events, env.appDataDir, fsService);
   const shelves = new ShelfService(db, paths, permissions, events);
   const tags = new TagService(db, paths, permissions);
   const shares = new ShareService(db, paths, permissions, audit);
@@ -239,7 +239,15 @@ function registerApi(app: FastifyInstance, services: Services) {
     reply.header("Content-Length", String(file.stat.size));
     return fs.createReadStream(file.safe.absolutePath);
   });
-  app.get("/api/fs/thumbnail", async () => ({ thumbnail: null }));
+  app.get("/api/fs/thumbnail", async (request, reply) => {
+    const actor = requireActor(request);
+    const query = fsQuerySchema.parse(request.query);
+    const thumbnail = await services.fsService.thumbnail(actor, query.rootSlug, query.path);
+    reply.header("Content-Type", thumbnail.contentType);
+    reply.header("Content-Length", String(thumbnail.stat.size));
+    reply.header("Cache-Control", "private, max-age=86400");
+    return fs.createReadStream(thumbnail.path);
+  });
   app.post("/api/fs/mkdir", async (request) => {
     const actor = requireActor(request);
     const input = mkdirSchema.parse(request.body);

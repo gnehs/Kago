@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { AppWindow, Archive, Boxes, Check, ChevronDown, ChevronLeft, ChevronRight, Circle, CirclePlus, Columns3, Download, FileText, Folder, FolderOpen, Globe2, HardDrive, HelpCircle, Home, LayoutGrid, List, Loader2, LogOut, Maximize2, MessageCircle, Minimize2, MoreHorizontal, PanelRight, Pencil, Plus, Radio, RefreshCw, Search, Server, Settings2, Share2, SlidersHorizontal, Smartphone, Star, Tags, Trash2, Upload, UserRound, X } from "lucide-react";
-import { api, downloadUrl } from "./api/client";
+import { api, downloadUrl, thumbnailUrl } from "./api/client";
 import { useFileList, useMe, useRoots, useSaveWorkspace, useShelves, useTasks, useWorkspace } from "./api/hooks";
 import { useWorkspaceStore } from "./stores/workspace";
 import type { FileItem, FileWindow, Root } from "./types/kago";
@@ -559,7 +559,7 @@ function FileRow({ item, window }: { item: FileItem; window: FileWindow }) {
         else globalThis.open(downloadUrl(window.rootSlug, item.path), "_blank");
       }}
     >
-      {item.kind === "folder" ? <FolderOpen className="folder-glyph" /> : <FileIcon />}
+      <FileGlyph item={item} window={window} />
       <span className="file-name">{item.name}</span>
       <span>{formatSize(item.size)}</span>
       <span>{item.kind === "folder" ? "檔案夾" : item.type}</span>
@@ -589,6 +589,17 @@ function FileRow({ item, window }: { item: FileItem; window: FileWindow }) {
     await queryClient.invalidateQueries({ queryKey: ["tasks"] });
     await queryClient.invalidateQueries({ queryKey: ["fs", "list", window.rootSlug, window.logicalPath] });
   }
+}
+
+function FileGlyph({ item, window }: { item: FileItem; window: FileWindow }) {
+  if (window.viewMode === "grid") {
+    return (
+      <span className="thumbnail-frame">
+        <img alt="" src={thumbnailUrl(window.rootSlug, item.path)} loading="lazy" />
+      </span>
+    );
+  }
+  return item.kind === "folder" ? <FolderOpen className="folder-glyph" /> : <FileIcon />;
 }
 
 function FileIcon() {

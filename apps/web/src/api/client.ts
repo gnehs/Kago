@@ -20,3 +20,6 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 export const downloadUrl = (rootSlug: string, path: string) =>
   `/api/fs/download?${new URLSearchParams({ rootSlug, path }).toString()}`;
+
+export const thumbnailUrl = (rootSlug: string, path: string) =>
+  `/api/fs/thumbnail?${new URLSearchParams({ rootSlug, path }).toString()}`;
