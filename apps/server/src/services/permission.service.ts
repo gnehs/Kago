@@ -128,7 +128,7 @@ export class PermissionService {
       principal_type: input.principalType,
       principal_id: input.principalId,
       root_id: input.rootId,
-      path_prefix: input.pathPrefix.startsWith("/") ? input.pathPrefix : `/${input.pathPrefix}`,
+      path_prefix: input.pathPrefix,
       allow_json: JSON.stringify(input.allow),
       deny_json: JSON.stringify(input.deny),
       recursive: input.recursive ? 1 : 0,

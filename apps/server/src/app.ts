@@ -376,7 +376,9 @@ function registerApi(app: FastifyInstance, services: Services) {
   });
   app.post("/api/permissions", async (request) => {
     const actor = requireAdmin(request);
-    const item = services.permissions.create(permissionInputSchema.parse(request.body));
+    const input = permissionInputSchema.parse(request.body);
+    services.roots.getById(input.rootId);
+    const item = services.permissions.create({ ...input, pathPrefix: services.paths.normalizeLogicalPath(input.pathPrefix) });
     services.audit.write({ actorType: "user", actorId: actor.id, action: "permission_change", rootId: item.root_id, target: item, result: "success" });
     services.events.publish({ type: "permission.updated" });
     return item;
