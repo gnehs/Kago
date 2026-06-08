@@ -34,7 +34,7 @@ export async function buildApp(env: Env) {
   const permissions = new PermissionService(db, audit);
   const auth = new AuthService(db, env);
   const fsService = new FsService(paths, permissions, audit, env.appDataDir);
-  const workspace = new WorkspaceService(db, roots);
+  const workspace = new WorkspaceService(db, roots, paths);
   const tasks = new TaskService(db, paths, permissions, audit, events, env.appDataDir, fsService);
   const shelves = new ShelfService(db, paths, permissions, events);
   const tags = new TagService(db, paths, permissions);

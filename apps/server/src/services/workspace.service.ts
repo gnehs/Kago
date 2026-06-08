@@ -1,7 +1,9 @@
 import { z } from "zod";
 import type { Db } from "../db/db.js";
 import { row } from "../db/db.js";
+import { AppError } from "../lib/errors.js";
 import { now } from "../lib/ids.js";
+import type { PathService } from "./path.service.js";
 import type { RootService } from "./root.service.js";
 
 const fileWindowSchema = z.object({
@@ -13,7 +15,7 @@ const fileWindowSchema = z.object({
   y: z.number().int().min(0).max(10000),
   width: z.number().int().min(360).max(4000),
   height: z.number().int().min(280).max(3000),
-  zIndex: z.number().int().min(100).max(499),
+  zIndex: z.number().int().min(0).max(1_000_000),
   minimized: z.boolean(),
   maximized: z.boolean(),
   focused: z.boolean().optional().default(false),
@@ -37,7 +39,8 @@ export const workspaceSchema = z.object({
 export class WorkspaceService {
   constructor(
     private readonly db: Db,
-    private readonly roots: RootService
+    private readonly roots: RootService,
+    private readonly paths: PathService
   ) {}
 
   get(userId: string): z.infer<typeof workspaceSchema> {
@@ -69,9 +72,23 @@ export class WorkspaceService {
   }
 
   save(userId: string, input: z.infer<typeof workspaceSchema>): z.infer<typeof workspaceSchema> {
+    const windowIds = new Set<string>();
     for (const window of input.windows) {
-      this.roots.getBySlug(window.rootSlug);
+      if (windowIds.has(window.id)) throw new AppError(400, "Duplicate window id", "DUPLICATE_WINDOW_ID");
+      windowIds.add(window.id);
     }
+    if (input.activeWindowId && !windowIds.has(input.activeWindowId)) {
+      throw new AppError(400, "Active window does not exist", "INVALID_ACTIVE_WINDOW");
+    }
+
+    const windows = input.windows.map((window) => {
+      this.roots.getBySlug(window.rootSlug);
+      return {
+        ...window,
+        logicalPath: this.paths.normalizeLogicalPath(window.logicalPath),
+        selectedItems: window.selectedItems.map((item) => this.paths.normalizeLogicalPath(item))
+      };
+    });
 
     const ts = now();
     this.db
@@ -89,7 +106,7 @@ export class WorkspaceService {
       )
       .run(
         userId,
-        JSON.stringify(input.windows),
+        JSON.stringify(windows),
         input.activeWindowId ?? null,
         JSON.stringify(input.sidebar ?? {}),
         JSON.stringify(input.inspector ?? {}),
