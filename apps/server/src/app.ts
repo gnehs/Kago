@@ -367,8 +367,11 @@ function registerApi(app: FastifyInstance, services: Services) {
     return services.audit.list();
   });
 
-  app.get("/s/:token", async (request) => {
+  app.get("/s/:token", async (request, reply) => {
     const params = z.object({ token: z.string().min(1) }).parse(request.params);
+    if (wantsHtml(request)) {
+      return reply.sendFile("index.html");
+    }
     return services.shares.publicInfo(params.token, shareAccessCookie(request, params.token));
   });
 
@@ -413,4 +416,9 @@ function shareAccessCookie(request: FastifyRequest, token: string): string | und
 
 function shareAccessCookieName(token: string): string {
   return `kago_share_${token.slice(0, 16)}`;
+}
+
+function wantsHtml(request: FastifyRequest): boolean {
+  const accept = request.headers.accept ?? "";
+  return accept.includes("text/html") && !accept.includes("application/json");
 }

@@ -187,10 +187,116 @@ select:focus {
   color: white;
   padding: 8px 14px;
   font-weight: 500;
+  text-decoration: none;
 }
 
 .primary-button:hover {
   background: var(--kago-accent-hover);
+}
+
+.share-screen {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 80% 18%, rgba(255, 222, 160, 0.82), transparent 18%),
+    linear-gradient(145deg, #213a61 0%, #5e89b7 42%, #1b2939 100%);
+}
+
+.share-window {
+  width: min(460px, calc(100vw - 32px));
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.52);
+  border-radius: 18px;
+  background: rgba(252, 253, 254, 0.92);
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(24px);
+}
+
+.share-window header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 44px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.09);
+  background: rgba(249, 250, 251, 0.94);
+  padding: 0 12px;
+}
+
+.share-window header strong,
+.share-success {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.share-body {
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  padding: 30px;
+  text-align: center;
+}
+
+.share-file-mark {
+  display: grid;
+  width: 70px;
+  height: 70px;
+  place-items: center;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #f8fbff 0%, #77c8ff 48%, #ffbd25 49%, #f79a1a 100%);
+  color: #105f99;
+  box-shadow: 0 12px 28px rgba(30, 83, 125, 0.24), 0 1px 0 rgba(255, 255, 255, 0.9) inset;
+}
+
+.share-file-mark svg {
+  width: 34px;
+  height: 34px;
+}
+
+.share-body h1 {
+  max-width: 100%;
+  overflow: hidden;
+  margin: 6px 0 0;
+  color: #26313c;
+  font-size: 24px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.share-body p {
+  max-width: 100%;
+  overflow: hidden;
+  margin: 0;
+  color: var(--kago-text-muted);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.share-password {
+  display: grid;
+  width: 100%;
+  gap: 12px;
+}
+
+.share-password label {
+  text-align: left;
+}
+
+.share-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.share-success {
+  color: var(--kago-success);
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .tool-button,

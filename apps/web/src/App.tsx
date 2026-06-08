@@ -7,6 +7,9 @@ import { useWorkspaceStore } from "./stores/workspace";
 import type { FileItem, FileWindow, Root } from "./types/kago";
 
 export function App() {
+  const shareToken = publicShareToken();
+  if (shareToken) return <PublicSharePage token={shareToken} />;
+
   const me = useMe();
 
   if (me.isLoading) return <ShellLoading />;
@@ -18,6 +21,114 @@ function ShellLoading() {
   return (
     <main className="loading-screen">
       <Loader2 className="spin" />
+    </main>
+  );
+}
+
+function PublicSharePage({ token }: { token: string }) {
+  const [share, setShare] = useState<PublicShareInfo | null>(null);
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [uploaded, setUploaded] = useState(false);
+
+  useEffect(() => {
+    void loadShare();
+  }, [token]);
+
+  async function loadShare() {
+    setError("");
+    try {
+      const info = await api<PublicShareInfo>(`/s/${token}`, { headers: { Accept: "application/json" } });
+      setShare(info);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "分享連結無法使用");
+    }
+  }
+
+  async function authenticate(event: React.FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      await api(`/s/${token}/auth`, { method: "POST", body: JSON.stringify({ password }) });
+      setPassword("");
+      await loadShare();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "密碼驗證失敗");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function upload(event: React.ChangeEvent<HTMLInputElement>) {
+    const files = event.target.files;
+    if (!files?.length) return;
+    setBusy(true);
+    setError("");
+    setUploaded(false);
+    try {
+      const form = new FormData();
+      for (const file of files) form.append("file", file);
+      await api(`/s/${token}/upload`, { method: "POST", body: form });
+      setUploaded(true);
+      event.target.value = "";
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "上傳失敗");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const needsPassword = share?.requiresPassword && !share.authenticated;
+
+  return (
+    <main className="share-screen">
+      <section className="share-window">
+        <header>
+          <div className="traffic-lights"><span /><span /><span /></div>
+          <strong><Share2 /> Kago Share</strong>
+        </header>
+        <div className="share-body">
+          <div className="share-file-mark">
+            {share?.mode === "upload_only" ? <Upload /> : <Download />}
+          </div>
+          <h1>{share ? share.path.split("/").filter(Boolean).at(-1) ?? share.rootSlug : "分享連結"}</h1>
+          {share && <p>{share.rootSlug}:{share.path}</p>}
+          {error && <div className="inline-error">{error}</div>}
+          {!share && !error && <Loader2 className="spin" />}
+          {needsPassword && (
+            <form className="share-password" onSubmit={authenticate}>
+              <label>
+                分享密碼
+                <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
+              </label>
+              <button className="primary-button" disabled={busy || !password}>
+                {busy ? <Loader2 className="spin" /> : <Check />}
+                解鎖
+              </button>
+            </form>
+          )}
+          {share && !needsPassword && (
+            <div className="share-actions">
+              {(share.mode === "download" || share.mode === "view_only") && (
+                <a className="primary-button" href={`/s/${token}/download`}>
+                  <Download />
+                  下載
+                </a>
+              )}
+              {share.mode === "upload_only" && (
+                <label className="primary-button file-input">
+                  {busy ? <Loader2 className="spin" /> : <Upload />}
+                  上傳檔案
+                  <input type="file" multiple onChange={upload} disabled={busy} />
+                </label>
+              )}
+              {uploaded && <span className="share-success"><Check /> 已上傳</span>}
+            </div>
+          )}
+        </div>
+      </section>
     </main>
   );
 }
@@ -70,6 +181,20 @@ function Login() {
     </main>
   );
 }
+
+function publicShareToken(): string | null {
+  const match = globalThis.location?.pathname.match(/^\/s\/([^/]+)$/);
+  return match ? decodeURIComponent(match[1]!) : null;
+}
+
+type PublicShareInfo = {
+  id: string;
+  mode: "view_only" | "download" | "upload_only";
+  path: string;
+  rootSlug: string;
+  requiresPassword: boolean;
+  authenticated: boolean;
+};
 
 function Workspace({ userEmail }: { userEmail: string }) {
   const workspaceQuery = useWorkspace();
