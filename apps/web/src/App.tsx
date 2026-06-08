@@ -574,6 +574,7 @@ function FileWindowView({ window }: { window: FileWindow }) {
       return haystack.includes(query);
     });
   }, [searchQuery, sortedItems]);
+  const selectedColumnItem = window.viewMode === "columns" ? visibleItems.find((item) => item.path === window.selectedItems[0]) ?? null : null;
 
   async function createTask(type: "copy" | "move") {
     if (!dropChoice || readonly) return;
@@ -880,11 +881,43 @@ function FileWindowView({ window }: { window: FileWindow }) {
                     onSelect={selectItem}
                   />
                 ))}
+                {window.viewMode === "columns" ? (
+                  <aside className="column-detail">
+                    {selectedColumnItem ? (
+                      <>
+                        <div className="column-detail-icon">
+                          {selectedColumnItem.kind === "folder" ? <FolderOpen /> : <FileText />}
+                        </div>
+                        <strong>{selectedColumnItem.name}</strong>
+                        <small>{selectedColumnItem.path}</small>
+                        <dl>
+                          <dt>種類</dt><dd>{selectedColumnItem.kind === "folder" ? "資料夾" : selectedColumnItem.type}</dd>
+                          <dt>大小</dt><dd>{formatSize(selectedColumnItem.size)}</dd>
+                          <dt>修改時間</dt><dd>{formatDate(selectedColumnItem.mtime)}</dd>
+                        </dl>
+                        <div className="column-detail-actions">
+                          <button onClick={() => openItem(selectedColumnItem)}>
+                            {selectedColumnItem.kind === "folder" ? <FolderOpen /> : <Download />} 開啟
+                          </button>
+                          {selectedColumnItem.kind === "folder" ? (
+                            <button onClick={() => openItem(selectedColumnItem, true)}><CirclePlus /> 新視窗</button>
+                          ) : null}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="column-detail-empty">
+                        <Columns3 />
+                        <strong>直欄預覽</strong>
+                        <span>選取項目後顯示摘要。</span>
+                      </div>
+                    )}
+                  </aside>
+                ) : null}
               </div>
               <div className="statusbar">
                 <span className="pathbar"><HardDrive /> {window.rootSlug} <ChevronRight /> {window.logicalPath === "/" ? window.title : window.logicalPath.split("/").filter(Boolean).join(" › ")}</span>
                 <span>{searchQuery ? `${visibleItems.length} / ${sortedItems.length} 個項目` : `${sortedItems.length} 個項目`}</span>
-                <button onClick={() => store.updateWindow(window.id, { viewMode: window.viewMode === "list" ? "grid" : "list" })}><List /> {viewModeLabel(window.viewMode)}</button>
+                <button onClick={() => store.updateWindow(window.id, { viewMode: nextViewMode(window.viewMode) })}><List /> {viewModeLabel(window.viewMode)}</button>
               </div>
             </div>
             <aside className="window-preview-pane">
@@ -1527,6 +1560,12 @@ function ensureZipName(value: string) {
 
 function defaultSortDirection(sortBy: FileWindow["sortBy"]): FileWindow["sortDirection"] {
   return sortBy === "size" || sortBy === "mtime" ? "desc" : "asc";
+}
+
+function nextViewMode(mode: FileWindow["viewMode"]): FileWindow["viewMode"] {
+  if (mode === "list") return "grid";
+  if (mode === "grid") return "columns";
+  return "list";
 }
 
 function formatSize(size: number) {
