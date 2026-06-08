@@ -89,7 +89,7 @@ export type ShareLink = {
   expires_at: number | null;
   max_downloads: number | null;
   download_count: number;
-  password_hash: string | null;
+  has_password: boolean;
   created_by: string;
   disabled: number;
   created_at: number;

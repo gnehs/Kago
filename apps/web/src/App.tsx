@@ -1600,7 +1600,10 @@ function Inspector() {
             <div className="share-status-item" key={share.id}>
               <div>
                 <strong>{shareModeLabel(parseShareMode(share.permission_json))}</strong>
-                <small>{share.disabled ? "已停用" : "啟用中"} · {share.download_count}{share.max_downloads ? `/${share.max_downloads}` : ""} 次下載</small>
+                <small>
+                  {share.disabled ? "已停用" : "啟用中"} · {share.has_password ? "有密碼 · " : ""}{share.download_count}{share.max_downloads ? `/${share.max_downloads}` : ""} 次下載
+                </small>
+                {share.expires_at ? <small>到期於 {formatUnixDate(share.expires_at)}</small> : null}
                 <small>建立於 {formatUnixDate(share.created_at)}</small>
               </div>
               <div className="share-status-actions">

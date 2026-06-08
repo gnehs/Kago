@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { Db } from "../db/db.js";
-import { row } from "../db/db.js";
+import { row, rows } from "../db/db.js";
 import { hashPassword, randomToken, sha256, verifyPassword } from "../lib/crypto.js";
 import { AppError } from "../lib/errors.js";
 import { id, now } from "../lib/ids.js";
@@ -29,8 +29,11 @@ export class ShareService {
   ) {}
 
   list(actor: Actor) {
-    if (actor.role === "ADMIN") return this.db.prepare("SELECT * FROM share_links ORDER BY created_at DESC").all();
-    return this.db.prepare("SELECT * FROM share_links WHERE created_by = ? ORDER BY created_at DESC").all(actor.id);
+    const items =
+      actor.role === "ADMIN"
+        ? rows<ResolvedShare>(this.db.prepare("SELECT * FROM share_links ORDER BY created_at DESC").all())
+        : rows<ResolvedShare>(this.db.prepare("SELECT * FROM share_links WHERE created_by = ? ORDER BY created_at DESC").all(actor.id));
+    return items.map((share) => this.publicShare(share));
   }
 
   async create(actor: Actor, input: z.infer<typeof shareSchema>) {
@@ -49,6 +52,7 @@ export class ShareService {
       permission_json: JSON.stringify({ mode: input.mode }),
       expires_at: input.expiresAt ?? null,
       max_downloads: input.maxDownloads ?? null,
+      download_count: 0,
       password_hash: input.password ? await hashPassword(input.password) : null,
       created_by: actor.id,
       disabled: 0,
@@ -85,7 +89,7 @@ export class ShareService {
       result: "success"
     });
     this.events.publish({ type: "share.updated" });
-    return { ...share, token };
+    return { ...this.publicShare(share), token };
   }
 
   patch(actor: Actor, shareId: string, input: { disabled?: boolean }) {
@@ -103,7 +107,7 @@ export class ShareService {
       result: "success"
     });
     this.events.publish({ type: "share.updated" });
-    return this.get(shareId);
+    return this.publicShare(this.get(shareId));
   }
 
   delete(actor: Actor, shareId: string): void {
@@ -229,6 +233,11 @@ export class ShareService {
   private accessTokenForShare(share: ResolvedShare): string {
     return sha256(`share-access:${share.id}:${share.password_hash ?? "none"}`);
   }
+
+  private publicShare(share: ResolvedShare): PublicShareLink {
+    const { token_hash: _tokenHash, password_hash, ...safeShare } = share;
+    return { ...safeShare, has_password: Boolean(password_hash) };
+  }
 }
 
 type ResolvedShare = {
@@ -245,4 +254,8 @@ type ResolvedShare = {
   disabled: number;
   created_at: number;
   updated_at: number;
+};
+
+type PublicShareLink = Omit<ResolvedShare, "token_hash" | "password_hash"> & {
+  has_password: boolean;
 };
