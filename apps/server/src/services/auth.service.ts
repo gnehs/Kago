@@ -20,6 +20,12 @@ export const createUserSchema = z.object({
   role: z.enum(["ADMIN", "USER", "GUEST"]).default("USER")
 });
 
+export const patchUserSchema = z.object({
+  displayName: z.string().min(1).max(120).optional(),
+  role: z.enum(["ADMIN", "USER", "GUEST"]).optional(),
+  disabled: z.boolean().optional()
+});
+
 export class AuthService {
   constructor(
     private readonly db: Db,
@@ -74,14 +80,19 @@ export class AuthService {
     );
   }
 
-  patchUser(userId: string, input: { displayName?: string; role?: string; disabled?: boolean }): PublicUser {
+  patchUser(userId: string, input: z.infer<typeof patchUserSchema>): PublicUser {
     const user = this.getUser(userId);
+    const nextRole = input.role ?? user.role;
+    const nextDisabled = input.disabled === undefined ? user.disabled : input.disabled ? 1 : 0;
+    if (user.role === "ADMIN" && (nextRole !== "ADMIN" || nextDisabled)) {
+      this.assertAnotherEnabledAdmin(userId);
+    }
     this.db
       .prepare("UPDATE users SET display_name = ?, role = ?, disabled = ?, updated_at = ? WHERE id = ?")
       .run(
         input.displayName ?? user.display_name,
-        input.role ?? user.role,
-        input.disabled === undefined ? user.disabled : input.disabled ? 1 : 0,
+        nextRole,
+        nextDisabled,
         now(),
         userId
       );
@@ -147,6 +158,15 @@ export class AuthService {
     const user = row<User>(this.db.prepare("SELECT * FROM users WHERE id = ?").get(userId));
     if (!user) throw new AppError(404, "User not found", "USER_NOT_FOUND");
     return user;
+  }
+
+  private assertAnotherEnabledAdmin(userId: string): void {
+    const count = row<{ count: number }>(
+      this.db
+        .prepare("SELECT COUNT(*) AS count FROM users WHERE role = 'ADMIN' AND disabled = 0 AND id != ?")
+        .get(userId)
+    )?.count ?? 0;
+    if (count === 0) throw new AppError(409, "Cannot remove the last enabled admin", "LAST_ADMIN_REQUIRED");
   }
 
   private publicUser(user: User): PublicUser {

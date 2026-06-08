@@ -11,7 +11,7 @@ import type { Env } from "./config/env.js";
 import { openDb } from "./db/db.js";
 import { AppError, publicError } from "./lib/errors.js";
 import { AuditService } from "./services/audit.service.js";
-import { AuthService, createUserSchema, loginSchema } from "./services/auth.service.js";
+import { AuthService, createUserSchema, loginSchema, patchUserSchema } from "./services/auth.service.js";
 import { FsService, fsQuerySchema, maxUploadFileBytes, maxUploadFiles, mkdirSchema, renameSchema } from "./services/fs.service.js";
 import { createGroupSchema, GroupService } from "./services/group.service.js";
 import { PathService } from "./services/path.service.js";
@@ -152,7 +152,7 @@ function registerApi(app: FastifyInstance, services: Services) {
   app.patch("/api/users/:id", async (request) => {
     const actor = requireAdmin(request);
     const params = z.object({ id: z.string() }).parse(request.params);
-    const body = z.object({ displayName: z.string().optional(), role: z.string().optional(), disabled: z.boolean().optional() }).parse(request.body);
+    const body = patchUserSchema.parse(request.body);
     const user = services.auth.patchUser(params.id, body);
     if (body.disabled !== undefined) {
       services.audit.write({ actorType: "user", actorId: actor.id, action: "user_disable", target: { userId: params.id, disabled: body.disabled }, result: "success" });
