@@ -375,35 +375,46 @@ function FileWindowView({ window }: { window: FileWindow }) {
       </div>
       {!window.minimized && (
         <>
-          <div className="window-toolbar">
-            <button className="icon-button" disabled={window.logicalPath === "/"} onClick={() => store.updateWindow(window.id, { logicalPath: parentPath(window.logicalPath), selectedItems: [] })}><ChevronLeft /></button>
-            <Breadcrumb window={window} />
-            <button className="tool-button" onClick={mkdir}><Folder /> 新增資料夾</button>
-            <label className="tool-button file-input"><Upload /> 上傳<input type="file" multiple onChange={upload} /></label>
-            <button className="icon-button" onClick={() => void queryClient.invalidateQueries({ queryKey: ["fs", "list", window.rootSlug, window.logicalPath] })}><RefreshCw /></button>
-          </div>
-          <div className={`file-list ${window.viewMode}`}>
-            {window.viewMode === "list" && (
-              <div className="file-header">
-                <span>名稱</span>
-                <span>大小</span>
-                <span>種類</span>
-                <span>加入日期</span>
-                <span />
-                <span />
-                <span />
-                <span />
+          <div className="finder-window-body">
+            <aside className="window-finder-sidebar">
+              <MiniFinderSidebar activeLabel={window.title} />
+            </aside>
+            <div className="window-content">
+              <div className="window-toolbar">
+                <button className="icon-button" disabled={window.logicalPath === "/"} onClick={() => store.updateWindow(window.id, { logicalPath: parentPath(window.logicalPath), selectedItems: [] })}><ChevronLeft /></button>
+                <button className="icon-button" disabled><ChevronRight /></button>
+                <Breadcrumb window={window} />
+                <button className="tool-button" onClick={mkdir}><Folder /> 新增資料夾</button>
+                <label className="tool-button file-input"><Upload /> 上傳<input type="file" multiple onChange={upload} /></label>
+                <button className="icon-button" onClick={() => void queryClient.invalidateQueries({ queryKey: ["fs", "list", window.rootSlug, window.logicalPath] })}><RefreshCw /></button>
               </div>
-            )}
-            {fileList.isLoading && <div className="empty-state"><Loader2 className="spin" /> Loading</div>}
-            {fileList.error && <div className="empty-state error">{fileList.error.message}</div>}
-            {!fileList.isLoading && sortedItems.length === 0 && <div className="empty-state">Empty folder</div>}
-            {sortedItems.map((item) => <FileRow key={item.path} item={item} window={window} />)}
-          </div>
-          <div className="statusbar">
-            <span className="pathbar"><HardDrive /> {window.rootSlug} <ChevronRight /> {window.logicalPath === "/" ? "Kago" : window.logicalPath.split("/").filter(Boolean).join(" › ")}</span>
-            <span>{sortedItems.length} 個項目</span>
-          <button onClick={() => store.updateWindow(window.id, { viewMode: window.viewMode === "list" ? "grid" : "list" })}><List /> {viewModeLabel(window.viewMode)}</button>
+              <div className={`file-list ${window.viewMode}`}>
+                {window.viewMode === "list" && (
+                  <div className="file-header">
+                    <span>名稱</span>
+                    <span>大小</span>
+                    <span>種類</span>
+                    <span>加入日期</span>
+                    <span />
+                    <span />
+                    <span />
+                    <span />
+                  </div>
+                )}
+                {fileList.isLoading && <div className="empty-state"><Loader2 className="spin" /> Loading</div>}
+                {fileList.error && <div className="empty-state error">{fileList.error.message}</div>}
+                {!fileList.isLoading && sortedItems.length === 0 && <div className="empty-state">Empty folder</div>}
+                {sortedItems.map((item) => <FileRow key={item.path} item={item} window={window} />)}
+              </div>
+              <div className="statusbar">
+                <span className="pathbar"><HardDrive /> {window.rootSlug} <ChevronRight /> {window.logicalPath === "/" ? window.title : window.logicalPath.split("/").filter(Boolean).join(" › ")}</span>
+                <span>{sortedItems.length} 個項目</span>
+                <button onClick={() => store.updateWindow(window.id, { viewMode: window.viewMode === "list" ? "grid" : "list" })}><List /> {viewModeLabel(window.viewMode)}</button>
+              </div>
+            </div>
+            <aside className="window-preview-pane">
+              <label className="search-pill window-search"><Search /><input placeholder="搜尋" /></label>
+            </aside>
           </div>
           <div className="resize-handle" onMouseDown={(event) => setResize({ startX: event.clientX, startY: event.clientY, width: window.width, height: window.height })} />
         </>
@@ -416,6 +427,31 @@ function FileWindowView({ window }: { window: FileWindow }) {
         </div>
       )}
     </section>
+  );
+}
+
+function MiniFinderSidebar({ activeLabel }: { activeLabel: string }) {
+  return (
+    <nav className="window-side-nav">
+      <button><RefreshCw /> 最近項目</button>
+      <button><Share2 /> 已共享</button>
+      <span>喜好項目</span>
+      <button><LayoutGrid /> 應用程式</button>
+      <button><PanelRight /> 桌面</button>
+      <button><FileText /> 文件</button>
+      <button className="selected"><Download /> {activeLabel || "下載項目"}</button>
+      <button><Folder /> Repos</button>
+      <span>位置</span>
+      <button><Home /> gnehs</button>
+      <button><Server /> Kago Roots</button>
+      <button><Radio /> AirDrop</button>
+      <button><Globe2 /> 網路</button>
+      <button><Trash2 /> 垃圾桶</button>
+      <span>標籤</span>
+      <button><Circle className="tag-dot gray" /> 已觀看</button>
+      <button><Circle className="tag-dot red" /> 可刪除</button>
+      <button><Circle className="tag-dot blue" /> 好看</button>
+    </nav>
   );
 }
 
@@ -502,6 +538,7 @@ function FloatingShelf() {
   const active = store.windows.find((window) => window.id === store.activeWindowId);
   const queryClient = useQueryClient();
   const shelf = shelves.data?.[0];
+  if (!shelf || shelf.items.length === 0) return null;
 
   async function copyToActive() {
     if (!shelf || !active || shelf.items.length === 0) return;
@@ -529,6 +566,7 @@ function FloatingShelf() {
 
 function TaskCenter() {
   const tasks = useTasks();
+  if (!tasks.data?.length) return null;
   return (
     <aside className="task-center">
       <header><Boxes /> 任務</header>

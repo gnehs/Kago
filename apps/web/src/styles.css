@@ -28,7 +28,7 @@
 body {
   margin: 0;
   min-width: 360px;
-  background: #000;
+  background: #2a415f;
   letter-spacing: 0;
   overflow: hidden;
 }
@@ -43,6 +43,15 @@ button {
   border: 0;
   color: inherit;
   cursor: pointer;
+}
+
+button:focus {
+  outline: none;
+}
+
+button:focus-visible {
+  outline: 2px solid rgba(0, 122, 255, 0.35);
+  outline-offset: 2px;
 }
 
 button:disabled {
@@ -211,13 +220,17 @@ select:focus {
   grid-template-columns: 260px minmax(0, 1fr) 360px;
   height: 100vh;
   overflow: hidden;
-  padding: 54px 64px;
-  background: #000;
+  padding: 38px 52px;
+  background:
+    radial-gradient(circle at 90% 10%, rgba(255, 255, 255, 0.78), transparent 12%),
+    radial-gradient(circle at 78% 38%, rgba(255, 255, 255, 0.52), transparent 10%),
+    linear-gradient(160deg, #5f86bd 0%, #90afd2 31%, #526a87 52%, #263647 70%, #15202d 100%);
+  background-size: cover;
 }
 
 .sidebar,
 .inspector {
-  min-height: calc(100vh - 108px);
+  min-height: calc(100vh - 76px);
   border-right: 1px solid var(--kago-border);
   background: rgba(246, 246, 246, 0.78);
   backdrop-filter: blur(28px);
@@ -360,8 +373,8 @@ select:focus {
 
 .workspace-canvas {
   position: relative;
-  overflow: hidden;
-  min-height: calc(100vh - 108px);
+  overflow: visible;
+  min-height: calc(100vh - 76px);
   background: rgba(255, 255, 255, 0.94);
 }
 
@@ -488,13 +501,14 @@ select:focus {
 .file-window {
   position: absolute;
   display: grid;
-  grid-template-rows: 42px 48px minmax(0, 1fr) 32px;
-  min-width: 360px;
-  min-height: 280px;
+  grid-template-rows: 48px minmax(0, 1fr);
+  min-width: 760px;
+  min-height: 420px;
   overflow: hidden;
   border: 1px solid rgba(0, 0, 0, 0.12);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.96);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(24px);
 }
 
 .file-window.focused {
@@ -503,9 +517,69 @@ select:focus {
 }
 
 .file-window.maximized {
-  inset: 78px 16px 16px 16px;
+  inset: 78px -340px 16px -220px;
   width: auto;
   height: auto;
+}
+
+.finder-window-body {
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr) 250px;
+  min-height: 0;
+}
+
+.window-finder-sidebar {
+  overflow: auto;
+  border-right: 1px solid rgba(0, 0, 0, 0.08);
+  background: rgba(238, 247, 255, 0.72);
+  padding: 14px 10px;
+}
+
+.window-side-nav {
+  display: grid;
+  gap: 5px;
+}
+
+.window-side-nav span {
+  margin: 14px 8px 4px;
+  color: #8c8c90;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.window-side-nav button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  min-height: 31px;
+  border-radius: 9px;
+  background: transparent;
+  color: #1f1f21;
+  padding: 0 10px;
+  font-weight: 650;
+}
+
+.window-side-nav button:hover,
+.window-side-nav button.selected {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.window-content {
+  display: grid;
+  grid-template-rows: 48px minmax(0, 1fr) 32px;
+  min-width: 0;
+}
+
+.window-preview-pane {
+  border-left: 1px solid rgba(0, 0, 0, 0.08);
+  background: rgba(245, 250, 255, 0.78);
+  padding: 10px 14px;
+}
+
+.window-search {
+  min-width: 0;
+  width: 100%;
 }
 
 .window-titlebar,
