@@ -465,6 +465,10 @@ select:focus {
   overflow: visible;
 }
 
+.desktop-window-background.sidebar-collapsed {
+  grid-template-columns: 64px minmax(0, 1fr);
+}
+
 .sidebar,
 .inspector {
   min-height: 0;
@@ -479,13 +483,43 @@ select:focus {
   padding: 12px 10px 14px;
 }
 
+.sidebar.collapsed {
+  overflow-x: hidden;
+  padding-inline: 8px;
+}
+
+.sidebar.collapsed .brand-row.compact {
+  justify-content: center;
+}
+
+.sidebar.collapsed .brand-row.compact strong,
+.sidebar.collapsed .side-item span,
+.sidebar.collapsed .root-button span,
+.sidebar.collapsed .sidebar-footer span,
+.sidebar.collapsed .mini-form,
+.sidebar.collapsed .badge,
+.sidebar.collapsed .side-section {
+  display: none;
+}
+
+.sidebar.collapsed .side-nav,
+.sidebar.collapsed .root-list {
+  padding-inline: 0;
+}
+
+.sidebar.collapsed .side-item,
+.sidebar.collapsed .root-button {
+  justify-content: center;
+  min-height: 38px;
+  padding-inline: 0;
+}
+
 .inspector {
   position: absolute;
   z-index: 720;
   top: 82px;
   right: 20px;
   min-width: 0;
-  width: min(320px, calc(100vw - 48px));
   max-height: calc(100% - 110px);
   overflow: auto;
   border: 1px solid rgba(36, 48, 62, 0.14);
@@ -497,6 +531,15 @@ select:focus {
   backdrop-filter: blur(22px);
 }
 
+.inspector-resize-handle {
+  position: absolute;
+  top: 12px;
+  bottom: 12px;
+  left: -5px;
+  width: 10px;
+  cursor: ew-resize;
+}
+
 .inspector header,
 .task-center header,
 .floating-shelf header {
@@ -506,6 +549,10 @@ select:focus {
   color: var(--kago-text);
   font-size: 13px;
   font-weight: 600;
+}
+
+.inspector header {
+  justify-content: space-between;
 }
 
 .inspector h3 {
@@ -1283,7 +1330,8 @@ select:focus {
   white-space: nowrap;
 }
 
-.action-row .tool-button:hover {
+.action-row .tool-button:hover,
+.action-row .tool-button.selected {
   background: rgba(222, 235, 245, 0.95);
 }
 
@@ -1785,7 +1833,6 @@ select:focus {
 .floating-shelf,
 .task-center {
   position: absolute;
-  right: 16px;
   width: 280px;
   border: 1px solid rgba(0, 0, 0, 0.1);
   border-radius: 18px;
@@ -1796,7 +1843,32 @@ select:focus {
 
 .floating-shelf {
   z-index: 600;
-  bottom: 16px;
+  display: grid;
+  gap: 8px;
+  max-height: min(430px, calc(100% - 24px));
+  overflow: hidden;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.14);
+}
+
+.floating-shelf.collapsed {
+  width: 178px;
+  padding: 9px 10px;
+}
+
+.floating-shelf header {
+  cursor: move;
+  user-select: none;
+}
+
+.floating-shelf header span {
+  margin-left: auto;
+}
+
+.floating-shelf header .icon-button {
+  width: 24px;
+  height: 24px;
+  margin-left: 2px;
+  cursor: pointer;
 }
 
 .floating-shelf.drop-active {
@@ -1808,6 +1880,7 @@ select:focus {
 .task-center {
   z-index: 700;
   top: 64px;
+  right: 16px;
 }
 
 .trash-center,

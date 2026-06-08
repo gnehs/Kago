@@ -302,13 +302,14 @@ function Workspace({ userEmail }: { userEmail: string }) {
 
   const rootList = roots.data ?? [];
   const activeWindow = store.windows.find((window) => window.id === store.activeWindowId);
-  const showInspector = Boolean(activeWindow?.selectedItems.length);
+  const showInspector = Boolean(activeWindow?.selectedItems.length && store.inspector.open !== false);
+  const sidebarCollapsed = Boolean(store.sidebar.collapsed);
 
   return (
     <main className="app-shell">
       <DesktopTopBar userEmail={userEmail} onOpenAudit={() => setAuditOpen(true)} />
       <DesktopIcons roots={rootList} onOpenTrash={() => setTrashOpen(true)} onOpenAudit={() => setAuditOpen(true)} />
-      <section className={`desktop-window desktop-window-background ${showInspector ? "inspector-visible" : ""}`}>
+      <section className={`desktop-window desktop-window-background ${showInspector ? "inspector-visible" : ""} ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
         <Sidebar roots={rootList} userEmail={userEmail} onOpenTrash={() => setTrashOpen(true)} onOpenAudit={() => setAuditOpen(true)} />
         <section className="workspace-canvas">
           <TopStrip />
@@ -373,6 +374,7 @@ function Sidebar({ roots, userEmail, onOpenTrash, onOpenAudit }: { roots: Root[]
   const queryClient = useQueryClient();
   const [rootName, setRootName] = useState("");
   const [rootSlug, setRootSlug] = useState("");
+  const collapsed = Boolean(store.sidebar.collapsed);
 
   async function logout() {
     await api("/api/auth/logout", { method: "POST" });
@@ -391,10 +393,13 @@ function Sidebar({ roots, userEmail, onOpenTrash, onOpenAudit }: { roots: Root[]
   }
 
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar ${collapsed ? "collapsed" : ""}`}>
       <div className="brand-row compact">
         <div className="brand-mark">K</div>
         <strong>Kago</strong>
+        <button className="icon-button" title={collapsed ? "展開側邊欄" : "收合側邊欄"} onClick={() => store.updateSidebar({ collapsed: !collapsed })}>
+          <PanelRight />
+        </button>
       </div>
       <nav className="side-nav">
         <button className="side-item active"><RefreshCw /> 最近項目</button>
@@ -462,6 +467,13 @@ function TopStrip() {
             <button className="chrome-button"><Boxes /><ChevronDown /></button>
             <button className="chrome-button"><Share2 /></button>
             <button className="chrome-button"><Tags /></button>
+            <button
+              className={`chrome-button ${store.inspector.open === false ? "" : "selected"}`}
+              title={store.inspector.open === false ? "顯示檢閱器" : "隱藏檢閱器"}
+              onClick={() => store.updateInspector({ open: store.inspector.open === false })}
+            >
+              <PanelRight />
+            </button>
             <button className="chrome-button"><MoreHorizontal /></button>
           </div>
           <div className="top-actions">
@@ -838,6 +850,12 @@ function FileWindowView({ window }: { window: FileWindow }) {
                     </>
                   ) : null}
                   <button className="tool-button"><Settings2 /> 工具 <ChevronDown /></button>
+                  <button
+                    className={`tool-button ${store.inspector.open === false ? "" : "selected"}`}
+                    onClick={() => store.updateInspector({ open: store.inspector.open === false })}
+                  >
+                    <PanelRight /> 檢閱器
+                  </button>
                   <div className="window-view-tools">
                     <button className={window.viewMode === "list" ? "selected" : ""} onClick={() => store.updateWindow(window.id, { viewMode: "list" })}><List /></button>
                     <button className={window.viewMode === "grid" ? "selected" : ""} onClick={() => store.updateWindow(window.id, { viewMode: "grid" })}><LayoutGrid /></button>
@@ -1100,9 +1118,34 @@ function FloatingShelf() {
   const activeList = useFileList(active?.rootSlug ?? "", active?.logicalPath ?? "/", Boolean(active));
   const activeReadonly = Boolean(activeList.data?.readonly);
   const queryClient = useQueryClient();
+  const [shelfDrag, setShelfDrag] = useState<{ startX: number; startY: number; x: number; y: number } | null>(null);
   const [dropActive, setDropActive] = useState(false);
   const [dropError, setDropError] = useState("");
   const shelf = shelves.data?.[0];
+  const shelfCollapsed = Boolean(store.shelf.collapsed);
+  const shelfX = store.shelf.x ?? 320;
+  const shelfY = store.shelf.y ?? 620;
+
+  useEffect(() => {
+    if (!shelfDrag) return;
+    const currentDrag = shelfDrag;
+    function move(event: MouseEvent) {
+      store.updateShelf({
+        x: Math.max(8, Math.min(globalThis.innerWidth - 320, currentDrag.x + event.clientX - currentDrag.startX)),
+        y: Math.max(8, Math.min(globalThis.innerHeight - 180, currentDrag.y + event.clientY - currentDrag.startY))
+      });
+    }
+    function up() {
+      setShelfDrag(null);
+    }
+    globalThis.addEventListener("mousemove", move);
+    globalThis.addEventListener("mouseup", up);
+    return () => {
+      globalThis.removeEventListener("mousemove", move);
+      globalThis.removeEventListener("mouseup", up);
+    };
+  }, [shelfDrag, store]);
+
   if (!shelf) return null;
   const shelfId = shelf.id;
   const shelfItems = shelf.items;
@@ -1165,7 +1208,8 @@ function FloatingShelf() {
 
   return (
     <aside
-      className={`floating-shelf ${dropActive ? "drop-active" : ""}`}
+      className={`floating-shelf ${dropActive ? "drop-active" : ""} ${shelfCollapsed ? "collapsed" : ""}`}
+      style={{ left: shelfX, top: shelfY }}
       onDragOver={(event) => {
         event.preventDefault();
         setDropActive(true);
@@ -1175,25 +1219,39 @@ function FloatingShelf() {
       }}
       onDrop={(event) => void addDroppedItems(event)}
     >
-      <header><Archive /> 中轉區 <span>{shelfItems.length}</span></header>
-      <div className="shelf-items">
-        {shelfItems.length === 0 ? (
-          <div className="shelf-empty"><span>拖放檔案到這裡</span><small>中轉區只保存 reference，不會立即複製。</small></div>
-        ) : null}
-        {shelfItems.map((item) => (
-          <div className="shelf-item" key={item.id}>
-            <span>{item.name}</span>
-            <small>{item.kind === "folder" ? "資料夾" : "檔案"} · {formatSize(item.size)}</small>
-            <small>{item.root_slug}:{item.path}</small>
-            <button className="icon-button" title="從中轉區移除" onClick={() => void removeShelfItem(item.id)}><X /></button>
+      <header onMouseDown={(event) => setShelfDrag({ startX: event.clientX, startY: event.clientY, x: shelfX, y: shelfY })}>
+        <Archive /> 中轉區 <span>{shelfItems.length}</span>
+        <button
+          className="icon-button"
+          title={shelfCollapsed ? "展開中轉區" : "收合中轉區"}
+          onMouseDown={(event) => event.stopPropagation()}
+          onClick={() => store.updateShelf({ collapsed: !shelfCollapsed })}
+        >
+          <Minimize2 />
+        </button>
+      </header>
+      {!shelfCollapsed ? (
+        <>
+          <div className="shelf-items">
+            {shelfItems.length === 0 ? (
+              <div className="shelf-empty"><span>拖放檔案到這裡</span><small>中轉區只保存 reference，不會立即複製。</small></div>
+            ) : null}
+            {shelfItems.map((item) => (
+              <div className="shelf-item" key={item.id}>
+                <span>{item.name}</span>
+                <small>{item.kind === "folder" ? "資料夾" : "檔案"} · {formatSize(item.size)}</small>
+                <small>{item.root_slug}:{item.path}</small>
+                <button className="icon-button" title="從中轉區移除" onClick={() => void removeShelfItem(item.id)}><X /></button>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
-      {dropError ? <small className="readonly-note">{dropError}</small> : null}
-      {activeReadonly ? <small className="readonly-note">目前視窗是唯讀目的地</small> : null}
-      <button className="tool-button" onClick={copyToActive} disabled={!active || activeReadonly || shelfItems.length === 0}>複製到目前視窗</button>
-      <button className="tool-button" onClick={moveToActive} disabled={!active || activeReadonly || shelfItems.length === 0}>搬移到目前視窗</button>
-      <button className="tool-button" onClick={compressToActive} disabled={!active || activeReadonly || shelfItems.length === 0}>壓縮到目前視窗</button>
+          {dropError ? <small className="readonly-note">{dropError}</small> : null}
+          {activeReadonly ? <small className="readonly-note">目前視窗是唯讀目的地</small> : null}
+          <button className="tool-button" onClick={copyToActive} disabled={!active || activeReadonly || shelfItems.length === 0}>複製到目前視窗</button>
+          <button className="tool-button" onClick={moveToActive} disabled={!active || activeReadonly || shelfItems.length === 0}>搬移到目前視窗</button>
+          <button className="tool-button" onClick={compressToActive} disabled={!active || activeReadonly || shelfItems.length === 0}>壓縮到目前視窗</button>
+        </>
+      ) : null}
     </aside>
   );
 }
@@ -1330,6 +1388,25 @@ function Inspector() {
   const [groupName, setGroupName] = useState("");
   const [permissionUserId, setPermissionUserId] = useState("");
   const [permissionRootId, setPermissionRootId] = useState("");
+  const [inspectorResize, setInspectorResize] = useState<{ startX: number; width: number } | null>(null);
+  const inspectorWidth = Math.max(260, Math.min(480, store.inspector.width ?? 320));
+
+  useEffect(() => {
+    if (!inspectorResize) return;
+    const currentResize = inspectorResize;
+    function move(event: MouseEvent) {
+      store.updateInspector({ width: Math.max(260, Math.min(480, currentResize.width + currentResize.startX - event.clientX)) });
+    }
+    function up() {
+      setInspectorResize(null);
+    }
+    globalThis.addEventListener("mousemove", move);
+    globalThis.addEventListener("mouseup", up);
+    return () => {
+      globalThis.removeEventListener("mousemove", move);
+      globalThis.removeEventListener("mouseup", up);
+    };
+  }, [inspectorResize, store]);
 
   async function addTag() {
     if (!activeWindow || !selectedPath || !tagName) return;
@@ -1412,8 +1489,15 @@ function Inspector() {
   }
 
   return (
-    <aside className="inspector">
-      <header><Search /> 檢閱器</header>
+    <aside className="inspector" style={{ width: inspectorWidth }}>
+      <div
+        className="inspector-resize-handle"
+        onMouseDown={(event) => setInspectorResize({ startX: event.clientX, width: inspectorWidth })}
+      />
+      <header>
+        <Search /> 檢閱器
+        <button className="icon-button" title="關閉檢閱器" onClick={() => store.updateInspector({ open: false })}><X /></button>
+      </header>
       <section className="inspector-card inspector-summary">
         <h3>Preview</h3>
         {meta.isLoading ? <div className="inspector-preview"><Loader2 className="spin" /></div> : null}

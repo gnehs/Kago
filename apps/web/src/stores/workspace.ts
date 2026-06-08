@@ -10,6 +10,9 @@ type WorkspaceStore = WorkspaceState & {
   closeWindow: (id: string) => void;
   focusWindow: (id: string) => void;
   updateWindow: (id: string, patch: Partial<FileWindow>) => void;
+  updateSidebar: (patch: Partial<WorkspaceState["sidebar"]>) => void;
+  updateInspector: (patch: Partial<WorkspaceState["inspector"]>) => void;
+  updateShelf: (patch: Partial<WorkspaceState["shelf"]>) => void;
   selectItems: (id: string, items: string[]) => void;
   snapshot: () => WorkspaceState;
 };
@@ -106,6 +109,18 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
           ? { ...window, ...patch, title: patch.logicalPath ? titleFromPath(patch.logicalPath, window.rootSlug) : patch.title ?? window.title, updatedAt: ts() }
           : window
       )
+    })),
+  updateSidebar: (patch) =>
+    set((state) => ({
+      sidebar: { ...state.sidebar, ...patch }
+    })),
+  updateInspector: (patch) =>
+    set((state) => ({
+      inspector: { ...state.inspector, ...patch }
+    })),
+  updateShelf: (patch) =>
+    set((state) => ({
+      shelf: { ...state.shelf, ...patch }
     })),
   selectItems: (id, items) =>
     set((state) => ({
