@@ -1,4 +1,5 @@
 import { z } from "zod";
+import fsp from "node:fs/promises";
 import type { Db } from "../db/db.js";
 import { row, rows } from "../db/db.js";
 import { hashPassword, randomToken, sha256, verifyPassword } from "../lib/crypto.js";
@@ -39,6 +40,7 @@ export class ShareService {
   async create(actor: Actor, input: z.infer<typeof shareSchema>) {
     const safe = await this.paths.resolveExisting(input.rootSlug, input.path);
     this.permissions.require(actor, "share", safe.root, safe.logicalPath);
+    await this.assertModeMatchesTarget(input.mode, safe.absolutePath);
     if (safe.root.readonly && input.mode === "upload_only") {
       throw new AppError(403, "Readonly roots cannot accept upload-only shares", "ROOT_READONLY");
     }
@@ -205,6 +207,7 @@ export class ShareService {
       throw new AppError(403, "Download is not allowed for this share", "SHARE_DOWNLOAD_FORBIDDEN");
     }
     const safe = await this.paths.resolveRootById(share.root_id, share.path);
+    await this.assertModeMatchesTarget("download", safe.absolutePath);
     this.db.prepare("UPDATE share_links SET download_count = download_count + 1, updated_at = ? WHERE id = ?").run(
       now(),
       share.id
@@ -227,7 +230,9 @@ export class ShareService {
     if (mode !== "download" && mode !== "view_only") {
       throw new AppError(403, "Preview is not allowed for this share", "SHARE_PREVIEW_FORBIDDEN");
     }
-    return this.paths.resolveRootById(share.root_id, share.path);
+    const safe = await this.paths.resolveRootById(share.root_id, share.path);
+    await this.assertModeMatchesTarget("view_only", safe.absolutePath);
+    return safe;
   }
 
   async publicUploadTarget(token: string, accessToken?: string) {
@@ -236,8 +241,18 @@ export class ShareService {
     const mode = (JSON.parse(share.permission_json) as { mode: string }).mode;
     if (mode !== "upload_only") throw new AppError(403, "Upload is not allowed for this share", "SHARE_UPLOAD_FORBIDDEN");
     const safe = await this.paths.resolveRootById(share.root_id, share.path);
+    await this.assertModeMatchesTarget("upload_only", safe.absolutePath);
     if (safe.root.readonly) throw new AppError(403, "Root is readonly", "ROOT_READONLY");
     return { share, safe };
+  }
+
+  private async assertModeMatchesTarget(mode: "view_only" | "download" | "upload_only", absolutePath: string): Promise<void> {
+    const stat = await fsp.stat(absolutePath);
+    if (mode === "upload_only") {
+      if (!stat.isDirectory()) throw new AppError(400, "Upload-only shares must target a folder", "SHARE_TARGET_NOT_FOLDER");
+      return;
+    }
+    if (!stat.isFile()) throw new AppError(400, "Download and view shares must target a file", "SHARE_TARGET_NOT_FILE");
   }
 
   private accessTokenForShare(share: ResolvedShare): string {
