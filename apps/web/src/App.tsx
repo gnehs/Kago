@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { AppWindow, Archive, Boxes, Check, ChevronDown, ChevronLeft, ChevronRight, Circle, CirclePlus, Columns3, Download, FileText, Folder, FolderOpen, Globe2, HardDrive, HelpCircle, Home, LayoutGrid, List, Loader2, LogOut, Maximize2, MessageCircle, Minimize2, MoreHorizontal, PanelRight, Pencil, Plus, Radio, RefreshCw, Search, Server, Settings2, Share2, SlidersHorizontal, Smartphone, Star, Tags, Trash2, Upload, UserRound, X } from "lucide-react";
 import { api, downloadUrl, previewUrl, thumbnailUrl } from "./api/client";
-import { useAudit, useFileList, useFileMeta, useFileTags, useMe, useRoots, useSaveWorkspace, useShares, useShelves, useTasks, useTrash, useWorkspace } from "./api/hooks";
+import { useAudit, useFileList, useFileMeta, useFileTags, useMe, usePermissions, useRoots, useSaveWorkspace, useShares, useShelves, useTasks, useTrash, useWorkspace } from "./api/hooks";
 import { useWorkspaceStore } from "./stores/workspace";
 import type { FileItem, FileWindow, Root } from "./types/kago";
 
@@ -1288,6 +1288,8 @@ function Inspector() {
   const shares = useShares();
   const activeRoot = roots.data?.find((root) => root.slug === activeWindow?.rootSlug);
   const selectedShares = (shares.data ?? []).filter((share) => share.root_id === activeRoot?.id && share.path === selectedPath);
+  const permissions = usePermissions(activeRoot?.id, Boolean(activeRoot));
+  const selectedPermissionRules = (permissions.data ?? []).filter((rule) => selectedPath && permissionRuleMatchesPath(rule.path_prefix, Boolean(rule.recursive), selectedPath));
   const [tagName, setTagName] = useState("");
   const [shareMode, setShareMode] = useState<"download" | "view_only" | "upload_only">("download");
   const [shareUrl, setShareUrl] = useState("");
@@ -1368,6 +1370,12 @@ function Inspector() {
     setPermissionUserId("");
     setPermissionRootId("");
     await queryClient.invalidateQueries({ queryKey: ["roots"] });
+    await queryClient.invalidateQueries({ queryKey: ["permissions", permissionRootId] });
+  }
+
+  async function deletePermissionRule(ruleId: string) {
+    await api(`/api/permissions/${ruleId}`, { method: "DELETE" });
+    if (activeRoot) await queryClient.invalidateQueries({ queryKey: ["permissions", activeRoot.id] });
   }
 
   return (
@@ -1459,13 +1467,35 @@ function Inspector() {
       </section>
       <section className="inspector-card">
         <h3>權限</h3>
+        <div className="permission-rule-list">
+          {permissions.isLoading ? <span className="tag-empty">讀取權限規則...</span> : null}
+          {permissions.error ? <span className="tag-empty">需要管理員權限才能檢視規則</span> : null}
+          {!permissions.isLoading && !permissions.error && selectedPermissionRules.length === 0 ? <span className="tag-empty">目前路徑沒有明確規則</span> : null}
+          {selectedPermissionRules.map((rule) => {
+            const allow = parseJsonArray(rule.allow_json);
+            const deny = parseJsonArray(rule.deny_json);
+            return (
+              <div className="permission-rule-item" key={rule.id}>
+                <div>
+                  <strong>{rule.principal_type}:{rule.principal_id}</strong>
+                  <small>{rule.path_prefix}{rule.recursive ? "/*" : ""}</small>
+                  <div className="permission-badges">
+                    {allow.map((item) => <span className="allow" key={`allow-${rule.id}-${item}`}>{item}</span>)}
+                    {deny.map((item) => <span className="deny" key={`deny-${rule.id}-${item}`}>{item}</span>)}
+                  </div>
+                </div>
+                <button className="task-action" onClick={() => void deletePermissionRule(rule.id)}>刪除</button>
+              </div>
+            );
+          })}
+        </div>
         <div className="inline-form">
           <input placeholder="使用者 ID" value={permissionUserId} onChange={(event) => setPermissionUserId(event.target.value)} />
           <select value={permissionRootId} onChange={(event) => setPermissionRootId(event.target.value)}>
             <option value="">Root</option>
             {roots.data?.map((root) => <option key={root.id} value={root.id}>{root.name}</option>)}
           </select>
-          <button className="tool-button" onClick={grantReadPermission}>讀取</button>
+          <button className="tool-button" onClick={grantReadPermission} disabled={!permissionUserId || !permissionRootId}>讀取</button>
         </div>
       </section>
     </aside>
@@ -1531,6 +1561,21 @@ function shareModeLabel(mode: "download" | "view_only" | "upload_only") {
   if (mode === "view_only") return "檢視";
   if (mode === "upload_only") return "只允許上傳";
   return "下載";
+}
+
+function parseJsonArray(value: string): string[] {
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.map(String) : [];
+  } catch {
+    return [];
+  }
+}
+
+function permissionRuleMatchesPath(prefix: string, recursive: boolean, logicalPath: string) {
+  if (logicalPath === prefix) return true;
+  if (!recursive) return false;
+  return logicalPath.startsWith(prefix.endsWith("/") ? prefix : `${prefix}/`);
 }
 
 function summarizeAuditTarget(value: string | null) {

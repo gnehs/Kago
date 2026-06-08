@@ -96,6 +96,19 @@ export type ShareLink = {
   updated_at: number;
 };
 
+export type PermissionRule = {
+  id: string;
+  principal_type: "user" | "group" | "share_link";
+  principal_id: string;
+  root_id: string;
+  path_prefix: string;
+  allow_json: string;
+  deny_json: string;
+  recursive: number;
+  created_at: number;
+  updated_at: number;
+};
+
 export type FileTask = {
   id: string;
   type: string;

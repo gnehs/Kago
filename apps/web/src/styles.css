@@ -653,6 +653,63 @@ select:focus {
   font-size: 12px;
 }
 
+.permission-rule-list {
+  display: grid;
+  gap: 8px;
+}
+
+.permission-rule-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(36, 48, 62, 0.1);
+  border-radius: 10px;
+  background: rgba(247, 250, 252, 0.72);
+  padding: 8px;
+}
+
+.permission-rule-item > div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.permission-rule-item strong,
+.permission-rule-item small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.permission-rule-item small {
+  color: var(--kago-text-muted);
+  font-size: 12px;
+}
+
+.permission-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.permission-badges span {
+  border-radius: 999px;
+  padding: 2px 6px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.permission-badges .allow {
+  background: rgba(52, 199, 89, 0.14);
+  color: #22863a;
+}
+
+.permission-badges .deny {
+  background: rgba(255, 59, 48, 0.13);
+  color: #c22b24;
+}
+
 .inline-form {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

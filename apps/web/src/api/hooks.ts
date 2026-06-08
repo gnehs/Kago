@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./client";
-import type { Actor, AuditLog, FileList, FileMeta, FileTask, Root, ShareLink, Shelf, Tag, TrashItem, WorkspaceState } from "../types/kago";
+import type { Actor, AuditLog, FileList, FileMeta, FileTask, PermissionRule, Root, ShareLink, Shelf, Tag, TrashItem, WorkspaceState } from "../types/kago";
 
 export function useMe() {
   return useQuery({ queryKey: ["auth", "me"], queryFn: () => api<{ user: Actor | null }>("/api/auth/me") });
@@ -48,6 +48,14 @@ export function useFileTags(rootSlug: string, path: string, enabled = true) {
 
 export function useShares() {
   return useQuery({ queryKey: ["shares"], queryFn: () => api<ShareLink[]>("/api/shares") });
+}
+
+export function usePermissions(rootId?: string, enabled = true) {
+  return useQuery({
+    queryKey: ["permissions", rootId ?? "all"],
+    queryFn: () => api<PermissionRule[]>(`/api/permissions${rootId ? `?${new URLSearchParams({ rootId }).toString()}` : ""}`),
+    enabled
+  });
 }
 
 export function useTasks() {
