@@ -68,7 +68,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       notice: null
     }),
   openRoot: (root) => {
-    const existing = get().windows.find((window) => window.rootSlug === root.slug && window.logicalPath === "/");
+    const existing = get().windows.find((window) => window.rootSlug === root.slug);
     if (existing) {
       get().focusWindow(existing.id);
       return;
