@@ -3,6 +3,7 @@ import type { Db } from "../db/db.js";
 import { rows } from "../db/db.js";
 import { AppError } from "../lib/errors.js";
 import { id, now } from "../lib/ids.js";
+import type { AuditService } from "./audit.service.js";
 import type { Actor, Root } from "./types.js";
 
 export const actions = [
@@ -59,7 +60,10 @@ const readonlyBlocked = new Set<Action>([
 ]);
 
 export class PermissionService {
-  constructor(private readonly db: Db) {}
+  constructor(
+    private readonly db: Db,
+    private readonly audit: AuditService
+  ) {}
 
   can(actor: Actor, action: Action, root: Root, logicalPath: string): { allowed: boolean; reason?: string } {
     if (actor.disabled) return { allowed: false, reason: "User disabled" };
@@ -90,7 +94,18 @@ export class PermissionService {
 
   require(actor: Actor, action: Action, root: Root, logicalPath: string): void {
     const result = this.can(actor, action, root, logicalPath);
-    if (!result.allowed) throw new AppError(403, result.reason ?? "Forbidden", "FORBIDDEN");
+    if (!result.allowed) {
+      this.audit.write({
+        actorType: "user",
+        actorId: actor.id,
+        action: "permission_denied",
+        rootId: root.id,
+        path: logicalPath,
+        target: { action, reason: result.reason ?? "Forbidden" },
+        result: "denied"
+      });
+      throw new AppError(403, result.reason ?? "Forbidden", "FORBIDDEN");
+    }
   }
 
   list(rootId?: string) {

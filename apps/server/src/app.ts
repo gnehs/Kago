@@ -31,7 +31,7 @@ export async function buildApp(env: Env) {
   const audit = new AuditService(db);
   const roots = new RootService(db, env.dataDir);
   const paths = new PathService(roots);
-  const permissions = new PermissionService(db);
+  const permissions = new PermissionService(db, audit);
   const auth = new AuthService(db, env);
   const fsService = new FsService(paths, permissions, audit, env.appDataDir);
   const workspace = new WorkspaceService(db, roots);
