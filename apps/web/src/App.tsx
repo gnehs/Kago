@@ -223,7 +223,10 @@ function Workspace({ userEmail }: { userEmail: string }) {
     const ws = new WebSocket(`${protocol}://${location.host}/ws`);
     ws.onmessage = (event) => {
       const message = JSON.parse(event.data);
-      if (String(message.type).startsWith("task.")) void queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      if (String(message.type).startsWith("task.")) {
+        void queryClient.invalidateQueries({ queryKey: ["tasks"] });
+        if (message.type === "task.done") void queryClient.invalidateQueries({ queryKey: ["fs"] });
+      }
       if (message.type === "shelf.updated") void queryClient.invalidateQueries({ queryKey: ["shelves"] });
     };
     return () => ws.close();
@@ -510,6 +513,36 @@ function FileWindowView({ window }: { window: FileWindow }) {
     await queryClient.invalidateQueries({ queryKey: ["fs", "list", window.rootSlug, window.logicalPath] });
   }
 
+  async function compressSelection() {
+    if (window.selectedItems.length === 0) return;
+    const name = prompt("壓縮檔名稱", `${window.title || "archive"}.zip`);
+    if (!name) return;
+    await api("/api/tasks", {
+      method: "POST",
+      body: JSON.stringify({
+        type: "compress",
+        sources: window.selectedItems.map((path) => ({ rootSlug: window.rootSlug, path })),
+        destination: { rootSlug: window.rootSlug, path: joinLogicalPath(window.logicalPath, ensureZipName(name)) }
+      })
+    });
+    store.selectItems(window.id, []);
+    await queryClient.invalidateQueries({ queryKey: ["tasks"] });
+  }
+
+  async function extractSelection() {
+    if (window.selectedItems.length === 0) return;
+    await api("/api/tasks", {
+      method: "POST",
+      body: JSON.stringify({
+        type: "extract",
+        sources: window.selectedItems.map((path) => ({ rootSlug: window.rootSlug, path })),
+        destination: { rootSlug: window.rootSlug, path: window.logicalPath }
+      })
+    });
+    store.selectItems(window.id, []);
+    await queryClient.invalidateQueries({ queryKey: ["tasks"] });
+  }
+
   async function upload(event: React.ChangeEvent<HTMLInputElement>) {
     const files = event.target.files;
     if (!files?.length) return;
@@ -574,6 +607,8 @@ function FileWindowView({ window }: { window: FileWindow }) {
                   <button className="tool-button" onClick={mkdir}><Folder /> 建立 <ChevronDown /></button>
                   <label className="tool-button file-input"><Upload /> 上傳 <ChevronDown /><input type="file" multiple onChange={upload} /></label>
                   <button className="tool-button"><MoreHorizontal /> 操作 <ChevronDown /></button>
+                  <button className="tool-button" onClick={() => void compressSelection()} disabled={window.selectedItems.length === 0}><Archive /> 壓縮</button>
+                  <button className="tool-button" onClick={() => void extractSelection()} disabled={window.selectedItems.length === 0}><FolderOpen /> 解壓縮</button>
                   <button className="tool-button"><Settings2 /> 工具 <ChevronDown /></button>
                   <button className="tool-button"><SlidersHorizontal /> 設定</button>
                   <div className="window-view-tools">
@@ -758,6 +793,21 @@ function FloatingShelf() {
     await queryClient.invalidateQueries({ queryKey: ["tasks"] });
   }
 
+  async function compressToActive() {
+    if (!shelf || !active || shelf.items.length === 0) return;
+    const name = prompt("壓縮檔名稱", "shelf.zip");
+    if (!name) return;
+    await api("/api/tasks", {
+      method: "POST",
+      body: JSON.stringify({
+        type: "compress",
+        sources: shelf.items.map((item) => ({ rootSlug: item.root_slug, path: item.path })),
+        destination: { rootSlug: active.rootSlug, path: joinLogicalPath(active.logicalPath, ensureZipName(name)) }
+      })
+    });
+    await queryClient.invalidateQueries({ queryKey: ["tasks"] });
+  }
+
   return (
     <aside className="floating-shelf">
       <header><Archive /> 中轉區 <span>{shelf?.items.length ?? 0}</span></header>
@@ -765,6 +815,7 @@ function FloatingShelf() {
         {shelf?.items.map((item) => <div key={item.id}><span>{item.name}</span><small>{item.path}</small></div>)}
       </div>
       <button className="tool-button" onClick={copyToActive}>複製到目前視窗</button>
+      <button className="tool-button" onClick={compressToActive}>壓縮到目前視窗</button>
     </aside>
   );
 }
@@ -982,6 +1033,17 @@ function parentPath(value: string) {
   const parts = value.split("/").filter(Boolean);
   parts.pop();
   return parts.length ? `/${parts.join("/")}` : "/";
+}
+
+function joinLogicalPath(parent: string, name: string) {
+  const cleanName = name.replaceAll("\\", "-").replaceAll("/", "-").replaceAll("\0", "");
+  const base = parent === "/" ? "" : parent;
+  return `${base}/${cleanName}`;
+}
+
+function ensureZipName(value: string) {
+  const trimmed = value.trim() || "archive";
+  return trimmed.toLowerCase().endsWith(".zip") ? trimmed : `${trimmed}.zip`;
 }
 
 function formatSize(size: number) {
