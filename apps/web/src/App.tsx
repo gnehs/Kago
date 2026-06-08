@@ -4,7 +4,7 @@ import { AppWindow, Archive, Boxes, Check, ChevronDown, ChevronLeft, ChevronRigh
 import { ApiError, api, downloadUrl, previewUrl, thumbnailUrl } from "./api/client";
 import { useAudit, useFileList, useFileMeta, useFileTags, useMe, usePathPermissions, useRoots, useSaveWorkspace, useShares, useShelves, useTasks, useTrash, useWorkspace } from "./api/hooks";
 import { useWorkspaceStore } from "./stores/workspace";
-import type { FileItem, FileWindow, Root } from "./types/kago";
+import type { FileItem, FileWindow, Root, WorkspaceState } from "./types/kago";
 
 export function App() {
   const shareToken = publicShareToken();
@@ -209,6 +209,7 @@ function Workspace({ userEmail }: { userEmail: string }) {
   const store = useWorkspaceStore();
   const queryClient = useQueryClient();
   const saveTimer = useRef<number | null>(null);
+  const prevWorkspace = useRef<WorkspaceState | null>(null);
   const noticeTimer = useRef<number | null>(null);
   const [trashOpen, setTrashOpen] = useState(false);
   const [auditOpen, setAuditOpen] = useState(false);
@@ -219,10 +220,67 @@ function Workspace({ userEmail }: { userEmail: string }) {
 
   useEffect(() => {
     if (!store.hydrated) return;
+    const current = store.snapshot();
+    const previous = prevWorkspace.current;
+
+    if (!previous) {
+      prevWorkspace.current = current;
+      return;
+    }
+
+    const previousWindows = new Map(previous.windows.map((window) => [window.id, window]));
+    let hasOpenClose = current.windows.length !== previous.windows.length;
+    let hasPathOrViewSortChange = false;
+    let hasGeometryChange = false;
+
+    for (const window of current.windows) {
+      const prevWindow = previousWindows.get(window.id);
+      if (!prevWindow) {
+        hasOpenClose = true;
+        continue;
+      }
+      if (
+        window.logicalPath !== prevWindow.logicalPath ||
+        window.viewMode !== prevWindow.viewMode ||
+        window.sortBy !== prevWindow.sortBy ||
+        window.sortDirection !== prevWindow.sortDirection
+      ) {
+        hasPathOrViewSortChange = true;
+      }
+      if (window.x !== prevWindow.x || window.y !== prevWindow.y || window.width !== prevWindow.width || window.height !== prevWindow.height) {
+        hasGeometryChange = true;
+      }
+    }
+
+    if (!hasOpenClose) {
+      for (const prevWindow of previous.windows) {
+        if (!current.windows.some((window) => window.id === prevWindow.id)) {
+          hasOpenClose = true;
+          break;
+        }
+      }
+    }
+
     if (saveTimer.current) window.clearTimeout(saveTimer.current);
+
+    if (hasOpenClose || hasPathOrViewSortChange) {
+      prevWorkspace.current = current;
+      saveWorkspace.mutate(current);
+      return;
+    }
+
+    let delay = 700;
+    if (store.activeWindowId !== previous.activeWindowId) delay = 300;
+    else if (hasGeometryChange) delay = 1000;
+
     saveTimer.current = window.setTimeout(() => {
-      saveWorkspace.mutate(store.snapshot());
-    }, 700);
+      saveWorkspace.mutate(current);
+      prevWorkspace.current = current;
+    }, delay);
+
+    return () => {
+      if (saveTimer.current) window.clearTimeout(saveTimer.current);
+    };
   }, [store.windows, store.activeWindowId, store.sidebar, store.inspector, store.shelf]);
 
   useEffect(() => {
