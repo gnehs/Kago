@@ -291,13 +291,22 @@ export class TaskService {
     const dest = await this.paths.resolveExisting(destination.rootSlug, destination.path);
     this.permissions.require(actor, "upload", dest.root, dest.logicalPath);
 
+    const operations = [];
+    const targetPaths = new Set<string>();
     for (const source of sources) {
       const safeSource = await this.paths.resolveExisting(source.rootSlug, source.path);
       this.permissions.require(actor, move ? "move" : "read", safeSource.root, safeSource.logicalPath);
       const target = path.join(dest.absolutePath, path.basename(safeSource.absolutePath));
+      if (targetPaths.has(target)) throw new AppError(409, "Multiple sources resolve to the same target", "TARGET_COLLISION");
+      targetPaths.add(target);
+      await assertPathDoesNotExist(target);
+      operations.push({ safeSource, target });
+    }
+
+    for (const { safeSource, target } of operations) {
       await this.progress(task.id, safeSource.logicalPath);
       if (move) await fsp.rename(safeSource.absolutePath, target);
-      else await fsp.cp(safeSource.absolutePath, target, { recursive: true, errorOnExist: false });
+      else await fsp.cp(safeSource.absolutePath, target, { recursive: true, force: false, errorOnExist: true });
       if (move) {
         this.audit.write({
           actorType: "user",
@@ -373,6 +382,7 @@ export class TaskService {
     const dest = await this.paths.resolveForCreate(destination.rootSlug, destination.path);
     this.permissions.require(actor, "upload", dest.root, path.posix.dirname(dest.logicalPath));
     this.permissions.require(actor, "compress", dest.root, path.posix.dirname(dest.logicalPath));
+    await assertPathDoesNotExist(dest.absolutePath);
     const zip = new AdmZip();
     for (const source of sources) {
       const safe = await this.paths.resolveExisting(source.rootSlug, source.path);
@@ -610,4 +620,18 @@ async function assertRealPathInside(rootPath: string, targetPath: string): Promi
   if (relative.startsWith("..") || path.isAbsolute(relative)) {
     throw new AppError(403, "Extract target escapes destination", "ZIP_TARGET_ESCAPES_DESTINATION");
   }
+}
+
+async function assertPathDoesNotExist(targetPath: string): Promise<void> {
+  try {
+    await fsp.lstat(targetPath);
+  } catch (error) {
+    if (isMissingPathError(error)) return;
+    throw error;
+  }
+  throw new AppError(409, "Target already exists", "TARGET_EXISTS");
+}
+
+function isMissingPathError(error: unknown): boolean {
+  return Boolean(error && typeof error === "object" && "code" in error && error.code === "ENOENT");
 }
