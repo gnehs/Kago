@@ -53,9 +53,9 @@ export class PathService {
   }
 
   private async resolveInsideRoot(root: Root, logicalPath: string): Promise<string> {
-    const rootReal = await fs.realpath(root.base_path);
+    const rootReal = await resolveRealPath(root.base_path);
     const target = path.join(root.base_path, logicalPath.slice(1));
-    const targetReal = await fs.realpath(target);
+    const targetReal = await resolveRealPath(target);
     if (!this.isInside(rootReal, targetReal)) {
       throw new AppError(403, "Path escapes root", "PATH_ESCAPES_ROOT");
     }
@@ -63,8 +63,8 @@ export class PathService {
   }
 
   private async assertParentInsideRoot(root: Root, absolutePath: string): Promise<void> {
-    const rootReal = await fs.realpath(root.base_path);
-    const parentReal = await fs.realpath(path.dirname(absolutePath));
+    const rootReal = await resolveRealPath(root.base_path);
+    const parentReal = await resolveRealPath(path.dirname(absolutePath));
     if (!this.isInside(rootReal, parentReal)) {
       throw new AppError(403, "Path escapes root", "PATH_ESCAPES_ROOT");
     }
@@ -74,4 +74,17 @@ export class PathService {
     const relative = path.relative(rootReal, targetReal);
     return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
   }
+}
+
+async function resolveRealPath(targetPath: string): Promise<string> {
+  try {
+    return await fs.realpath(targetPath);
+  } catch (error) {
+    if (isMissingPathError(error)) throw new AppError(404, "Path not found", "PATH_NOT_FOUND");
+    throw error;
+  }
+}
+
+function isMissingPathError(error: unknown): boolean {
+  return Boolean(error && typeof error === "object" && "code" in error && error.code === "ENOENT");
 }

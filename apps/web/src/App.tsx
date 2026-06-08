@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { AppWindow, Archive, Boxes, Check, ChevronDown, ChevronLeft, ChevronRight, Circle, CirclePlus, Columns3, Download, FileText, Folder, FolderOpen, Globe2, HardDrive, HelpCircle, Home, LayoutGrid, List, Loader2, LogOut, Maximize2, MessageCircle, Minimize2, MoreHorizontal, PanelRight, Pencil, Plus, Radio, RefreshCw, Search, Server, Settings2, Share2, SlidersHorizontal, Smartphone, Star, Tags, Trash2, Upload, UserRound, X } from "lucide-react";
-import { api, downloadUrl, previewUrl, thumbnailUrl } from "./api/client";
+import { AppWindow, Archive, Boxes, Check, ChevronDown, ChevronLeft, ChevronRight, Circle, CirclePlus, Columns3, Download, FileText, Folder, FolderOpen, Globe2, HardDrive, HelpCircle, Home, LayoutGrid, List, Loader2, LogOut, Maximize2, MessageCircle, Minimize2, MoreHorizontal, PanelRight, Pencil, Plus, Radio, RefreshCw, Search, Server, Settings2, Share2, ShieldAlert, SlidersHorizontal, Smartphone, Star, Tags, Trash2, Upload, UserRound, X } from "lucide-react";
+import { ApiError, api, downloadUrl, previewUrl, thumbnailUrl } from "./api/client";
 import { useAudit, useFileList, useFileMeta, useFileTags, useMe, usePathPermissions, useRoots, useSaveWorkspace, useShares, useShelves, useTasks, useTrash, useWorkspace } from "./api/hooks";
 import { useWorkspaceStore } from "./stores/workspace";
 import type { FileItem, FileWindow, Root } from "./types/kago";
@@ -620,7 +620,15 @@ function FileWindowView({ window }: { window: FileWindow }) {
       return haystack.includes(query);
     });
   }, [searchQuery, sortedItems]);
-  const selectedColumnItem = window.viewMode === "columns" ? visibleItems.find((item) => item.path === window.selectedItems[0]) ?? null : null;
+  const fileWindowError = classifyFileWindowError(fileList.error);
+  const visibleWindowItems = fileWindowError ? [] : visibleItems;
+  const selectedColumnItem = window.viewMode === "columns" ? visibleWindowItems.find((item) => item.path === window.selectedItems[0]) ?? null : null;
+
+  useEffect(() => {
+    if (fileWindowError?.kind === "forbidden" && window.selectedItems.length > 0) {
+      store.selectItems(window.id, []);
+    }
+  }, [fileWindowError?.kind, store, window.id, window.selectedItems.length]);
 
   async function createTask(type: "copy" | "move") {
     if (!dropChoice || readonly) return;
@@ -911,8 +919,15 @@ function FileWindowView({ window }: { window: FileWindow }) {
                   </div>
                 )}
                 {fileList.isLoading && <div className="empty-state"><Loader2 className="spin" /> Loading</div>}
-                {fileList.error && <div className="empty-state error">{fileList.error.message}</div>}
-                {!fileList.isLoading && fileList.data && visibleItems.length === 0 && (
+                {!fileList.isLoading && fileWindowError ? (
+                  <WindowErrorState
+                    error={fileWindowError}
+                    window={window}
+                    onClose={() => store.closeWindow(window.id)}
+                    onGoToRoot={() => store.updateWindow(window.id, { logicalPath: "/", selectedItems: [] })}
+                  />
+                ) : null}
+                {!fileList.isLoading && !fileWindowError && fileList.data && visibleWindowItems.length === 0 && (
                   <div className="empty-state file-empty">
                     <FolderOpen />
                     <strong>{searchQuery ? "沒有符合的項目" : "資料夾是空的"}</strong>
@@ -923,7 +938,7 @@ function FileWindowView({ window }: { window: FileWindow }) {
                     </span>
                   </div>
                 )}
-                {visibleItems.map((item) => (
+                {visibleWindowItems.map((item) => (
                   <FileRow
                     key={item.path}
                     item={item}
@@ -968,7 +983,7 @@ function FileWindowView({ window }: { window: FileWindow }) {
               </div>
               <div className="statusbar">
                 <span className="pathbar"><HardDrive /> {window.rootSlug} <ChevronRight /> {window.logicalPath === "/" ? window.title : window.logicalPath.split("/").filter(Boolean).join(" › ")}</span>
-                <span>{searchQuery ? `${visibleItems.length} / ${sortedItems.length} 個項目` : `${sortedItems.length} 個項目`}</span>
+                <span>{fileWindowError ? "無法讀取目前位置" : searchQuery ? `${visibleWindowItems.length} / ${sortedItems.length} 個項目` : `${sortedItems.length} 個項目`}</span>
                 <button onClick={() => store.updateWindow(window.id, { viewMode: nextViewMode(window.viewMode) })}><List /> {viewModeLabel(window.viewMode)}</button>
               </div>
             </div>
@@ -1128,6 +1143,37 @@ function FileRow({
     await queryClient.invalidateQueries({ queryKey: ["tasks"] });
     await queryClient.invalidateQueries({ queryKey: ["fs", "list", window.rootSlug, window.logicalPath] });
   }
+}
+
+function WindowErrorState({
+  error,
+  window,
+  onClose,
+  onGoToRoot
+}: {
+  error: FileWindowErrorState;
+  window: FileWindow;
+  onClose: () => void;
+  onGoToRoot: () => void;
+}) {
+  async function requestAccess() {
+    const subject = encodeURIComponent(`Kago access request: ${window.rootSlug}${window.logicalPath}`);
+    const body = encodeURIComponent(`Root: ${window.rootSlug}\nPath: ${window.logicalPath}\n\nPlease grant access to this folder.`);
+    globalThis.open(`mailto:?subject=${subject}&body=${body}`, "_blank");
+  }
+
+  return (
+    <div className={`empty-state file-window-error ${error.kind}`}>
+      {error.kind === "root_missing" ? <HardDrive /> : error.kind === "path_missing" ? <FolderOpen /> : <ShieldAlert />}
+      <strong>{error.title}</strong>
+      <span>{error.message}</span>
+      <div className="window-error-actions">
+        {error.kind === "path_missing" ? <button className="tool-button" onClick={onGoToRoot}><Home /> 回到 Root</button> : null}
+        {error.kind === "forbidden" ? <button className="tool-button" onClick={() => void requestAccess()}><Share2 /> 申請存取</button> : null}
+        <button className="tool-button" onClick={onClose}><X /> 關閉視窗</button>
+      </div>
+    </div>
+  );
 }
 
 function FileGlyph({ item, window }: { item: FileItem; window: FileWindow }) {
@@ -1815,4 +1861,36 @@ function viewModeLabel(mode: FileWindow["viewMode"]) {
   if (mode === "grid") return "圖像";
   if (mode === "columns") return "直欄";
   return "列表";
+}
+
+type FileWindowErrorState = {
+  kind: "root_missing" | "path_missing" | "forbidden";
+  title: string;
+  message: string;
+};
+
+function classifyFileWindowError(error: unknown): FileWindowErrorState | null {
+  if (!(error instanceof ApiError)) return null;
+  if (error.code === "ROOT_NOT_FOUND") {
+    return {
+      kind: "root_missing",
+      title: "Root not found",
+      message: "這個視窗原本指向的 Root 已不存在。"
+    };
+  }
+  if (error.code === "PATH_NOT_FOUND") {
+    return {
+      kind: "path_missing",
+      title: "Folder not found",
+      message: "原本的資料夾路徑已失效，你可以回到 Root 或直接關閉視窗。"
+    };
+  }
+  if (error.code === "FORBIDDEN") {
+    return {
+      kind: "forbidden",
+      title: "Forbidden",
+      message: "你目前沒有權限開啟這個位置，已隱藏舊的選取與快取內容。"
+    };
+  }
+  return null;
 }

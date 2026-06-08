@@ -1718,6 +1718,50 @@ select:focus {
   color: #39424b;
 }
 
+.file-window-error {
+  align-content: center;
+  justify-items: center;
+  gap: 10px;
+  margin: 26px 10px;
+  border: 1px dashed rgba(36, 48, 62, 0.14);
+  background: linear-gradient(180deg, rgba(248, 251, 253, 0.82), rgba(255, 255, 255, 0.94));
+  padding: 28px;
+  text-align: center;
+}
+
+.file-window-error strong {
+  color: #2f3942;
+  font-size: 18px;
+}
+
+.file-window-error span {
+  max-width: 340px;
+  color: #6e7983;
+  line-height: 1.55;
+}
+
+.file-window-error svg {
+  width: 34px;
+  height: 34px;
+}
+
+.file-window-error.root_missing svg,
+.file-window-error.path_missing svg {
+  color: #d99a1b;
+  fill: rgba(244, 178, 60, 0.2);
+}
+
+.file-window-error.forbidden svg {
+  color: #c25f1a;
+}
+
+.window-error-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
 .empty-state.error {
   color: var(--kago-danger);
 }

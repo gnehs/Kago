@@ -1,3 +1,13 @@
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public readonly code: string,
+    public readonly statusCode: number
+  ) {
+    super(message);
+  }
+}
+
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(path, {
     credentials: "include",
@@ -10,8 +20,8 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: response.statusText }));
-    throw new Error(error.error ?? "Request failed");
+    const error = await response.json().catch(() => ({ error: response.statusText, code: "REQUEST_FAILED" }));
+    throw new ApiError(error.error ?? "Request failed", error.code ?? "REQUEST_FAILED", response.status);
   }
 
   if (response.status === 204) return undefined as T;
