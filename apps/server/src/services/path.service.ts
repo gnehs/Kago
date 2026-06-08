@@ -15,9 +15,12 @@ export class PathService {
 
   normalizeLogicalPath(input: string): string {
     if (input.includes("\0")) throw new AppError(400, "Invalid path", "INVALID_PATH");
+    if (input.includes("\\")) throw new AppError(400, "Invalid path separator", "INVALID_PATH");
     if (input.startsWith("/data/") || input === "/data") {
       throw new AppError(400, "Physical paths are not accepted", "PHYSICAL_PATH_REJECTED");
     }
+    const rawSegments = input.split("/");
+    if (rawSegments.includes("..")) throw new AppError(400, "Invalid path", "INVALID_PATH");
 
     const withSlash = input.startsWith("/") ? input : `/${input}`;
     const normalized = path.posix.normalize(withSlash);
