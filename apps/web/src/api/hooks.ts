@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./client";
-import type { Actor, FileList, FileTask, Root, Shelf, WorkspaceState } from "../types/kago";
+import type { Actor, FileList, FileTask, Root, Shelf, TrashItem, WorkspaceState } from "../types/kago";
 
 export function useMe() {
   return useQuery({ queryKey: ["auth", "me"], queryFn: () => api<{ user: Actor | null }>("/api/auth/me") });
@@ -35,4 +35,8 @@ export function useTasks() {
 
 export function useShelves() {
   return useQuery({ queryKey: ["shelves"], queryFn: () => api<Shelf[]>("/api/shelves") });
+}
+
+export function useTrash(enabled = true) {
+  return useQuery({ queryKey: ["trash"], queryFn: () => api<TrashItem[]>("/api/trash"), enabled });
 }

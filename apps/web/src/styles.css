@@ -1123,6 +1123,86 @@ select:focus {
   top: 64px;
 }
 
+.trash-center {
+  position: absolute;
+  z-index: 850;
+  top: 86px;
+  right: 32px;
+  display: grid;
+  grid-template-rows: 44px minmax(0, 1fr);
+  width: min(620px, calc(100vw - 140px));
+  max-height: min(520px, calc(100vh - 150px));
+  overflow: hidden;
+  border: 1px solid rgba(0, 0, 0, 0.16);
+  border-radius: 16px;
+  background: rgba(252, 253, 254, 0.96);
+  box-shadow: 0 24px 72px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(22px);
+}
+
+.trash-center header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.09);
+  background: rgba(249, 250, 251, 0.94);
+  padding: 0 10px;
+}
+
+.trash-center header strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #39424c;
+  font-size: 14px;
+}
+
+.trash-center header .icon-button {
+  margin-left: auto;
+}
+
+.trash-list {
+  display: grid;
+  align-content: start;
+  overflow: auto;
+  padding: 10px;
+}
+
+.trash-item {
+  display: grid;
+  grid-template-columns: 22px minmax(160px, 1fr) 88px auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 46px;
+  border-radius: 6px;
+  padding: 6px 8px;
+  color: #36414c;
+  font-size: 13px;
+}
+
+.trash-item:nth-child(even) {
+  background: rgba(61, 74, 89, 0.045);
+}
+
+.trash-item > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.trash-item strong,
+.trash-item span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trash-item > div span,
+.trash-item > span {
+  color: var(--kago-text-muted);
+  font-size: 12px;
+}
+
 .shelf-items,
 .task-list {
   display: grid;
@@ -1225,6 +1305,21 @@ select:focus {
 
   .file-window.maximized {
     inset: 44px -14px 10px -138px;
+  }
+
+  .trash-center {
+    right: 10px;
+    left: -72px;
+    width: auto;
+    max-height: calc(100vh - 112px);
+  }
+
+  .trash-item {
+    grid-template-columns: 22px minmax(120px, 1fr) auto;
+  }
+
+  .trash-item > span {
+    display: none;
   }
 
   .finder-window-body {

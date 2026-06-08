@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { AppWindow, Archive, Boxes, Check, ChevronDown, ChevronLeft, ChevronRight, Circle, CirclePlus, Columns3, Download, FileText, Folder, FolderOpen, Globe2, HardDrive, HelpCircle, Home, LayoutGrid, List, Loader2, LogOut, Maximize2, MessageCircle, Minimize2, MoreHorizontal, PanelRight, Pencil, Plus, Radio, RefreshCw, Search, Server, Settings2, Share2, SlidersHorizontal, Smartphone, Star, Tags, Trash2, Upload, UserRound, X } from "lucide-react";
 import { api, downloadUrl, thumbnailUrl } from "./api/client";
-import { useFileList, useMe, useRoots, useSaveWorkspace, useShelves, useTasks, useWorkspace } from "./api/hooks";
+import { useFileList, useMe, useRoots, useSaveWorkspace, useShelves, useTasks, useTrash, useWorkspace } from "./api/hooks";
 import { useWorkspaceStore } from "./stores/workspace";
 import type { FileItem, FileWindow, Root } from "./types/kago";
 
@@ -78,6 +78,7 @@ function Workspace({ userEmail }: { userEmail: string }) {
   const store = useWorkspaceStore();
   const queryClient = useQueryClient();
   const saveTimer = useRef<number | null>(null);
+  const [trashOpen, setTrashOpen] = useState(false);
 
   useEffect(() => {
     if (workspaceQuery.data && !store.hydrated) store.hydrate(workspaceQuery.data);
@@ -137,9 +138,9 @@ function Workspace({ userEmail }: { userEmail: string }) {
   return (
     <main className="app-shell">
       <DesktopTopBar userEmail={userEmail} />
-      <DesktopIcons roots={rootList} />
+      <DesktopIcons roots={rootList} onOpenTrash={() => setTrashOpen(true)} />
       <section className="desktop-window desktop-window-background">
-        <Sidebar roots={rootList} userEmail={userEmail} />
+        <Sidebar roots={rootList} userEmail={userEmail} onOpenTrash={() => setTrashOpen(true)} />
         <section className="workspace-canvas">
           <TopStrip />
           {store.windows.length === 0 ? <RootPicker roots={rootList} /> : null}
@@ -148,6 +149,7 @@ function Workspace({ userEmail }: { userEmail: string }) {
           ))}
           <FloatingShelf />
           <TaskCenter />
+          <TrashCenter open={trashOpen} onClose={() => setTrashOpen(false)} />
         </section>
         <Inspector />
       </section>
@@ -173,13 +175,14 @@ function DesktopTopBar({ userEmail }: { userEmail: string }) {
   );
 }
 
-function DesktopIcons({ roots }: { roots: Root[] }) {
+function DesktopIcons({ roots, onOpenTrash }: { roots: Root[]; onOpenTrash: () => void }) {
   const store = useWorkspaceStore();
   const firstRoot = roots[0];
   const iconItems = [
     { label: "套件中心", icon: <Boxes />, action: undefined },
     { label: "控制台", icon: <SlidersHorizontal />, action: undefined },
     { label: "File Station", icon: <FolderOpen />, action: firstRoot ? () => store.openRoot(firstRoot) : undefined },
+    { label: "垃圾桶", icon: <Trash2 />, action: onOpenTrash },
     { label: "DSM 說明", icon: <HelpCircle />, action: undefined }
   ];
 
@@ -195,7 +198,7 @@ function DesktopIcons({ roots }: { roots: Root[] }) {
   );
 }
 
-function Sidebar({ roots, userEmail }: { roots: Root[]; userEmail: string }) {
+function Sidebar({ roots, userEmail, onOpenTrash }: { roots: Root[]; userEmail: string; onOpenTrash: () => void }) {
   const store = useWorkspaceStore();
   const queryClient = useQueryClient();
   const [rootName, setRootName] = useState("");
@@ -238,7 +241,7 @@ function Sidebar({ roots, userEmail }: { roots: Root[]; userEmail: string }) {
         <button className="side-item"><Server /> Kago Roots</button>
         <button className="side-item"><Radio /> AirDrop</button>
         <button className="side-item"><Globe2 /> 網路</button>
-        <button className="side-item"><Trash2 /> 垃圾桶</button>
+        <button className="side-item" onClick={onOpenTrash}><Trash2 /> 垃圾桶</button>
         <span className="side-section">標籤</span>
         <button className="side-item"><Circle className="tag-dot gray" /> 已觀看</button>
         <button className="side-item"><Circle className="tag-dot red" /> 可刪除</button>
@@ -658,6 +661,45 @@ function TaskCenter() {
   );
 }
 
+function TrashCenter({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const trash = useTrash(open);
+  const queryClient = useQueryClient();
+  if (!open) return null;
+
+  async function restore(itemId: string) {
+    await api(`/api/trash/${itemId}/restore`, { method: "POST" });
+    await queryClient.invalidateQueries({ queryKey: ["trash"] });
+    await queryClient.invalidateQueries({ queryKey: ["tasks"] });
+    await queryClient.invalidateQueries({ queryKey: ["fs"] });
+  }
+
+  return (
+    <aside className="trash-center">
+      <header>
+        <div className="traffic-lights"><span /><span /><span /></div>
+        <strong><Trash2 /> 垃圾桶</strong>
+        <button className="icon-button" onClick={onClose} title="關閉"><X /></button>
+      </header>
+      <div className="trash-list">
+        {trash.isLoading && <div className="empty-state"><Loader2 className="spin" /> Loading</div>}
+        {trash.error && <div className="empty-state error">{trash.error.message}</div>}
+        {!trash.isLoading && !trash.data?.length && <div className="empty-state">沒有待還原的項目</div>}
+        {trash.data?.map((item) => (
+          <div className="trash-item" key={item.id}>
+            <FileIcon />
+            <div>
+              <strong>{item.original_path.split("/").filter(Boolean).at(-1) ?? item.original_path}</strong>
+              <span>{item.original_path}</span>
+            </div>
+            <span>{formatUnixDate(item.deleted_at)}</span>
+            <button className="tool-button" onClick={() => void restore(item.id)}><RefreshCw /> 還原</button>
+          </div>
+        ))}
+      </div>
+    </aside>
+  );
+}
+
 function Inspector() {
   const store = useWorkspaceStore();
   const roots = useRoots();
@@ -792,6 +834,12 @@ function formatSize(size: number) {
 function formatDate(mtime: number) {
   return new Intl.DateTimeFormat("zh-TW", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(
     new Date(mtime)
+  );
+}
+
+function formatUnixDate(value: number) {
+  return new Intl.DateTimeFormat("zh-TW", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(
+    new Date(value * 1000)
   );
 }
 

@@ -79,3 +79,13 @@ export type Shelf = {
   name: string;
   items: Array<{ id: string; root_id: string; root_slug: string; path: string; kind: string; name: string; size: number }>;
 };
+
+export type TrashItem = {
+  id: string;
+  original_root_id: string;
+  original_path: string;
+  trash_path: string;
+  deleted_by: string;
+  deleted_at: number;
+  restored_at: number | null;
+};
