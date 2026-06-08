@@ -855,7 +855,20 @@ function FloatingShelf() {
 
 function TaskCenter() {
   const tasks = useTasks();
+  const queryClient = useQueryClient();
   if (!tasks.data?.length) return null;
+
+  async function cancelTask(taskId: string) {
+    await api(`/api/tasks/${taskId}/cancel`, { method: "POST" });
+    await queryClient.invalidateQueries({ queryKey: ["tasks"] });
+  }
+
+  async function retryTask(taskId: string) {
+    await api(`/api/tasks/${taskId}/retry`, { method: "POST" });
+    await queryClient.invalidateQueries({ queryKey: ["tasks"] });
+    await queryClient.invalidateQueries({ queryKey: ["fs"] });
+  }
+
   return (
     <aside className="task-center">
       <header><Boxes /> 任務</header>
@@ -866,6 +879,14 @@ function TaskCenter() {
             <span className={`status ${task.status}`}>{task.status}</span>
             <progress value={task.processed_files} max={Math.max(task.total_files, 1)} />
             {task.error_message && <small>{task.error_message}</small>}
+            <div className="task-actions">
+              {task.status === "queued" ? (
+                <button className="task-action" onClick={() => void cancelTask(task.id)}><X /> 取消</button>
+              ) : null}
+              {["failed", "cancelled", "interrupted"].includes(task.status) ? (
+                <button className="task-action" onClick={() => void retryTask(task.id)}><RefreshCw /> 重試</button>
+              ) : null}
+            </div>
           </div>
         ))}
       </div>

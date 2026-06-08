@@ -290,6 +290,10 @@ function registerApi(app: FastifyInstance, services: Services) {
     const actor = requireActor(request);
     return services.tasks.cancel(actor, z.object({ id: z.string() }).parse(request.params).id);
   });
+  app.post("/api/tasks/:id/retry", async (request) => {
+    const actor = requireActor(request);
+    return services.tasks.retry(actor, z.object({ id: z.string() }).parse(request.params).id);
+  });
   app.post("/api/tasks/:id/pause", async () => ({ ok: false, reason: "Pause is reserved for a later worker version" }));
   app.post("/api/tasks/:id/resume", async () => ({ ok: false, reason: "Task resume is not part of MVP" }));
 

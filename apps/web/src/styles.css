@@ -1566,6 +1566,35 @@ select:focus {
   width: 100%;
 }
 
+.task-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 6px;
+}
+
+.task-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 26px;
+  border: 1px solid rgba(125, 145, 164, 0.24);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.62);
+  color: #39424b;
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.task-action:hover {
+  background: rgba(222, 235, 245, 0.95);
+}
+
+.task-action svg {
+  width: 13px;
+  height: 13px;
+}
+
 .status {
   border-radius: 9999px;
   background: var(--kago-surface-elevated);

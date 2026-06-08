@@ -166,6 +166,24 @@ export class TaskService {
     return this.get(taskId);
   }
 
+  retry(actor: Actor, taskId: string): FileTask {
+    const task = this.get(taskId);
+    this.requireTaskAccess(actor, task);
+    if (!["failed", "cancelled", "interrupted"].includes(task.status)) {
+      throw new AppError(409, "Only failed, cancelled, or interrupted tasks can be retried", "TASK_RETRY_NOT_ALLOWED");
+    }
+
+    const retryTask = this.cloneTask(actor, task);
+    this.audit.write({
+      actorType: "user",
+      actorId: actor.id,
+      action: "task_retry",
+      target: { taskId, retryTaskId: retryTask.id },
+      result: "success"
+    });
+    return retryTask;
+  }
+
   createRestoreTrash(actor: Actor, trashItemId: string): FileTask {
     return this.create(actor, {
       type: "restore_trash",
@@ -400,6 +418,54 @@ export class TaskService {
   private requireTaskAccess(actor: Actor, task: FileTask): void {
     if (actor.role === "ADMIN" || task.created_by === actor.id) return;
     throw new AppError(403, "Task access denied", "TASK_ACCESS_DENIED");
+  }
+
+  private cloneTask(actor: Actor, task: FileTask): FileTask {
+    const ts = now();
+    const retryTask: FileTask = {
+      ...task,
+      id: id("task"),
+      status: "queued",
+      created_by: actor.id,
+      processed_files: 0,
+      processed_bytes: 0,
+      current_path: null,
+      error_message: null,
+      auth_snapshot_json: JSON.stringify({ actorId: actor.id, role: actor.role, retriedFrom: task.id }),
+      created_at: ts,
+      updated_at: ts,
+      started_at: null,
+      finished_at: null
+    };
+
+    this.db
+      .prepare(
+        `INSERT INTO tasks
+        (id, type, status, created_by, sources_json, destination, total_files, processed_files, total_bytes,
+         processed_bytes, current_path, error_message, auth_snapshot_json, created_at, updated_at, started_at, finished_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        retryTask.id,
+        retryTask.type,
+        retryTask.status,
+        retryTask.created_by,
+        retryTask.sources_json,
+        retryTask.destination,
+        retryTask.total_files,
+        retryTask.processed_files,
+        retryTask.total_bytes,
+        retryTask.processed_bytes,
+        retryTask.current_path,
+        retryTask.error_message,
+        retryTask.auth_snapshot_json,
+        retryTask.created_at,
+        retryTask.updated_at,
+        retryTask.started_at,
+        retryTask.finished_at
+      );
+    this.events.publish({ type: "task.created", task: retryTask });
+    return retryTask;
   }
 }
 
