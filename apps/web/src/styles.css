@@ -582,6 +582,43 @@ select:focus {
   white-space: nowrap;
 }
 
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 26px;
+}
+
+.tag-empty {
+  color: var(--kago-text-muted);
+  font-size: 12px;
+}
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 26px;
+  max-width: 100%;
+  border: 1px solid rgba(36, 48, 62, 0.12);
+  border-radius: 999px;
+  background: rgba(247, 250, 252, 0.84);
+  color: #39424b;
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.tag-chip:hover {
+  background: rgba(222, 235, 245, 0.95);
+}
+
+.tag-chip svg {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+}
+
 .inline-form {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

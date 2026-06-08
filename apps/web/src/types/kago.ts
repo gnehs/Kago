@@ -72,6 +72,15 @@ export type FileMeta = {
   type: string;
 };
 
+export type Tag = {
+  id: string;
+  name: string;
+  color: string | null;
+  owner_id: string | null;
+  created_at: number;
+  updated_at: number;
+};
+
 export type FileTask = {
   id: string;
   type: string;

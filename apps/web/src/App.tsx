@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { AppWindow, Archive, Boxes, Check, ChevronDown, ChevronLeft, ChevronRight, Circle, CirclePlus, Columns3, Download, FileText, Folder, FolderOpen, Globe2, HardDrive, HelpCircle, Home, LayoutGrid, List, Loader2, LogOut, Maximize2, MessageCircle, Minimize2, MoreHorizontal, PanelRight, Pencil, Plus, Radio, RefreshCw, Search, Server, Settings2, Share2, SlidersHorizontal, Smartphone, Star, Tags, Trash2, Upload, UserRound, X } from "lucide-react";
 import { api, downloadUrl, previewUrl, thumbnailUrl } from "./api/client";
-import { useAudit, useFileList, useFileMeta, useMe, useRoots, useSaveWorkspace, useShelves, useTasks, useTrash, useWorkspace } from "./api/hooks";
+import { useAudit, useFileList, useFileMeta, useFileTags, useMe, useRoots, useSaveWorkspace, useShelves, useTasks, useTrash, useWorkspace } from "./api/hooks";
 import { useWorkspaceStore } from "./stores/workspace";
 import type { FileItem, FileWindow, Root } from "./types/kago";
 
@@ -1284,6 +1284,7 @@ function Inspector() {
   const selectedPath = activeWindow?.selectedItems[0] ?? null;
   const selectedCount = activeWindow?.selectedItems.length ?? 0;
   const meta = useFileMeta(activeWindow?.rootSlug ?? "", selectedPath ?? "/", Boolean(activeWindow && selectedPath));
+  const fileTags = useFileTags(activeWindow?.rootSlug ?? "", selectedPath ?? "/", Boolean(activeWindow && selectedPath));
   const [tagName, setTagName] = useState("");
   const [shareMode, setShareMode] = useState<"download" | "view_only" | "upload_only">("download");
   const [shareUrl, setShareUrl] = useState("");
@@ -1295,11 +1296,26 @@ function Inspector() {
   async function addTag() {
     if (!activeWindow || !selectedPath || !tagName) return;
     const tag = await api<{ id: string }>("/api/tags", { method: "POST", body: JSON.stringify({ name: tagName, color: "#007aff" }) });
+    const tagIds = [...new Set([...(fileTags.data ?? []).map((item) => item.id), tag.id])];
     await api("/api/tags/file", {
       method: "PUT",
-      body: JSON.stringify({ rootSlug: activeWindow.rootSlug, path: selectedPath, tagIds: [tag.id] })
+      body: JSON.stringify({ rootSlug: activeWindow.rootSlug, path: selectedPath, tagIds })
     });
     setTagName("");
+    await queryClient.invalidateQueries({ queryKey: ["tags", "file", activeWindow.rootSlug, selectedPath] });
+  }
+
+  async function removeTag(tagId: string) {
+    if (!activeWindow || !selectedPath) return;
+    await api("/api/tags/file", {
+      method: "PUT",
+      body: JSON.stringify({
+        rootSlug: activeWindow.rootSlug,
+        path: selectedPath,
+        tagIds: (fileTags.data ?? []).filter((tag) => tag.id !== tagId).map((tag) => tag.id)
+      })
+    });
+    await queryClient.invalidateQueries({ queryKey: ["tags", "file", activeWindow.rootSlug, selectedPath] });
   }
 
   async function createShare() {
@@ -1377,9 +1393,20 @@ function Inspector() {
       </section>
       <section className="inspector-card">
         <h3>標籤</h3>
+        <div className="tag-list">
+          {fileTags.isLoading ? <span className="tag-empty">讀取標籤...</span> : null}
+          {!fileTags.isLoading && !fileTags.data?.length ? <span className="tag-empty">尚未套用標籤</span> : null}
+          {fileTags.data?.map((tag) => (
+            <button key={tag.id} className="tag-chip" onClick={() => void removeTag(tag.id)} title="移除此標籤">
+              <Circle style={{ color: tag.color ?? "#007aff" }} />
+              {tag.name}
+              <X />
+            </button>
+          ))}
+        </div>
         <div className="inline-form">
           <input placeholder="標籤名稱" value={tagName} onChange={(event) => setTagName(event.target.value)} />
-          <button className="tool-button" onClick={addTag}><Tags /> 套用</button>
+          <button className="tool-button" onClick={addTag} disabled={!selectedPath || !tagName.trim()}><Tags /> 套用</button>
         </div>
       </section>
       <section className="inspector-card">
