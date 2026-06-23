@@ -3850,3 +3850,898 @@ select:focus {
 .window-titlebar .traffic-lights {
   margin-right: 2px;
 }
+
+/* DESIGN.md alignment: near-black product workspace */
+:root {
+  --kago-bg: #010102;
+  --kago-surface: #0f1011;
+  --kago-surface-elevated: #141516;
+  --kago-surface-strong: #18191a;
+  --kago-border: #23252a;
+  --kago-border-strong: #34343a;
+  --kago-text: #f7f8f8;
+  --kago-text-muted: #d0d6e0;
+  --kago-text-subtle: #8a8f98;
+  --kago-text-tertiary: #62666d;
+  --kago-accent: #5e6ad2;
+  --kago-accent-hover: #828fff;
+  --kago-danger: #ff6b68;
+  --kago-warning: #c8a86a;
+  --kago-success: #27a644;
+  --kago-glass: #0f1011;
+  --kago-divider: #23252a;
+  --kago-radius-sm: 4px;
+  --kago-radius-md: 8px;
+  --kago-radius-lg: 12px;
+  color-scheme: dark;
+}
+
+body {
+  background: var(--kago-bg);
+  color: var(--kago-text);
+  font-family: Inter, "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  letter-spacing: 0;
+}
+
+.app-shell,
+.loading-screen,
+.login-screen,
+.share-screen {
+  background: var(--kago-bg);
+}
+
+.app-shell::before,
+.app-shell::after {
+  display: none;
+}
+
+.desktop-icons {
+  display: none;
+}
+
+.desktop-topbar {
+  height: 40px;
+  background: rgba(1, 1, 2, 0.88);
+  border-bottom: 1px solid var(--kago-border);
+  backdrop-filter: blur(18px);
+}
+
+.desktop-launcher,
+.desktop-status {
+  height: 40px;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.desktop-launcher button,
+.desktop-status button {
+  width: 42px;
+  height: 40px;
+  border-left-color: var(--kago-border);
+  color: var(--kago-text-muted);
+}
+
+.desktop-launcher button:hover,
+.desktop-status button:hover {
+  background: var(--kago-surface-elevated);
+  color: var(--kago-text);
+}
+
+.workspace-sidebar-shell {
+  position: absolute;
+  z-index: 650;
+  top: 56px;
+  bottom: 18px;
+  left: 16px;
+  width: 244px;
+  min-height: 0;
+}
+
+.workspace-sidebar-shell.collapsed {
+  width: 68px;
+}
+
+.workspace-sidebar-shell .sidebar {
+  height: 100%;
+  min-height: 0;
+  border: 1px solid var(--kago-border);
+  border-radius: var(--kago-radius-lg);
+  background: var(--kago-surface);
+  color: var(--kago-text);
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.workspace-sidebar-shell .brand-row.compact {
+  border-bottom: 1px solid var(--kago-border);
+}
+
+.brand-mark {
+  border-radius: var(--kago-radius-md);
+  background: var(--kago-accent);
+  color: #ffffff;
+}
+
+.brand-row h1,
+.brand-row strong,
+.finder-nav strong,
+.window-titlebar strong,
+.inspector h3,
+.root-picker-inner h2 {
+  color: var(--kago-text);
+  letter-spacing: 0;
+}
+
+.brand-row p,
+.side-section,
+.window-titlebar > span,
+.root-picker-inner p,
+.inspector p,
+.tag-empty,
+.meta-grid dt,
+.share-status-item small,
+.permission-rule-item small,
+.statusbar,
+.pathbar,
+.command-palette button small {
+  color: var(--kago-text-subtle);
+}
+
+.workspace-canvas.desktop-canvas {
+  position: absolute;
+  inset: 40px 0 0;
+  overflow: visible;
+  background: var(--kago-bg);
+}
+
+.top-strip {
+  top: 0;
+  height: 48px;
+  padding-left: 284px;
+  border-bottom: 1px solid var(--kago-border);
+  border-radius: 0;
+  background: rgba(1, 1, 2, 0.94);
+  backdrop-filter: blur(18px);
+}
+
+.workspace-canvas.sidebar-collapsed .top-strip {
+  padding-left: 104px;
+}
+
+.workspace-notice,
+.command-palette,
+.root-picker-inner,
+.file-window,
+.floating-shelf,
+.task-center,
+.trash-center,
+.audit-center,
+.inspector,
+.context-menu,
+.drop-popover,
+.login-panel,
+.share-window {
+  border: 1px solid var(--kago-border) !important;
+  background: var(--kago-surface) !important;
+  color: var(--kago-text);
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.root-picker {
+  padding: 62px 24px 24px 284px;
+}
+
+.workspace-canvas.sidebar-collapsed .root-picker {
+  padding-left: 104px;
+}
+
+.root-picker-inner {
+  width: min(560px, calc(100vw - 340px));
+  border-radius: var(--kago-radius-lg);
+}
+
+.root-picker-mark,
+.share-file-mark,
+.desktop-icon-tile,
+.thumbnail-frame,
+.inspector-preview,
+.column-detail-icon {
+  border: 1px solid var(--kago-border);
+  background: var(--kago-surface-elevated);
+  color: var(--kago-accent);
+  box-shadow: none;
+}
+
+.file-window {
+  grid-template-rows: 42px minmax(0, 1fr);
+  min-width: 360px;
+  min-height: 280px;
+  border-radius: var(--kago-radius-lg);
+  background: var(--kago-surface) !important;
+}
+
+.file-window.focused {
+  border-color: var(--kago-border-strong) !important;
+  box-shadow: 0 0 0 1px rgba(94, 106, 210, 0.22);
+}
+
+.file-window.maximized {
+  inset: 64px 18px 18px 284px;
+}
+
+.workspace-canvas.sidebar-collapsed .file-window.maximized {
+  inset: 64px 18px 18px 92px;
+}
+
+.window-titlebar {
+  height: 42px;
+  border-bottom: 1px solid var(--kago-border);
+  background: var(--kago-surface-elevated);
+  color: var(--kago-text);
+}
+
+.traffic-lights span,
+.window-titlebar .traffic-lights span:nth-child(1),
+.window-titlebar .traffic-lights span:nth-child(2),
+.window-titlebar .traffic-lights span:nth-child(3),
+.share-window .traffic-lights span:nth-child(1),
+.share-window .traffic-lights span:nth-child(2),
+.share-window .traffic-lights span:nth-child(3),
+.trash-center .traffic-lights span:nth-child(1),
+.trash-center .traffic-lights span:nth-child(2),
+.trash-center .traffic-lights span:nth-child(3),
+.audit-center .traffic-lights span:nth-child(1),
+.audit-center .traffic-lights span:nth-child(2),
+.audit-center .traffic-lights span:nth-child(3) {
+  background: var(--kago-text-tertiary);
+}
+
+.finder-window-body,
+.window-content,
+.file-list,
+.window-preview-pane,
+.statusbar,
+.sidebar,
+.inspector,
+.task-list {
+  background: var(--kago-surface);
+}
+
+.window-finder-sidebar {
+  border-right: 1px solid var(--kago-border);
+  background: var(--kago-surface-elevated);
+}
+
+.file-station-toolbar,
+.address-row,
+.file-header,
+.trash-center header,
+.audit-center header {
+  border-color: var(--kago-border);
+  background: var(--kago-surface-elevated);
+}
+
+.window-preview-pane,
+.column-detail {
+  border-color: var(--kago-border);
+}
+
+.file-row,
+.audit-item,
+.trash-item,
+.task-item,
+.share-status-item,
+.permission-rule-item,
+.shelf-item {
+  color: var(--kago-text-muted);
+  background: transparent;
+}
+
+.file-list.list .file-row:nth-of-type(even) {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.file-row:hover,
+.file-list.columns .file-row:hover,
+.side-item:hover,
+.side-item.active,
+.root-button:hover,
+.window-side-nav button:hover,
+.window-side-nav button.selected,
+.command-palette button.selected,
+.command-palette button:hover,
+.context-menu button:hover,
+.context-menu a:hover {
+  background: rgba(94, 106, 210, 0.14);
+  color: var(--kago-text);
+}
+
+.file-row.selected {
+  background: rgba(94, 106, 210, 0.24);
+  color: var(--kago-text);
+}
+
+.file-header,
+.sort-header,
+.window-side-nav span {
+  color: var(--kago-text-subtle);
+}
+
+.folder-glyph,
+.title-folder,
+.column-detail-icon svg,
+.file-empty svg,
+.file-window-error.root_missing svg,
+.file-window-error.path_missing svg {
+  color: var(--kago-accent);
+  fill: rgba(94, 106, 210, 0.18);
+}
+
+.file-icon {
+  border-color: var(--kago-border-strong);
+  background: var(--kago-surface-strong);
+}
+
+.tool-button,
+.icon-button,
+.chrome-button,
+.view-segment,
+.view-segment button,
+.window-view-tools,
+.window-view-tools button,
+.search-pill,
+.address-field,
+.search-clear,
+.side-item,
+.root-button,
+.task-action,
+.column-detail-actions button {
+  border-color: var(--kago-border);
+  background: var(--kago-surface-elevated);
+  color: var(--kago-text-muted);
+  border-radius: var(--kago-radius-md);
+  box-shadow: none;
+}
+
+.tool-button:hover,
+.icon-button:hover,
+.chrome-button:hover,
+.view-segment button:hover,
+.view-segment .selected,
+.window-view-tools button:hover,
+.window-view-tools .selected,
+.search-clear:hover,
+.task-action:hover,
+.column-detail-actions button:hover {
+  background: var(--kago-surface-strong);
+  color: var(--kago-text);
+}
+
+.primary-button {
+  border-radius: var(--kago-radius-md);
+  background: var(--kago-accent);
+  color: #ffffff;
+}
+
+.primary-button:hover {
+  background: var(--kago-accent-hover);
+}
+
+input,
+select,
+textarea,
+.command-palette input,
+.search-pill,
+.address-field,
+.root-create-form input,
+.mini-form input,
+.inline-form input,
+.share-options-grid input {
+  border-color: var(--kago-border);
+  background: var(--kago-surface-elevated) !important;
+  color: var(--kago-text);
+  box-shadow: none;
+}
+
+input::placeholder,
+.search-pill input::placeholder {
+  color: var(--kago-text-tertiary);
+}
+
+input:focus,
+select:focus,
+.address-field:focus-visible {
+  border-color: var(--kago-accent);
+  box-shadow: 0 0 0 2px rgba(94, 106, 210, 0.42);
+}
+
+.inline-error {
+  border-color: rgba(255, 107, 104, 0.34);
+  background: rgba(255, 107, 104, 0.1);
+  color: #ffb3b1;
+}
+
+.readonly-pill,
+.readonly-note,
+.badge,
+.status,
+.tag-chip,
+.permission-badges span {
+  border-color: var(--kago-border);
+  background: var(--kago-surface-elevated);
+  color: var(--kago-text-muted);
+}
+
+.status.done,
+.audit-result.success,
+.permission-badges .allow {
+  background: rgba(39, 166, 68, 0.16);
+  color: #72d78a;
+}
+
+.status.failed,
+.audit-result.failure,
+.audit-result.denied,
+.permission-badges .deny,
+.context-menu .danger:not(:disabled),
+.icon-button.danger:hover,
+.task-action.danger {
+  background: rgba(255, 107, 104, 0.12);
+  color: #ff9c99;
+}
+
+.file-empty,
+.file-window-error {
+  border-color: var(--kago-border);
+  background: var(--kago-surface-elevated);
+}
+
+.file-empty strong,
+.file-window-error strong,
+.drop-popover strong,
+.share-body h1,
+.share-body p,
+.inspector-summary > strong,
+.meta-grid dd,
+.column-detail,
+.column-detail dd,
+.context-menu button,
+.context-menu a,
+.floating-shelf header,
+.task-item,
+.trash-item,
+.audit-item {
+  color: var(--kago-text);
+}
+
+.floating-shelf {
+  z-index: 760;
+}
+
+.task-center {
+  top: 58px;
+}
+
+.inspector {
+  top: 64px;
+  right: 18px;
+}
+
+@media (max-width: 980px) {
+  .workspace-sidebar-shell {
+    display: none;
+  }
+
+  .top-strip,
+  .workspace-canvas.sidebar-collapsed .top-strip {
+    padding-left: 12px;
+  }
+
+  .root-picker,
+  .workspace-canvas.sidebar-collapsed .root-picker {
+    padding-left: 24px;
+  }
+
+  .root-picker-inner {
+    width: min(560px, calc(100vw - 48px));
+  }
+
+  .file-window.maximized,
+  .workspace-canvas.sidebar-collapsed .file-window.maximized {
+    inset: 54px 12px 12px;
+  }
+}
+
+.action-row .tool-button,
+.file-window .tool-button,
+.nav-cluster .icon-button,
+.window-controls .icon-button,
+.file-row .icon-button,
+.statusbar button,
+.column-detail-actions button,
+.task-action,
+.chrome-button,
+.view-segment button,
+.window-view-tools,
+.window-view-tools button,
+.search-pill,
+.address-field {
+  border-color: var(--kago-border) !important;
+  background: var(--kago-surface-elevated) !important;
+  color: var(--kago-text-muted) !important;
+  box-shadow: none !important;
+}
+
+.action-row .tool-button:hover,
+.file-window .tool-button:hover,
+.nav-cluster .icon-button:hover,
+.window-controls .icon-button:hover,
+.file-row .icon-button:hover,
+.statusbar button:hover,
+.column-detail-actions button:hover,
+.task-action:hover,
+.chrome-button:hover,
+.view-segment button:hover,
+.view-segment .selected,
+.window-view-tools button:hover,
+.window-view-tools .selected {
+  background: var(--kago-surface-strong) !important;
+  color: var(--kago-text) !important;
+}
+
+.search-pill input,
+.address-field input {
+  background: transparent !important;
+}
+
+/* Usability reset: file managers need clarity before atmosphere. */
+:root {
+  --kago-bg: #dfe7f1;
+  --kago-surface: #ffffff;
+  --kago-surface-elevated: #f4f7fb;
+  --kago-surface-strong: #e8eef6;
+  --kago-border: #cbd5e1;
+  --kago-border-strong: #94a3b8;
+  --kago-text: #17202a;
+  --kago-text-muted: #334155;
+  --kago-text-subtle: #667085;
+  --kago-text-tertiary: #98a2b3;
+  --kago-accent: #2563eb;
+  --kago-accent-hover: #1d4ed8;
+  --kago-danger: #dc2626;
+  --kago-warning: #d97706;
+  --kago-success: #16803b;
+  --kago-glass: #ffffff;
+  --kago-divider: #d6dee8;
+  color-scheme: light;
+}
+
+body {
+  background: var(--kago-bg);
+  color: var(--kago-text);
+}
+
+.app-shell,
+.loading-screen,
+.login-screen,
+.share-screen,
+.workspace-canvas.desktop-canvas {
+  background: var(--kago-bg) !important;
+}
+
+.desktop-topbar {
+  border-bottom: 1px solid #0b1220;
+  background: #111827 !important;
+}
+
+.desktop-launcher button,
+.desktop-status button {
+  color: #dbe5f2;
+}
+
+.desktop-launcher button:hover,
+.desktop-status button:hover {
+  background: #1f2937;
+  color: #ffffff;
+}
+
+.top-strip {
+  border-bottom: 1px solid var(--kago-border);
+  background: #ffffff !important;
+  color: var(--kago-text);
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.04);
+  backdrop-filter: none;
+}
+
+.workspace-sidebar-shell .sidebar,
+.file-window,
+.root-picker-inner,
+.floating-shelf,
+.task-center,
+.trash-center,
+.audit-center,
+.inspector,
+.command-palette,
+.login-panel,
+.share-window {
+  border-color: var(--kago-border) !important;
+  background: var(--kago-surface) !important;
+  color: var(--kago-text);
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.14);
+}
+
+.file-window.focused {
+  border-color: #7aa2ee !important;
+  box-shadow: 0 20px 54px rgba(15, 23, 42, 0.18), 0 0 0 2px rgba(37, 99, 235, 0.18);
+}
+
+.window-titlebar,
+.file-station-toolbar,
+.address-row,
+.file-header,
+.statusbar,
+.trash-center header,
+.audit-center header {
+  border-color: var(--kago-border) !important;
+  background: var(--kago-surface-elevated) !important;
+  color: var(--kago-text);
+}
+
+.window-finder-sidebar,
+.window-preview-pane {
+  border-color: var(--kago-border) !important;
+  background: #f7f9fc !important;
+}
+
+.side-item,
+.root-button,
+.window-side-nav button,
+.tool-button,
+.icon-button,
+.chrome-button,
+.view-segment button,
+.window-view-tools,
+.window-view-tools button,
+.action-row .tool-button,
+.file-window .tool-button,
+.nav-cluster .icon-button,
+.statusbar button,
+.column-detail-actions button,
+.task-action,
+.search-pill,
+.address-field {
+  border-color: #c4cedb !important;
+  background: #eef3f8 !important;
+  color: var(--kago-text-muted) !important;
+}
+
+.side-item:hover,
+.side-item.active,
+.root-button:hover,
+.window-side-nav button:hover,
+.window-side-nav button.selected,
+.tool-button:hover,
+.icon-button:hover,
+.chrome-button:hover,
+.view-segment button:hover,
+.view-segment .selected,
+.window-view-tools button:hover,
+.window-view-tools .selected,
+.action-row .tool-button:hover,
+.file-window .tool-button:hover,
+.nav-cluster .icon-button:hover,
+.statusbar button:hover,
+.column-detail-actions button:hover,
+.task-action:hover {
+  background: #dbeafe !important;
+  color: #0f172a !important;
+}
+
+input,
+select,
+textarea,
+.command-palette input,
+.root-create-form input,
+.mini-form input,
+.inline-form input,
+.share-options-grid input {
+  border-color: #c4cedb !important;
+  background: #ffffff !important;
+  color: var(--kago-text);
+}
+
+input::placeholder,
+.search-pill input::placeholder {
+  color: #7b8794;
+}
+
+.brand-row h1,
+.brand-row strong,
+.finder-nav strong,
+.window-titlebar strong,
+.inspector h3,
+.root-picker-inner h2,
+.file-empty strong,
+.file-window-error strong,
+.share-body h1,
+.inspector-summary > strong,
+.column-detail,
+.context-menu button,
+.context-menu a,
+.floating-shelf header,
+.task-item,
+.trash-item,
+.audit-item {
+  color: var(--kago-text);
+}
+
+.brand-row p,
+.side-section,
+.window-titlebar > span,
+.root-picker-inner p,
+.inspector p,
+.tag-empty,
+.meta-grid dt,
+.share-status-item small,
+.permission-rule-item small,
+.statusbar,
+.pathbar,
+.command-palette button small,
+.window-side-nav span {
+  color: var(--kago-text-subtle);
+}
+
+.file-list {
+  background: #ffffff !important;
+}
+
+.file-list.list .file-row:nth-of-type(even) {
+  background: #f8fafc;
+}
+
+.file-row {
+  color: var(--kago-text-muted);
+}
+
+.file-row:hover,
+.file-list.columns .file-row:hover {
+  background: #eff6ff !important;
+  color: #0f172a;
+}
+
+.file-row.selected {
+  background: #dbeafe !important;
+  color: #0f172a;
+  outline: 1px solid #93c5fd;
+}
+
+.file-empty,
+.file-window-error,
+.column-detail-icon,
+.thumbnail-frame,
+.inspector-preview {
+  border-color: var(--kago-border);
+  background: #f8fafc;
+}
+
+.folder-glyph,
+.title-folder,
+.column-detail-icon svg,
+.file-empty svg,
+.file-window-error.root_missing svg,
+.file-window-error.path_missing svg {
+  color: #d97706;
+  fill: rgba(217, 119, 6, 0.16);
+}
+
+.file-icon {
+  border-color: #9aa8b8;
+  background: linear-gradient(180deg, #ffffff, #edf2f7);
+}
+
+.context-menu,
+.drop-popover,
+.task-item,
+.trash-item,
+.audit-item,
+.permission-rule-item,
+.share-status-item,
+.shelf-item {
+  border-color: var(--kago-border);
+  background: #ffffff !important;
+  color: var(--kago-text);
+}
+
+.status.done,
+.audit-result.success,
+.permission-badges .allow {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.status.failed,
+.audit-result.failure,
+.audit-result.denied,
+.permission-badges .deny,
+.context-menu .danger:not(:disabled),
+.icon-button.danger:hover,
+.task-action.danger {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.product-topbar {
+  align-items: center;
+  padding: 0 16px;
+  pointer-events: auto;
+}
+
+.product-topbar-brand,
+.product-topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.product-topbar-brand strong {
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.product-topbar-brand span {
+  color: #aeb8c6;
+  font-size: 13px;
+}
+
+.product-topbar .brand-mark {
+  width: 28px;
+  height: 28px;
+}
+
+.product-topbar-actions {
+  margin-left: auto;
+}
+
+.product-topbar-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #dbe5f2;
+  padding: 0 10px;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.product-topbar-actions button:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+}
+
+.finder-window-body {
+  grid-template-columns: 214px minmax(0, 1fr) !important;
+}
+
+@media (max-width: 980px) {
+  .product-topbar-brand span,
+  .product-topbar-actions button span {
+    display: none;
+  }
+
+  .product-topbar-actions button {
+    width: 34px;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .finder-window-body {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}

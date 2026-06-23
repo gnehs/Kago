@@ -24,11 +24,13 @@ const titleFromPath = (logicalPath: string, rootSlug: string) => logicalPath ===
 const initialGeometry = (index: number) => {
   const viewportWidth = typeof globalThis.innerWidth === "number" ? globalThis.innerWidth : 1280;
   const viewportHeight = typeof globalThis.innerHeight === "number" ? globalThis.innerHeight : 820;
-  const width = Math.max(820, Math.min(1220, viewportWidth - 220));
-  const height = Math.max(580, Math.min(760, viewportHeight - 150));
+  const minX = viewportWidth > 980 ? 292 : 12;
+  const availableWidth = Math.max(360, viewportWidth - minX - 28);
+  const width = Math.max(360, Math.min(1040, availableWidth));
+  const height = Math.max(280, Math.min(720, viewportHeight - 132));
   return {
-    x: Math.max(132, Math.round((viewportWidth - width) / 2) + index * 34),
-    y: 86 + index * 28,
+    x: Math.max(minX, Math.round((viewportWidth - width + minX) / 2) + index * 28),
+    y: 92 + index * 24,
     width,
     height
   };
@@ -37,10 +39,12 @@ const initialGeometry = (index: number) => {
 const fitGeometry = (window: FileWindow): FileWindow => {
   const viewportWidth = typeof globalThis.innerWidth === "number" ? globalThis.innerWidth : 1280;
   const viewportHeight = typeof globalThis.innerHeight === "number" ? globalThis.innerHeight : 820;
-  const minX = viewportWidth > 980 ? 156 : 12;
-  const preferredMinWidth = viewportWidth > 980 ? Math.min(1040, viewportWidth - minX - 28) : 760;
-  const width = Math.max(preferredMinWidth, Math.min(window.width, Math.max(760, viewportWidth - minX - 20)));
-  const height = Math.max(520, Math.min(window.height, Math.max(520, viewportHeight - 78)));
+  const minX = viewportWidth > 980 ? 292 : 12;
+  const maxWidth = Math.max(360, viewportWidth - minX - 20);
+  const restoredWidth = Math.min(window.width, maxWidth);
+  const minUsefulDesktopWidth = viewportWidth > 1180 ? Math.min(920, maxWidth) : 360;
+  const width = Math.max(restoredWidth < 820 ? minUsefulDesktopWidth : 360, restoredWidth);
+  const height = Math.max(280, Math.min(window.height, Math.max(280, viewportHeight - 78)));
   return {
     ...window,
     width,

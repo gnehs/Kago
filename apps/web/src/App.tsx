@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { AppWindow, Archive, Boxes, Check, ChevronDown, ChevronLeft, ChevronRight, Circle, CirclePlus, Columns3, Download, FileText, Folder, FolderOpen, Globe2, HardDrive, HelpCircle, Home, LayoutGrid, List, Loader2, LogOut, Maximize2, MessageCircle, Minimize2, MoreHorizontal, PanelRight, Pencil, Plus, Radio, RefreshCw, Search, Server, Settings2, Share2, ShieldAlert, SlidersHorizontal, Smartphone, Star, Tags, Trash2, Upload, UserRound, X } from "lucide-react";
+import { Archive, Boxes, Check, ChevronLeft, ChevronRight, Circle, CirclePlus, Columns3, Download, FileText, Folder, FolderOpen, HardDrive, Home, LayoutGrid, List, Loader2, LogOut, Maximize2, Minimize2, PanelRight, Pencil, Plus, RefreshCw, Search, Server, Share2, ShieldAlert, SlidersHorizontal, Star, Tags, Trash2, Upload, X } from "lucide-react";
 import { ApiError, api, downloadUrl, previewUrl, thumbnailUrl } from "./api/client";
 import { useAudit, useFileList, useFileMeta, useFileTags, useMe, usePathPermissions, useRoots, useSaveWorkspace, useShares, useShelves, useTasks, useTrash, useWorkspace } from "./api/hooks";
 import { useWorkspaceStore } from "./stores/workspace";
@@ -435,6 +435,10 @@ function Workspace({ userEmail }: { userEmail: string }) {
     <main className="app-shell">
       <DesktopTopBar
         userEmail={userEmail}
+        onOpenFileStation={() => {
+          const firstRoot = rootList[0];
+          if (firstRoot) store.openRoot(firstRoot);
+        }}
         onOpenAudit={() => setAuditOpen(true)}
         onOpenCommandPalette={() => {
           setCommandPaletteQuery("");
@@ -443,7 +447,9 @@ function Workspace({ userEmail }: { userEmail: string }) {
         }}
         onLogout={logout}
       />
-      <DesktopIcons roots={rootList} onOpenTrash={() => setTrashOpen(true)} onOpenAudit={() => setAuditOpen(true)} />
+      <aside className={`workspace-sidebar-shell ${sidebarCollapsed ? "collapsed" : ""}`}>
+        <Sidebar roots={rootList} userEmail={userEmail} onOpenTrash={() => setTrashOpen(true)} onOpenAudit={() => setAuditOpen(true)} />
+      </aside>
       <section className={`workspace-canvas desktop-canvas ${showInspector ? "inspector-visible" : ""} ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
         {store.notice ? <div className="workspace-notice">{store.notice}</div> : null}
         {commandPaletteOpen ? (
@@ -604,47 +610,25 @@ function normalizeCommandPalettePath(value: string): string | null {
 
 function DesktopTopBar({
   userEmail,
+  onOpenFileStation,
   onOpenAudit,
   onOpenCommandPalette,
   onLogout
-}: { userEmail: string; onOpenAudit: () => void; onOpenCommandPalette: () => void; onLogout: () => void }) {
+}: { userEmail: string; onOpenFileStation: () => void; onOpenAudit: () => void; onOpenCommandPalette: () => void; onLogout: () => void }) {
   return (
-    <header className="desktop-topbar">
-      <div className="desktop-launcher">
-        <button title="主選單"><LayoutGrid /></button>
-        <button title="File Station"><FolderOpen /></button>
-        <button title="套件中心"><Boxes /></button>
+    <header className="desktop-topbar product-topbar">
+      <div className="product-topbar-brand">
+        <div className="brand-mark">K</div>
+        <strong>Kago</strong>
+        <span>檔案管理器</span>
       </div>
-      <div className="desktop-status">
-        <button title="通知"><MessageCircle /></button>
-        <button title={`登出 ${userEmail}`} onClick={onLogout}><UserRound /></button>
-        <button title="稽核紀錄" onClick={onOpenAudit}><SlidersHorizontal /></button>
-        <button title="搜尋" onClick={onOpenCommandPalette}><Search /></button>
+      <div className="product-topbar-actions">
+        <button onClick={onOpenFileStation}><FolderOpen /> <span>開啟 Root</span></button>
+        <button onClick={onOpenCommandPalette}><Search /> <span>快速開啟</span></button>
+        <button onClick={onOpenAudit}><SlidersHorizontal /> <span>稽核</span></button>
+        <button onClick={onLogout} title={`登出 ${userEmail}`}><LogOut /> <span>登出</span></button>
       </div>
     </header>
-  );
-}
-
-function DesktopIcons({ roots, onOpenTrash, onOpenAudit }: { roots: Root[]; onOpenTrash: () => void; onOpenAudit: () => void }) {
-  const store = useWorkspaceStore();
-  const firstRoot = roots[0];
-  const iconItems = [
-    { label: "套件中心", icon: <Boxes />, action: undefined },
-    { label: "稽核紀錄", icon: <SlidersHorizontal />, action: onOpenAudit },
-    { label: "File Station", icon: <FolderOpen />, action: firstRoot ? () => store.openRoot(firstRoot) : undefined },
-    { label: "垃圾桶", icon: <Trash2 />, action: onOpenTrash },
-    { label: "DSM 說明", icon: <HelpCircle />, action: undefined }
-  ];
-
-  return (
-    <nav className="desktop-icons" aria-label="NAS desktop apps">
-      {iconItems.map((item) => (
-        <button key={item.label} onClick={item.action}>
-          <span className="desktop-icon-tile">{item.icon}</span>
-          <span>{item.label}</span>
-        </button>
-      ))}
-    </nav>
   );
 }
 
@@ -681,29 +665,17 @@ function Sidebar({ roots, userEmail, onOpenTrash, onOpenAudit }: { roots: Root[]
         </button>
       </div>
       <nav className="side-nav">
-        <button className="side-item active"><RefreshCw /> 最近項目</button>
-        <button className="side-item"><Share2 /> 已共享</button>
-        <span className="side-section">喜好項目</span>
-        <button className="side-item"><LayoutGrid /> 應用程式</button>
-        <button className="side-item"><PanelRight /> 桌面</button>
-        <button className="side-item"><FileText /> 文件</button>
-        <button className="side-item"><Download /> 下載項目</button>
-        <button className="side-item"><Folder /> Repos</button>
-        <span className="side-section">位置</span>
-        <button className="side-item"><Home /> {userEmail.split("@")[0]}</button>
-        <button className="side-item"><Smartphone /> NAS 掛載點</button>
-        <button className="side-item"><Server /> Kago Roots</button>
-        <button className="side-item" onClick={onOpenAudit}><SlidersHorizontal /> 稽核紀錄</button>
-        <button className="side-item"><Radio /> AirDrop</button>
-        <button className="side-item"><Globe2 /> 網路</button>
+        <span className="side-section">工作區</span>
+        <button className="side-item active"><HardDrive /> Roots</button>
+        <button className="side-item"><Archive /> 中轉區</button>
+        <button className="side-item"><Boxes /> 任務</button>
+        <button className="side-item"><Share2 /> 分享</button>
         <button className="side-item" onClick={onOpenTrash}><Trash2 /> 垃圾桶</button>
-        <span className="side-section">標籤</span>
-        <button className="side-item"><Circle className="tag-dot gray" /> 已觀看</button>
-        <button className="side-item"><Circle className="tag-dot red" /> 可刪除</button>
-        <button className="side-item"><Circle className="tag-dot blue" /> 好看</button>
+        <span className="side-section">管理</span>
+        <button className="side-item" onClick={onOpenAudit}><SlidersHorizontal /> 稽核紀錄</button>
       </nav>
       <div className="root-list">
-        <span className="side-section">Kago</span>
+        <span className="side-section">Roots</span>
         {roots.map((root) => (
           <button key={root.id} className="root-button" onClick={() => store.openRoot(root)}>
             <FolderOpen />
@@ -714,54 +686,14 @@ function Sidebar({ roots, userEmail, onOpenTrash, onOpenAudit }: { roots: Root[]
       </div>
       <div className="mini-form">
         <input placeholder="root slug" value={rootSlug} onChange={(event) => setRootSlug(event.target.value)} />
-        <input placeholder="name" value={rootName} onChange={(event) => setRootName(event.target.value)} />
-        <button onClick={createRoot}><Plus /> Root</button>
+        <input placeholder="顯示名稱" value={rootName} onChange={(event) => setRootName(event.target.value)} />
+        <button onClick={createRoot}><Plus /> 新增 Root</button>
       </div>
       <div className="sidebar-footer">
         <span>{userEmail}</span>
         <button className="icon-button" onClick={logout} title="Logout"><LogOut /></button>
       </div>
     </aside>
-  );
-}
-
-function TopStrip() {
-  const store = useWorkspaceStore();
-  const active = store.windows.find((window) => window.id === store.activeWindowId);
-  return (
-    <header className="top-strip">
-      <div className="finder-nav">
-        <button className="chrome-button"><ChevronLeft /></button>
-        <button className="chrome-button" disabled><ChevronRight /></button>
-        <strong>{active ? active.title : "Kago"}</strong>
-      </div>
-      {active ? (
-        <>
-          <div className="view-segment" aria-label="View mode">
-            <button className={active.viewMode === "grid" ? "selected" : ""} onClick={() => store.updateWindow(active.id, { viewMode: "grid" })}><LayoutGrid /></button>
-            <button className={active.viewMode === "list" ? "selected" : ""} onClick={() => store.updateWindow(active.id, { viewMode: "list" })}><List /></button>
-            <button className={active.viewMode === "columns" ? "selected" : ""} onClick={() => store.updateWindow(active.id, { viewMode: "columns" })}><Columns3 /></button>
-          </div>
-          <div className="toolbar-cluster">
-            <button className="chrome-button"><Boxes /><ChevronDown /></button>
-            <button className="chrome-button"><Share2 /></button>
-            <button className="chrome-button"><Tags /></button>
-            <button
-              className={`chrome-button ${store.inspector.open === false ? "" : "selected"}`}
-              title={store.inspector.open === false ? "顯示檢閱器" : "隱藏檢閱器"}
-              onClick={() => store.updateInspector({ open: store.inspector.open === false })}
-            >
-              <PanelRight />
-            </button>
-            <button className="chrome-button"><MoreHorizontal /></button>
-          </div>
-          <div className="top-actions">
-            <label className="search-pill"><Search /><input placeholder="搜尋" /></label>
-            <button className="chrome-button" title="New window" onClick={() => store.openWindow({ rootSlug: active.rootSlug, logicalPath: active.logicalPath, title: active.title })}><CirclePlus /></button>
-          </div>
-        </>
-      ) : null}
-    </header>
   );
 }
 
@@ -788,7 +720,7 @@ function RootPicker({ roots }: { roots: Root[] }) {
       <div className="root-picker-inner">
         <div className="root-picker-mark"><HardDrive /></div>
         <h2>選擇一個 Root</h2>
-        <p>從左側建立或開啟 NAS 掛載點，檔案視窗會以 Finder 風格浮在桌面上。</p>
+        <p>從左側建立或開啟 NAS 掛載點，Kago 會替每個位置開啟獨立檔案視窗。</p>
         <div className="picker-grid">
           {roots.map((root) => (
             <button key={root.id} onClick={() => store.openRoot(root)}>
@@ -822,15 +754,20 @@ function FileWindowView({ window }: { window: FileWindow }) {
   useEffect(() => {
     function move(event: MouseEvent) {
       if (drag) {
+        const minX = globalThis.innerWidth > 980 ? (store.sidebar.collapsed ? 96 : 276) : 8;
+        const maxX = Math.max(minX, globalThis.innerWidth - 120);
+        const maxY = Math.max(46, globalThis.innerHeight - 80);
         store.updateWindow(window.id, {
-          x: Math.max(-window.width + 120, drag.x + event.clientX - drag.startX),
-          y: Math.max(0, drag.y + event.clientY - drag.startY)
+          x: Math.min(maxX, Math.max(minX, drag.x + event.clientX - drag.startX)),
+          y: Math.min(maxY, Math.max(46, drag.y + event.clientY - drag.startY))
         });
       }
       if (resize) {
+        const maxWidth = Math.max(360, globalThis.innerWidth - window.x - 16);
+        const maxHeight = Math.max(280, globalThis.innerHeight - window.y - 16);
         store.updateWindow(window.id, {
-          width: Math.max(360, resize.width + event.clientX - resize.startX),
-          height: Math.max(280, resize.height + event.clientY - resize.startY)
+          width: Math.min(maxWidth, Math.max(360, resize.width + event.clientX - resize.startX)),
+          height: Math.min(maxHeight, Math.max(280, resize.height + event.clientY - resize.startY))
         });
       }
     }
@@ -1090,7 +1027,7 @@ function FileWindowView({ window }: { window: FileWindow }) {
       >
         <div className="traffic-lights"><span /><span /><span /></div>
         <Folder className="title-folder" />
-        <strong>File Station</strong>
+        <strong>{window.title}</strong>
         <span>{window.title} · {window.rootSlug}:{window.logicalPath}</span>
         {readonly ? <span className="readonly-pill">唯讀</span> : null}
         <div className="window-controls">
@@ -1103,7 +1040,7 @@ function FileWindowView({ window }: { window: FileWindow }) {
         <>
           <div className="finder-window-body">
             <aside className="window-finder-sidebar">
-              <MiniFinderSidebar activeLabel={window.title} rootSlug={window.rootSlug} />
+              <WindowFolderSidebar activeLabel={window.title} rootSlug={window.rootSlug} />
             </aside>
             <div className="window-content">
               <div className="file-station-toolbar">
@@ -1146,18 +1083,16 @@ function FileWindowView({ window }: { window: FileWindow }) {
                   </label>
                 </div>
                 <div className="action-row">
-                  <button className="tool-button" onClick={mkdir} disabled={readonly}><Folder /> 建立 <ChevronDown /></button>
+                  <button className="tool-button" onClick={mkdir} disabled={readonly}><Folder /> 建立資料夾</button>
                   <label className={`tool-button file-input ${readonly ? "disabled" : ""}`} aria-disabled={readonly}>
-                    <Upload /> 上傳 <ChevronDown /><input type="file" multiple onChange={upload} disabled={readonly} />
+                    <Upload /> 上傳檔案<input type="file" multiple onChange={upload} disabled={readonly} />
                   </label>
-                  <button className="tool-button"><MoreHorizontal /> 操作 <ChevronDown /></button>
                   {window.selectedItems.length > 0 ? (
                     <>
                       <button className="tool-button" onClick={() => void compressSelection()} disabled={readonly}><Archive /> 壓縮</button>
                       <button className="tool-button" onClick={() => void extractSelection()} disabled={readonly}><FolderOpen /> 解壓縮</button>
                     </>
                   ) : null}
-                  <button className="tool-button"><Settings2 /> 工具 <ChevronDown /></button>
                   <button
                     className={`tool-button ${store.inspector.open === false ? "" : "selected"}`}
                     onClick={() => store.updateInspector({ open: store.inspector.open === false })}
@@ -1254,13 +1189,6 @@ function FileWindowView({ window }: { window: FileWindow }) {
                 <button onClick={() => store.updateWindow(window.id, { viewMode: nextViewMode(window.viewMode) })}><List /> {viewModeLabel(window.viewMode)}</button>
               </div>
             </div>
-            <aside className="window-preview-pane">
-              <div className="preview-empty">
-                <AppWindow />
-                <strong>預覽</strong>
-                <span>選取檔案後顯示詳細資訊</span>
-              </div>
-            </aside>
           </div>
           <div className="resize-handle" onMouseDown={(event) => setResize({ startX: event.clientX, startY: event.clientY, width: window.width, height: window.height })} />
         </>
@@ -1298,20 +1226,12 @@ function FileWindowView({ window }: { window: FileWindow }) {
   );
 }
 
-function MiniFinderSidebar({ activeLabel, rootSlug }: { activeLabel: string; rootSlug: string }) {
+function WindowFolderSidebar({ activeLabel, rootSlug }: { activeLabel: string; rootSlug: string }) {
   return (
     <nav className="window-side-nav">
-      <button className="tree-root"><Server /> gnehsNAS</button>
-      <button className="tree-child selected"><ChevronRight /> <Folder /> {rootSlug || activeLabel || "data"}</button>
-      <button className="tree-child"><ChevronRight /> <Folder /> docker</button>
-      <button className="tree-child"><ChevronRight /> <Folder /> download</button>
-      <button className="tree-child"><ChevronRight /> <Folder /> home</button>
-      <button className="tree-child"><ChevronRight /> <Folder /> photo</button>
-      <button className="tree-child"><ChevronRight /> <Folder /> video</button>
-      <span>遠端資料夾</span>
-      <button className="tree-child muted"><ChevronRight /> <Folder /> media</button>
-      <button className="tree-child muted"><ChevronRight /> <Folder /> photos</button>
-      <span>系統</span>
+      <button className="tree-root"><Server /> {rootSlug || activeLabel || "Root"}</button>
+      <button className="tree-child selected"><ChevronRight /> <Folder /> 目前資料夾</button>
+      <span>此視窗</span>
       <button><Share2 /> 已共享</button>
       <button><Trash2 /> 垃圾桶</button>
     </nav>
