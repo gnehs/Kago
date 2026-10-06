@@ -72,7 +72,7 @@ export function TopBar({ user, onOpenPalette }: { user: Actor; onOpenPalette: ()
         Kago
       </button>
 
-      <nav aria-label="開啟的視窗" className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden pl-1">
+      <nav aria-label="開啟的視窗" className="flex h-full min-w-0 flex-1 items-center gap-1 overflow-hidden px-1">
         {ordered.map((window) => (
           <button
             key={window.id}
@@ -80,7 +80,7 @@ export function TopBar({ user, onOpenPalette }: { user: Actor; onOpenPalette: ()
             aria-pressed={window.focused && !window.minimized}
             className={cn(
               "flex h-7 max-w-40 min-w-0 items-center gap-1.5 rounded-md px-2 outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-accent/50",
-              window.focused && !window.minimized ? "bg-surface shadow-popup hover:bg-surface" : "text-muted",
+              window.focused && !window.minimized ? "bg-surface ring-1 ring-line-strong hover:bg-surface" : "text-muted",
               window.minimized && "opacity-60"
             )}
             onClick={() => activate(window)}
