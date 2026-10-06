@@ -11,17 +11,10 @@ pnpm dev
 
 後端預設在 `http://localhost:8080`，前端 Vite 在 `http://localhost:5173`，開發模式會把 API proxy 到後端。
 
-預設 demo 管理員：
-
-```txt
-email: admin@kago.local
-password: admin123
-```
-
-可用環境變數覆蓋：
+第一次開啟會顯示初始化頁面，請在瀏覽器中建立第一位管理員。若要在開發環境自動建立初始管理員，可以同時提供：
 
 ```bash
-ADMIN_EMAIL=you@example.com ADMIN_PASSWORD='change-me' pnpm dev
+ADMIN_EMAIL=admin@example.test ADMIN_PASSWORD='replace-with-a-development-password' pnpm dev
 ```
 
 ## 建置
@@ -29,6 +22,44 @@ ADMIN_EMAIL=you@example.com ADMIN_PASSWORD='change-me' pnpm dev
 ```bash
 pnpm build
 pnpm start
+```
+
+## 驗證
+
+本機驗證先跑 TypeScript、production build 與後端 smoke flow：
+
+```bash
+pnpm typecheck
+pnpm lint
+pnpm build
+pnpm test:smoke
+```
+
+`package.json` 以 `packageManager` pin 住 pnpm 版本；若環境有 Corepack，建議先啟用 Corepack，讓本機與 Docker build 使用相同的 pnpm 版本：
+
+```bash
+corepack enable
+pnpm --version
+```
+
+Docker 驗證需要 Docker CLI。build 完 image 後，確認 container 可以啟動、Fastify 有 serve API 與 SPA fallback：
+
+```bash
+docker build -t kago:local .
+docker run --rm -d \
+  --name kago-verify \
+  -p 8080:8080 \
+  -v "$PWD/.tmp/kago-data:/data" \
+  -v "$PWD/.tmp/kago-app-data:/app-data" \
+  -e DATA_DIR=/data \
+  -e APP_DATA_DIR=/app-data \
+  -e PORT=8080 \
+  -e SESSION_SECRET='replace-with-a-long-random-value' \
+  kago:local
+
+curl -fsS http://localhost:8080/api/auth/setup
+curl -fsSI http://localhost:8080/
+docker stop kago-verify
 ```
 
 ## Docker
@@ -43,9 +74,12 @@ docker run -d \
   -e DATA_DIR=/data \
   -e APP_DATA_DIR=/app-data \
   -e PORT=8080 \
+  -e SESSION_SECRET='replace-with-a-long-random-value' \
   --user 1000:1000 \
   --restart unless-stopped \
   kago:local
 ```
 
-第一次啟動會初始化 SQLite、建立預設 admin，並在 `/app-data/app.db` 保存 workspace、權限、任務、tags、shares、audit logs 與 shelf references。
+第一次啟動會初始化 SQLite，並在 `/app-data/app.db` 保存 workspace、權限、任務、tags、shares、audit logs 與 shelf references。建議在 production 提供 `SESSION_SECRET`；若未提供，Kago 會在 `/app-data/session.secret` 產生並重用一組隨機 secret。管理員可以透過初始化頁面建立，或用 `ADMIN_EMAIL` / `ADMIN_PASSWORD` 預先建立。
+
+Docker image 預設使用容器內的 `kago` 使用者（UID/GID 1000）執行，並內建 `rsync` 供 `rsync_pull` / `rsync_push` task 使用。若掛載的 host 目錄不是 UID 1000 可寫，請調整目錄 owner，或在 `docker run` 以符合 host 權限的 `--user` 覆寫。

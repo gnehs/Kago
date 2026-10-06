@@ -42,20 +42,31 @@ export class FsService {
 
   async list(actor: Actor, rootSlug: string, logicalPath: string) {
     const safe = await this.paths.resolveExisting(rootSlug, logicalPath);
-    this.permissions.require(actor, "list", safe.root, safe.logicalPath);
+    const canListCurrent = this.permissions.can(actor, "list", safe.root, safe.logicalPath).allowed;
+    if (!canListCurrent && !this.permissions.canReachListableDescendant(actor, safe.root, safe.logicalPath)) {
+      this.permissions.require(actor, "list", safe.root, safe.logicalPath);
+    }
     const stat = await fsp.stat(safe.absolutePath);
     if (!stat.isDirectory()) throw new AppError(400, "Path is not a folder", "NOT_FOLDER");
 
     const entries = await fsp.readdir(safe.absolutePath, { withFileTypes: true });
-    const items = await Promise.all(
+    const listedItems = await Promise.all(
       entries
         .filter((entry) => !entry.name.includes("\0"))
         .map(async (entry) => {
           const itemPath = path.join(safe.absolutePath, entry.name);
           const itemStat = await fsp.lstat(itemPath);
+          if (itemStat.isSymbolicLink()) return null;
+          const itemLogicalPath = path.posix.join(safe.logicalPath, entry.name);
+          if (
+            !this.permissions.can(actor, "list", safe.root, itemLogicalPath).allowed &&
+            !this.permissions.canReachListableDescendant(actor, safe.root, itemLogicalPath)
+          ) {
+            return null;
+          }
           return {
             name: entry.name,
-            path: path.posix.join(safe.logicalPath, entry.name),
+            path: itemLogicalPath,
             kind: entry.isDirectory() ? "folder" : "file",
             size: itemStat.size,
             mtime: itemStat.mtimeMs,
@@ -64,6 +75,7 @@ export class FsService {
           };
         })
     );
+    const items = listedItems.filter((item) => item !== null);
 
     return { rootSlug: safe.root.slug, path: safe.logicalPath, readonly: Boolean(safe.root.readonly), items };
   }
@@ -96,6 +108,14 @@ export class FsService {
       path: safe.logicalPath,
       result: "success"
     });
+    return { safe, stat, contentType: lookup(safe.absolutePath) || "application/octet-stream" };
+  }
+
+  async preview(actor: Actor, rootSlug: string, logicalPath: string) {
+    const safe = await this.paths.resolveExisting(rootSlug, logicalPath);
+    this.permissions.require(actor, "read", safe.root, safe.logicalPath);
+    const stat = await fsp.stat(safe.absolutePath);
+    if (!stat.isFile()) throw new AppError(400, "Path is not a file", "NOT_FILE");
     return { safe, stat, contentType: lookup(safe.absolutePath) || "application/octet-stream" };
   }
 
@@ -160,7 +180,7 @@ export class FsService {
     return this.meta(actor, rootSlug, target.logicalPath);
   }
 
-  async publicUpload(rootSlug: string, parentPath: string, fileName: string, stream: NodeJS.ReadableStream) {
+  async publicUpload(rootSlug: string, parentPath: string, fileName: string, stream: NodeJS.ReadableStream, shareId: string) {
     if (!fileName || fileName.includes("/") || fileName.includes("..") || fileName.includes("\0") || fileName.length > 255) {
       throw new AppError(400, "Invalid filename", "INVALID_FILENAME");
     }
@@ -170,6 +190,7 @@ export class FsService {
     await this.writeUploadStream(stream, writeStream, target.absolutePath);
     this.audit.write({
       actorType: "share_link",
+      actorId: shareId,
       action: "upload_via_share",
       rootId: target.root.id,
       path: target.logicalPath,

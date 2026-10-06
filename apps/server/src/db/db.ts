@@ -6,7 +6,7 @@ import { now } from "../lib/ids.js";
 
 export type Db = DatabaseSync;
 
-export function openDb(env: Env): Db {
+export function openDb(env: Env, options: { interruptRunningTasks?: boolean } = {}): Db {
   const dbPath = path.join(env.appDataDir, "app.db");
   const schemaPath = path.join(import.meta.dirname, "schema.sql");
   const db = new DatabaseSync(dbPath);
@@ -18,9 +18,11 @@ export function openDb(env: Env): Db {
     PRAGMA busy_timeout = 5000;
   `);
   db.exec(schema);
-  db.prepare(
-    "UPDATE tasks SET status = 'interrupted', updated_at = ?, finished_at = ? WHERE status = 'running'"
-  ).run(now(), now());
+  if (options.interruptRunningTasks ?? true) {
+    db.prepare(
+      "UPDATE tasks SET status = 'interrupted', updated_at = ?, finished_at = ? WHERE status = 'running'"
+    ).run(now(), now());
+  }
 
   return db;
 }

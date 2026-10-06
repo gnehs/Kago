@@ -20,6 +20,9 @@ type WorkspaceStore = WorkspaceState & {
 };
 
 const ts = () => Date.now();
+const fileWindowZBase = 100;
+const fileWindowZLimit = 499;
+const fileWindowZRebaseAt = 460;
 const titleFromPath = (logicalPath: string, rootSlug: string) => logicalPath === "/" ? rootSlug : logicalPath.split("/").filter(Boolean).at(-1) ?? rootSlug;
 const initialGeometry = (index: number) => {
   const viewportWidth = typeof globalThis.innerWidth === "number" ? globalThis.innerWidth : 1280;
@@ -54,6 +57,20 @@ const fitGeometry = (window: FileWindow): FileWindow => {
   };
 };
 
+const rebaseWindowStack = (windows: FileWindow[]): FileWindow[] => {
+  const orderedIds = [...windows]
+    .sort((a, b) => a.zIndex - b.zIndex || a.createdAt - b.createdAt)
+    .map((window) => window.id);
+  const zIndexById = new Map(orderedIds.map((id, index) => [id, fileWindowZBase + index]));
+  return windows.map((window) => ({ ...window, zIndex: zIndexById.get(window.id) ?? fileWindowZBase }));
+};
+
+const maybeRebaseWindowStack = (windows: FileWindow[], nextZ: number): FileWindow[] =>
+  nextZ >= fileWindowZRebaseAt ? rebaseWindowStack(windows) : windows;
+
+const nextFileWindowZ = (windows: FileWindow[]): number =>
+  Math.min(fileWindowZLimit, Math.max(fileWindowZBase, ...windows.map((window) => window.zIndex + 1)));
+
 export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   hydrated: false,
   activeWindowId: null,
@@ -63,14 +80,16 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   shelf: { collapsed: false, x: 360, y: 680 },
   nextZ: 120,
   notice: null,
-  hydrate: (workspace) =>
+  hydrate: (workspace) => {
+    const windows = rebaseWindowStack(workspace.windows.map(fitGeometry));
     set({
       ...workspace,
-      windows: workspace.windows.map(fitGeometry),
+      windows,
       hydrated: true,
-      nextZ: Math.max(120, ...workspace.windows.map((window) => window.zIndex + 1)),
+      nextZ: nextFileWindowZ(windows),
       notice: null
-    }),
+    });
+  },
   openRoot: (root) => {
     const existing = get().windows.find((window) => window.rootSlug === root.slug);
     if (existing) {
@@ -82,6 +101,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   openWindow: (partial) =>
     set((state) => {
       if (state.windows.length >= 12) return { notice: "已達視窗數量上限" };
+      const baseWindows = maybeRebaseWindowStack(state.windows, state.nextZ);
+      const zIndex = nextFileWindowZ(baseWindows);
       const index = state.windows.length;
       const id = `win_${crypto.randomUUID()}`;
       const geometry = initialGeometry(index);
@@ -94,7 +115,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         y: geometry.y,
         width: geometry.width,
         height: geometry.height,
-        zIndex: state.nextZ,
+        zIndex,
         minimized: false,
         maximized: false,
         focused: true,
@@ -106,9 +127,9 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         updatedAt: ts()
       };
       return {
-        windows: [...state.windows.map((item) => ({ ...item, focused: false })), window],
+        windows: [...baseWindows.map((item) => ({ ...item, focused: false })), window],
         activeWindowId: id,
-        nextZ: state.nextZ + 1,
+        nextZ: zIndex + 1,
         notice: null
       };
     }),
@@ -119,15 +140,19 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       return { windows, activeWindowId };
     }),
   focusWindow: (id) =>
-    set((state) => ({
-      activeWindowId: id,
-      nextZ: state.nextZ + 1,
-      windows: state.windows.map((window) => ({
-        ...window,
-        focused: window.id === id,
-        zIndex: window.id === id ? state.nextZ : window.zIndex
-      }))
-    })),
+    set((state) => {
+      const baseWindows = maybeRebaseWindowStack(state.windows, state.nextZ);
+      const zIndex = nextFileWindowZ(baseWindows);
+      return {
+        activeWindowId: id,
+        nextZ: zIndex + 1,
+        windows: baseWindows.map((window) => ({
+          ...window,
+          focused: window.id === id,
+          zIndex: window.id === id ? zIndex : window.zIndex
+        }))
+      };
+    }),
   updateWindow: (id, patch) =>
     set((state) => ({
       windows: state.windows.map((window) =>

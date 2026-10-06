@@ -34,7 +34,7 @@ const reservedSlugs = new Set([
 export const rootInputSchema = z.object({
   slug: z.string().regex(/^[a-z0-9_-]+$/).min(1).max(64),
   name: z.string().min(1).max(120),
-  basePath: z.string().min(1),
+  basePath: z.string().min(1).optional(),
   readonly: z.boolean().optional().default(false)
 });
 
@@ -65,7 +65,7 @@ export class RootService {
     if (row<Root>(this.db.prepare("SELECT * FROM roots WHERE slug = ?").get(input.slug))) {
       throw new AppError(409, "Root slug already exists", "ROOT_SLUG_EXISTS");
     }
-    const basePath = this.resolveBasePath(input.basePath);
+    const basePath = this.resolveBasePath(input.basePath ?? `/data/${input.slug}`);
     fs.mkdirSync(basePath, { recursive: true });
     this.assertBasePathInsideData(basePath);
     const ts = now();

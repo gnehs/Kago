@@ -1,20 +1,47 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Archive, Boxes, Check, ChevronLeft, ChevronRight, Circle, CirclePlus, Columns3, Download, FileText, Folder, FolderOpen, HardDrive, Home, LayoutGrid, List, Loader2, LogOut, Maximize2, Minimize2, PanelRight, Pencil, Plus, RefreshCw, Search, Server, Share2, ShieldAlert, SlidersHorizontal, Star, Tags, Trash2, Upload, X } from "lucide-react";
+import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router";
+import { Archive, Boxes, Check, ChevronLeft, ChevronRight, Circle, CirclePlus, Columns3, Download, FileText, Folder, FolderOpen, HardDrive, Home, KeyRound, LayoutGrid, List, Loader2, LogOut, Maximize2, Minimize2, PanelRight, Pencil, Plus, RefreshCw, Search, Server, Settings, Share2, ShieldAlert, SlidersHorizontal, Star, Tags, Trash2, Upload, UserPlus, Users, X } from "lucide-react";
 import { ApiError, api, downloadUrl, previewUrl, thumbnailUrl } from "./api/client";
-import { useAudit, useFileList, useFileMeta, useFileTags, useMe, usePathPermissions, useRoots, useSaveWorkspace, useShares, useShelves, useTasks, useTrash, useWorkspace } from "./api/hooks";
+import { useAudit, useFileList, useFileMeta, useFileTags, useGroups, useMe, usePathPermissions, usePermissions, useRoots, useSaveWorkspace, useSetupStatus, useShares, useShelves, useTasks, useTrash, useUsers, useWorkspace } from "./api/hooks";
+import { Button } from "./components/ui/button";
+import { Input } from "./components/ui/input";
 import { useWorkspaceStore } from "./stores/workspace";
-import type { FileItem, FileWindow, Root, WorkspaceState } from "./types/kago";
+import type { FileItem, FileTask, FileWindow, Root, WorkspaceState } from "./types/kago";
 
 export function App() {
-  const shareToken = publicShareToken();
-  if (shareToken) return <PublicSharePage token={shareToken} />;
+  return (
+    <Routes>
+      <Route path="/" element={<AppGate />} />
+      <Route path="/login" element={<AppGate />} />
+      <Route path="/_kago/*" element={<AppGate />} />
+      <Route path="/s/:token" element={<PublicShareRoute />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}
 
+function PublicShareRoute() {
+  const { token } = useParams();
+  if (!token) return <Navigate to="/" replace />;
+  return <PublicSharePage token={token} />;
+}
+
+function AppGate() {
+  const setup = useSetupStatus();
+
+  if (setup.isLoading) return <ShellLoading />;
+  if (setup.data?.needsSetup) return <SetupAdmin />;
+
+  return <AuthenticatedApp />;
+}
+
+function AuthenticatedApp() {
   const me = useMe();
 
   if (me.isLoading) return <ShellLoading />;
   if (!me.data?.user) return <Login />;
-  return <Workspace userEmail={me.data.user.email} />;
+  return <Workspace userId={me.data.user.id} userEmail={me.data.user.email} />;
 }
 
 function ShellLoading() {
@@ -81,6 +108,7 @@ function PublicSharePage({ token }: { token: string }) {
   }
 
   const needsPassword = share?.requiresPassword && !share.authenticated;
+  const shareTitle = share?.path ? share.path.split("/").filter(Boolean).at(-1) ?? share.rootSlug ?? "分享連結" : "受保護分享";
 
   return (
     <main className="share-screen">
@@ -93,8 +121,8 @@ function PublicSharePage({ token }: { token: string }) {
           <div className="share-file-mark">
             {share?.mode === "upload_only" ? <Upload /> : <Download />}
           </div>
-          <h1>{share ? share.path.split("/").filter(Boolean).at(-1) ?? share.rootSlug : "分享連結"}</h1>
-          {share && <p>{share.rootSlug}:{share.path}</p>}
+          <h1>{share ? shareTitle : "分享連結"}</h1>
+          {share?.rootSlug && share.path ? <p>{share.rootSlug}:{share.path}</p> : null}
           {error && <div className="inline-error">{error}</div>}
           {!share && !error && <Loader2 className="spin" />}
           {needsPassword && (
@@ -139,9 +167,70 @@ function PublicSharePage({ token }: { token: string }) {
   );
 }
 
+function SetupAdmin() {
+  const [email, setEmail] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const queryClient = useQueryClient();
+  const passwordTooShort = Boolean(password && password.length < 8);
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    if (passwordTooShort) return;
+    setBusy(true);
+    setError("");
+    try {
+      await api("/api/auth/setup", {
+        method: "POST",
+        body: JSON.stringify({ email, displayName: displayName || email.split("@")[0] || "Admin", password })
+      });
+      await queryClient.invalidateQueries({ queryKey: ["auth", "setup"] });
+      await queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "初始化失敗");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <main className="login-screen setup-screen">
+      <form className="login-panel" onSubmit={submit}>
+        <div className="brand-row">
+          <div className="brand-mark">K</div>
+          <div>
+            <h1>Kago</h1>
+            <p>建立第一位管理員</p>
+          </div>
+        </div>
+        <label>
+          Email
+          <Input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="username" required />
+        </label>
+        <label>
+          Display name
+          <Input value={displayName} onChange={(event) => setDisplayName(event.target.value)} autoComplete="name" />
+        </label>
+        <label>
+          Password
+          <Input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" required />
+        </label>
+        {passwordTooShort && <div className="inline-error">密碼至少需要 8 個字元</div>}
+        {error && <div className="inline-error">{error}</div>}
+        <Button className="primary-button" disabled={busy || !email || password.length < 8}>
+          {busy ? <Loader2 className="spin" /> : <Check />}
+          Create admin
+        </Button>
+      </form>
+    </main>
+  );
+}
+
 function Login() {
-  const [email, setEmail] = useState("admin@kago.local");
-  const [password, setPassword] = useState("admin123");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const queryClient = useQueryClient();
@@ -172,42 +261,92 @@ function Login() {
         </div>
         <label>
           Email
-          <input value={email} onChange={(event) => setEmail(event.target.value)} />
+          <Input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="username" />
         </label>
         <label>
           Password
-          <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
+          <Input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" />
         </label>
         {error && <div className="inline-error">{error}</div>}
-        <button className="primary-button" disabled={busy}>
+        <Button className="primary-button" disabled={busy || !email || !password}>
           {busy ? <Loader2 className="spin" /> : <Check />}
           Sign in
-        </button>
+        </Button>
       </form>
     </main>
   );
 }
 
-function publicShareToken(): string | null {
-  const match = globalThis.location?.pathname.match(/^\/s\/([^/]+)$/);
-  return match ? decodeURIComponent(match[1]!) : null;
-}
-
 type PublicShareInfo = {
   id: string;
   mode: "view_only" | "download" | "upload_only";
-  path: string;
-  rootSlug: string;
+  path?: string;
+  rootSlug?: string;
   requiresPassword: boolean;
   authenticated: boolean;
 };
 
-function Workspace({ userEmail }: { userEmail: string }) {
+type RoutePanel = "shelf" | "tasks" | "shares" | "users" | "groups" | "permissions" | "settings" | "trash" | "audit";
+type PointerDragState = { pointerId: number; startX: number; startY: number; x: number; y: number };
+type PointerResizeState = { pointerId: number; startX: number; startY: number; width: number; height: number };
+type SelectionDragState = { pointerId: number; startX: number; startY: number; currentX: number; currentY: number };
+
+function routePanelFromPath(pathname: string): RoutePanel | null {
+  if (pathname === "/_kago/shelf") return "shelf";
+  if (pathname === "/_kago/tasks") return "tasks";
+  if (pathname === "/_kago/shares") return "shares";
+  if (pathname === "/_kago/admin/users") return "users";
+  if (pathname === "/_kago/admin/groups") return "groups";
+  if (pathname === "/_kago/admin/permissions") return "permissions";
+  if (pathname === "/_kago/settings") return "settings";
+  if (pathname === "/_kago/trash") return "trash";
+  if (pathname === "/_kago/audit") return "audit";
+  return null;
+}
+
+function routePanelPath(panel: RoutePanel): string {
+  const paths: Record<RoutePanel, string> = {
+    shelf: "/_kago/shelf",
+    tasks: "/_kago/tasks",
+    shares: "/_kago/shares",
+    users: "/_kago/admin/users",
+    groups: "/_kago/admin/groups",
+    permissions: "/_kago/admin/permissions",
+    settings: "/_kago/settings",
+    trash: "/_kago/trash",
+    audit: "/_kago/audit"
+  };
+  return paths[panel];
+}
+
+const permissionActions = [
+  "list",
+  "read",
+  "download",
+  "upload",
+  "create_folder",
+  "rename",
+  "move",
+  "copy",
+  "delete",
+  "share",
+  "manage_tags",
+  "manage_permissions",
+  "run_rsync",
+  "compress",
+  "extract"
+] as const;
+
+type PermissionAction = (typeof permissionActions)[number];
+
+function Workspace({ userId, userEmail }: { userId: string; userEmail: string }) {
   const workspaceQuery = useWorkspace();
   const roots = useRoots();
   const saveWorkspace = useSaveWorkspace();
   const store = useWorkspaceStore();
   const queryClient = useQueryClient();
+  const routerLocation = useLocation();
+  const navigate = useNavigate();
   const saveTimer = useRef<number | null>(null);
   const prevWorkspace = useRef<WorkspaceState | null>(null);
   const noticeTimer = useRef<number | null>(null);
@@ -216,13 +355,21 @@ function Workspace({ userEmail }: { userEmail: string }) {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [commandPaletteQuery, setCommandPaletteQuery] = useState("");
   const [commandPaletteIndex, setCommandPaletteIndex] = useState(0);
+  const [remoteWorkspaceRequestedAt, setRemoteWorkspaceRequestedAt] = useState(0);
   const rootList = roots.data ?? [];
   const activeWindow = store.windows.find((window) => window.id === store.activeWindowId) ?? null;
   const commandPaletteItems = getCommandPaletteSuggestions(commandPaletteQuery, rootList, activeWindow);
+  const routePanel = routePanelFromPath(routerLocation.pathname);
 
   useEffect(() => {
-    if (workspaceQuery.data && !store.hydrated) store.hydrate(workspaceQuery.data);
-  }, [workspaceQuery.data, store]);
+    if (!workspaceQuery.data) return;
+    const hasFreshRemoteWorkspace = remoteWorkspaceRequestedAt > 0 && workspaceQuery.dataUpdatedAt >= remoteWorkspaceRequestedAt;
+    if (!store.hydrated || hasFreshRemoteWorkspace) {
+      store.hydrate(workspaceQuery.data);
+      prevWorkspace.current = workspaceQuery.data;
+      if (hasFreshRemoteWorkspace) setRemoteWorkspaceRequestedAt(0);
+    }
+  }, [workspaceQuery.data, workspaceQuery.dataUpdatedAt, store, remoteWorkspaceRequestedAt]);
 
   useEffect(() => {
     if (!store.hydrated) return;
@@ -302,9 +449,22 @@ function Workspace({ userEmail }: { userEmail: string }) {
 
   useEffect(() => {
     const protocol = location.protocol === "https:" ? "wss" : "ws";
-    const ws = new WebSocket(`${protocol}://${location.host}/ws`);
-    ws.onmessage = (event) => {
-      const message = JSON.parse(event.data);
+    let closed = false;
+    let retryCount = 0;
+    let reconnectTimer: number | null = null;
+    let socket: WebSocket | null = null;
+
+    const refetchRealtimeState = () => {
+      void queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      void queryClient.invalidateQueries({ queryKey: ["shelves"] });
+      void queryClient.invalidateQueries({ queryKey: ["shares"] });
+      void queryClient.invalidateQueries({ queryKey: ["permissions"] });
+      void queryClient.invalidateQueries({ queryKey: ["roots"] });
+      void queryClient.invalidateQueries({ queryKey: ["workspace"] });
+    };
+
+    const handleMessage = (event: MessageEvent) => {
+      const message = JSON.parse(event.data) as { type?: string; userId?: string };
       if (String(message.type).startsWith("task.")) {
         void queryClient.invalidateQueries({ queryKey: ["tasks"] });
         if (message.type === "task.done") void queryClient.invalidateQueries({ queryKey: ["fs"] });
@@ -316,9 +476,37 @@ function Workspace({ userEmail }: { userEmail: string }) {
         void queryClient.invalidateQueries({ queryKey: ["roots"] });
         void queryClient.invalidateQueries({ queryKey: ["fs"] });
       }
+      if (message.type === "workspace.updated" && message.userId === userId) {
+        setRemoteWorkspaceRequestedAt(Date.now());
+        void queryClient.invalidateQueries({ queryKey: ["workspace"] });
+      }
     };
-    return () => ws.close();
-  }, [queryClient]);
+
+    const connect = () => {
+      if (closed) return;
+      const ws = new WebSocket(`${protocol}://${location.host}/ws`);
+      socket = ws;
+      ws.onopen = () => {
+        retryCount = 0;
+        refetchRealtimeState();
+      };
+      ws.onmessage = handleMessage;
+      ws.onerror = () => ws.close();
+      ws.onclose = () => {
+        if (closed) return;
+        retryCount += 1;
+        const delay = Math.min(15000, 500 * 2 ** Math.min(retryCount, 5));
+        reconnectTimer = window.setTimeout(connect, delay);
+      };
+    };
+
+    connect();
+    return () => {
+      closed = true;
+      if (reconnectTimer) window.clearTimeout(reconnectTimer);
+      socket?.close();
+    };
+  }, [queryClient, userId]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -377,6 +565,7 @@ function Workspace({ userEmail }: { userEmail: string }) {
         event.preventDefault();
         const address = document.querySelector<HTMLElement>(`[data-window="${active.id}"] [data-address-target]`);
         address?.focus();
+        if (address instanceof HTMLInputElement) address.select();
       }
       if (event.key === "Backspace" && active.logicalPath !== "/") {
         event.preventDefault();
@@ -411,8 +600,8 @@ function Workspace({ userEmail }: { userEmail: string }) {
         if (row.dataset.fileKind === "folder") {
           if (mod) store.openWindow({ rootSlug: active.rootSlug, logicalPath: selectedPath, title: selectedPath.split("/").filter(Boolean).at(-1) ?? active.title });
           else store.updateWindow(active.id, { logicalPath: selectedPath, selectedItems: [] });
-        } else if (row.dataset.downloadUrl) {
-          globalThis.open(row.dataset.downloadUrl, "_blank");
+        } else {
+          row.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
         }
       }
       if (event.key === "Escape") store.selectItems(active.id, []);
@@ -423,7 +612,7 @@ function Workspace({ userEmail }: { userEmail: string }) {
 
   if (workspaceQuery.isLoading || roots.isLoading) return <ShellLoading />;
 
-  const showInspector = Boolean(activeWindow?.selectedItems.length && store.inspector.open !== false);
+  const showInspector = Boolean(!routePanel && activeWindow?.selectedItems.length && store.inspector.open !== false);
   const sidebarCollapsed = Boolean(store.sidebar.collapsed);
 
   async function logout() {
@@ -439,7 +628,7 @@ function Workspace({ userEmail }: { userEmail: string }) {
           const firstRoot = rootList[0];
           if (firstRoot) store.openRoot(firstRoot);
         }}
-        onOpenAudit={() => setAuditOpen(true)}
+        onOpenAudit={() => navigate(routePanelPath("audit"))}
         onOpenCommandPalette={() => {
           setCommandPaletteQuery("");
           setCommandPaletteIndex(0);
@@ -448,7 +637,15 @@ function Workspace({ userEmail }: { userEmail: string }) {
         onLogout={logout}
       />
       <aside className={`workspace-sidebar-shell ${sidebarCollapsed ? "collapsed" : ""}`}>
-        <Sidebar roots={rootList} userEmail={userEmail} onOpenTrash={() => setTrashOpen(true)} onOpenAudit={() => setAuditOpen(true)} />
+        <Sidebar
+          roots={rootList}
+          userEmail={userEmail}
+          activePanel={routePanel}
+          onShowDesktop={() => navigate("/")}
+          onOpenPanel={(panel) => navigate(routePanelPath(panel))}
+          onOpenTrash={() => navigate(routePanelPath("trash"))}
+          onOpenAudit={() => navigate(routePanelPath("audit"))}
+        />
       </aside>
       <section className={`workspace-canvas desktop-canvas ${showInspector ? "inspector-visible" : ""} ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
         {store.notice ? <div className="workspace-notice">{store.notice}</div> : null}
@@ -466,14 +663,20 @@ function Workspace({ userEmail }: { userEmail: string }) {
             selectedIndex={commandPaletteIndex}
           />
         ) : null}
-        {store.windows.length === 0 ? <RootPicker roots={rootList} /> : null}
-        {store.windows.map((window) => (
-          <FileWindowView key={window.id} window={window} />
-        ))}
-        <FloatingShelf />
-        <TaskCenter />
-        <TrashCenter open={trashOpen} onClose={() => setTrashOpen(false)} />
-        <AuditCenter open={auditOpen} onClose={() => setAuditOpen(false)} />
+        {routePanel ? (
+          <RoutePanelView panel={routePanel} roots={rootList} onClose={() => navigate("/")} />
+        ) : (
+          <>
+            {store.windows.length === 0 ? <RootPicker roots={rootList} /> : null}
+            {store.windows.map((window) => (
+              <FileWindowView key={window.id} window={window} />
+            ))}
+            <FloatingShelf />
+            <TaskCenter />
+            <TrashCenter open={trashOpen} onClose={() => setTrashOpen(false)} />
+            <AuditCenter open={auditOpen} onClose={() => setAuditOpen(false)} />
+          </>
+        )}
       </section>
       {showInspector ? <Inspector /> : null}
     </main>
@@ -632,11 +835,467 @@ function DesktopTopBar({
   );
 }
 
-function Sidebar({ roots, userEmail, onOpenTrash, onOpenAudit }: { roots: Root[]; userEmail: string; onOpenTrash: () => void; onOpenAudit: () => void }) {
+function RoutePanelView({ panel, roots, onClose }: { panel: RoutePanel; roots: Root[]; onClose: () => void }) {
+  const titles: Record<RoutePanel, { icon: React.ReactNode; title: string }> = {
+    shelf: { icon: <Archive />, title: "中轉區" },
+    tasks: { icon: <Boxes />, title: "任務" },
+    shares: { icon: <Share2 />, title: "分享" },
+    users: { icon: <UserPlus />, title: "使用者" },
+    groups: { icon: <Users />, title: "群組" },
+    permissions: { icon: <KeyRound />, title: "權限" },
+    settings: { icon: <Settings />, title: "設定" },
+    trash: { icon: <Trash2 />, title: "垃圾桶" },
+    audit: { icon: <SlidersHorizontal />, title: "稽核紀錄" }
+  };
+  return (
+    <section className="route-panel">
+      <header>
+        <strong>{titles[panel].icon}{titles[panel].title}</strong>
+        <button className="icon-button" onClick={onClose} title="回到桌面"><X /></button>
+      </header>
+      {panel === "shelf" ? <ShelfRoutePanel /> : null}
+      {panel === "tasks" ? <TasksRoutePanel /> : null}
+      {panel === "shares" ? <SharesRoutePanel roots={roots} /> : null}
+      {panel === "users" ? <UsersRoutePanel /> : null}
+      {panel === "groups" ? <GroupsRoutePanel /> : null}
+      {panel === "permissions" ? <PermissionsRoutePanel roots={roots} /> : null}
+      {panel === "settings" ? <SettingsRoutePanel roots={roots} /> : null}
+      {panel === "trash" ? <TrashRoutePanel /> : null}
+      {panel === "audit" ? <AuditRoutePanel /> : null}
+    </section>
+  );
+}
+
+function ShelfRoutePanel() {
+  const shelves = useShelves();
+  return (
+    <div className="route-panel-body">
+      {(shelves.data ?? []).map((shelf) => (
+        <section className="route-card" key={shelf.id}>
+          <h3>{shelf.name}</h3>
+          <div className="route-list">
+            {shelf.items.length === 0 ? <div className="empty-state">沒有中轉項目</div> : null}
+            {shelf.items.map((item) => (
+              <div className="route-row" key={item.id}>
+                <Archive />
+                <div><strong>{item.name}</strong><span>{item.root_slug}:{item.path}</span></div>
+                <small>{item.kind === "folder" ? "資料夾" : "檔案"} · {formatSize(item.size)}</small>
+              </div>
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function TasksRoutePanel() {
+  const tasks = useTasks();
+  const queryClient = useQueryClient();
+  async function action(taskId: string, verb: "cancel" | "pause" | "resume" | "retry") {
+    await api(`/api/tasks/${taskId}/${verb}`, { method: "POST" });
+    await queryClient.invalidateQueries({ queryKey: ["tasks"] });
+    if (verb === "retry") await queryClient.invalidateQueries({ queryKey: ["fs"] });
+  }
+  return (
+    <div className="route-panel-body">
+      <section className="route-card">
+        <div className="route-list">
+          {tasks.isLoading ? <div className="empty-state"><Loader2 className="spin" /> Loading</div> : null}
+          {!tasks.isLoading && !tasks.data?.length ? <div className="empty-state">目前沒有任務</div> : null}
+          {tasks.data?.map((task) => {
+            const downloadTarget = completedCompressDownloadTarget(task);
+            return (
+              <div className="route-row task-route-row" key={task.id}>
+                <Boxes />
+                <div>
+                  <strong>{task.type}</strong>
+                  <span>{taskProgressLabel(task)}</span>
+                  {task.error_message ? <small>{task.error_message}</small> : null}
+                </div>
+                <span className={`status ${task.status}`}>{task.status}</span>
+                <progress value={taskProgressValue(task)} max={taskProgressMax(task)} />
+                <div className="route-actions">
+                  {downloadTarget ? (
+                    <a className="task-action" href={downloadUrl(downloadTarget.rootSlug, downloadTarget.path)}><Download /> 下載</a>
+                  ) : null}
+                  {task.status === "queued" ? <button onClick={() => void action(task.id, "pause")}>暫停</button> : null}
+                  {["queued", "paused"].includes(task.status) ? <button onClick={() => void action(task.id, "cancel")}>取消</button> : null}
+                  {task.status === "paused" ? <button onClick={() => void action(task.id, "resume")}>繼續</button> : null}
+                  {["failed", "cancelled", "interrupted"].includes(task.status) ? <button onClick={() => void action(task.id, "retry")}>重試</button> : null}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function SharesRoutePanel({ roots }: { roots: Root[] }) {
+  const shares = useShares();
+  const queryClient = useQueryClient();
+  const [rootSlug, setRootSlug] = useState(roots[0]?.slug ?? "");
+  const [sharePath, setSharePath] = useState("/");
+  const [mode, setMode] = useState<"download" | "view_only" | "upload_only">("download");
+  const [password, setPassword] = useState("");
+  const [expiresDays, setExpiresDays] = useState("");
+  const [maxDownloads, setMaxDownloads] = useState("");
+  const [shareUrl, setShareUrl] = useState("");
+  const rootById = new Map(roots.map((root) => [root.id, root]));
+  const passwordInvalid = Boolean(password && password.length < 8);
+
+  useEffect(() => {
+    if (!rootSlug && roots[0]) setRootSlug(roots[0].slug);
+  }, [rootSlug, roots]);
+
+  async function createShare() {
+    if (!rootSlug || !sharePath || passwordInvalid) return;
+    const days = Number(expiresDays);
+    const downloads = Number(maxDownloads);
+    const share = await api<{ token: string }>("/api/shares", {
+      method: "POST",
+      body: JSON.stringify({
+        rootSlug,
+        path: normalizePermissionInput(sharePath),
+        mode,
+        ...(password ? { password } : {}),
+        ...(Number.isFinite(days) && days > 0 ? { expiresAt: Math.floor(Date.now() / 1000) + days * 86400 } : {}),
+        ...(Number.isFinite(downloads) && downloads > 0 ? { maxDownloads: downloads } : {})
+      })
+    });
+    setShareUrl(`${location.origin}/s/${share.token}`);
+    setPassword("");
+    setExpiresDays("");
+    setMaxDownloads("");
+    await queryClient.invalidateQueries({ queryKey: ["shares"] });
+  }
+
+  async function setDisabled(shareId: string, disabled: boolean) {
+    await api(`/api/shares/${shareId}`, { method: "PATCH", body: JSON.stringify({ disabled }) });
+    await queryClient.invalidateQueries({ queryKey: ["shares"] });
+  }
+
+  async function remove(shareId: string) {
+    await api(`/api/shares/${shareId}`, { method: "DELETE" });
+    await queryClient.invalidateQueries({ queryKey: ["shares"] });
+  }
+
+  return (
+    <div className="route-panel-body">
+      <section className="route-card route-form-grid">
+        <select value={rootSlug} onChange={(event) => setRootSlug(event.target.value)}>
+          {roots.map((root) => <option key={root.id} value={root.slug}>{root.name}</option>)}
+        </select>
+        <input value={sharePath} onChange={(event) => setSharePath(event.target.value)} placeholder="/public/file.jpg" />
+        <select value={mode} onChange={(event) => setMode(event.target.value as "download" | "view_only" | "upload_only")}>
+          <option value="download">下載</option>
+          <option value="view_only">檢視</option>
+          <option value="upload_only">只允許上傳</option>
+        </select>
+        <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="密碼（選填）" />
+        <input type="number" min="1" value={expiresDays} onChange={(event) => setExpiresDays(event.target.value)} placeholder="有效天數" />
+        <input type="number" min="1" value={maxDownloads} onChange={(event) => setMaxDownloads(event.target.value)} placeholder="下載上限" />
+        <button className="tool-button" onClick={createShare} disabled={!rootSlug || !sharePath || passwordInvalid}><Share2 /> 建立分享</button>
+        {shareUrl ? <input readOnly value={shareUrl} /> : null}
+      </section>
+      <section className="route-card">
+        <div className="route-list">
+          {shares.data?.map((share) => (
+            <div className="route-row" key={share.id}>
+              <Share2 />
+              <div>
+                <strong>{rootById.get(share.root_id)?.slug ?? share.root_id}:{share.path}</strong>
+                <span>{shareModeLabel(parseShareMode(share.permission_json))} · {share.disabled ? "已停用" : "啟用中"} · {share.download_count}{share.max_downloads ? `/${share.max_downloads}` : ""}</span>
+              </div>
+              <div className="route-actions">
+                <button onClick={() => void setDisabled(share.id, !share.disabled)}>{share.disabled ? "啟用" : "停用"}</button>
+                <button className="danger" onClick={() => void remove(share.id)}>刪除</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function UsersRoutePanel() {
+  const users = useUsers();
+  const queryClient = useQueryClient();
+  const [email, setEmail] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [password, setPassword] = useState("");
+  const [role, setRole] = useState<"ADMIN" | "USER" | "GUEST">("USER");
+  async function createUser() {
+    if (!email || password.length < 8) return;
+    await api("/api/users", { method: "POST", body: JSON.stringify({ email, displayName: displayName || email.split("@")[0], password, role }) });
+    setEmail("");
+    setDisplayName("");
+    setPassword("");
+    setRole("USER");
+    await queryClient.invalidateQueries({ queryKey: ["users"] });
+  }
+  return (
+    <div className="route-panel-body">
+      <section className="route-card route-form-grid">
+        <input type="email" placeholder="user@example.test" value={email} onChange={(event) => setEmail(event.target.value)} />
+        <input placeholder="顯示名稱" value={displayName} onChange={(event) => setDisplayName(event.target.value)} />
+        <input type="password" placeholder="初始密碼" value={password} onChange={(event) => setPassword(event.target.value)} />
+        <select value={role} onChange={(event) => setRole(event.target.value as "ADMIN" | "USER" | "GUEST")}>
+          <option value="USER">USER</option>
+          <option value="GUEST">GUEST</option>
+          <option value="ADMIN">ADMIN</option>
+        </select>
+        <button className="tool-button" onClick={createUser} disabled={!email || password.length < 8}><UserPlus /> 新增使用者</button>
+      </section>
+      <section className="route-card">
+        {users.error ? <div className="empty-state error">需要管理員權限</div> : null}
+        <div className="route-list">
+          {users.data?.map((user) => (
+            <div className="route-row" key={user.id}>
+              <UserPlus />
+              <div><strong>{user.email}</strong><span>{user.display_name} · {user.role}</span></div>
+              <span className={`status ${user.disabled ? "failed" : "done"}`}>{user.disabled ? "disabled" : "active"}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function GroupsRoutePanel() {
+  const groups = useGroups();
+  const users = useUsers();
+  const queryClient = useQueryClient();
+  const [name, setName] = useState("");
+  const [groupId, setGroupId] = useState("");
+  const [userId, setUserId] = useState("");
+  async function createGroup() {
+    if (!name) return;
+    await api("/api/groups", { method: "POST", body: JSON.stringify({ name }) });
+    setName("");
+    await queryClient.invalidateQueries({ queryKey: ["groups"] });
+  }
+  async function addMember() {
+    if (!groupId || !userId) return;
+    await api(`/api/groups/${groupId}/members`, { method: "POST", body: JSON.stringify({ userId }) });
+    setUserId("");
+  }
+  return (
+    <div className="route-panel-body">
+      <section className="route-card route-form-grid">
+        <input placeholder="群組名稱" value={name} onChange={(event) => setName(event.target.value)} />
+        <button className="tool-button" onClick={createGroup} disabled={!name}><Users /> 新增群組</button>
+        <select value={groupId} onChange={(event) => setGroupId(event.target.value)}>
+          <option value="">群組</option>
+          {groups.data?.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
+        </select>
+        <select value={userId} onChange={(event) => setUserId(event.target.value)}>
+          <option value="">使用者</option>
+          {users.data?.map((user) => <option key={user.id} value={user.id}>{user.email}</option>)}
+        </select>
+        <button className="tool-button" onClick={addMember} disabled={!groupId || !userId}>加入群組</button>
+      </section>
+      <section className="route-card">
+        {groups.error ? <div className="empty-state error">需要管理員權限</div> : null}
+        <div className="route-list">
+          {groups.data?.map((group) => (
+            <div className="route-row" key={group.id}><Users /><div><strong>{group.name}</strong><span>{formatUnixDate(group.created_at)}</span></div></div>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function PermissionsRoutePanel({ roots }: { roots: Root[] }) {
+  const users = useUsers();
+  const groups = useGroups();
+  const queryClient = useQueryClient();
+  const [rootId, setRootId] = useState(roots[0]?.id ?? "");
+  const [pathPrefix, setPathPrefix] = useState("/");
+  const [principalType, setPrincipalType] = useState<"user" | "group">("group");
+  const [principalId, setPrincipalId] = useState("");
+  const [allow, setAllow] = useState<PermissionAction[]>(["list", "read"]);
+  const [deny, setDeny] = useState<PermissionAction[]>([]);
+  const [recursive, setRecursive] = useState(true);
+  const permissions = usePermissions(rootId, Boolean(rootId));
+
+  useEffect(() => {
+    if (!rootId && roots[0]) setRootId(roots[0].id);
+  }, [rootId, roots]);
+
+  function toggleAction(action: PermissionAction, kind: "allow" | "deny") {
+    const update = kind === "allow" ? setAllow : setDeny;
+    const otherUpdate = kind === "allow" ? setDeny : setAllow;
+    update((items) => items.includes(action) ? items.filter((item) => item !== action) : [...items, action]);
+    otherUpdate((items) => items.filter((item) => item !== action));
+  }
+
+  async function createRule() {
+    if (!rootId || !principalId || (allow.length === 0 && deny.length === 0)) return;
+    await api("/api/permissions", {
+      method: "POST",
+      body: JSON.stringify({ principalType, principalId, rootId, pathPrefix: normalizePermissionInput(pathPrefix), allow, deny, recursive })
+    });
+    await queryClient.invalidateQueries({ queryKey: ["permissions"] });
+    await queryClient.invalidateQueries({ queryKey: ["roots"] });
+    await queryClient.invalidateQueries({ queryKey: ["fs"] });
+  }
+
+  async function deleteRule(ruleId: string) {
+    await api(`/api/permissions/${ruleId}`, { method: "DELETE" });
+    await queryClient.invalidateQueries({ queryKey: ["permissions"] });
+  }
+
+  return (
+    <div className="route-panel-body">
+      <section className="route-card route-form-grid permission-editor">
+        <select value={rootId} onChange={(event) => setRootId(event.target.value)}>
+          {roots.map((root) => <option key={root.id} value={root.id}>{root.name}</option>)}
+        </select>
+        <input value={pathPrefix} onChange={(event) => setPathPrefix(event.target.value)} placeholder="/public" />
+        <select value={principalType} onChange={(event) => { setPrincipalType(event.target.value as "user" | "group"); setPrincipalId(""); }}>
+          <option value="group">群組</option>
+          <option value="user">使用者</option>
+        </select>
+        <select value={principalId} onChange={(event) => setPrincipalId(event.target.value)}>
+          <option value="">Principal</option>
+          {principalType === "group"
+            ? groups.data?.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)
+            : users.data?.map((user) => <option key={user.id} value={user.id}>{user.email}</option>)}
+        </select>
+        <label className="compact-check"><input type="checkbox" checked={recursive} onChange={(event) => setRecursive(event.target.checked)} /> 遞迴</label>
+        <div className="permission-action-grid">
+          {permissionActions.map((action) => (
+            <div className="permission-action-row" key={action}>
+              <span>{action}</span>
+              <label><input type="checkbox" checked={allow.includes(action)} onChange={() => toggleAction(action, "allow")} /> allow</label>
+              <label><input type="checkbox" checked={deny.includes(action)} onChange={() => toggleAction(action, "deny")} /> deny</label>
+            </div>
+          ))}
+        </div>
+        <button className="tool-button" onClick={createRule} disabled={!rootId || !principalId || (allow.length === 0 && deny.length === 0)}><KeyRound /> 儲存規則</button>
+      </section>
+      <section className="route-card">
+        {permissions.error ? <div className="empty-state error">無法讀取權限規則</div> : null}
+        <div className="route-list">
+          {permissions.data?.map((rule) => (
+            <div className="route-row" key={rule.id}>
+              <KeyRound />
+              <div>
+                <strong>{rule.principal_type}:{rule.principal_id}</strong>
+                <span>{rule.path_prefix}{rule.recursive ? "/*" : ""}</span>
+                <div className="permission-badges">
+                  {parseJsonArray(rule.allow_json).map((item) => <span className="allow" key={`${rule.id}-allow-${item}`}>{item}</span>)}
+                  {parseJsonArray(rule.deny_json).map((item) => <span className="deny" key={`${rule.id}-deny-${item}`}>{item}</span>)}
+                </div>
+              </div>
+              <button className="task-action" onClick={() => void deleteRule(rule.id)}>刪除</button>
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function SettingsRoutePanel({ roots }: { roots: Root[] }) {
+  return (
+    <div className="route-panel-body">
+      <section className="route-card">
+        <div className="route-list">
+          <div className="route-row">
+            <HardDrive />
+            <div><strong>Roots</strong><span>{roots.length}</span></div>
+          </div>
+          <div className="route-row">
+            <Settings />
+            <div><strong>Runtime</strong><span>single container</span></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function TrashRoutePanel() {
+  const trash = useTrash(true);
+  const queryClient = useQueryClient();
+  async function restore(itemId: string) {
+    await api(`/api/trash/${itemId}/restore`, { method: "POST" });
+    await queryClient.invalidateQueries({ queryKey: ["trash"] });
+    await queryClient.invalidateQueries({ queryKey: ["tasks"] });
+    await queryClient.invalidateQueries({ queryKey: ["fs"] });
+  }
+  return (
+    <div className="route-panel-body">
+      <section className="route-card">
+        <div className="route-list">
+          {trash.isLoading ? <div className="empty-state"><Loader2 className="spin" /> Loading</div> : null}
+          {!trash.isLoading && !trash.data?.length ? <div className="empty-state">沒有待還原的項目</div> : null}
+          {trash.data?.map((item) => (
+            <div className="route-row" key={item.id}>
+              <Trash2 />
+              <div><strong>{item.original_path.split("/").filter(Boolean).at(-1) ?? item.original_path}</strong><span>{item.original_path}</span></div>
+              <small>{formatUnixDate(item.deleted_at)}</small>
+              <button className="tool-button" onClick={() => void restore(item.id)}><RefreshCw /> 還原</button>
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function AuditRoutePanel() {
+  const audit = useAudit(true);
+  return (
+    <div className="route-panel-body">
+      <section className="route-card">
+        <div className="route-list">
+          {audit.isLoading ? <div className="empty-state"><Loader2 className="spin" /> Loading</div> : null}
+          {!audit.isLoading && !audit.data?.length ? <div className="empty-state">目前沒有稽核紀錄</div> : null}
+          {audit.data?.map((item) => (
+            <div className="route-row" key={item.id}>
+              <span className={`audit-result ${item.result}`}>{item.result}</span>
+              <div><strong>{item.action}</strong><span>{item.path ?? summarizeAuditTarget(item.target_json)}</span></div>
+              <span>{item.actor_type}</span>
+              <time>{formatUnixDate(item.created_at)}</time>
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function Sidebar({
+  roots,
+  userEmail,
+  activePanel,
+  onShowDesktop,
+  onOpenPanel,
+  onOpenTrash,
+  onOpenAudit
+}: {
+  roots: Root[];
+  userEmail: string;
+  activePanel: RoutePanel | null;
+  onShowDesktop: () => void;
+  onOpenPanel: (panel: RoutePanel) => void;
+  onOpenTrash: () => void;
+  onOpenAudit: () => void;
+}) {
   const store = useWorkspaceStore();
   const queryClient = useQueryClient();
   const [rootName, setRootName] = useState("");
   const [rootSlug, setRootSlug] = useState("");
+  const [rootBasePath, setRootBasePath] = useState("");
+  const [rootReadonly, setRootReadonly] = useState(false);
   const collapsed = Boolean(store.sidebar.collapsed);
 
   async function logout() {
@@ -648,10 +1307,17 @@ function Sidebar({ roots, userEmail, onOpenTrash, onOpenAudit }: { roots: Root[]
     if (!rootSlug) return;
     await api("/api/roots", {
       method: "POST",
-      body: JSON.stringify({ slug: rootSlug, name: rootName || rootSlug, basePath: `/data/${rootSlug}`, readonly: false })
+      body: JSON.stringify({
+        slug: rootSlug,
+        name: rootName || rootSlug,
+        ...(rootBasePath.trim() ? { basePath: rootBasePath.trim() } : {}),
+        readonly: rootReadonly
+      })
     });
     setRootName("");
     setRootSlug("");
+    setRootBasePath("");
+    setRootReadonly(false);
     await queryClient.invalidateQueries({ queryKey: ["roots"] });
   }
 
@@ -666,27 +1332,45 @@ function Sidebar({ roots, userEmail, onOpenTrash, onOpenAudit }: { roots: Root[]
       </div>
       <nav className="side-nav">
         <span className="side-section">工作區</span>
-        <button className="side-item active"><HardDrive /> Roots</button>
-        <button className="side-item"><Archive /> 中轉區</button>
-        <button className="side-item"><Boxes /> 任務</button>
-        <button className="side-item"><Share2 /> 分享</button>
-        <button className="side-item" onClick={onOpenTrash}><Trash2 /> 垃圾桶</button>
+        <button className={`side-item ${activePanel === null ? "active" : ""}`} onClick={onShowDesktop}><HardDrive /> Roots</button>
+        <button className={`side-item ${activePanel === "shelf" ? "active" : ""}`} onClick={() => onOpenPanel("shelf")}><Archive /> 中轉區</button>
+        <button className={`side-item ${activePanel === "tasks" ? "active" : ""}`} onClick={() => onOpenPanel("tasks")}><Boxes /> 任務</button>
+        <button className={`side-item ${activePanel === "shares" ? "active" : ""}`} onClick={() => onOpenPanel("shares")}><Share2 /> 分享</button>
+        <button className={`side-item ${activePanel === "trash" ? "active" : ""}`} onClick={onOpenTrash}><Trash2 /> 垃圾桶</button>
         <span className="side-section">管理</span>
-        <button className="side-item" onClick={onOpenAudit}><SlidersHorizontal /> 稽核紀錄</button>
+        <button className={`side-item ${activePanel === "users" ? "active" : ""}`} onClick={() => onOpenPanel("users")}><UserPlus /> 使用者</button>
+        <button className={`side-item ${activePanel === "groups" ? "active" : ""}`} onClick={() => onOpenPanel("groups")}><Users /> 群組</button>
+        <button className={`side-item ${activePanel === "permissions" ? "active" : ""}`} onClick={() => onOpenPanel("permissions")}><KeyRound /> 權限</button>
+        <button className={`side-item ${activePanel === "settings" ? "active" : ""}`} onClick={() => onOpenPanel("settings")}><Settings /> 設定</button>
+        <button className={`side-item ${activePanel === "audit" ? "active" : ""}`} onClick={onOpenAudit}><SlidersHorizontal /> 稽核紀錄</button>
       </nav>
       <div className="root-list">
         <span className="side-section">Roots</span>
         {roots.map((root) => (
-          <button key={root.id} className="root-button" onClick={() => store.openRoot(root)}>
-            <FolderOpen />
-            <span>{root.name}</span>
-            {root.readonly ? <span className="badge">RO</span> : null}
-          </button>
+          <div className="root-row" key={root.id}>
+            <button className="root-button" onClick={() => store.openRoot(root)}>
+              <FolderOpen />
+              <span>{root.name}</span>
+              {root.readonly ? <span className="badge">RO</span> : null}
+            </button>
+            <button
+              className="icon-button root-new-window"
+              title="以新視窗開啟"
+              onClick={() => store.openWindow({ rootSlug: root.slug, logicalPath: "/", title: root.name })}
+            >
+              <CirclePlus />
+            </button>
+          </div>
         ))}
       </div>
       <div className="mini-form">
         <input placeholder="root slug" value={rootSlug} onChange={(event) => setRootSlug(event.target.value)} />
         <input placeholder="顯示名稱" value={rootName} onChange={(event) => setRootName(event.target.value)} />
+        <input placeholder="/data/photos" value={rootBasePath} onChange={(event) => setRootBasePath(event.target.value)} />
+        <label className="compact-check">
+          <input type="checkbox" checked={rootReadonly} onChange={(event) => setRootReadonly(event.target.checked)} />
+          唯讀
+        </label>
         <button onClick={createRoot}><Plus /> 新增 Root</button>
       </div>
       <div className="sidebar-footer">
@@ -702,16 +1386,25 @@ function RootPicker({ roots }: { roots: Root[] }) {
   const queryClient = useQueryClient();
   const [rootName, setRootName] = useState("");
   const [rootSlug, setRootSlug] = useState("");
+  const [rootBasePath, setRootBasePath] = useState("");
+  const [rootReadonly, setRootReadonly] = useState(false);
 
   async function createRoot(event: React.FormEvent) {
     event.preventDefault();
     if (!rootSlug) return;
     await api("/api/roots", {
       method: "POST",
-      body: JSON.stringify({ slug: rootSlug, name: rootName || rootSlug, basePath: `/data/${rootSlug}`, readonly: false })
+      body: JSON.stringify({
+        slug: rootSlug,
+        name: rootName || rootSlug,
+        ...(rootBasePath.trim() ? { basePath: rootBasePath.trim() } : {}),
+        readonly: rootReadonly
+      })
     });
     setRootName("");
     setRootSlug("");
+    setRootBasePath("");
+    setRootReadonly(false);
     await queryClient.invalidateQueries({ queryKey: ["roots"] });
   }
 
@@ -732,6 +1425,11 @@ function RootPicker({ roots }: { roots: Root[] }) {
         <form className="root-create-form" onSubmit={createRoot}>
           <input placeholder="root slug" value={rootSlug} onChange={(event) => setRootSlug(event.target.value)} />
           <input placeholder="顯示名稱" value={rootName} onChange={(event) => setRootName(event.target.value)} />
+          <input placeholder="/data/photos" value={rootBasePath} onChange={(event) => setRootBasePath(event.target.value)} />
+          <label className="compact-check">
+            <input type="checkbox" checked={rootReadonly} onChange={(event) => setRootReadonly(event.target.checked)} />
+            唯讀
+          </label>
           <button className="tool-button" disabled={!rootSlug.trim()}><Plus /> 新增 Root</button>
         </form>
       </div>
@@ -744,16 +1442,22 @@ function FileWindowView({ window }: { window: FileWindow }) {
   const queryClient = useQueryClient();
   const fileList = useFileList(window.rootSlug, window.logicalPath);
   const readonly = Boolean(fileList.data?.readonly);
-  const [drag, setDrag] = useState<{ startX: number; startY: number; x: number; y: number } | null>(null);
-  const [resize, setResize] = useState<{ startX: number; startY: number; width: number; height: number } | null>(null);
+  const [drag, setDrag] = useState<PointerDragState | null>(null);
+  const [resize, setResize] = useState<PointerResizeState | null>(null);
+  const [selectionDrag, setSelectionDrag] = useState<SelectionDragState | null>(null);
   const [dropChoice, setDropChoice] = useState<{ items: Array<{ rootSlug: string; path: string }> } | null>(null);
   const [contextMenu, setContextMenu] = useState<{ item: FileItem; x: number; y: number } | null>(null);
+  const [previewItem, setPreviewItem] = useState<FileItem | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [addressDraft, setAddressDraft] = useState(window.logicalPath);
+  const [addressEditing, setAddressEditing] = useState(false);
   const [lastSelectedPath, setLastSelectedPath] = useState<string | null>(null);
+  const [operationError, setOperationError] = useState("");
+  const [busyAction, setBusyAction] = useState<"mkdir" | "upload" | null>(null);
 
   useEffect(() => {
-    function move(event: MouseEvent) {
-      if (drag) {
+    function move(event: PointerEvent) {
+      if (drag && event.pointerId === drag.pointerId) {
         const minX = globalThis.innerWidth > 980 ? (store.sidebar.collapsed ? 96 : 276) : 8;
         const maxX = Math.max(minX, globalThis.innerWidth - 120);
         const maxY = Math.max(46, globalThis.innerHeight - 80);
@@ -762,7 +1466,7 @@ function FileWindowView({ window }: { window: FileWindow }) {
           y: Math.min(maxY, Math.max(46, drag.y + event.clientY - drag.startY))
         });
       }
-      if (resize) {
+      if (resize && event.pointerId === resize.pointerId) {
         const maxWidth = Math.max(360, globalThis.innerWidth - window.x - 16);
         const maxHeight = Math.max(280, globalThis.innerHeight - window.y - 16);
         store.updateWindow(window.id, {
@@ -771,17 +1475,19 @@ function FileWindowView({ window }: { window: FileWindow }) {
         });
       }
     }
-    function up() {
-      setDrag(null);
-      setResize(null);
+    function up(event: PointerEvent) {
+      if (drag && event.pointerId === drag.pointerId) setDrag(null);
+      if (resize && event.pointerId === resize.pointerId) setResize(null);
     }
-    globalThis.addEventListener("mousemove", move);
-    globalThis.addEventListener("mouseup", up);
+    globalThis.addEventListener("pointermove", move);
+    globalThis.addEventListener("pointerup", up);
+    globalThis.addEventListener("pointercancel", up);
     return () => {
-      globalThis.removeEventListener("mousemove", move);
-      globalThis.removeEventListener("mouseup", up);
+      globalThis.removeEventListener("pointermove", move);
+      globalThis.removeEventListener("pointerup", up);
+      globalThis.removeEventListener("pointercancel", up);
     };
-  }, [drag, resize, store, window.id, window.width]);
+  }, [drag, resize, store, window.id, window.width, window.x]);
 
   useEffect(() => {
     if (!contextMenu) return;
@@ -796,6 +1502,10 @@ function FileWindowView({ window }: { window: FileWindow }) {
       globalThis.removeEventListener("keydown", closeMenu);
     };
   }, [contextMenu]);
+
+  useEffect(() => {
+    if (!addressEditing) setAddressDraft(window.logicalPath);
+  }, [addressEditing, window.logicalPath]);
 
   const sortedItems = useMemo(() => {
     const items = [...(fileList.data?.items ?? [])];
@@ -847,8 +1557,16 @@ function FileWindowView({ window }: { window: FileWindow }) {
     if (readonly) return;
     const name = prompt("Folder name");
     if (!name) return;
-    await api("/api/fs/mkdir", { method: "POST", body: JSON.stringify({ rootSlug: window.rootSlug, path: window.logicalPath, name }) });
-    await queryClient.invalidateQueries({ queryKey: ["fs", "list", window.rootSlug, window.logicalPath] });
+    setBusyAction("mkdir");
+    setOperationError("");
+    try {
+      await api("/api/fs/mkdir", { method: "POST", body: JSON.stringify({ rootSlug: window.rootSlug, path: window.logicalPath, name }) });
+      await queryClient.invalidateQueries({ queryKey: ["fs", "list", window.rootSlug, window.logicalPath] });
+    } catch (error) {
+      setOperationError(error instanceof Error ? error.message : "建立資料夾失敗");
+    } finally {
+      setBusyAction(null);
+    }
   }
 
   async function compressSelection() {
@@ -861,6 +1579,25 @@ function FileWindowView({ window }: { window: FileWindow }) {
         type: "compress",
         sources: window.selectedItems.map((path) => ({ rootSlug: window.rootSlug, path })),
         destination: { rootSlug: window.rootSlug, path: joinLogicalPath(window.logicalPath, ensureZipName(name)) }
+      })
+    });
+    store.selectItems(window.id, []);
+    await queryClient.invalidateQueries({ queryKey: ["tasks"] });
+  }
+
+  async function downloadSelection() {
+    if (window.selectedItems.length === 0) return;
+    if (window.selectedItems.length === 1) {
+      globalThis.open(downloadUrl(window.rootSlug, window.selectedItems[0]!), "_blank");
+      return;
+    }
+    const stamp = new Date().toISOString().replaceAll(":", "").replace(/\.\d+Z$/, "Z");
+    await api("/api/tasks", {
+      method: "POST",
+      body: JSON.stringify({
+        type: "compress",
+        sources: window.selectedItems.map((path) => ({ rootSlug: window.rootSlug, path })),
+        destination: { rootSlug: window.rootSlug, path: joinLogicalPath(window.logicalPath, ensureZipName(`download-${stamp}.zip`)) }
       })
     });
     store.selectItems(window.id, []);
@@ -892,9 +1629,17 @@ function FileWindowView({ window }: { window: FileWindow }) {
     form.append("rootSlug", window.rootSlug);
     form.append("path", window.logicalPath);
     for (const file of files) form.append("file", file);
-    await api("/api/fs/upload", { method: "POST", body: form });
-    event.target.value = "";
-    await queryClient.invalidateQueries({ queryKey: ["fs", "list", window.rootSlug, window.logicalPath] });
+    setBusyAction("upload");
+    setOperationError("");
+    try {
+      await api("/api/fs/upload", { method: "POST", body: form });
+      event.target.value = "";
+      await queryClient.invalidateQueries({ queryKey: ["fs", "list", window.rootSlug, window.logicalPath] });
+    } catch (error) {
+      setOperationError(error instanceof Error ? error.message : "上傳失敗");
+    } finally {
+      setBusyAction(null);
+    }
   }
 
   function openContextMenu(event: React.MouseEvent<HTMLElement>, item: FileItem) {
@@ -918,7 +1663,50 @@ function FileWindowView({ window }: { window: FileWindow }) {
       else store.updateWindow(window.id, { logicalPath: item.path, selectedItems: [] });
       return;
     }
-    globalThis.open(downloadUrl(window.rootSlug, item.path), "_blank");
+    setPreviewItem(item);
+  }
+
+  function commitAddressDraft(value = addressDraft) {
+    const nextPath = normalizeAddressInput(value, window.rootSlug);
+    if (!nextPath) {
+      setAddressDraft(window.logicalPath);
+      setAddressEditing(false);
+      setOperationError("路徑格式無效");
+      return;
+    }
+    setAddressDraft(nextPath);
+    setAddressEditing(false);
+    setOperationError("");
+    if (nextPath !== window.logicalPath) store.updateWindow(window.id, { logicalPath: nextPath, selectedItems: [] });
+  }
+
+  function beginSelectionDrag(event: React.PointerEvent<HTMLDivElement>) {
+    if (!isPrimaryPointerStart(event) || isEditableTarget(event.target)) return;
+    const target = event.target instanceof HTMLElement ? event.target : null;
+    if (target?.closest(".file-row, .file-header, .column-detail, button, a, input, label")) return;
+    if (fileWindowError || visibleWindowItems.length === 0) return;
+    const point = localPointerPoint(event, event.currentTarget);
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setSelectionDrag({ pointerId: event.pointerId, startX: point.x, startY: point.y, currentX: point.x, currentY: point.y });
+    store.selectItems(window.id, []);
+    setLastSelectedPath(null);
+  }
+
+  function updateSelectionDrag(event: React.PointerEvent<HTMLDivElement>) {
+    if (!selectionDrag || event.pointerId !== selectionDrag.pointerId) return;
+    const point = localPointerPoint(event, event.currentTarget);
+    const nextDrag = { ...selectionDrag, currentX: point.x, currentY: point.y };
+    setSelectionDrag(nextDrag);
+    const selectedPaths = pathsIntersectingSelection(event.currentTarget, nextDrag);
+    store.selectItems(window.id, selectedPaths);
+    if (selectedPaths.length > 0) setLastSelectedPath(selectedPaths.at(-1) ?? null);
+  }
+
+  function endSelectionDrag(event: React.PointerEvent<HTMLDivElement>) {
+    if (!selectionDrag || event.pointerId !== selectionDrag.pointerId) return;
+    event.currentTarget.releasePointerCapture(event.pointerId);
+    setSelectionDrag(null);
   }
 
   async function addItemToShelf(item: FileItem) {
@@ -1022,7 +1810,11 @@ function FileWindowView({ window }: { window: FileWindow }) {
     >
       <div
         className="window-titlebar"
-        onMouseDown={(event) => setDrag({ startX: event.clientX, startY: event.clientY, x: window.x, y: window.y })}
+        onPointerDown={(event) => {
+          if (!isPrimaryPointerStart(event) || isInteractiveTarget(event.target)) return;
+          event.currentTarget.setPointerCapture(event.pointerId);
+          setDrag({ pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, x: window.x, y: window.y });
+        }}
         onDoubleClick={() => store.updateWindow(window.id, { maximized: !window.maximized })}
       >
         <div className="traffic-lights"><span /><span /><span /></div>
@@ -1050,8 +1842,33 @@ function FileWindowView({ window }: { window: FileWindow }) {
                     <button className="icon-button" disabled><ChevronRight /></button>
                     <button className="icon-button" onClick={() => void queryClient.invalidateQueries({ queryKey: ["fs", "list", window.rootSlug, window.logicalPath] })}><RefreshCw /></button>
                   </div>
-                  <div className="address-field" tabIndex={0} data-address-target>
-                    <Breadcrumb window={window} />
+                  <div className={`address-field ${addressEditing ? "editing" : ""}`}>
+                    <span className="address-root">{window.rootSlug}</span>
+                    <input
+                      aria-label="目前路徑"
+                      data-address-target
+                      value={addressDraft}
+                      onFocus={() => {
+                        setAddressDraft(window.logicalPath);
+                        setAddressEditing(true);
+                      }}
+                      onBlur={(event) => commitAddressDraft(event.currentTarget.value)}
+                      onChange={(event) => setAddressDraft(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          commitAddressDraft(event.currentTarget.value);
+                          event.currentTarget.blur();
+                        }
+                        if (event.key === "Escape") {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          setAddressDraft(window.logicalPath);
+                          setAddressEditing(false);
+                          event.currentTarget.blur();
+                        }
+                      }}
+                    />
                     <Star />
                   </div>
                   <label className="search-pill window-search">
@@ -1083,12 +1900,15 @@ function FileWindowView({ window }: { window: FileWindow }) {
                   </label>
                 </div>
                 <div className="action-row">
-                  <button className="tool-button" onClick={mkdir} disabled={readonly}><Folder /> 建立資料夾</button>
-                  <label className={`tool-button file-input ${readonly ? "disabled" : ""}`} aria-disabled={readonly}>
-                    <Upload /> 上傳檔案<input type="file" multiple onChange={upload} disabled={readonly} />
+                  <button className="tool-button" onClick={mkdir} disabled={readonly || Boolean(busyAction)}>
+                    {busyAction === "mkdir" ? <Loader2 className="spin" /> : <Folder />} 建立資料夾
+                  </button>
+                  <label className={`tool-button file-input ${readonly || busyAction ? "disabled" : ""}`} aria-disabled={readonly || Boolean(busyAction)}>
+                    {busyAction === "upload" ? <Loader2 className="spin" /> : <Upload />} 上傳檔案<input type="file" multiple onChange={upload} disabled={readonly || Boolean(busyAction)} />
                   </label>
                   {window.selectedItems.length > 0 ? (
                     <>
+                      <button className="tool-button" onClick={() => void downloadSelection()}><Download /> 下載選取</button>
                       <button className="tool-button" onClick={() => void compressSelection()} disabled={readonly}><Archive /> 壓縮</button>
                       <button className="tool-button" onClick={() => void extractSelection()} disabled={readonly}><FolderOpen /> 解壓縮</button>
                     </>
@@ -1106,7 +1926,14 @@ function FileWindowView({ window }: { window: FileWindow }) {
                   </div>
                 </div>
               </div>
-              <div className={`file-list ${window.viewMode}`}>
+              {operationError ? <div className="inline-error window-operation-error">{operationError}</div> : null}
+              <div
+                className={`file-list ${window.viewMode} ${selectionDrag ? "selecting" : ""}`}
+                onPointerDown={beginSelectionDrag}
+                onPointerMove={updateSelectionDrag}
+                onPointerUp={endSelectionDrag}
+                onPointerCancel={endSelectionDrag}
+              >
                 {window.viewMode === "list" && (
                   <div className="file-header">
                     {sortHeader("name", "名稱")}
@@ -1166,7 +1993,7 @@ function FileWindowView({ window }: { window: FileWindow }) {
                         </dl>
                         <div className="column-detail-actions">
                           <button onClick={() => openItem(selectedColumnItem)}>
-                            {selectedColumnItem.kind === "folder" ? <FolderOpen /> : <Download />} 開啟
+                            {selectedColumnItem.kind === "folder" ? <FolderOpen /> : <FileText />} 開啟
                           </button>
                           {selectedColumnItem.kind === "folder" ? (
                             <button onClick={() => openItem(selectedColumnItem, true)}><CirclePlus /> 新視窗</button>
@@ -1182,6 +2009,7 @@ function FileWindowView({ window }: { window: FileWindow }) {
                     )}
                   </aside>
                 ) : null}
+                {selectionDrag ? <div className="selection-marquee" style={selectionMarqueeStyle(selectionDrag)} /> : null}
               </div>
               <div className="statusbar">
                 <span className="pathbar"><HardDrive /> {window.rootSlug} <ChevronRight /> {window.logicalPath === "/" ? window.title : window.logicalPath.split("/").filter(Boolean).join(" › ")}</span>
@@ -1190,7 +2018,15 @@ function FileWindowView({ window }: { window: FileWindow }) {
               </div>
             </div>
           </div>
-          <div className="resize-handle" onMouseDown={(event) => setResize({ startX: event.clientX, startY: event.clientY, width: window.width, height: window.height })} />
+          <div
+            className="resize-handle"
+            onPointerDown={(event) => {
+              if (!isPrimaryPointerStart(event)) return;
+              event.preventDefault();
+              event.currentTarget.setPointerCapture(event.pointerId);
+              setResize({ pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, width: window.width, height: window.height });
+            }}
+          />
         </>
       )}
       {dropChoice && (
@@ -1209,7 +2045,7 @@ function FileWindowView({ window }: { window: FileWindow }) {
           onClick={(event) => event.stopPropagation()}
         >
           <button onClick={() => openItem(contextMenu.item)}>
-            {contextMenu.item.kind === "folder" ? <FolderOpen /> : <Download />} 開啟
+            {contextMenu.item.kind === "folder" ? <FolderOpen /> : <FileText />} 開啟
           </button>
           {contextMenu.item.kind === "folder" ? (
             <button onClick={() => openItem(contextMenu.item, true)}><CirclePlus /> 在新視窗開啟</button>
@@ -1220,6 +2056,20 @@ function FileWindowView({ window }: { window: FileWindow }) {
           <span />
           <button disabled={readonly || contextMenu.item.readonly} onClick={() => void renameContextItem(contextMenu.item)}><Pencil /> 重新命名</button>
           <button className="danger" disabled={readonly || contextMenu.item.readonly} onClick={() => void trashContextItem(contextMenu.item)}><Trash2 /> 移到垃圾桶</button>
+        </div>
+      ) : null}
+      {previewItem ? (
+        <div className="preview-modal" onMouseDown={(event) => event.stopPropagation()}>
+          <div className="preview-window">
+            <header>
+              <strong><FileText /> {previewItem.name}</strong>
+              <div>
+                <a className="icon-button" href={downloadUrl(window.rootSlug, previewItem.path)} title="下載"><Download /></a>
+                <button className="icon-button" onClick={() => setPreviewItem(null)} title="關閉預覽"><X /></button>
+              </div>
+            </header>
+            <iframe title={previewItem.name} src={previewUrl(window.rootSlug, previewItem.path)} />
+          </div>
         </div>
       ) : null}
     </section>
@@ -1235,41 +2085,6 @@ function WindowFolderSidebar({ activeLabel, rootSlug }: { activeLabel: string; r
       <button><Share2 /> 已共享</button>
       <button><Trash2 /> 垃圾桶</button>
     </nav>
-  );
-}
-
-function Breadcrumb({ window }: { window: FileWindow }) {
-  const store = useWorkspaceStore();
-  const parts = window.logicalPath.split("/").filter(Boolean);
-  function openInCurrentWindow(nextPath: string) {
-    store.updateWindow(window.id, { logicalPath: nextPath });
-  }
-  function openInNewWindow(nextPath: string, title: string) {
-    store.openWindow({ rootSlug: window.rootSlug, logicalPath: nextPath, title });
-  }
-  return (
-    <div className="breadcrumb">
-      <button
-        onClick={(event) =>
-          (event.metaKey || event.ctrlKey) ? openInNewWindow("/", window.rootSlug) : openInCurrentWindow("/")
-        }
-      >
-        {window.rootSlug}
-      </button>
-      {parts.map((part, index) => {
-        const nextPath = `/${parts.slice(0, index + 1).join("/")}`;
-        return (
-          <button
-            key={nextPath}
-            onClick={(event) =>
-              (event.metaKey || event.ctrlKey) ? openInNewWindow(nextPath, part) : openInCurrentWindow(nextPath)
-            }
-          >
-            {part}
-          </button>
-        );
-      })}
-    </div>
   );
 }
 
@@ -1307,6 +2122,7 @@ function FileRow({
       data-file-path={item.path}
       data-file-kind={item.kind}
       data-download-url={item.kind === "file" ? downloadUrl(window.rootSlug, item.path) : undefined}
+      data-preview-url={item.kind === "file" ? previewUrl(window.rootSlug, item.path) : undefined}
       draggable
       onDragStart={(event) => {
         const paths = selected && window.selectedItems.length > 0 ? window.selectedItems : [item.path];
@@ -1324,7 +2140,7 @@ function FileRow({
       onContextMenu={(event) => onOpenContext(event, item)}
       onDoubleClick={() => {
         if (item.kind === "folder") onOpen(item);
-        else globalThis.open(downloadUrl(window.rootSlug, item.path), "_blank");
+        else onOpen(item);
       }}
     >
       <FileGlyph item={item} window={window} />
@@ -1414,33 +2230,46 @@ function FloatingShelf() {
   const activeList = useFileList(active?.rootSlug ?? "", active?.logicalPath ?? "/", Boolean(active));
   const activeReadonly = Boolean(activeList.data?.readonly);
   const queryClient = useQueryClient();
-  const [shelfDrag, setShelfDrag] = useState<{ startX: number; startY: number; x: number; y: number } | null>(null);
+  const [shelfDrag, setShelfDrag] = useState<PointerDragState | null>(null);
   const [dropActive, setDropActive] = useState(false);
   const [dropError, setDropError] = useState("");
   const shelf = shelves.data?.[0];
   const shelfCollapsed = Boolean(store.shelf.collapsed);
-  const shelfX = store.shelf.x ?? 320;
-  const shelfY = store.shelf.y ?? 620;
+  const rawShelfX = store.shelf.x ?? 320;
+  const rawShelfY = store.shelf.y ?? 620;
+  const viewportWidth = typeof globalThis.innerWidth === "number" ? globalThis.innerWidth : 1280;
+  const viewportHeight = typeof globalThis.innerHeight === "number" ? globalThis.innerHeight : 820;
+  const shelfWidth = shelfCollapsed ? 178 : 280;
+  const shelfX = clampNumber(rawShelfX, 8, viewportWidth - shelfWidth - 12);
+  const shelfY = clampNumber(rawShelfY, 56, viewportHeight - 140);
+
+  useEffect(() => {
+    if (shelfX !== rawShelfX || shelfY !== rawShelfY) store.updateShelf({ x: shelfX, y: shelfY });
+  }, [rawShelfX, rawShelfY, shelfX, shelfY, store]);
 
   useEffect(() => {
     if (!shelfDrag) return;
     const currentDrag = shelfDrag;
-    function move(event: MouseEvent) {
+    function move(event: PointerEvent) {
+      if (event.pointerId !== currentDrag.pointerId) return;
       store.updateShelf({
-        x: Math.max(8, Math.min(globalThis.innerWidth - 320, currentDrag.x + event.clientX - currentDrag.startX)),
-        y: Math.max(8, Math.min(globalThis.innerHeight - 180, currentDrag.y + event.clientY - currentDrag.startY))
+        x: clampNumber(currentDrag.x + event.clientX - currentDrag.startX, 8, globalThis.innerWidth - shelfWidth - 12),
+        y: clampNumber(currentDrag.y + event.clientY - currentDrag.startY, 56, globalThis.innerHeight - 140)
       });
     }
-    function up() {
+    function up(event: PointerEvent) {
+      if (event.pointerId !== currentDrag.pointerId) return;
       setShelfDrag(null);
     }
-    globalThis.addEventListener("mousemove", move);
-    globalThis.addEventListener("mouseup", up);
+    globalThis.addEventListener("pointermove", move);
+    globalThis.addEventListener("pointerup", up);
+    globalThis.addEventListener("pointercancel", up);
     return () => {
-      globalThis.removeEventListener("mousemove", move);
-      globalThis.removeEventListener("mouseup", up);
+      globalThis.removeEventListener("pointermove", move);
+      globalThis.removeEventListener("pointerup", up);
+      globalThis.removeEventListener("pointercancel", up);
     };
-  }, [shelfDrag, store]);
+  }, [shelfDrag, shelfWidth, store]);
 
   if (!shelf) return null;
   const shelfId = shelf.id;
@@ -1515,12 +2344,18 @@ function FloatingShelf() {
       }}
       onDrop={(event) => void addDroppedItems(event)}
     >
-      <header onMouseDown={(event) => setShelfDrag({ startX: event.clientX, startY: event.clientY, x: shelfX, y: shelfY })}>
+      <header
+        onPointerDown={(event) => {
+          if (!isPrimaryPointerStart(event) || isInteractiveTarget(event.target)) return;
+          event.currentTarget.setPointerCapture(event.pointerId);
+          setShelfDrag({ pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, x: shelfX, y: shelfY });
+        }}
+      >
         <Archive /> 中轉區 <span>{shelfItems.length}</span>
         <button
           className="icon-button"
           title={shelfCollapsed ? "展開中轉區" : "收合中轉區"}
-          onMouseDown={(event) => event.stopPropagation()}
+          onPointerDown={(event) => event.stopPropagation()}
           onClick={() => store.updateShelf({ collapsed: !shelfCollapsed })}
         >
           <Minimize2 />
@@ -1533,7 +2368,16 @@ function FloatingShelf() {
               <div className="shelf-empty"><span>拖放檔案到這裡</span><small>中轉區只保存 reference，不會立即複製。</small></div>
             ) : null}
             {shelfItems.map((item) => (
-              <div className="shelf-item" key={item.id}>
+              <div
+                className="shelf-item"
+                key={item.id}
+                draggable
+                onDragStart={(event) => {
+                  const dragItem = { rootSlug: item.root_slug, path: item.path };
+                  event.dataTransfer.setData("application/kago-files", JSON.stringify([dragItem]));
+                  event.dataTransfer.setData("application/kago-file", JSON.stringify(dragItem));
+                }}
+              >
                 <span>{item.name}</span>
                 <small>{item.kind === "folder" ? "資料夾" : "檔案"} · {formatSize(item.size)}</small>
                 <small>{item.root_slug}:{item.path}</small>
@@ -1582,31 +2426,38 @@ function TaskCenter() {
     <aside className="task-center">
       <header><Boxes /> 任務</header>
       <div className="task-list">
-        {tasks.data?.slice(0, 6).map((task) => (
-          <div className="task-item" key={task.id}>
-            <strong>{task.type}</strong>
-            <span className={`status ${task.status}`}>{task.status}</span>
-            <progress value={task.processed_files} max={Math.max(task.total_files, 1)} />
-            {task.error_message && <small>{task.error_message}</small>}
-            <div className="task-actions">
-              {task.status === "queued" ? (
-                <>
-                  <button className="task-action" onClick={() => void pauseTask(task.id)}><Minimize2 /> 暫停</button>
-                  <button className="task-action" onClick={() => void cancelTask(task.id)}><X /> 取消</button>
-                </>
-              ) : null}
-              {task.status === "paused" ? (
-                <>
-                  <button className="task-action" onClick={() => void resumeTask(task.id)}><RefreshCw /> 繼續</button>
-                  <button className="task-action" onClick={() => void cancelTask(task.id)}><X /> 取消</button>
-                </>
-              ) : null}
-              {["failed", "cancelled", "interrupted"].includes(task.status) ? (
-                <button className="task-action" onClick={() => void retryTask(task.id)}><RefreshCw /> 重試</button>
-              ) : null}
+        {tasks.data?.slice(0, 6).map((task) => {
+          const downloadTarget = completedCompressDownloadTarget(task);
+          return (
+            <div className="task-item" key={task.id}>
+              <strong>{task.type}</strong>
+              <span className={`status ${task.status}`}>{task.status}</span>
+              <progress value={taskProgressValue(task)} max={taskProgressMax(task)} />
+              <small>{taskProgressLabel(task)}</small>
+              {task.error_message && <small>{task.error_message}</small>}
+              <div className="task-actions">
+                {downloadTarget ? (
+                  <a className="task-action" href={downloadUrl(downloadTarget.rootSlug, downloadTarget.path)}><Download /> 下載</a>
+                ) : null}
+                {task.status === "queued" ? (
+                  <>
+                    <button className="task-action" onClick={() => void pauseTask(task.id)}><Minimize2 /> 暫停</button>
+                    <button className="task-action" onClick={() => void cancelTask(task.id)}><X /> 取消</button>
+                  </>
+                ) : null}
+                {task.status === "paused" ? (
+                  <>
+                    <button className="task-action" onClick={() => void resumeTask(task.id)}><RefreshCw /> 繼續</button>
+                    <button className="task-action" onClick={() => void cancelTask(task.id)}><X /> 取消</button>
+                  </>
+                ) : null}
+                {["failed", "cancelled", "interrupted"].includes(task.status) ? (
+                  <button className="task-action" onClick={() => void retryTask(task.id)}><RefreshCw /> 重試</button>
+                ) : null}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </aside>
   );
@@ -1685,6 +2536,8 @@ function AuditCenter({ open, onClose }: { open: boolean; onClose: () => void }) 
 function Inspector() {
   const store = useWorkspaceStore();
   const roots = useRoots();
+  const users = useUsers();
+  const groups = useGroups();
   const queryClient = useQueryClient();
   const activeWindow = store.windows.find((window) => window.id === store.activeWindowId);
   const selectedPath = activeWindow?.selectedItems[0] ?? null;
@@ -1703,11 +2556,19 @@ function Inspector() {
   const [shareExpiresDays, setShareExpiresDays] = useState("");
   const [shareMaxDownloads, setShareMaxDownloads] = useState("");
   const [userEmail, setUserEmail] = useState("");
+  const [userDisplayName, setUserDisplayName] = useState("");
+  const [userPassword, setUserPassword] = useState("");
+  const [userRole, setUserRole] = useState<"ADMIN" | "USER" | "GUEST">("USER");
   const [groupName, setGroupName] = useState("");
-  const [permissionUserId, setPermissionUserId] = useState("");
+  const [memberGroupId, setMemberGroupId] = useState("");
+  const [memberUserId, setMemberUserId] = useState("");
+  const [permissionPrincipalType, setPermissionPrincipalType] = useState<"user" | "group">("group");
+  const [permissionPrincipalId, setPermissionPrincipalId] = useState("");
   const [permissionRootId, setPermissionRootId] = useState("");
+  const [permissionPathPrefix, setPermissionPathPrefix] = useState("/");
   const [inspectorResize, setInspectorResize] = useState<{ startX: number; width: number } | null>(null);
   const inspectorWidth = Math.max(260, Math.min(480, store.inspector.width ?? 320));
+  const canCreateUser = Boolean(userEmail && userPassword.length >= 8);
 
   useEffect(() => {
     if (!inspectorResize) return;
@@ -1725,6 +2586,13 @@ function Inspector() {
       globalThis.removeEventListener("mouseup", up);
     };
   }, [inspectorResize, store]);
+
+  useEffect(() => {
+    if (activeRoot && !permissionRootId) setPermissionRootId(activeRoot.id);
+    if (activeWindow && permissionPathPrefix === "/") {
+      setPermissionPathPrefix(selectedPath ?? activeWindow.logicalPath);
+    }
+  }, [activeRoot, activeWindow, permissionPathPrefix, permissionRootId, selectedPath]);
 
   async function addTag() {
     if (!activeWindow || !selectedPath || !tagName) return;
@@ -1787,36 +2655,53 @@ function Inspector() {
   }
 
   async function createUser() {
-    if (!userEmail) return;
+    if (!canCreateUser) return;
     await api("/api/users", {
       method: "POST",
-      body: JSON.stringify({ email: userEmail, password: "change-me-123", displayName: userEmail.split("@")[0], role: "USER" })
+      body: JSON.stringify({
+        email: userEmail,
+        password: userPassword,
+        displayName: userDisplayName || userEmail.split("@")[0],
+        role: userRole
+      })
     });
     setUserEmail("");
+    setUserDisplayName("");
+    setUserPassword("");
+    setUserRole("USER");
+    await queryClient.invalidateQueries({ queryKey: ["users"] });
   }
 
   async function createGroup() {
     if (!groupName) return;
     await api("/api/groups", { method: "POST", body: JSON.stringify({ name: groupName }) });
     setGroupName("");
+    await queryClient.invalidateQueries({ queryKey: ["groups"] });
+  }
+
+  async function addGroupMember() {
+    if (!memberGroupId || !memberUserId) return;
+    await api(`/api/groups/${memberGroupId}/members`, {
+      method: "POST",
+      body: JSON.stringify({ userId: memberUserId })
+    });
+    setMemberUserId("");
   }
 
   async function grantReadPermission() {
-    if (!permissionUserId || !permissionRootId) return;
+    if (!permissionPrincipalId || !permissionRootId || !permissionPathPrefix) return;
     await api("/api/permissions", {
       method: "POST",
       body: JSON.stringify({
-        principalType: "user",
-        principalId: permissionUserId,
+        principalType: permissionPrincipalType,
+        principalId: permissionPrincipalId,
         rootId: permissionRootId,
-        pathPrefix: "/",
+        pathPrefix: permissionPathPrefix,
         allow: ["list", "read", "download"],
         deny: [],
         recursive: true
       })
     });
-    setPermissionUserId("");
-    setPermissionRootId("");
     await queryClient.invalidateQueries({ queryKey: ["roots"] });
     await queryClient.invalidateQueries({ queryKey: ["permissions"] });
   }
@@ -1939,14 +2824,33 @@ function Inspector() {
       </section>
       <section className="inspector-card">
         <h3>管理</h3>
-        <div className="inline-form">
-          <input placeholder="user@example.com" value={userEmail} onChange={(event) => setUserEmail(event.target.value)} />
-          <button className="tool-button" onClick={createUser}>新增使用者</button>
+        <div className="share-options-grid">
+          <input type="email" placeholder="使用者 email" value={userEmail} onChange={(event) => setUserEmail(event.target.value)} />
+          <input placeholder="顯示名稱" value={userDisplayName} onChange={(event) => setUserDisplayName(event.target.value)} />
+          <input type="password" placeholder="初始密碼（至少 8 字）" value={userPassword} onChange={(event) => setUserPassword(event.target.value)} />
+          <select value={userRole} onChange={(event) => setUserRole(event.target.value as "ADMIN" | "USER" | "GUEST")}>
+            <option value="USER">USER</option>
+            <option value="GUEST">GUEST</option>
+            <option value="ADMIN">ADMIN</option>
+          </select>
+          <button className="tool-button" onClick={createUser} disabled={!canCreateUser}>新增使用者</button>
         </div>
         <div className="inline-form">
           <input placeholder="群組名稱" value={groupName} onChange={(event) => setGroupName(event.target.value)} />
           <button className="tool-button" onClick={createGroup}>新增群組</button>
         </div>
+        <div className="inline-form">
+          <select value={memberGroupId} onChange={(event) => setMemberGroupId(event.target.value)}>
+            <option value="">群組</option>
+            {groups.data?.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
+          </select>
+          <select value={memberUserId} onChange={(event) => setMemberUserId(event.target.value)}>
+            <option value="">使用者</option>
+            {users.data?.map((user) => <option key={user.id} value={user.id}>{user.email}</option>)}
+          </select>
+          <button className="tool-button" onClick={addGroupMember} disabled={!memberGroupId || !memberUserId}>加入群組</button>
+        </div>
+        {users.error || groups.error ? <span className="tag-empty">需要管理員權限才能管理使用者與群組</span> : null}
       </section>
       <section className="inspector-card">
         <h3>權限</h3>
@@ -1972,13 +2876,30 @@ function Inspector() {
             );
           })}
         </div>
-        <div className="inline-form">
-          <input placeholder="使用者 ID" value={permissionUserId} onChange={(event) => setPermissionUserId(event.target.value)} />
+        <div className="share-options-grid">
+          <select
+            value={permissionPrincipalType}
+            onChange={(event) => {
+              const type = event.target.value as "user" | "group";
+              setPermissionPrincipalType(type);
+              setPermissionPrincipalId("");
+            }}
+          >
+            <option value="group">群組</option>
+            <option value="user">使用者</option>
+          </select>
+          <select value={permissionPrincipalId} onChange={(event) => setPermissionPrincipalId(event.target.value)}>
+            <option value="">Principal</option>
+            {permissionPrincipalType === "group"
+              ? groups.data?.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)
+              : users.data?.map((user) => <option key={user.id} value={user.id}>{user.email}</option>)}
+          </select>
           <select value={permissionRootId} onChange={(event) => setPermissionRootId(event.target.value)}>
             <option value="">Root</option>
             {roots.data?.map((root) => <option key={root.id} value={root.id}>{root.name}</option>)}
           </select>
-          <button className="tool-button" onClick={grantReadPermission} disabled={!permissionUserId || !permissionRootId}>讀取</button>
+          <input placeholder="/public" value={permissionPathPrefix} onChange={(event) => setPermissionPathPrefix(normalizePermissionInput(event.target.value))} />
+          <button className="tool-button" onClick={grantReadPermission} disabled={!permissionPrincipalId || !permissionRootId || !permissionPathPrefix}>授予讀取</button>
         </div>
       </section>
     </aside>
@@ -1991,16 +2912,104 @@ function parentPath(value: string) {
   return parts.length ? `/${parts.join("/")}` : "/";
 }
 
+function normalizeAddressInput(value: string, rootSlug: string): string | null {
+  const trimmed = value.trim().replaceAll("\\", "/");
+  const withoutRoot = trimmed.startsWith(`${rootSlug}:`) ? trimmed.slice(rootSlug.length + 1).trim() : trimmed;
+  if (!withoutRoot || withoutRoot === "/") return "/";
+  if (withoutRoot.includes("\0")) return null;
+  const clean = withoutRoot.startsWith("/") ? withoutRoot : `/${withoutRoot}`;
+  if (clean === "/data" || clean.startsWith("/data/")) return null;
+  const parts = clean.split("/").filter(Boolean);
+  if (parts.some((part) => part === "..")) return null;
+  const normalized = parts.filter((part) => part !== ".").join("/");
+  return normalized ? `/${normalized}` : "/";
+}
+
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   if (target.isContentEditable) return true;
   return ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
 }
 
+function isInteractiveTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return Boolean(target.closest("button, a, input, textarea, select, label"));
+}
+
+function isPrimaryPointerStart(event: React.PointerEvent<HTMLElement>): boolean {
+  return event.isPrimary && event.button === 0;
+}
+
+function localPointerPoint(event: React.PointerEvent<HTMLElement>, element: HTMLElement) {
+  const rect = element.getBoundingClientRect();
+  return {
+    x: event.clientX - rect.left + element.scrollLeft,
+    y: event.clientY - rect.top + element.scrollTop
+  };
+}
+
+function selectionMarqueeStyle(drag: SelectionDragState) {
+  const bounds = selectionBounds(drag);
+  return {
+    left: bounds.left,
+    top: bounds.top,
+    width: bounds.right - bounds.left,
+    height: bounds.bottom - bounds.top
+  };
+}
+
+function pathsIntersectingSelection(container: HTMLElement, drag: SelectionDragState): string[] {
+  const bounds = selectionBounds(drag);
+  const containerRect = container.getBoundingClientRect();
+  const rows = Array.from(container.querySelectorAll<HTMLElement>(".file-row[data-file-path]"));
+  return rows
+    .filter((row) => {
+      const rowRect = row.getBoundingClientRect();
+      const localRow = {
+        left: rowRect.left - containerRect.left + container.scrollLeft,
+        right: rowRect.right - containerRect.left + container.scrollLeft,
+        top: rowRect.top - containerRect.top + container.scrollTop,
+        bottom: rowRect.bottom - containerRect.top + container.scrollTop
+      };
+      return rectanglesIntersect(bounds, localRow);
+    })
+    .map((row) => row.dataset.filePath)
+    .filter((path): path is string => Boolean(path));
+}
+
+function selectionBounds(drag: SelectionDragState) {
+  return {
+    left: Math.min(drag.startX, drag.currentX),
+    right: Math.max(drag.startX, drag.currentX),
+    top: Math.min(drag.startY, drag.currentY),
+    bottom: Math.max(drag.startY, drag.currentY)
+  };
+}
+
+function rectanglesIntersect(
+  a: { left: number; right: number; top: number; bottom: number },
+  b: { left: number; right: number; top: number; bottom: number }
+) {
+  return a.left <= b.right && a.right >= b.left && a.top <= b.bottom && a.bottom >= b.top;
+}
+
 function joinLogicalPath(parent: string, name: string) {
   const cleanName = name.replaceAll("\\", "-").replaceAll("/", "-").replaceAll("\0", "");
   const base = parent === "/" ? "" : parent;
   return `${base}/${cleanName}`;
+}
+
+function clampNumber(value: number, min: number, max: number) {
+  const upper = Math.max(min, max);
+  return Math.min(upper, Math.max(min, value));
+}
+
+function normalizePermissionInput(value: string) {
+  const trimmed = value.trim().replaceAll("\\", "/");
+  if (!trimmed || trimmed === "/") return "/";
+  const clean = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+  const parts = clean.split("/").filter(Boolean).filter((part) => part !== "." && part !== "..");
+  return parts.length ? `/${parts.join("/")}` : "/";
 }
 
 function ensureZipName(value: string) {
@@ -2016,6 +3025,39 @@ function nextViewMode(mode: FileWindow["viewMode"]): FileWindow["viewMode"] {
   if (mode === "list") return "grid";
   if (mode === "grid") return "columns";
   return "list";
+}
+
+function taskProgressValue(task: { processed_files: number; processed_bytes: number; total_bytes: number }) {
+  return task.total_bytes > 0 ? task.processed_bytes : task.processed_files;
+}
+
+function taskProgressMax(task: { total_files: number; total_bytes: number }) {
+  return Math.max(task.total_bytes > 0 ? task.total_bytes : task.total_files, 1);
+}
+
+function taskProgressLabel(task: { processed_files: number; total_files: number; processed_bytes: number; total_bytes: number }) {
+  if (task.total_bytes > 0) {
+    return `${formatSize(task.processed_bytes)} / ${formatSize(task.total_bytes)} · ${task.processed_files}/${Math.max(task.total_files, 1)} 項`;
+  }
+  return `${task.processed_files}/${Math.max(task.total_files, 1)} 項`;
+}
+
+function completedCompressDownloadTarget(task: FileTask): { rootSlug: string; path: string } | null {
+  if (task.type !== "compress" || task.status !== "done" || !task.destination) return null;
+  try {
+    const destination = JSON.parse(task.destination) as unknown;
+    if (!isRecord(destination)) return null;
+    const rootSlug = destination.rootSlug;
+    const path = destination.path;
+    if (typeof rootSlug !== "string" || typeof path !== "string" || !rootSlug || !path) return null;
+    return { rootSlug, path };
+  } catch {
+    return null;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function formatSize(size: number) {

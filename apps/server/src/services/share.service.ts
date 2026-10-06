@@ -9,7 +9,7 @@ import type { AuditService } from "./audit.service.js";
 import type { PathService } from "./path.service.js";
 import type { PermissionService } from "./permission.service.js";
 import type { Actor } from "./types.js";
-import type { EventHub } from "../ws/events.js";
+import type { EventPublisher } from "../ws/events.js";
 
 export const shareSchema = z.object({
   rootSlug: z.string().min(1),
@@ -26,7 +26,7 @@ export class ShareService {
     private readonly paths: PathService,
     private readonly permissions: PermissionService,
     private readonly audit: AuditService,
-    private readonly events: EventHub
+    private readonly events: EventPublisher
   ) {}
 
   list(actor: Actor) {
@@ -82,6 +82,15 @@ export class ShareService {
         share.created_at,
         share.updated_at
       );
+    this.permissions.create({
+      principalType: "share_link",
+      principalId: share.id,
+      rootId: safe.root.id,
+      pathPrefix: safe.logicalPath,
+      allow: shareAllowedActions(input.mode),
+      deny: [],
+      recursive: input.mode === "upload_only"
+    });
     this.audit.write({
       actorType: "user",
       actorId: actor.id,
@@ -90,7 +99,7 @@ export class ShareService {
       path: safe.logicalPath,
       result: "success"
     });
-    this.events.publish({ type: "share.updated" });
+    this.events.publish({ type: "share.updated", userId: actor.id });
     return { ...this.publicShare(share), token };
   }
 
@@ -108,12 +117,13 @@ export class ShareService {
       target: { shareId, disabled: input.disabled },
       result: "success"
     });
-    this.events.publish({ type: "share.updated" });
+    this.events.publish({ type: "share.updated", userId: existing.created_by });
     return this.publicShare(this.get(shareId));
   }
 
   delete(actor: Actor, shareId: string): void {
     const existing = this.getForActor(actor, shareId);
+    this.db.prepare("DELETE FROM permission_rules WHERE principal_type = 'share_link' AND principal_id = ?").run(shareId);
     this.db.prepare("DELETE FROM share_links WHERE id = ?").run(shareId);
     this.audit.write({
       actorType: "user",
@@ -124,7 +134,7 @@ export class ShareService {
       target: { shareId },
       result: "success"
     });
-    this.events.publish({ type: "share.updated" });
+    this.events.publish({ type: "share.updated", userId: existing.created_by });
   }
 
   get(shareId: string): ResolvedShare {
@@ -136,6 +146,15 @@ export class ShareService {
   getForActor(actor: Actor, shareId: string): ResolvedShare {
     const share = this.get(shareId);
     if (actor.role === "ADMIN" || share.created_by === actor.id) return share;
+    this.audit.write({
+      actorType: "user",
+      actorId: actor.id,
+      action: "permission_denied",
+      rootId: share.root_id,
+      path: share.path,
+      target: { action: "share_access", shareId },
+      result: "denied"
+    });
     throw new AppError(403, "Share access denied", "SHARE_ACCESS_DENIED");
   }
 
@@ -165,14 +184,20 @@ export class ShareService {
 
   async publicInfo(token: string, accessToken?: string) {
     const share = this.resolveToken(token);
-    const safe = await this.paths.resolveRootById(share.root_id, share.path);
-    return {
+    const authenticated = !share.password_hash || accessToken === this.accessTokenForShare(share);
+    const base = {
       id: share.id,
       mode: (JSON.parse(share.permission_json) as { mode: string }).mode,
-      path: share.path,
-      rootSlug: safe.root.slug,
       requiresPassword: Boolean(share.password_hash),
-      authenticated: !share.password_hash || accessToken === this.accessTokenForShare(share)
+      authenticated
+    };
+    if (!authenticated) return base;
+
+    const safe = await this.paths.resolveRootById(share.root_id, share.path);
+    return {
+      ...base,
+      path: share.path,
+      rootSlug: safe.root.slug
     };
   }
 
@@ -208,10 +233,15 @@ export class ShareService {
     }
     const safe = await this.paths.resolveRootById(share.root_id, share.path);
     await this.assertModeMatchesTarget("download", safe.absolutePath);
-    this.db.prepare("UPDATE share_links SET download_count = download_count + 1, updated_at = ? WHERE id = ?").run(
-      now(),
-      share.id
-    );
+    this.permissions.requireShareLink(share.id, "download", safe.root, safe.logicalPath);
+    const updated = this.db
+      .prepare(
+        `UPDATE share_links
+        SET download_count = download_count + 1, updated_at = ?
+        WHERE id = ? AND (max_downloads IS NULL OR download_count < max_downloads)`
+      )
+      .run(now(), share.id);
+    if (updated.changes !== 1) throw new AppError(410, "Share download limit reached", "SHARE_LIMIT_REACHED");
     this.audit.write({
       actorType: "share_link",
       actorId: share.id,
@@ -232,6 +262,7 @@ export class ShareService {
     }
     const safe = await this.paths.resolveRootById(share.root_id, share.path);
     await this.assertModeMatchesTarget("view_only", safe.absolutePath);
+    this.permissions.requireShareLink(share.id, "read", safe.root, safe.logicalPath);
     return safe;
   }
 
@@ -242,7 +273,7 @@ export class ShareService {
     if (mode !== "upload_only") throw new AppError(403, "Upload is not allowed for this share", "SHARE_UPLOAD_FORBIDDEN");
     const safe = await this.paths.resolveRootById(share.root_id, share.path);
     await this.assertModeMatchesTarget("upload_only", safe.absolutePath);
-    if (safe.root.readonly) throw new AppError(403, "Root is readonly", "ROOT_READONLY");
+    this.permissions.requireShareLink(share.id, "upload", safe.root, safe.logicalPath);
     return { share, safe };
   }
 
@@ -284,3 +315,9 @@ type ResolvedShare = {
 type PublicShareLink = Omit<ResolvedShare, "token_hash" | "password_hash"> & {
   has_password: boolean;
 };
+
+function shareAllowedActions(mode: "view_only" | "download" | "upload_only"): Array<"read" | "download" | "upload"> {
+  if (mode === "view_only") return ["read"];
+  if (mode === "download") return ["download", "read"];
+  return ["upload"];
+}

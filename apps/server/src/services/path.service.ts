@@ -33,6 +33,7 @@ export class PathService {
   async resolveExisting(rootSlug: string, logicalPath: string): Promise<SafePath> {
     const root = this.roots.getBySlug(rootSlug);
     const normalized = this.normalizeLogicalPath(logicalPath);
+    await this.assertNoSymlinkSegments(root, normalized);
     const absolutePath = await this.resolveInsideRoot(root, normalized);
     return { root, logicalPath: normalized, absolutePath };
   }
@@ -40,6 +41,8 @@ export class PathService {
   async resolveForCreate(rootSlug: string, logicalPath: string): Promise<SafePath> {
     const root = this.roots.getBySlug(rootSlug);
     const normalized = this.normalizeLogicalPath(logicalPath);
+    const parentLogical = path.posix.dirname(normalized);
+    await this.assertNoSymlinkSegments(root, parentLogical === "." ? "/" : parentLogical);
     const absolutePath = path.join(root.base_path, normalized.slice(1));
     await this.assertParentInsideRoot(root, absolutePath);
     return { root, logicalPath: normalized, absolutePath };
@@ -48,8 +51,21 @@ export class PathService {
   async resolveRootById(rootId: string, logicalPath: string): Promise<SafePath> {
     const root = this.roots.getById(rootId);
     const normalized = this.normalizeLogicalPath(logicalPath);
+    await this.assertNoSymlinkSegments(root, normalized);
     const absolutePath = await this.resolveInsideRoot(root, normalized);
     return { root, logicalPath: normalized, absolutePath };
+  }
+
+  private async assertNoSymlinkSegments(root: Root, logicalPath: string): Promise<void> {
+    const segments = logicalPath.split("/").filter(Boolean);
+    let current = root.base_path;
+    for (const segment of segments) {
+      current = path.join(current, segment);
+      const stat = await lstatExisting(current);
+      if (stat.isSymbolicLink()) {
+        throw new AppError(403, "Symlink paths are not allowed", "SYMLINK_FORBIDDEN");
+      }
+    }
   }
 
   private async resolveInsideRoot(root: Root, logicalPath: string): Promise<string> {
@@ -73,6 +89,15 @@ export class PathService {
   private isInside(rootReal: string, targetReal: string): boolean {
     const relative = path.relative(rootReal, targetReal);
     return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+  }
+}
+
+async function lstatExisting(targetPath: string) {
+  try {
+    return await fs.lstat(targetPath);
+  } catch (error) {
+    if (isMissingPathError(error)) throw new AppError(404, "Path not found", "PATH_NOT_FOUND");
+    throw error;
   }
 }
 

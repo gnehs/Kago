@@ -11,7 +11,7 @@ import type { Env } from "./config/env.js";
 import { openDb } from "./db/db.js";
 import { AppError, publicError } from "./lib/errors.js";
 import { AuditService } from "./services/audit.service.js";
-import { AuthService, createUserSchema, loginSchema, patchUserSchema } from "./services/auth.service.js";
+import { AuthService, createUserSchema, loginSchema, patchUserSchema, setupAdminSchema } from "./services/auth.service.js";
 import { FsService, fsQuerySchema, maxUploadFileBytes, maxUploadFiles, mkdirSchema, renameSchema } from "./services/fs.service.js";
 import { createGroupSchema, GroupService } from "./services/group.service.js";
 import { PathService } from "./services/path.service.js";
@@ -37,42 +37,67 @@ export async function buildApp(env: Env) {
   const fsService = new FsService(paths, permissions, audit, env.appDataDir);
   const workspace = new WorkspaceService(db, roots, paths);
   const tasks = new TaskService(db, paths, permissions, audit, events, env.appDataDir, fsService);
-  const shelves = new ShelfService(db, paths, permissions, events);
-  const tags = new TagService(db, paths, permissions);
+  const shelves = new ShelfService(db, paths, permissions, events, audit);
+  const tags = new TagService(db, paths, permissions, audit);
   const shares = new ShareService(db, paths, permissions, audit, events);
   const groups = new GroupService(db);
-  const workers = new WorkerManager(tasks, auth);
+  const workers = new WorkerManager(tasks, env, events);
 
   await app.register(cookie, { secret: env.sessionSecret });
-  await app.register(multipart, { limits: { fileSize: maxUploadFileBytes, files: maxUploadFiles } });
+  await app.register(multipart, {
+    limits: { fileSize: maxUploadFileBytes, files: maxUploadFiles, fields: 4, parts: maxUploadFiles + 4 }
+  });
   await app.register(websocket);
 
-  app.setErrorHandler((error, _request, reply) => {
+  app.setErrorHandler((error, request, reply) => {
     if (error instanceof z.ZodError) {
+      auditRequestFailure(request, "INVALID_INPUT", 400);
       void reply.status(400).send({ error: "Invalid input", code: "INVALID_INPUT", issues: error.issues });
       return;
     }
     const safe = publicError(error);
+    auditRequestFailure(request, safe.body.code, safe.statusCode);
     void reply.status(safe.statusCode).send(safe.body);
   });
 
+  function auditRequestFailure(request: FastifyRequest, code: string, statusCode: number): void {
+    if (!request.url.startsWith("/api/") && !request.url.startsWith("/s/")) return;
+    const actor = auth.actorFromRequest(request);
+    audit.write({
+      actorType: actor ? "user" : "system",
+      actorId: actor?.id,
+      action: statusCode === 403 ? "request_denied" : "request_failed",
+      target: { method: request.method, route: auditRoute(request), code, statusCode },
+      result: statusCode === 403 ? "denied" : "failure",
+      ip: request.ip,
+      userAgent: request.headers["user-agent"]
+    });
+  }
+
   app.addHook("preHandler", async (request) => {
-    if (!request.url.startsWith("/api/")) return;
+    if (!request.url.startsWith("/api/") && !request.url.startsWith("/s/")) return;
     if (!["POST", "PUT", "PATCH", "DELETE"].includes(request.method)) return;
     if (request.headers["x-kago-csrf"] !== "1") {
       throw new AppError(403, "Missing CSRF header", "CSRF_REQUIRED");
     }
   });
 
-  await auth.ensureAdmin();
+  await auth.ensureInitialAdminFromEnv();
   registerApi(app, { auth, audit, roots, paths, permissions, fsService, workspace, tasks, shelves, tags, shares, groups, events, db });
 
-  app.get("/ws", { websocket: true }, (socket) => {
-    events.add(socket);
+  app.get("/ws", {
+    websocket: true,
+    preValidation: async (request) => {
+      assertAllowedWebSocketOrigin(request);
+      auth.requireActor(request);
+    }
+  }, (socket, request) => {
+    const actor = auth.requireActor(request);
+    events.add(socket, actor);
     socket.send(JSON.stringify({ type: "connected" }));
   });
 
-  const webDist = path.resolve(import.meta.dirname, "../../web/dist");
+  const webDist = resolveWebDist(env);
   if (fs.existsSync(webDist)) {
     await app.register(fastifyStatic, { root: webDist, prefix: "/" });
     app.setNotFoundHandler((request, reply) => {
@@ -85,12 +110,27 @@ export async function buildApp(env: Env) {
   }
 
   app.addHook("onClose", async () => {
-    workers.stop();
+    await workers.stop();
     db.close();
   });
 
   workers.start();
   return app;
+}
+
+function resolveWebDist(env: Env): string {
+  const candidates = [
+    env.webDistDir,
+    path.resolve(import.meta.dirname, "../../web/dist"),
+    path.resolve(import.meta.dirname, "../apps/web/dist")
+  ].filter((candidate): candidate is string => Boolean(candidate));
+  return candidates.find((candidate) => fs.existsSync(candidate)) ?? candidates[0]!;
+}
+
+function auditRoute(request: FastifyRequest): string {
+  if (request.routeOptions.url) return request.routeOptions.url;
+  if (request.url.startsWith("/s/")) return "/s/:token";
+  return request.url.split("?", 1)[0] ?? request.url;
 }
 
 type Services = {
@@ -114,14 +154,38 @@ function registerApi(app: FastifyInstance, services: Services) {
   const requireActor = (request: FastifyRequest) => services.auth.requireActor(request);
   const requireAdmin = (request: FastifyRequest) => {
     const actor = services.auth.requireActor(request);
-    if (actor.role !== "ADMIN") throw new AppError(403, "Admin required", "ADMIN_REQUIRED");
+    if (actor.role !== "ADMIN") {
+      services.audit.write({
+        actorType: "user",
+        actorId: actor.id,
+        action: "permission_denied",
+        target: { action: "admin" },
+        result: "denied",
+        ip: request.ip,
+        userAgent: request.headers["user-agent"]
+      });
+      throw new AppError(403, "Admin required", "ADMIN_REQUIRED");
+    }
     return actor;
   };
+  const publishPermissionUpdated = (actor: ReturnType<typeof requireActor>, principalType: string, principalId: string) => {
+    services.events.publish({ type: "permission.updated", userId: actor.id });
+    if (principalType === "user" && principalId !== actor.id) {
+      services.events.publish({ type: "permission.updated", userId: principalId });
+    }
+  };
+
+  app.get("/api/auth/setup", async () => ({ needsSetup: services.auth.needsSetup() }));
+  app.post("/api/auth/setup", async (request, reply) => {
+    const actor = await services.auth.setupAdmin(request, reply, setupAdminSchema.parse(request.body));
+    services.audit.write({ actorType: "user", actorId: actor.id, action: "setup_admin", result: "success" });
+    return { user: actor };
+  });
 
   app.post("/api/auth/login", async (request, reply) => {
     const input = loginSchema.parse(request.body);
     try {
-      const actor = await services.auth.login(reply, input.email, input.password);
+      const actor = await services.auth.login(request, reply, input.email, input.password);
       services.audit.write({ actorType: "user", actorId: actor.id, action: "login_success", result: "success" });
       return { user: actor };
     } catch (error) {
@@ -187,8 +251,14 @@ function registerApi(app: FastifyInstance, services: Services) {
   });
 
   app.get("/api/roots", async (request) => {
-    requireActor(request);
-    return services.roots.list().map(({ base_path: _basePath, ...root }) => root);
+    const actor = requireActor(request);
+    return services.roots
+      .list()
+      .filter((root) =>
+        services.permissions.can(actor, "list", root, "/").allowed ||
+        services.permissions.canReachListableDescendant(actor, root, "/")
+      )
+      .map(({ base_path: _basePath, ...root }) => root);
   });
   app.post("/api/roots", async (request) => {
     const actor = requireAdmin(request);
@@ -219,6 +289,7 @@ function registerApi(app: FastifyInstance, services: Services) {
     const actor = requireActor(request);
     const saved = services.workspace.save(actor.id, workspaceSchema.parse(request.body));
     services.audit.write({ actorType: "user", actorId: actor.id, action: "workspace_update", result: "success" });
+    services.events.publish({ type: "workspace.updated", userId: actor.id });
     return saved;
   });
 
@@ -244,7 +315,7 @@ function registerApi(app: FastifyInstance, services: Services) {
   app.get("/api/fs/preview", async (request, reply) => {
     const actor = requireActor(request);
     const query = fsQuerySchema.parse(request.query);
-    const file = await services.fsService.download(actor, query.rootSlug, query.path);
+    const file = await services.fsService.preview(actor, query.rootSlug, query.path);
     reply.header("Content-Type", file.contentType);
     reply.header("Content-Length", String(file.stat.size));
     return fs.createReadStream(file.safe.absolutePath);
@@ -270,19 +341,18 @@ function registerApi(app: FastifyInstance, services: Services) {
   });
   app.post("/api/fs/upload", async (request) => {
     const actor = requireActor(request);
-    const parts = request.parts();
-    let rootSlug = "";
-    let uploadPath = "/";
+    const files = await request.saveRequestFiles({
+      limits: { fileSize: maxUploadFileBytes, files: maxUploadFiles, fields: 2, parts: maxUploadFiles + 2 }
+    });
     const uploaded = [];
-    let fileCount = 0;
-    for await (const part of parts) {
-      if (part.type === "field" && part.fieldname === "rootSlug") rootSlug = String(part.value);
-      if (part.type === "field" && part.fieldname === "path") uploadPath = String(part.value);
-      if (part.type === "file") {
-        fileCount += 1;
-        if (fileCount > maxUploadFiles) throw new AppError(413, "Too many files in one upload", "TOO_MANY_UPLOAD_FILES");
-        uploaded.push(await services.fsService.upload(actor, rootSlug, uploadPath, part.filename, part.file));
+    try {
+      if (files.length === 0) throw new AppError(400, "At least one file is required", "UPLOAD_FILE_REQUIRED");
+      const input = uploadRequestSchema.parse(extractMultipartFields(files[0]?.fields ?? {}));
+      for (const file of files) {
+        uploaded.push(await services.fsService.upload(actor, input.rootSlug, input.path, file.filename, fs.createReadStream(file.filepath)));
       }
+    } finally {
+      await request.cleanRequestFiles();
     }
     return { items: uploaded };
   });
@@ -364,32 +434,43 @@ function registerApi(app: FastifyInstance, services: Services) {
   });
 
   app.get("/api/permissions", async (request) => {
-    requireAdmin(request);
+    const actor = requireActor(request);
     const query = z.object({
       rootId: z.string().optional(),
       rootSlug: z.string().optional(),
       path: z.string().optional()
     }).parse(request.query);
-    const rootId = query.rootSlug ? services.roots.getBySlug(query.rootSlug).id : query.rootId;
+    const root = query.rootSlug ? services.roots.getBySlug(query.rootSlug) : query.rootId ? services.roots.getById(query.rootId) : null;
+    const rootId = root?.id;
+    if (!root && actor.role !== "ADMIN") throw new AppError(400, "rootId or rootSlug is required", "ROOT_REQUIRED");
     if (query.path && !rootId) throw new AppError(400, "rootId or rootSlug is required for path lookups", "ROOT_REQUIRED");
+    if (root) {
+      const permissionPath = services.paths.normalizeLogicalPath(query.path ?? "/");
+      services.permissions.require(actor, "manage_permissions", root, permissionPath);
+    }
     if (query.path && rootId) return services.permissions.listForPath(rootId, services.paths.normalizeLogicalPath(query.path));
     return services.permissions.list(rootId);
   });
   app.post("/api/permissions", async (request) => {
-    const actor = requireAdmin(request);
+    const actor = requireActor(request);
     const input = permissionInputSchema.parse(request.body);
-    services.roots.getById(input.rootId);
-    const item = services.permissions.create({ ...input, pathPrefix: services.paths.normalizeLogicalPath(input.pathPrefix) });
+    const root = services.roots.getById(input.rootId);
+    const pathPrefix = services.paths.normalizeLogicalPath(input.pathPrefix);
+    services.permissions.require(actor, "manage_permissions", root, pathPrefix);
+    const item = services.permissions.create({ ...input, pathPrefix });
     services.audit.write({ actorType: "user", actorId: actor.id, action: "permission_change", rootId: item.root_id, target: item, result: "success" });
-    services.events.publish({ type: "permission.updated" });
+    publishPermissionUpdated(actor, item.principal_type, item.principal_id);
     return item;
   });
   app.delete("/api/permissions/:id", async (request) => {
-    const actor = requireAdmin(request);
+    const actor = requireActor(request);
     const params = z.object({ id: z.string() }).parse(request.params);
+    const rule = services.permissions.get(params.id);
+    const root = services.roots.getById(rule.root_id);
+    services.permissions.require(actor, "manage_permissions", root, rule.path_prefix);
     services.permissions.delete(params.id);
     services.audit.write({ actorType: "user", actorId: actor.id, action: "permission_change", target: { ruleId: params.id, deleted: true }, result: "success" });
-    services.events.publish({ type: "permission.updated" });
+    publishPermissionUpdated(actor, rule.principal_type, rule.principal_id);
     return { ok: true };
   });
 
@@ -466,7 +547,7 @@ function registerApi(app: FastifyInstance, services: Services) {
       if (part.type === "file") {
         fileCount += 1;
         if (fileCount > maxUploadFiles) throw new AppError(413, "Too many files in one upload", "TOO_MANY_UPLOAD_FILES");
-        uploaded.push(await services.fsService.publicUpload(target.safe.root.slug, target.safe.logicalPath, part.filename, part.file));
+        uploaded.push(await services.fsService.publicUpload(target.safe.root.slug, target.safe.logicalPath, part.filename, part.file, target.share.id));
       }
     }
     return { items: uploaded };
@@ -484,4 +565,37 @@ function shareAccessCookieName(token: string): string {
 function wantsHtml(request: FastifyRequest): boolean {
   const accept = request.headers.accept ?? "";
   return accept.includes("text/html") && !accept.includes("application/json");
+}
+
+function assertAllowedWebSocketOrigin(request: FastifyRequest): void {
+  const origin = request.headers.origin;
+  if (!origin) return;
+  const host = request.headers.host;
+  if (!host) throw new AppError(403, "WebSocket origin is not allowed", "WS_ORIGIN_DENIED");
+  try {
+    if (new URL(origin).host === host) return;
+  } catch {
+    // Fall through to the shared denial below.
+  }
+  throw new AppError(403, "WebSocket origin is not allowed", "WS_ORIGIN_DENIED");
+}
+
+const uploadRequestSchema = z.object({
+  rootSlug: z.string().min(1),
+  path: z.string().min(1)
+});
+
+function extractMultipartFields(fields: Record<string, unknown>): Record<string, unknown> {
+  return {
+    rootSlug: multipartFieldValue(fields.rootSlug),
+    path: multipartFieldValue(fields.path)
+  };
+}
+
+function multipartFieldValue(field: unknown): unknown {
+  const part = Array.isArray(field) ? field.at(-1) : field;
+  if (!part || typeof part !== "object" || !("type" in part) || part.type !== "field" || !("value" in part)) {
+    return undefined;
+  }
+  return part.value;
 }

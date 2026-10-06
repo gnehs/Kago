@@ -8,6 +8,7 @@
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "lint": "pnpm -r lint",
+    "test:smoke": "pnpm --filter @kago/server test:smoke",
     "start": "pnpm --filter @kago/server start"
   },
   "devDependencies": {

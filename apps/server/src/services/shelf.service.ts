@@ -3,7 +3,8 @@ import type { Db } from "../db/db.js";
 import { row, rows } from "../db/db.js";
 import { AppError } from "../lib/errors.js";
 import { id, now } from "../lib/ids.js";
-import type { EventHub } from "../ws/events.js";
+import type { EventPublisher } from "../ws/events.js";
+import type { AuditService } from "./audit.service.js";
 import type { PathService } from "./path.service.js";
 import type { PermissionService } from "./permission.service.js";
 import type { Actor } from "./types.js";
@@ -13,7 +14,8 @@ export class ShelfService {
     private readonly db: Db,
     private readonly paths: PathService,
     private readonly permissions: PermissionService,
-    private readonly events: EventHub
+    private readonly events: EventPublisher,
+    private readonly audit: AuditService
   ) {}
 
   ensureDefault(ownerId: string) {
@@ -27,15 +29,15 @@ export class ShelfService {
     return shelfId;
   }
 
-  list(actor: Actor) {
+  async list(actor: Actor) {
     const shelfId = this.ensureDefault(actor.id);
     const shelfRows = rows<{ id: string; owner_id: string; name: string; created_at: number; updated_at: number }>(
       this.db.prepare("SELECT * FROM shelves WHERE owner_id = ? ORDER BY created_at ASC").all(actor.id)
     );
-    return shelfRows
-      .map((shelf) => ({
-        ...shelf,
-        items: this.db
+    const shelves = [];
+    for (const shelf of shelfRows) {
+      const rawItems = rows<ShelfItemRow>(
+        this.db
           .prepare(
             `SELECT shelf_items.*, roots.slug AS root_slug
             FROM shelf_items
@@ -43,9 +45,18 @@ export class ShelfService {
             WHERE shelf_id = ?
             ORDER BY added_at DESC`
           )
-          .all(shelf.id as string)
-      }))
-      .filter((shelf) => shelf.id || shelfId);
+          .all(shelf.id)
+      );
+      const items = [];
+      for (const item of rawItems) {
+        const safe = await this.resolveShelfItem(item.root_slug, item.path);
+        if (!safe) continue;
+        if (!this.permissions.can(actor, "list", safe.root, safe.logicalPath).allowed) continue;
+        items.push(item);
+      }
+      shelves.push({ ...shelf, items });
+    }
+    return shelves.filter((shelf) => shelf.id || shelfId);
   }
 
   create(actor: Actor, name: string) {
@@ -58,6 +69,7 @@ export class ShelfService {
   }
 
   async addItem(actor: Actor, shelfId: string, rootSlug: string, logicalPath: string) {
+    this.requireOwnedShelf(actor, shelfId);
     const safe = await this.paths.resolveExisting(rootSlug, logicalPath);
     this.permissions.require(actor, "list", safe.root, safe.logicalPath);
     const stat = await import("node:fs/promises").then((fs) => fs.stat(safe.absolutePath));
@@ -76,20 +88,18 @@ export class ShelfService {
         "INSERT INTO shelf_items (id, shelf_id, root_id, path, kind, name, size, added_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
       )
       .run(item.id, item.shelf_id, item.root_id, item.path, item.kind, item.name, item.size, item.added_at);
-    this.events.publish({ type: "shelf.updated", shelfId });
+    this.events.publish({ type: "shelf.updated", userId: actor.id, shelfId });
     return item;
   }
 
   removeItem(actor: Actor, shelfId: string, itemId: string): void {
-    const shelf = row<{ owner_id: string }>(this.db.prepare("SELECT owner_id FROM shelves WHERE id = ?").get(shelfId));
-    if (!shelf || shelf.owner_id !== actor.id) throw new AppError(404, "Shelf not found", "SHELF_NOT_FOUND");
+    this.requireOwnedShelf(actor, shelfId);
     this.db.prepare("DELETE FROM shelf_items WHERE shelf_id = ? AND id = ?").run(shelfId, itemId);
-    this.events.publish({ type: "shelf.updated", shelfId });
+    this.events.publish({ type: "shelf.updated", userId: actor.id, shelfId });
   }
 
   itemsForTask(actor: Actor, shelfId: string) {
-    const shelf = row<{ owner_id: string }>(this.db.prepare("SELECT owner_id FROM shelves WHERE id = ?").get(shelfId));
-    if (!shelf || shelf.owner_id !== actor.id) throw new AppError(404, "Shelf not found", "SHELF_NOT_FOUND");
+    this.requireOwnedShelf(actor, shelfId);
     return rows<{ root_slug: string; path: string }>(
       this.db
         .prepare(
@@ -101,4 +111,38 @@ export class ShelfService {
         .all(shelfId)
     );
   }
+
+  private requireOwnedShelf(actor: Actor, shelfId: string): void {
+    const shelf = row<{ owner_id: string }>(this.db.prepare("SELECT owner_id FROM shelves WHERE id = ?").get(shelfId));
+    if (!shelf || shelf.owner_id !== actor.id) {
+      this.audit.write({
+        actorType: "user",
+        actorId: actor.id,
+        action: "permission_denied",
+        target: { action: "shelf_access", shelfId },
+        result: "denied"
+      });
+      throw new AppError(404, "Shelf not found", "SHELF_NOT_FOUND");
+    }
+  }
+
+  private async resolveShelfItem(rootSlug: string, logicalPath: string) {
+    try {
+      return await this.paths.resolveExisting(rootSlug, logicalPath);
+    } catch {
+      return null;
+    }
+  }
 }
+
+type ShelfItemRow = {
+  id: string;
+  shelf_id: string;
+  root_id: string;
+  root_slug: string;
+  path: string;
+  kind: string;
+  name: string;
+  size: number;
+  added_at: number;
+};

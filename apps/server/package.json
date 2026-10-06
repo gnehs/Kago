@@ -8,6 +8,7 @@
     "build": "tsc -p tsconfig.json && cp src/db/schema.sql dist/db/schema.sql",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit",
+    "test:smoke": "tsc -p tsconfig.json && cp src/db/schema.sql dist/db/schema.sql && node --test test/smoke.mjs",
     "start": "node dist/main.js"
   },
   "dependencies": {

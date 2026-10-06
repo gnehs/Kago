@@ -1,26 +1,41 @@
 import type { WebSocket } from "@fastify/websocket";
+import type { Actor } from "../services/types.js";
 
 export type ServerEvent =
-  | { type: "task.created"; task: unknown }
-  | { type: "task.progress"; taskId: string; patch: Record<string, unknown> }
-  | { type: "task.done"; taskId: string }
-  | { type: "task.failed"; taskId: string; error: string }
-  | { type: "shelf.updated"; shelfId: string }
-  | { type: "permission.updated" }
-  | { type: "share.updated" };
+  | { type: "task.created"; userId: string; task: unknown }
+  | { type: "task.progress"; userId: string; taskId: string; patch: Record<string, unknown> }
+  | { type: "task.done"; userId: string; taskId: string }
+  | { type: "task.failed"; userId: string; taskId: string; error: string }
+  | { type: "shelf.updated"; userId: string; shelfId: string }
+  | { type: "workspace.updated"; userId: string }
+  | { type: "permission.updated"; userId?: string }
+  | { type: "share.updated"; userId: string };
 
-export class EventHub {
-  private readonly clients = new Set<WebSocket>();
+type ClientContext = Pick<Actor, "id" | "role">;
 
-  add(client: WebSocket): void {
-    this.clients.add(client);
+export type EventPublisher = {
+  publish(event: ServerEvent): void;
+};
+
+export class EventHub implements EventPublisher {
+  private readonly clients = new Map<WebSocket, ClientContext>();
+
+  add(client: WebSocket, actor: ClientContext): void {
+    this.clients.set(client, actor);
     client.on("close", () => this.clients.delete(client));
   }
 
   publish(event: ServerEvent): void {
     const payload = JSON.stringify(event);
-    for (const client of this.clients) {
+    for (const [client, actor] of this.clients) {
+      if (!canReceive(actor, event)) continue;
       if (client.readyState === client.OPEN) client.send(payload);
     }
   }
+}
+
+function canReceive(actor: ClientContext, event: ServerEvent): boolean {
+  if (actor.role === "ADMIN") return true;
+  if ("userId" in event) return event.userId === actor.id;
+  return false;
 }

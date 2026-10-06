@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { Db } from "../db/db.js";
 import { rows } from "../db/db.js";
 import { id, now } from "../lib/ids.js";
+import type { AuditService } from "./audit.service.js";
 import type { PathService } from "./path.service.js";
 import type { PermissionService } from "./permission.service.js";
 import type { Actor } from "./types.js";
@@ -15,7 +16,8 @@ export class TagService {
   constructor(
     private readonly db: Db,
     private readonly paths: PathService,
-    private readonly permissions: PermissionService
+    private readonly permissions: PermissionService,
+    private readonly audit: AuditService
   ) {}
 
   list(actor: Actor) {
@@ -30,6 +32,13 @@ export class TagService {
     this.db
       .prepare("INSERT INTO tags (id, name, color, owner_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
       .run(tag.id, tag.name, tag.color, tag.owner_id, tag.created_at, tag.updated_at);
+    this.audit.write({
+      actorType: "user",
+      actorId: actor.id,
+      action: "tag_create",
+      target: { tagId: tag.id, name: tag.name },
+      result: "success"
+    });
     return tag;
   }
 
@@ -63,6 +72,15 @@ export class TagService {
       this.db.exec("ROLLBACK");
       throw error;
     }
+    this.audit.write({
+      actorType: "user",
+      actorId: actor.id,
+      action: "tag_update",
+      rootId: safe.root.id,
+      path: safe.logicalPath,
+      target: { tagIds },
+      result: "success"
+    });
     return this.getFileTags(actor, rootSlug, logicalPath);
   }
 }

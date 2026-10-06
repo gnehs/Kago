@@ -20,6 +20,10 @@ export const createUserSchema = z.object({
   role: z.enum(["ADMIN", "USER", "GUEST"]).default("USER")
 });
 
+export const setupAdminSchema = createUserSchema.extend({
+  role: z.literal("ADMIN").default("ADMIN")
+});
+
 export const patchUserSchema = z.object({
   displayName: z.string().min(1).max(120).optional(),
   role: z.enum(["ADMIN", "USER", "GUEST"]).optional(),
@@ -32,15 +36,27 @@ export class AuthService {
     private readonly env: Env
   ) {}
 
-  async ensureAdmin(): Promise<void> {
+  async ensureInitialAdminFromEnv(): Promise<void> {
     const count = row<{ count: number }>(this.db.prepare("SELECT COUNT(*) AS count FROM users").get())?.count ?? 0;
     if (count > 0) return;
+    if (!this.env.initialAdminEmail || !this.env.initialAdminPassword) return;
     await this.createUser({
-      email: this.env.adminEmail,
-      password: this.env.adminPassword,
+      email: this.env.initialAdminEmail,
+      password: this.env.initialAdminPassword,
       displayName: "Kago Admin",
       role: "ADMIN"
     });
+  }
+
+  needsSetup(): boolean {
+    const count = row<{ count: number }>(this.db.prepare("SELECT COUNT(*) AS count FROM users").get())?.count ?? 0;
+    return count === 0;
+  }
+
+  async setupAdmin(request: FastifyRequest, reply: FastifyReply, input: z.infer<typeof setupAdminSchema>): Promise<Actor> {
+    if (!this.needsSetup()) throw new AppError(409, "Kago is already initialized", "SETUP_ALREADY_DONE");
+    await this.createUser({ ...input, role: "ADMIN" });
+    return this.login(request, reply, input.email, input.password);
   }
 
   async createUser(input: z.infer<typeof createUserSchema>): Promise<PublicUser> {
@@ -99,7 +115,7 @@ export class AuthService {
     return this.publicUser(this.getUser(userId));
   }
 
-  async login(reply: FastifyReply, email: string, password: string): Promise<Actor> {
+  async login(request: FastifyRequest, reply: FastifyReply, email: string, password: string): Promise<Actor> {
     const user = row<User>(this.db.prepare("SELECT * FROM users WHERE email = ?").get(email.toLowerCase()));
     if (!user || user.disabled || !(await verifyPassword(password, user.password_hash))) {
       throw new AppError(401, "Invalid email or password", "INVALID_LOGIN");
@@ -116,7 +132,7 @@ export class AuthService {
     reply.setCookie("kago_session", token, {
       httpOnly: true,
       sameSite: "lax",
-      secure: this.env.nodeEnv === "production",
+      secure: request.protocol === "https",
       path: "/",
       maxAge: 60 * 60 * 24 * 30
     });

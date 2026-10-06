@@ -15,6 +15,23 @@ export type Root = {
   updated_at: number;
 };
 
+export type UserAccount = {
+  id: string;
+  email: string;
+  display_name: string;
+  role: "ADMIN" | "USER" | "GUEST";
+  disabled: number;
+  created_at: number;
+  updated_at: number;
+};
+
+export type Group = {
+  id: string;
+  name: string;
+  created_at: number;
+  updated_at: number;
+};
+
 export type FileWindow = {
   id: string;
   rootSlug: string;
@@ -115,6 +132,9 @@ export type FileTask = {
   status: string;
   total_files: number;
   processed_files: number;
+  total_bytes: number;
+  processed_bytes: number;
+  destination: string | null;
   current_path: string | null;
   error_message: string | null;
   created_at: number;
@@ -131,7 +151,6 @@ export type TrashItem = {
   id: string;
   original_root_id: string;
   original_path: string;
-  trash_path: string;
   deleted_by: string;
   deleted_at: number;
   restored_at: number | null;
