@@ -20,8 +20,8 @@ WORKDIR /app
 RUN apt-get update \
   && apt-get install -y --no-install-recommends rsync \
   && rm -rf /var/lib/apt/lists/* \
-  && groupadd -g 1000 kago \
-  && useradd -u 1000 -g kago -d /app -s /usr/sbin/nologin kago \
+  && groupmod -n kago node \
+  && usermod -l kago -d /app -s /usr/sbin/nologin node \
   && mkdir -p /data /app-data \
   && chown -R kago:kago /data /app-data
 ENV NODE_ENV=production
