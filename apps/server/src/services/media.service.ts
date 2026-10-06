@@ -27,6 +27,18 @@ export type MediaInfo = {
   audio: Array<{ codec: string; channels: number; language: string; title: string }>;
   /** Heights the file can be transcoded to, tallest first. */
   qualities: number[];
+  /** What does the encoding: `software`, or the GPU API in use. */
+  encoder: Encoder;
+};
+
+type Encoder = "software" | "nvenc" | "vaapi" | "vaapi-cqp" | "videotoolbox";
+
+/** How one encoder is driven: what goes before the input, after the scaler, and in place of libx264. */
+type Accel = {
+  encoder: Encoder;
+  input: string[];
+  filter: string;
+  codec: (maxKbps: number) => string[];
 };
 
 type Session = {
@@ -39,6 +51,8 @@ type Session = {
   audioIndex: number;
   segmentCount: number;
   proc: ChildProcess | null;
+  /** Set once the GPU pipeline has failed on this file; the rest of the session encodes on the CPU. */
+  software: boolean;
   /** Bumped on every ffmpeg (re)start so waiters from an abandoned run give up. */
   run: number;
   runStart: number;
@@ -52,7 +66,7 @@ type Session = {
 
 const SEGMENT_SECONDS = 6;
 const LADDER = [2160, 1440, 1080, 720, 480, 360];
-const MAX_RATE: Record<number, string> = { 2160: "16M", 1440: "10M", 1080: "6M", 720: "3M", 480: "1500k", 360: "800k" };
+const MAX_KBPS: Record<number, number> = { 2160: 16000, 1440: 10000, 1080: 6000, 720: 3000, 480: 1500, 360: 800 };
 const SESSIONS_PER_ACTOR = 3;
 /** ffmpeg stops when nobody has asked for a segment this long; the session itself outlives it so a paused player can resume. */
 const IDLE_KILL_MS = 60_000;
@@ -71,15 +85,20 @@ export class MediaService {
   private readonly ffprobe = process.env.FFPROBE_PATH ?? "ffprobe";
   private readonly baseDir: string;
   private readonly available: Promise<boolean>;
+  private accel: Accel = accelFor("software");
   private readonly sessions = new Map<string, Session>();
-  private readonly probes = new Map<string, Omit<MediaInfo, "transcode">>();
+  private readonly probes = new Map<string, Omit<MediaInfo, "transcode" | "encoder">>();
   private readonly ticker: NodeJS.Timeout;
 
   constructor(appDataDir: string) {
     this.baseDir = path.join(appDataDir, "temp", "transcode");
     fs.rmSync(this.baseDir, { recursive: true, force: true });
     this.available = Promise.all([execFileAsync(this.ffmpeg, ["-version"]), execFileAsync(this.ffprobe, ["-version"])]).then(
-      () => true,
+      async () => {
+        this.accel = await this.detectAccel();
+        logger.info(`video transcoding uses ${this.accel.encoder}`);
+        return true;
+      },
       () => {
         logger.warn("ffmpeg/ffprobe not found; video transcoding is disabled");
         return false;
@@ -90,7 +109,7 @@ export class MediaService {
   }
 
   async info(absolutePath: string, stat: fs.Stats): Promise<MediaInfo> {
-    if (!(await this.available)) return { transcode: false, duration: 0, container: "", video: null, audio: [], qualities: [] };
+    if (!(await this.available)) return { transcode: false, duration: 0, container: "", video: null, audio: [], qualities: [], encoder: "software" };
     const key = `${absolutePath}:${stat.mtimeMs}:${stat.size}`;
     let probed = this.probes.get(key);
     if (!probed) {
@@ -98,7 +117,7 @@ export class MediaService {
       if (this.probes.size >= 200) this.probes.delete(this.probes.keys().next().value!);
       this.probes.set(key, probed);
     }
-    return { transcode: probed.qualities.length > 0, ...probed };
+    return { transcode: probed.qualities.length > 0, encoder: this.accel.encoder, ...probed };
   }
 
   async createSession(actorId: string, absolutePath: string, stat: fs.Stats, height: number, audioIndex: number) {
@@ -124,6 +143,7 @@ export class MediaService {
       audioIndex: Math.min(audioIndex, Math.max(0, info.audio.length - 1)),
       segmentCount,
       proc: null,
+      software: false,
       run: 0,
       runStart: 0,
       head: 0,
@@ -198,13 +218,13 @@ export class MediaService {
     while (session.head < session.segmentCount && fs.existsSync(this.segmentPath(session, session.head))) session.head += 1;
   }
 
-  private start(session: Session, index: number): void {
+  private start(session: Session, index: number, sameRun = false): void {
     this.kill(session);
     // Segments from an earlier run at or past the new start would make `head` lie about how far this run has got.
     for (const name of fs.readdirSync(session.dir)) {
       if (name.endsWith(".tmp") || Number.parseInt(name, 10) >= index) fs.rmSync(path.join(session.dir, name), { force: true });
     }
-    session.run += 1;
+    if (!sameRun) session.run += 1;
     session.runStart = index;
     session.head = index;
 
@@ -213,17 +233,18 @@ export class MediaService {
     const long = Math.round((session.height * 16) / 9);
     const box = landscape ? `w=${long}:h=${session.height}` : `w=${session.height}:h=${long}`;
     const hasAudio = session.info.audio.length > 0;
+    const accel = session.software ? accelFor("software") : this.accel;
     const args = [
       "-nostdin", "-hide_banner", "-loglevel", "error",
+      ...accel.input,
+      // Seeking the input, not the output: a run for the middle of the file starts decoding there.
       "-ss", String(index * SEGMENT_SECONDS),
       "-i", session.input,
       "-map", "0:v:0",
       ...(hasAudio ? ["-map", `0:a:${session.audioIndex}`] : []),
       "-sn", "-dn",
-      "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
-      "-maxrate", MAX_RATE[session.height] ?? "6M", "-bufsize", doubleRate(MAX_RATE[session.height] ?? "6M"),
-      "-pix_fmt", "yuv420p", "-profile:v", "high",
-      "-vf", `scale=${box}:force_original_aspect_ratio=decrease:force_divisible_by=2`,
+      "-vf", `scale=${box}:force_original_aspect_ratio=decrease:force_divisible_by=2${accel.filter}`,
+      ...accel.codec(MAX_KBPS[session.height] ?? 6000),
       // A keyframe on every segment boundary, so segments line up with the precomputed playlist.
       "-force_key_frames", `expr:gte(t,n_forced*${SEGMENT_SECONDS})`,
       ...(hasAudio ? ["-c:a", "aac", "-ac", "2", "-b:a", session.height <= 480 ? "96k" : "128k"] : []),
@@ -244,8 +265,16 @@ export class MediaService {
     });
     proc.on("error", (error) => logger.error("ffmpeg failed to start", error.message));
     proc.on("close", (code, signal) => {
-      if (session.proc === proc) session.proc = null;
-      if (code !== 0 && !signal) logger.error(`ffmpeg exited with code ${code}`, stderr.trim());
+      if (session.proc !== proc) return;
+      session.proc = null;
+      if (code === 0 || signal) return;
+      logger.error(`ffmpeg (${accel.encoder}) exited with code ${code}`, stderr.trim());
+      this.advanceHead(session);
+      // A GPU that cannot take this particular file should not make it unplayable.
+      if (accel.encoder !== "software" && session.head === session.runStart && this.sessions.has(session.id)) {
+        session.software = true;
+        this.start(session, session.runStart, true);
+      }
     });
     session.proc = proc;
     session.paused = false;
@@ -306,7 +335,45 @@ export class MediaService {
     }
   }
 
-  private async probe(absolutePath: string): Promise<Omit<MediaInfo, "transcode">> {
+  /** Picks the first encoder that survives a real test encode, so a GPU that is present but unusable is skipped. */
+  private async detectAccel(): Promise<Accel> {
+    const wanted = (process.env.TRANSCODE_HWACCEL ?? "auto").toLowerCase();
+    if (wanted === "none" || wanted === "software") return accelFor("software");
+    const renderNodes = process.env.TRANSCODE_VAAPI_DEVICE
+      ? [process.env.TRANSCODE_VAAPI_DEVICE]
+      : await fsp.readdir("/dev/dri").then((names) => names.filter((name) => name.startsWith("renderD")).sort().map((name) => `/dev/dri/${name}`), () => []);
+    const candidates: Accel[] = [
+      accelFor("nvenc"),
+      // With several GPUs the Intel/AMD one is not necessarily the first render node.
+      ...renderNodes.map((node) => accelFor("vaapi", node)),
+      ...renderNodes.map((node) => accelFor("vaapi-cqp", node)),
+      accelFor("videotoolbox")
+    ].filter((candidate) => wanted === "auto" || candidate.encoder.startsWith(wanted));
+    for (const candidate of candidates) {
+      try {
+        await execFileAsync(
+          this.ffmpeg,
+          [
+            "-nostdin", "-hide_banner", "-loglevel", "error",
+            ...candidate.input,
+            "-f", "lavfi", "-i", "testsrc2=size=1280x720:rate=30",
+            "-frames:v", "30",
+            "-vf", `scale=w=640:h=360${candidate.filter}`,
+            ...candidate.codec(800),
+            "-f", "null", "-"
+          ],
+          { timeout: 20_000 }
+        );
+        return candidate;
+      } catch {
+        // Not available here; try the next one.
+      }
+    }
+    if (wanted !== "auto") logger.warn(`TRANSCODE_HWACCEL=${wanted} is not usable here; falling back to software encoding`);
+    return accelFor("software");
+  }
+
+  private async probe(absolutePath: string): Promise<Omit<MediaInfo, "transcode" | "encoder">> {
     let raw: string;
     try {
       const result = await execFileAsync(this.ffprobe, ["-v", "error", "-print_format", "json", "-show_format", "-show_streams", absolutePath], {
@@ -362,7 +429,45 @@ export class MediaService {
   }
 }
 
-function doubleRate(rate: string): string {
-  const match = /^(\d+)([kM])$/.exec(rate);
-  return match ? `${Number(match[1]) * 2}${match[2]}` : rate;
+/**
+ * Decoding is offloaded where it can be but frames come back to system memory for scaling, so a
+ * source the GPU cannot decode quietly falls back to the CPU instead of breaking the filter chain.
+ */
+function accelFor(encoder: Encoder, device = ""): Accel {
+  const rate = (maxKbps: number) => ["-b:v", `${Math.round(maxKbps * 0.7)}k`, "-maxrate", `${maxKbps}k`, "-bufsize", `${maxKbps * 2}k`];
+  // Segment boundaries get forced keyframes; the encoder's own cadence (as short as 12 frames by default) only costs bitrate.
+  const gop = ["-g", "300"];
+  switch (encoder) {
+    case "nvenc":
+      return {
+        encoder,
+        input: ["-hwaccel", "cuda"],
+        filter: "",
+        // NVENC only makes forced keyframes seekable (IDR) when asked to.
+        codec: (maxKbps) => ["-c:v", "h264_nvenc", ...gop, "-preset", "p4", "-rc", "vbr", "-cq", "24", "-b:v", "0", "-maxrate", `${maxKbps}k`, "-bufsize", `${maxKbps * 2}k`, "-pix_fmt", "yuv420p", "-profile:v", "high", "-forced-idr", "1"]
+      };
+    case "vaapi":
+    case "vaapi-cqp":
+      return {
+        encoder,
+        input: ["-init_hw_device", `vaapi=va:${device}`, "-hwaccel", "vaapi", "-hwaccel_device", "va", "-filter_hw_device", "va"],
+        filter: ",format=nv12,hwupload",
+        // Some Intel generations only do bitrate control with HuC firmware loaded; constant QP always works.
+        codec: (maxKbps) => ["-c:v", "h264_vaapi", ...gop, ...(encoder === "vaapi" ? rate(maxKbps) : ["-rc_mode", "CQP", "-qp", "25"]), "-profile:v", "high"]
+      };
+    case "videotoolbox":
+      return {
+        encoder,
+        input: ["-hwaccel", "videotoolbox"],
+        filter: "",
+        codec: (maxKbps) => ["-c:v", "h264_videotoolbox", ...gop, "-b:v", `${Math.round(maxKbps * 0.7)}k`, "-pix_fmt", "yuv420p", "-profile:v", "high"]
+      };
+    default:
+      return {
+        encoder: "software",
+        input: [],
+        filter: "",
+        codec: (maxKbps) => ["-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-maxrate", `${maxKbps}k`, "-bufsize", `${maxKbps * 2}k`, "-pix_fmt", "yuv420p", "-profile:v", "high"]
+      };
+  }
 }

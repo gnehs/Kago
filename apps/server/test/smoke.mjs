@@ -585,6 +585,7 @@ test("videos are probed and transcoded to HLS on demand", { skip: spawnSync("ffm
     assert.equal(info.statusCode, 200);
     assert.equal(info.json.transcode, true);
     assert.equal(info.json.video.codec, "mpeg4");
+    assert.match(info.json.encoder, /^(software|nvenc|vaapi|vaapi-cqp|videotoolbox)$/);
     assert.deepEqual(info.json.qualities, [480, 360]);
     assert.equal((await admin.get("/api/media/info?rootSlug=photos&path=/public/readme.txt")).statusCode, 422);
 

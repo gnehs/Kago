@@ -103,6 +103,26 @@ Docker image 內建 `rsync` 供 `rsync_pull` / `rsync_push` task 使用，並沿
 
 ### 影片轉檔
 
-Docker image 內建 `ffmpeg`。預覽影片時，瀏覽器能直接解碼的檔案會原檔播放；不能直接播放的（例如 HEVC / AC3 的 mkv、avi、rmvb），或是在視窗標題列手動選了較低畫質時，伺服器會即時轉成 H.264 + AAC 的 HLS 串流，暫存檔放在 `/app-data/temp/transcode`，關閉視窗或閒置一段時間後自動清除。
+Docker image 內建 `jellyfin-ffmpeg`。預覽影片時，瀏覽器能直接解碼的檔案會原檔播放；不能直接播放的（例如 HEVC / AC3 的 mkv、avi、rmvb），或是在視窗標題列手動選了較低畫質時，伺服器會即時轉成 H.264 + AAC 的 HLS 串流。播放清單依片長預先算好，跳轉時 ffmpeg 直接從該時間點開始轉，不需要從頭處理。暫存檔放在 `/app-data/temp/transcode`，關閉視窗或閒置一段時間後自動清除。
 
-轉檔使用軟體編碼（libx264），會吃 CPU。本機開發若沒有安裝 `ffmpeg` / `ffprobe`，影片仍會以原檔播放，只是沒有轉檔與畫質選單；執行檔不在 `PATH` 時可用 `FFMPEG_PATH`、`FFPROBE_PATH` 指定。
+啟動時會實際試編一小段來挑選編碼器，順序是 NVIDIA NVENC → Intel / AMD VAAPI → 軟體編碼（libx264），結果會寫在啟動 log（`video transcoding uses ...`），畫質選單底部也會顯示。GPU 無法處理某個檔案時，該次播放會自動改用軟體編碼。
+
+要讓容器用到 GPU，需要把裝置交給它：
+
+```bash
+# NVIDIA：主機需先安裝 NVIDIA Container Toolkit
+docker run --gpus all ... ghcr.io/gnehs/kago:latest
+
+# Intel / AMD 內顯
+docker run --device /dev/dri:/dev/dri ... ghcr.io/gnehs/kago:latest
+```
+
+兩者可以同時給，預設優先用 NVIDIA。內顯的 render node 屬於主機的 `render` / `video` 群組，entrypoint 會自動讓 `PUID` 加入這些群組；若是用 `docker run --user` 啟動，請自行加上 `--group-add`。
+
+| 變數 | 預設 | 說明 |
+| --- | --- | --- |
+| `TRANSCODE_HWACCEL` | `auto` | `auto`、`nvenc`、`vaapi` 或 `none`（只用軟體編碼）。指定的編碼器不可用時會退回軟體編碼 |
+| `TRANSCODE_VAAPI_DEVICE` | 自動 | VAAPI 使用的 render node，例如 `/dev/dri/renderD129`；未設定時逐一嘗試 `/dev/dri/renderD*` |
+| `FFMPEG_PATH` / `FFPROBE_PATH` | image 內建 | 改用其他 ffmpeg 執行檔 |
+
+本機開發使用 `PATH` 上的 `ffmpeg` / `ffprobe`（macOS 會用 VideoToolbox）；沒有安裝時影片仍以原檔播放，只是沒有轉檔與畫質選單。

@@ -13,6 +13,7 @@ import type { MediaInfo } from "@/types/kago";
 import { FileIcon } from "./FileIcon";
 
 const BITRATE_HINT: Record<number, string> = { 2160: "16 Mbps", 1440: "10 Mbps", 1080: "6 Mbps", 720: "3 Mbps", 480: "1.5 Mbps", 360: "0.8 Mbps" };
+const ENCODER_LABEL: Record<string, string> = { nvenc: "NVIDIA GPU", vaapi: "Intel / AMD GPU", "vaapi-cqp": "Intel / AMD GPU", videotoolbox: "Apple GPU", software: "CPU" };
 const MAX_RECOVERIES = 2;
 
 /**
@@ -160,6 +161,8 @@ export function VideoPreviewWindow({ window }: { window: PreviewWindow }) {
                 ))}
               </>
             ) : null}
+            <KagoMenuSeparator />
+            <div className="px-2 py-1 text-xs text-muted">轉檔：{ENCODER_LABEL[media?.encoder ?? ""] ?? "CPU"}</div>
           </>
         }
       >

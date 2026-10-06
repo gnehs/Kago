@@ -24,8 +24,14 @@ RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
 
 FROM node:24-bookworm-slim AS runtime
 WORKDIR /app
+# jellyfin-ffmpeg bundles what GPU transcoding needs (NVENC, the Intel media driver, VAAPI), unlike Debian's build.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends rsync attr ffmpeg \
+  && apt-get install -y --no-install-recommends rsync attr ca-certificates curl gnupg \
+  && curl -fsSL https://repo.jellyfin.org/jellyfin_team.gpg.key | gpg --dearmor -o /usr/share/keyrings/jellyfin.gpg \
+  && echo "deb [signed-by=/usr/share/keyrings/jellyfin.gpg arch=$(dpkg --print-architecture)] https://repo.jellyfin.org/debian bookworm main" > /etc/apt/sources.list.d/jellyfin.list \
+  && apt-get update \
+  && apt-get install -y --no-install-recommends jellyfin-ffmpeg8 \
+  && apt-get purge -y --auto-remove curl gnupg \
   && rm -rf /var/lib/apt/lists/* \
   && groupmod -n kago node \
   && usermod -l kago -d /app -s /usr/sbin/nologin node \
@@ -36,6 +42,11 @@ ENV DATA_DIR=/data
 ENV APP_DATA_DIR=/app-data
 ENV WEB_DIST_DIR=/app/apps/web/dist
 ENV PORT=8080
+ENV FFMPEG_PATH=/usr/lib/jellyfin-ffmpeg/ffmpeg
+ENV FFPROBE_PATH=/usr/lib/jellyfin-ffmpeg/ffprobe
+# Read by the NVIDIA container runtime: `video` is what exposes NVENC/NVDEC inside the container.
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,video,utility
 COPY --from=build --chown=kago:kago /prod ./
 COPY --from=build --chown=kago:kago /app/apps/web/dist ./apps/web/dist
 COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/kago-entrypoint

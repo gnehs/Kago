@@ -19,5 +19,20 @@ esac
 mkdir -p "$APP_DATA_DIR"
 find "$APP_DATA_DIR" \( ! -user "$PUID" -o ! -group "$PGID" \) -exec chown -h "$PUID:$PGID" {} +
 
+# GPU render nodes belong to host groups (render, video) the chosen user is not in; join them so VAAPI can open the device.
+DEVICE_GIDS=""
+for device in /dev/dri/renderD* /dev/dri/card*; do
+  if [ -e "$device" ]; then
+    gid="$(stat -c %g "$device")"
+    case ",$DEVICE_GIDS," in
+      *",$gid,"*) ;;
+      *) if [ "$gid" != "0" ]; then DEVICE_GIDS="${DEVICE_GIDS:+$DEVICE_GIDS,}$gid"; fi ;;
+    esac
+  fi
+done
+
 export HOME=/app
+if [ -n "$DEVICE_GIDS" ]; then
+  exec setpriv --reuid "$PUID" --regid "$PGID" --groups "$DEVICE_GIDS" "$@"
+fi
 exec setpriv --reuid "$PUID" --regid "$PGID" --clear-groups "$@"

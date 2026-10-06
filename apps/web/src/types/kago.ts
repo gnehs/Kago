@@ -189,4 +189,6 @@ export type MediaInfo = {
   audio: Array<{ codec: string; channels: number; language: string; title: string }>;
   /** Heights the file can be transcoded to, tallest first. */
   qualities: number[];
+  /** What the server encodes with: `software`, or the GPU API in use. */
+  encoder: string;
 };
