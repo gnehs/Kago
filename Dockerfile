@@ -1,4 +1,9 @@
-FROM node:24-bookworm-slim AS base
+# syntax=docker/dockerfile:1
+
+# Build stages run on the builder's native platform so multi-arch builds skip
+# QEMU emulation. This is safe because the production deps are pure JS; if a
+# native addon is ever added, drop --platform here.
+FROM --platform=$BUILDPLATFORM node:24-bookworm-slim AS base
 WORKDIR /app
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
@@ -8,12 +13,14 @@ FROM base AS deps
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY apps/server/package.json apps/server/package.json
 COPY apps/web/package.json apps/web/package.json
-RUN pnpm install --frozen-lockfile
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+  pnpm install --frozen-lockfile
 
 FROM deps AS build
 COPY . .
 RUN pnpm build
-RUN pnpm --filter @kago/server deploy --prod /prod
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+  pnpm --filter @kago/server deploy --prod /prod
 
 FROM node:24-bookworm-slim AS runtime
 WORKDIR /app
