@@ -1,6 +1,5 @@
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { api, downloadUrl } from "@/api/client";
-import { formatSize } from "@/lib/format";
 import { baseName, ensureZipName, joinLogicalPath, needsNormalizing, nfc, parentPath, triggerDownload } from "@/lib/paths";
 import { run } from "@/lib/run";
 import type { UploadTree } from "@/lib/uploadTree";
@@ -15,8 +14,6 @@ export type { FileRef };
 
 /** The server takes at most this many files per upload request. */
 const uploadBatchSize = 20;
-/** Mirrors the server's per-file upload limit. */
-const maxUploadFileBytes = 1024 * 1024 * 512;
 
 export const KAGO_DRAG_TYPE = "application/kago-files";
 
@@ -90,9 +87,6 @@ export function useFileActions(window: FileWindow) {
       run(async () => {
         const tree = await source;
         if (tree.files.length === 0 && tree.dirs.length === 0) return;
-        // Checked up front: the server only rejects an oversized file after receiving all of it.
-        const oversized = tree.files.find(({ file }) => file.size > maxUploadFileBytes);
-        if (oversized) throw new Error(`「${nfc(oversized.file.name)}」超過單檔上限 ${formatSize(maxUploadFileBytes)}`);
         const target = (dir: string) => (dir ? `${path === "/" ? "" : path}/${dir}` : path);
         try {
           for (const dir of tree.dirs) {

@@ -2,7 +2,6 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import { createHash } from "node:crypto";
 import path from "node:path";
-import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { lookup } from "mime-types";
 import { z } from "zod";
@@ -31,7 +30,6 @@ export const renameSchema = z.object({
 });
 
 export const maxUploadFiles = 20;
-export const maxUploadFileBytes = 1024 * 1024 * 512;
 
 export class FsService {
   constructor(
@@ -265,7 +263,7 @@ export class FsService {
       opened = true;
     });
     try {
-      await pipeline(stream, limitUploadBytes(), writeStream);
+      await pipeline(stream, writeStream);
     } catch (error) {
       if (opened) {
         try {
@@ -277,20 +275,6 @@ export class FsService {
       throw error;
     }
   }
-}
-
-function limitUploadBytes(): Transform {
-  let total = 0;
-  return new Transform({
-    transform(chunk: Buffer, _encoding, callback) {
-      total += chunk.length;
-      if (total > maxUploadFileBytes) {
-        callback(new AppError(413, "Uploaded file is too large", "UPLOAD_TOO_LARGE"));
-        return;
-      }
-      callback(null, chunk);
-    }
-  });
 }
 
 function renderPlaceholderThumbnail(input: { name: string; kind: "folder" | "file"; type: string }): string {

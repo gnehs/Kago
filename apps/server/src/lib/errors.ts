@@ -9,7 +9,6 @@ export class AppError extends Error {
 }
 
 const multipartLimitErrors: Record<string, { error: string; code: string }> = {
-  FST_REQ_FILE_TOO_LARGE: { error: "Uploaded file is too large", code: "UPLOAD_TOO_LARGE" },
   FST_FILES_LIMIT: { error: "Too many files in one upload", code: "TOO_MANY_UPLOAD_FILES" },
   FST_PARTS_LIMIT: { error: "Too many files in one upload", code: "TOO_MANY_UPLOAD_FILES" }
 };

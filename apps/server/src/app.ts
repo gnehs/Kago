@@ -14,7 +14,7 @@ import { nfc } from "./lib/filename.js";
 import { sendFile } from "./lib/send-file.js";
 import { AuditService } from "./services/audit.service.js";
 import { AuthService, changePasswordSchema, createUserSchema, loginSchema, patchUserSchema, resetPasswordSchema, setupAdminSchema } from "./services/auth.service.js";
-import { FsService, fsQuerySchema, maxUploadFileBytes, maxUploadFiles, mkdirSchema, renameSchema } from "./services/fs.service.js";
+import { FsService, fsQuerySchema, maxUploadFiles, mkdirSchema, renameSchema } from "./services/fs.service.js";
 import { createGroupSchema, GroupService } from "./services/group.service.js";
 import { PathService } from "./services/path.service.js";
 import { permissionInputSchema, PermissionService } from "./services/permission.service.js";
@@ -47,7 +47,8 @@ export async function buildApp(env: Env) {
 
   await app.register(cookie, { secret: env.sessionSecret });
   await app.register(multipart, {
-    limits: { fileSize: maxUploadFileBytes, files: maxUploadFiles, fields: 4, parts: maxUploadFiles + 4 }
+    // Uploads are streamed to disk, so there is no per-file size limit; without this the plugin falls back to bodyLimit.
+    limits: { fileSize: Infinity, files: maxUploadFiles, fields: 4, parts: maxUploadFiles + 4 }
   });
   await app.register(websocket);
 
@@ -351,19 +352,19 @@ function registerApi(app: FastifyInstance, services: Services) {
   });
   app.post("/api/fs/upload", async (request) => {
     const actor = requireActor(request);
-    const files = await request.saveRequestFiles({
-      limits: { fileSize: maxUploadFileBytes, files: maxUploadFiles, fields: 2, parts: maxUploadFiles + 2 }
-    });
+    // Files are streamed straight to their destination, so an upload is bounded by free disk space rather than by a temp copy.
+    const fields: Record<string, unknown> = {};
     const uploaded = [];
-    try {
-      if (files.length === 0) throw new AppError(400, "At least one file is required", "UPLOAD_FILE_REQUIRED");
-      const input = uploadRequestSchema.parse(extractMultipartFields(files[0]?.fields ?? {}));
-      for (const file of files) {
-        uploaded.push(await services.fsService.upload(actor, input.rootSlug, input.path, file.filename, fs.createReadStream(file.filepath)));
+    for await (const part of request.parts()) {
+      if (part.type === "field") {
+        fields[part.fieldname] = part.value;
+        continue;
       }
-    } finally {
-      await request.cleanRequestFiles();
+      // The destination fields are sent ahead of the files.
+      const input = uploadRequestSchema.parse(fields);
+      uploaded.push(await services.fsService.upload(actor, input.rootSlug, input.path, part.filename, part.file));
     }
+    if (uploaded.length === 0) throw new AppError(400, "At least one file is required", "UPLOAD_FILE_REQUIRED");
     return { items: uploaded };
   });
 
@@ -599,18 +600,3 @@ const uploadRequestSchema = z.object({
   rootSlug: z.string().min(1),
   path: z.string().min(1)
 });
-
-function extractMultipartFields(fields: Record<string, unknown>): Record<string, unknown> {
-  return {
-    rootSlug: multipartFieldValue(fields.rootSlug),
-    path: multipartFieldValue(fields.path)
-  };
-}
-
-function multipartFieldValue(field: unknown): unknown {
-  const part = Array.isArray(field) ? field.at(-1) : field;
-  if (!part || typeof part !== "object" || !("type" in part) || part.type !== "field" || !("value" in part)) {
-    return undefined;
-  }
-  return part.value;
-}
