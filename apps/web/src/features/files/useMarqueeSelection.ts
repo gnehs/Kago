@@ -16,8 +16,11 @@ const bounds = (marquee: Marquee) => ({
   bottom: Math.max(marquee.startY, marquee.y)
 });
 
-/** Rubber-band selection that starts on the blank area of a file list. */
-export function useMarqueeSelection(windowId: string) {
+/**
+ * Rubber-band selection that starts on the blank area of a file list.
+ * `pathsInArea` answers which items an area of the scrolled content covers; rows outside the viewport are not in the DOM to be measured.
+ */
+export function useMarqueeSelection(windowId: string, pathsInArea: (area: ReturnType<typeof bounds>) => string[]) {
   const [marquee, setMarquee] = useState<Marquee | null>(null);
   const select = (paths: string[]) => useWorkspaceStore.getState().selectItems(windowId, paths);
 
@@ -42,16 +45,7 @@ export function useMarqueeSelection(windowId: string) {
         if (marquee?.pointerId !== event.pointerId) return;
         const next = { ...marquee, ...localPoint(event) };
         setMarquee(next);
-        const area = bounds(next);
-        const container = event.currentTarget;
-        const origin = container.getBoundingClientRect();
-        const hits = Array.from(container.querySelectorAll<HTMLElement>("[data-file-path]")).filter((row) => {
-          const rect = row.getBoundingClientRect();
-          const left = rect.left - origin.left + container.scrollLeft;
-          const top = rect.top - origin.top + container.scrollTop;
-          return area.left <= left + rect.width && area.right >= left && area.top <= top + rect.height && area.bottom >= top;
-        });
-        select(hits.map((row) => row.dataset.filePath!).filter(Boolean));
+        select(pathsInArea(bounds(next)));
       },
       onPointerUp: end,
       onPointerCancel: end

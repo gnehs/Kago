@@ -8,11 +8,15 @@ import { useClipboardStore } from "@/stores/clipboard";
 import { useWorkspaceStore } from "@/stores/workspace";
 import type { FileItem, FileWindow } from "@/types/kago";
 import { FileIcon } from "./FileIcon";
+import { GRID_CELL_HEIGHT, LIST_HEADER_HEIGHT, useVisibleRange, type FileLayout } from "./fileLayout";
 import { KAGO_DRAG_TYPE } from "./useFileActions";
 
 type FileListProps = {
   window: FileWindow;
   items: FileItem[];
+  /** The scroll container the list sits in, and where each item is laid out inside it. */
+  scroller: HTMLElement | null;
+  layout: FileLayout;
   onSelect: (event: React.MouseEvent, item: FileItem) => void;
   onOpen: (item: FileItem, newWindow?: boolean) => void;
   onContextItem: (item: FileItem) => void;
@@ -20,11 +24,11 @@ type FileListProps = {
   onDropInto?: (event: React.DragEvent, folder: FileItem) => void;
 };
 
-type ViewProps = FileListProps & { dropTarget: string | null; setDropTarget: (path: string | null) => void; cutPaths: Set<string> };
+type ViewProps = FileListProps & { selectedPaths: Set<string>; dropTarget: string | null; setDropTarget: (path: string | null) => void; cutPaths: Set<string> };
 
 /** Behaviour shared by every view: selection, open, drag source, folder drop target and context-menu target. */
-function itemProps({ window, onSelect, onOpen, onContextItem, onDropInto, setDropTarget }: ViewProps, item: FileItem) {
-  const selected = window.selectedItems.includes(item.path);
+function itemProps({ window, items, selectedPaths, onSelect, onOpen, onContextItem, onDropInto, setDropTarget }: ViewProps, item: FileItem, index: number) {
+  const selected = selectedPaths.has(item.path);
   const dropHandlers =
     item.kind === "folder" && onDropInto
       ? {
@@ -49,6 +53,9 @@ function itemProps({ window, onSelect, onOpen, onContextItem, onDropInto, setDro
     "data-file-path": item.path,
     "data-file-kind": item.kind,
     "aria-selected": selected,
+    // Only the rows near the viewport are rendered, so the full size of the list has to be stated.
+    "aria-setsize": items.length,
+    "aria-posinset": index + 1,
     draggable: true,
     onDragStart(event: React.DragEvent) {
       const paths = selected ? window.selectedItems : [item.path];
@@ -74,36 +81,41 @@ export function FileList(props: FileListProps) {
   const clip = useClipboardStore((state) => state.clip);
   const rootSlug = props.window.rootSlug;
   const cutPaths = useMemo(() => new Set(clip?.mode === "cut" ? clip.items.filter((item) => item.rootSlug === rootSlug).map((item) => item.path) : []), [clip, rootSlug]);
-  const view = { ...props, dropTarget, setDropTarget, cutPaths };
+  const selectedItems = props.window.selectedItems;
+  const selectedPaths = useMemo(() => new Set(selectedItems), [selectedItems]);
+  const view = { ...props, selectedPaths, dropTarget, setDropTarget, cutPaths };
   if (props.window.viewMode === "grid") return <GridView {...view} />;
   if (props.window.viewMode === "columns") return <ColumnsView {...view} />;
   return <ListView {...view} />;
 }
 
 function ListView(props: ViewProps) {
-  const { window, items } = props;
+  const { window, items, layout, selectedPaths } = props;
+  const range = useVisibleRange(props.scroller, layout, items.length);
   return (
-    <div className="@container min-w-0 pb-2" role="listbox" aria-multiselectable>
-      <div className="sticky top-0 z-[1] flex h-7 items-center gap-2 border-b border-line bg-surface px-3 text-xs text-muted">
+    <div className="@container min-w-0" role="listbox" aria-multiselectable>
+      <div className="sticky top-0 z-[1] flex items-center gap-2 border-b border-line bg-surface px-3 text-xs text-muted" style={{ height: LIST_HEADER_HEIGHT }}>
         <SortHeader window={window} sortBy="name" label="名稱" className="min-w-0 flex-1" />
         <SortHeader window={window} sortBy="mtime" label="修改時間" className="hidden w-36 @md:flex" />
         <SortHeader window={window} sortBy="size" label="大小" className="w-20 justify-end" />
         <SortHeader window={window} sortBy="type" label="種類" className="hidden w-24 @xl:flex" />
       </div>
-      {items.map((item) => {
-        const selected = window.selectedItems.includes(item.path);
-        return (
-          <div key={item.path} role="option" className={cn("mx-1 flex h-(--kago-row-h) items-center gap-2 rounded-sm px-2", selectedClass(window, selected), stateClass(props, item))} {...itemProps(props, item)}>
-            <span className="flex min-w-0 flex-1 items-center gap-2">
-              <FileIcon item={item} className={cn(selected && window.focused && item.kind === "file" && "text-inherit")} />
-              <span className="truncate">{item.name}</span>
-            </span>
-            <span className={cn("hidden w-36 truncate tabular-nums @md:block", !selected && "text-muted")}>{formatDate(item.mtime)}</span>
-            <span className={cn("w-20 text-right tabular-nums", !selected && "text-muted")}>{item.kind === "folder" ? "—" : formatSize(item.size)}</span>
-            <span className={cn("hidden w-24 truncate @xl:block", !selected && "text-muted")}>{kindLabel(item)}</span>
-          </div>
-        );
-      })}
+      <div style={{ height: range.height + layout.bottom, paddingTop: range.offset }}>
+        {items.slice(range.start, range.end).map((item, offset) => {
+          const selected = selectedPaths.has(item.path);
+          return (
+            <div key={item.path} role="option" className={cn("mx-1 flex h-(--kago-row-h) items-center gap-2 rounded-sm px-2", selectedClass(window, selected), stateClass(props, item))} {...itemProps(props, item, range.start + offset)}>
+              <span className="flex min-w-0 flex-1 items-center gap-2">
+                <FileIcon item={item} className={cn(selected && window.focused && item.kind === "file" && "text-inherit")} />
+                <span className="truncate">{item.name}</span>
+              </span>
+              <span className={cn("hidden w-36 truncate tabular-nums @md:block", !selected && "text-muted")}>{formatDate(item.mtime)}</span>
+              <span className={cn("w-20 text-right tabular-nums", !selected && "text-muted")}>{item.kind === "folder" ? "—" : formatSize(item.size)}</span>
+              <span className={cn("hidden w-24 truncate @xl:block", !selected && "text-muted")}>{kindLabel(item)}</span>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -135,17 +147,24 @@ function SortHeader({ window, sortBy, label, className }: { window: FileWindow; 
 }
 
 function GridView(props: ViewProps) {
-  const { window, items } = props;
+  const { window, items, layout, selectedPaths } = props;
+  const range = useVisibleRange(props.scroller, layout, items.length);
   return (
-    <div className="grid grid-cols-[repeat(auto-fill,minmax(104px,1fr))] content-start gap-1 p-2" role="listbox" aria-multiselectable>
-      {items.map((item) => {
-        const selected = window.selectedItems.includes(item.path);
+    <div
+      className="grid content-start px-2"
+      role="listbox"
+      aria-multiselectable
+      style={{ gridTemplateColumns: `repeat(${layout.columns}, minmax(0, 1fr))`, gap: layout.gap, height: layout.top + range.height + layout.bottom, paddingTop: layout.top + range.offset }}
+    >
+      {items.slice(range.start, range.end).map((item, offset) => {
+        const selected = selectedPaths.has(item.path);
         return (
-          <div key={item.path} role="option" className={cn("flex flex-col items-center gap-1 rounded-md p-1.5", stateClass(props, item))} {...itemProps(props, item)}>
-            <div className={cn("flex size-20 items-center justify-center rounded-md", selected ? "bg-hover" : "")}>
+          // Every cell is the same height whatever the length of its name, so rows can be placed without measuring them.
+          <div key={item.path} role="option" className={cn("flex flex-col items-center gap-1 overflow-hidden rounded-md p-1.5", stateClass(props, item))} style={{ height: GRID_CELL_HEIGHT }} {...itemProps(props, item, range.start + offset)}>
+            <div className={cn("flex size-20 shrink-0 items-center justify-center rounded-md", selected ? "bg-hover" : "")}>
               <Thumbnail rootSlug={window.rootSlug} item={item} />
             </div>
-            <span className={cn("line-clamp-2 max-w-full rounded-sm px-1.5 text-center break-words", selectedClass(window, selected))}>{item.name}</span>
+            <span className={cn("line-clamp-2 max-w-full rounded-sm px-1.5 text-center leading-4 break-words", selectedClass(window, selected))}>{item.name}</span>
           </div>
         );
       })}
@@ -163,15 +182,16 @@ function Thumbnail({ rootSlug, item }: { rootSlug: string; item: FileItem }) {
 
 /** Name column on the left, a preview of the selected item on the right. */
 function ColumnsView(props: ViewProps) {
-  const { window, items, onOpen } = props;
+  const { window, items, layout, selectedPaths, onOpen } = props;
+  const range = useVisibleRange(props.scroller, layout, items.length);
   const current = items.find((item) => item.path === window.selectedItems.at(-1));
   return (
     <div className="flex min-h-full">
-      <div className="w-1/2 max-w-72 shrink-0 border-r border-line py-1" role="listbox" aria-multiselectable>
-        {items.map((item) => {
-          const selected = window.selectedItems.includes(item.path);
+      <div className="w-1/2 max-w-72 shrink-0 border-r border-line" role="listbox" aria-multiselectable style={{ minHeight: layout.top + range.height + layout.bottom, paddingTop: layout.top + range.offset }}>
+        {items.slice(range.start, range.end).map((item, offset) => {
+          const selected = selectedPaths.has(item.path);
           return (
-            <div key={item.path} role="option" className={cn("mx-1 flex h-(--kago-row-h) items-center gap-2 rounded-sm px-2", selectedClass(window, selected), stateClass(props, item))} {...itemProps(props, item)}>
+            <div key={item.path} role="option" className={cn("mx-1 flex h-(--kago-row-h) items-center gap-2 rounded-sm px-2", selectedClass(window, selected), stateClass(props, item))} {...itemProps(props, item, range.start + offset)}>
               <FileIcon item={item} className={cn(selected && window.focused && item.kind === "file" && "text-inherit")} />
               <span className="truncate">{item.name}</span>
             </div>

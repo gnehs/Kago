@@ -17,6 +17,7 @@ import { useRecentStore } from "@/stores/recent";
 import { useWorkspaceStore } from "@/stores/workspace";
 import type { FileItem, FileWindow } from "@/types/kago";
 import { isArchive } from "./FileIcon";
+import { fileViews, indexesInArea, revealIndex, useFileLayout } from "./fileLayout";
 import { FileList } from "./FileList";
 import { FileToolbar } from "./FileToolbar";
 import { Inspector } from "./Inspector";
@@ -24,7 +25,9 @@ import { readDraggedFiles, useFileActions, type FileRef } from "./useFileActions
 import { useMarqueeSelection } from "./useMarqueeSelection";
 import { classifyFileWindowError, WindowErrorState } from "./WindowErrorState";
 
-const compare = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+// A shared collator sorts a folder of tens of thousands of names far faster than localeCompare does.
+const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+const compare = (a: string, b: string) => collator.compare(a, b);
 
 function sortItems(items: FileItem[], sortBy: FileWindow["sortBy"], direction: FileWindow["sortDirection"]) {
   const sign = direction === "asc" ? 1 : -1;
@@ -40,7 +43,6 @@ export function FileWindowView({ window: win, rootName, isAdmin }: { window: Fil
   const store = useWorkspaceStore.getState;
   const fileList = useFileList(win.rootSlug, win.logicalPath);
   const actions = useFileActions(win);
-  const marquee = useMarqueeSelection(win.id);
   const uploadInput = useRef<HTMLInputElement>(null);
   const folderInput = useRef<HTMLInputElement>(null);
   const [search, setSearch] = useState("");
@@ -64,8 +66,14 @@ export function FileWindowView({ window: win, rootName, isAdmin }: { window: Fil
     const query = nfc(search.trim()).toLocaleLowerCase();
     return query ? allItems.filter((item) => item.name.toLocaleLowerCase().includes(query)) : allItems;
   }, [allItems, search]);
-  const selectedItems = allItems.filter((item) => win.selectedItems.includes(item.path));
+  const selectedItems = useMemo(() => {
+    const selected = new Set(win.selectedItems);
+    return allItems.filter((item) => selected.has(item.path));
+  }, [allItems, win.selectedItems]);
   const selectedPaths = selectedItems.map((item) => item.path);
+  const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
+  const layout = useFileLayout(scroller, win.viewMode);
+  const marquee = useMarqueeSelection(win.id, (area) => indexesInArea(layout, items.length, area).map((index) => items[index]!.path));
 
   useEffect(() => {
     if (fileList.data) useRecentStore.getState().visit({ rootSlug: win.rootSlug, path: win.logicalPath });
@@ -89,6 +97,13 @@ export function FileWindowView({ window: win, rootName, isAdmin }: { window: Fil
     globalThis.addEventListener(OPEN_ITEM_EVENT, onOpenItem);
     return () => globalThis.removeEventListener(OPEN_ITEM_EVENT, onOpenItem);
   }, [allItems, win.id, win.rootSlug]);
+
+  // Keyboard shortcuts act on what the window lists, which is more than what is rendered.
+  const hasError = Boolean(error);
+  useEffect(() => {
+    fileViews.set(win.id, { items: hasError ? [] : items, reveal: (index) => scroller && revealIndex(scroller, layout, index) });
+    return () => void fileViews.delete(win.id);
+  }, [win.id, items, hasError, scroller, layout]);
 
   const navigate = (logicalPath: string) => store().updateWindow(win.id, { logicalPath, selectedItems: [] });
 
@@ -217,7 +232,7 @@ export function FileWindowView({ window: win, rootName, isAdmin }: { window: Fil
           </div>
         ) : (
           <KagoContextMenu menu={renderMenu(menuTargets)} className="flex min-h-0 min-w-0 flex-1">
-            <div className="relative min-w-0 flex-1 overflow-auto select-none" onContextMenuCapture={() => setMenuItem(null)} {...marquee.handlers}>
+            <div ref={setScroller} className="relative min-w-0 flex-1 overflow-auto select-none" onContextMenuCapture={() => setMenuItem(null)} {...marquee.handlers}>
               {fileList.isLoading ? <KagoLoading /> : null}
               {fileList.data && items.length === 0 ? (
                 <KagoEmptyState
@@ -227,7 +242,7 @@ export function FileWindowView({ window: win, rootName, isAdmin }: { window: Fil
                   description={search ? `找不到名稱包含「${search.trim()}」的項目。` : readonly ? "這個位置是唯讀的。" : "把檔案拖進來，或使用工具列上傳。"}
                 />
               ) : null}
-              {items.length > 0 ? <FileList window={win} items={items} onSelect={selectItem} onOpen={openItem} onContextItem={onContextItem} onDropInto={readonly ? undefined : (event, folder) => dropInto(event, folder.path)} /> : null}
+              {items.length > 0 ? <FileList window={win} items={items} scroller={scroller} layout={layout} onSelect={selectItem} onOpen={openItem} onContextItem={onContextItem} onDropInto={readonly ? undefined : (event, folder) => dropInto(event, folder.path)} /> : null}
               {marquee.style ? <div className="pointer-events-none absolute border border-accent bg-accent/15" style={marquee.style} /> : null}
             </div>
           </KagoContextMenu>

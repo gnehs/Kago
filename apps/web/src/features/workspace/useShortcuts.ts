@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { fileViews } from "@/features/files/fileLayout";
 import { pasteClipboard, setClipboard } from "@/features/files/useFileActions";
 import { baseName, parentPath } from "@/lib/paths";
 import { isEditableTarget } from "@/lib/usePointerDrag";
@@ -45,7 +46,8 @@ export function useShortcuts({ enabled, onOpenPalette }: { enabled: boolean; onO
       }
       const active = store.windows.find((window) => window.id === store.activeWindowId && !window.minimized);
       if (!active) return;
-      const rows = () => Array.from(document.querySelectorAll<HTMLElement>(`[data-window="${active.id}"] [data-file-path]`));
+      const view = fileViews.get(active.id);
+      const items = view?.items ?? [];
 
       if (closes) {
         event.preventDefault();
@@ -64,7 +66,7 @@ export function useShortcuts({ enabled, onOpenPalette }: { enabled: boolean; onO
         store.updateWindow(active.id, { inspectorOpen: !active.inspectorOpen });
       } else if (mod && key === "a") {
         event.preventDefault();
-        store.selectItems(active.id, rows().map((row) => row.dataset.filePath!).filter(Boolean));
+        store.selectItems(active.id, items.map((item) => item.path));
       } else if (mod && (key === "c" || key === "x")) {
         // Leave the shortcut to the browser when there is text selected or no file to pick up.
         if (active.selectedItems.length === 0 || globalThis.getSelection()?.toString()) return;
@@ -78,22 +80,20 @@ export function useShortcuts({ enabled, onOpenPalette }: { enabled: boolean; onO
         event.preventDefault();
         store.updateWindow(active.id, { logicalPath: parentPath(active.logicalPath), selectedItems: [] });
       } else if (["ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight"].includes(event.key)) {
-        const list = rows();
-        if (list.length === 0) return;
+        if (items.length === 0) return;
         event.preventDefault();
         const forward = event.key === "ArrowDown" || event.key === "ArrowRight";
-        const current = list.findIndex((row) => row.dataset.filePath === active.selectedItems.at(-1));
-        const nextIndex = current === -1 ? (forward ? 0 : list.length - 1) : Math.min(list.length - 1, Math.max(0, current + (forward ? 1 : -1)));
-        const next = list[nextIndex];
-        if (!next?.dataset.filePath) return;
-        store.selectItems(active.id, [next.dataset.filePath]);
-        next.scrollIntoView({ block: "nearest" });
+        const selectedPath = active.selectedItems.at(-1);
+        const current = selectedPath === undefined ? -1 : items.findIndex((item) => item.path === selectedPath);
+        const nextIndex = current === -1 ? (forward ? 0 : items.length - 1) : Math.min(items.length - 1, Math.max(0, current + (forward ? 1 : -1)));
+        store.selectItems(active.id, [items[nextIndex]!.path]);
+        view?.reveal(nextIndex);
       } else if (event.key === "Enter") {
         const selectedPath = active.selectedItems[0];
-        const row = rows().find((item) => item.dataset.filePath === selectedPath);
-        if (!selectedPath || !row) return;
+        const item = items.find((entry) => entry.path === selectedPath);
+        if (!selectedPath || !item) return;
         event.preventDefault();
-        if (row.dataset.fileKind !== "folder") window.dispatchEvent(new CustomEvent(OPEN_ITEM_EVENT, { detail: { windowId: active.id, path: selectedPath } }));
+        if (item.kind !== "folder") window.dispatchEvent(new CustomEvent(OPEN_ITEM_EVENT, { detail: { windowId: active.id, path: selectedPath } }));
         else if (mod) store.openWindow({ rootSlug: active.rootSlug, logicalPath: selectedPath, title: baseName(selectedPath) });
         else store.updateWindow(active.id, { logicalPath: selectedPath, selectedItems: [] });
       } else if (event.key === "Escape") {
