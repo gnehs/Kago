@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/input";
 import { normalizeLogicalPath } from "@/lib/paths";
 import { run } from "@/lib/run";
-import { cn } from "@/lib/utils";
+import { cn, copyText } from "@/lib/utils";
 import type { Root } from "@/types/kago";
 import { shareModes, type ShareMode } from "./shareUtils";
 
@@ -53,7 +53,7 @@ export function ShareForm({ target, roots = [], compact }: { target?: { rootSlug
   }
 
   async function copy() {
-    await navigator.clipboard.writeText(shareUrl);
+    await copyText(shareUrl);
     setCopied(true);
   }
 

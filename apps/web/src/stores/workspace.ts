@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { FileWindow, Root, WorkspaceState } from "../types/kago";
 import { baseName } from "../lib/paths";
+import { randomId } from "../lib/utils";
 import { toast } from "./toast";
 
 /** Geometry and stacking shared by every window on the canvas. */
@@ -167,7 +168,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       return;
     }
     set((state) => {
-      const id = `win_${crypto.randomUUID()}`;
+      const id = `win_${randomId()}`;
       const window: FileWindow = {
         id,
         ...partial,
