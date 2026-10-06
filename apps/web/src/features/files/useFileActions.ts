@@ -5,6 +5,7 @@ import { run } from "@/lib/run";
 import { useClipboardStore, type FileRef } from "@/stores/clipboard";
 import { promptText } from "@/stores/dialogs";
 import { toast } from "@/stores/toast";
+import { isUploadCancelled, uploadForm, uploadLabel } from "@/stores/uploads";
 import { useWorkspaceStore } from "@/stores/workspace";
 import type { FileItem, FileTask, FileWindow } from "@/types/kago";
 
@@ -82,7 +83,13 @@ export function useFileActions(window: FileWindow) {
         form.append("rootSlug", window.rootSlug);
         form.append("path", path);
         for (const file of files) form.append("file", file, nfc(file.name));
-        await api("/api/fs/upload", { method: "POST", body: form });
+        try {
+          await uploadForm("/api/fs/upload", form, uploadLabel(files));
+        } catch (error) {
+          if (!isUploadCancelled(error)) throw error;
+          toast("已取消上傳");
+          return;
+        }
         await refresh();
         toast(`已上傳 ${files.length} 個檔案`);
       }, "上傳失敗"),

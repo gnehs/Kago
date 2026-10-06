@@ -7,6 +7,7 @@ import { Field, Input } from "@/components/ui/input";
 import { AuthCard, FormError } from "@/features/auth/AuthCard";
 import { errorMessage } from "@/lib/format";
 import { baseName, nfc } from "@/lib/paths";
+import { isUploadCancelled, uploadForm, uploadLabel } from "@/stores/uploads";
 
 type PublicShareInfo = {
   id: string;
@@ -63,12 +64,12 @@ export function PublicSharePage({ token }: { token: string }) {
     try {
       const form = new FormData();
       for (const file of files) form.append("file", file, nfc(file.name));
-      await api(`/s/${token}/upload`, { method: "POST", body: form });
+      await uploadForm(`/s/${token}/upload`, form, uploadLabel(files));
       setUploaded(true);
-      event.target.value = "";
     } catch (err) {
-      setError(errorMessage(err, "上傳失敗"));
+      if (!isUploadCancelled(err)) setError(errorMessage(err, "上傳失敗"));
     } finally {
+      event.target.value = "";
       setBusy(false);
     }
   }

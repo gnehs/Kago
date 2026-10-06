@@ -7,6 +7,14 @@ export function formatSize(size: number) {
   return `${(size / 1024 ** 3).toFixed(2)} GB`;
 }
 
+/** Rounded so a countdown reads calmly: seconds under a minute, then minutes, then hours and minutes. */
+export function formatDuration(seconds: number) {
+  const total = Math.max(1, Math.round(seconds));
+  if (total < 60) return `${total} 秒`;
+  if (total < 3600) return `${Math.floor(total / 60)} 分 ${total % 60} 秒`;
+  return `${Math.floor(total / 3600)} 小時 ${Math.floor((total % 3600) / 60)} 分`;
+}
+
 const dateFormat = new Intl.DateTimeFormat("zh-TW", { year: "numeric", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
 
 /** File mtimes are milliseconds; database timestamps are unix seconds. */
