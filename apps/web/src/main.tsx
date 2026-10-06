@@ -4,7 +4,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter } from "react-router";
 import { App } from "./App";
 import { KagoTooltipProvider } from "./components/kago/tooltip";
+import { applyPrefs } from "./lib/prefs";
 import "./styles.css";
+
+applyPrefs();
 
 const queryClient = new QueryClient({
   defaultOptions: {

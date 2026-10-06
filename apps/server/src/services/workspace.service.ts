@@ -58,7 +58,7 @@ export class WorkspaceService {
         windows: [],
         sidebar: { collapsed: false },
         inspector: { open: false, width: 320 },
-        shelf: { collapsed: false, x: 320, y: 720 }
+        shelf: { collapsed: false }
       };
     }
 
@@ -67,7 +67,7 @@ export class WorkspaceService {
       windows: JSON.parse(stored.windows_json),
       sidebar: stored.sidebar_json ? JSON.parse(stored.sidebar_json) : { collapsed: false },
       inspector: stored.inspector_json ? JSON.parse(stored.inspector_json) : { open: false, width: 320 },
-      shelf: stored.shelf_json ? JSON.parse(stored.shelf_json) : { collapsed: false, x: 320, y: 720 }
+      shelf: stored.shelf_json ? JSON.parse(stored.shelf_json) : { collapsed: false }
     };
   }
 

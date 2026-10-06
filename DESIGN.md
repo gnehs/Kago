@@ -1,621 +1,92 @@
----
-version: alpha
-name: Linear-design-analysis
-description: "A near-black product-focused marketing canvas built around #010102 (the deepest dark surface of any tool in this collection), light gray text (#f7f8f8), and the signature Linear lavender-blue (#5e6ad2) used as the single chromatic accent. The system reads as software-craft documentation: dense, technical, and quietly luxurious. Display type is set in the Linear custom sans (SF Pro Display fallback) at 500–700 with measured negative tracking. Cards live as charcoal panels (#0f1011) with hairline borders. The accent lavender appears on the brand mark, focus rings, and a few intentional CTAs — never decoratively. Page rhythm leans on product UI screenshots framed in dark panels rather than atmospheric color."
+# Kago 設計規格
 
-colors:
-  primary: "#5e6ad2"
-  on-primary: "#ffffff"
-  primary-hover: "#828fff"
-  primary-focus: "#5e69d1"
-  ink: "#f7f8f8"
-  ink-muted: "#d0d6e0"
-  ink-subtle: "#8a8f98"
-  ink-tertiary: "#62666d"
-  canvas: "#010102"
-  surface-1: "#0f1011"
-  surface-2: "#141516"
-  surface-3: "#18191a"
-  surface-4: "#191a1b"
-  hairline: "#23252a"
-  hairline-strong: "#34343a"
-  hairline-tertiary: "#3e3e44"
-  inverse-canvas: "#ffffff"
-  inverse-surface-1: "#f5f6f6"
-  inverse-surface-2: "#f6f7f7"
-  inverse-ink: "#000000"
-  brand-secure: "#7a7fad"
-  semantic-success: "#27a644"
-  semantic-overlay: "#000000"
+Kago 是瀏覽器裡的 NAS 桌面檔案管理器。視覺與互動以 requirements.md §28 為準：
 
-typography:
-  display-xl:
-    fontFamily: Linear Display
-    fontSize: 80px
-    fontWeight: 600
-    lineHeight: 1.05
-    letterSpacing: -3.0px
-  display-lg:
-    fontFamily: Linear Display
-    fontSize: 56px
-    fontWeight: 600
-    lineHeight: 1.10
-    letterSpacing: -1.8px
-  display-md:
-    fontFamily: Linear Display
-    fontSize: 40px
-    fontWeight: 600
-    lineHeight: 1.15
-    letterSpacing: -1.0px
-  headline:
-    fontFamily: Linear Display
-    fontSize: 28px
-    fontWeight: 600
-    lineHeight: 1.20
-    letterSpacing: -0.6px
-  card-title:
-    fontFamily: Linear Display
-    fontSize: 22px
-    fontWeight: 500
-    lineHeight: 1.25
-    letterSpacing: -0.4px
-  subhead:
-    fontFamily: Linear Display
-    fontSize: 20px
-    fontWeight: 400
-    lineHeight: 1.40
-    letterSpacing: -0.2px
-  body-lg:
-    fontFamily: Linear Text
-    fontSize: 18px
-    fontWeight: 400
-    lineHeight: 1.50
-    letterSpacing: -0.1px
-  body:
-    fontFamily: Linear Text
-    fontSize: 16px
-    fontWeight: 400
-    lineHeight: 1.50
-    letterSpacing: -0.05px
-  body-sm:
-    fontFamily: Linear Text
-    fontSize: 14px
-    fontWeight: 400
-    lineHeight: 1.50
-    letterSpacing: 0
-  caption:
-    fontFamily: Linear Text
-    fontSize: 12px
-    fontWeight: 400
-    lineHeight: 1.40
-    letterSpacing: 0
-  button:
-    fontFamily: Linear Text
-    fontSize: 14px
-    fontWeight: 500
-    lineHeight: 1.20
-    letterSpacing: 0
-  eyebrow:
-    fontFamily: Linear Text
-    fontSize: 13px
-    fontWeight: 500
-    lineHeight: 1.30
-    letterSpacing: 0.4px
-  mono:
-    fontFamily: Linear Mono
-    fontSize: 13px
-    fontWeight: 400
-    lineHeight: 1.50
-    letterSpacing: 0
+- 像 Finder 一樣直覺
+- 像 NAS File Station 一樣完整
+- 像 Dropover 一樣有中轉區
+- 像現代設計工具一樣細緻
 
-rounded:
-  xs: 4px
-  sm: 6px
-  md: 8px
-  lg: 12px
-  xl: 16px
-  xxl: 24px
-  pill: 9999px
-  full: 9999px
+這份文件只記錄設計上的決定；實際數值以 `apps/web/src/styles.css` 為唯一來源。
 
-spacing:
-  xxs: 4px
-  xs: 8px
-  sm: 12px
-  md: 16px
-  lg: 24px
-  xl: 32px
-  xxl: 48px
-  section: 96px
+## 原則
 
-components:
-  button-primary:
-    backgroundColor: "{colors.primary}"
-    textColor: "{colors.on-primary}"
-    typography: "{typography.button}"
-    rounded: "{rounded.md}"
-    padding: 8px 14px
-  button-primary-pressed:
-    backgroundColor: "{colors.primary-focus}"
-    textColor: "{colors.on-primary}"
-    typography: "{typography.button}"
-    rounded: "{rounded.md}"
-  button-primary-hover:
-    backgroundColor: "{colors.primary-hover}"
-    textColor: "{colors.on-primary}"
-    typography: "{typography.button}"
-    rounded: "{rounded.md}"
-  button-secondary:
-    backgroundColor: "{colors.surface-1}"
-    textColor: "{colors.ink}"
-    typography: "{typography.button}"
-    rounded: "{rounded.md}"
-    padding: 8px 14px
-  button-tertiary:
-    backgroundColor: "{colors.canvas}"
-    textColor: "{colors.ink}"
-    typography: "{typography.button}"
-    rounded: "{rounded.md}"
-    padding: 8px 14px
-  button-inverse:
-    backgroundColor: "{colors.inverse-canvas}"
-    textColor: "{colors.inverse-ink}"
-    typography: "{typography.button}"
-    rounded: "{rounded.md}"
-    padding: 8px 14px
-  pricing-card:
-    backgroundColor: "{colors.surface-1}"
-    textColor: "{colors.ink}"
-    typography: "{typography.body}"
-    rounded: "{rounded.lg}"
-    padding: 24px
-  pricing-card-featured:
-    backgroundColor: "{colors.surface-2}"
-    textColor: "{colors.ink}"
-    typography: "{typography.body}"
-    rounded: "{rounded.lg}"
-    padding: 24px
-  feature-card:
-    backgroundColor: "{colors.surface-1}"
-    textColor: "{colors.ink}"
-    typography: "{typography.body}"
-    rounded: "{rounded.lg}"
-    padding: 24px
-  product-screenshot-card:
-    backgroundColor: "{colors.surface-1}"
-    textColor: "{colors.ink}"
-    typography: "{typography.body}"
-    rounded: "{rounded.xl}"
-    padding: 24px
-  testimonial-card:
-    backgroundColor: "{colors.surface-1}"
-    textColor: "{colors.ink}"
-    typography: "{typography.body-lg}"
-    rounded: "{rounded.lg}"
-    padding: 32px
-  customer-logo-tile:
-    backgroundColor: "{colors.canvas}"
-    textColor: "{colors.ink-subtle}"
-    typography: "{typography.caption}"
-    rounded: "{rounded.xs}"
-    padding: 16px
-  text-input:
-    backgroundColor: "{colors.surface-1}"
-    textColor: "{colors.ink}"
-    typography: "{typography.body}"
-    rounded: "{rounded.md}"
-    padding: 8px 12px
-  text-input-focused:
-    backgroundColor: "{colors.surface-1}"
-    textColor: "{colors.ink}"
-    typography: "{typography.body}"
-    rounded: "{rounded.md}"
-    padding: 8px 12px
-  pricing-tab-default:
-    backgroundColor: "{colors.canvas}"
-    textColor: "{colors.ink-subtle}"
-    typography: "{typography.button}"
-    rounded: "{rounded.pill}"
-    padding: 6px 14px
-  pricing-tab-selected:
-    backgroundColor: "{colors.surface-2}"
-    textColor: "{colors.ink}"
-    typography: "{typography.button}"
-    rounded: "{rounded.pill}"
-    padding: 6px 14px
-  cta-banner:
-    backgroundColor: "{colors.surface-1}"
-    textColor: "{colors.ink}"
-    typography: "{typography.headline}"
-    rounded: "{rounded.lg}"
-    padding: 48px
-  changelog-row:
-    backgroundColor: "{colors.canvas}"
-    textColor: "{colors.ink}"
-    typography: "{typography.body}"
-    rounded: "{rounded.xs}"
-    padding: 24px 0
-  status-badge:
-    backgroundColor: "{colors.surface-2}"
-    textColor: "{colors.ink-muted}"
-    typography: "{typography.caption}"
-    rounded: "{rounded.pill}"
-    padding: 2px 8px
-  top-nav:
-    backgroundColor: "{colors.canvas}"
-    textColor: "{colors.ink}"
-    typography: "{typography.body-sm}"
-    rounded: "{rounded.xs}"
-    height: 56px
-  footer:
-    backgroundColor: "{colors.canvas}"
-    textColor: "{colors.ink-subtle}"
-    typography: "{typography.caption}"
-    rounded: "{rounded.xs}"
-    padding: 64px 32px
----
+1. **內容優先**：畫面的主角是檔案清單。外框只有一個側欄加畫布，不再加頂部列，視窗內也不放第二個側欄。
+2. **一件事一個入口**：每個功能只有一個主要位置。Root 管理在設定頁，分享與標籤在資訊面板，檔案操作在右鍵選單與選取列。
+3. **安靜的介面**：中性色為主，強調色只用在選取、主要按鈕與焦點。不用漸層、毛玻璃與裝飾性陰影。
+4. **淺色為預設**，深色跟隨系統或由使用者切換。兩種主題都必須可用。
+5. **系統字體**：不載入網路字體，使用各平台的系統字體與中文字體。
 
-## Overview
+## 版面
 
-Linear's marketing canvas is the deepest dark surface in this collection — `{colors.canvas}` is #010102, essentially pure black with a faint blue tint. On top sits a four-step surface ladder (`{colors.surface-1}` through `{colors.surface-4}`) for cards, panels, and lifted tiles, with hairline borders running from `{colors.hairline}` (#23252a) up through `{colors.hairline-strong}` and `{colors.hairline-tertiary}`. Light gray text (`{colors.ink}` #f7f8f8) carries the body and headlines.
+```txt
+┌──────────┬──────────────────────────────┬───────────┐
+│ Sidebar  │ Canvas                       │ Inspector │
+│          │  ┌ FileWindow ─────────────┐ │ （可關閉） │
+│ 位置      │  │ 標題列（紅黃綠控制鈕）    │ │           │
+│ 最近      │  │ 工具列：導覽／路徑／檢視  │ │ 預覽       │
+│ 工作區    │  │ 檔案清單                │ │ 一般資訊   │
+│ 管理      │  │ 狀態列／選取操作         │ │ 標籤       │
+│          │  └────────────────────────┘ │ 分享       │
+│ 使用者    │        中轉區   任務中心     │ 權限       │
+└──────────┴──────────────────────────────┴───────────┘
+```
 
-The single chromatic accent is **Linear lavender-blue** `{colors.primary}` (#5e6ad2) — used on the brand mark, focus rings, and the primary CTA button. A lighter hover state (`{colors.primary-hover}` #828fff) and a focus-tinted variant (`{colors.primary-focus}` #5e69d1) extend the same hue. Linear avoids saturated greens, oranges, reds, etc. on the marketing canvas — the only semantic color is `{colors.semantic-success}` (#27a644) for status pills and the rare success indicator.
+- **Sidebar**：寬 224px，可收合成 48px 的圖示列。管理區塊只對管理員顯示。
+- **Canvas**：視窗座標相對於畫布，不是整個瀏覽器視窗。空白時顯示位置選擇器。
+- **Inspector**：停靠在右側，顯示作用中視窗的選取項目；沒有選取時顯示目前資料夾。
+- **頁面**（任務、分享、垃圾桶、管理、設定）：取代畫布顯示，內容置中、最大寬度 768px。
 
-Display type runs Linear's custom sans (with `SF Pro Display` fallback) at weight 500–700 with negative letter-spacing scaling from -3.0px at 80px down to 0 at body. The body family is Linear's text cut, and a Linear Mono is reserved for code snippets in product screenshots.
+## Design tokens
 
-The page rhythm is **dense product screenshots** — Linear's marketing leads with high-fidelity captures of the product UI (issue list, project view, dashboard) framed in `{colors.surface-1}` panels with `{rounded.xl}` 16px corners. The chrome is intentionally minimal so the app screenshots can do the heavy lifting.
+所有顏色、圓角、密度都定義成 `--kago-*` CSS 變數，再透過 Tailwind `@theme` 對應成語意名稱。元件裡不可以寫死色碼。
 
-**Key Characteristics:**
-- **Dark-canvas marketing system** — `{colors.canvas}` (#010102) is the deepest dark in this collection.
-- **Lavender-blue brand accent** (`{colors.primary}` #5e6ad2) — used scarcely on brand mark, focus, and the primary CTA.
-- Four-step surface ladder (canvas → surface-1 → surface-2 → surface-3 → surface-4) carries hierarchy without shadow.
-- Display tracking pulls aggressively negative (-3.0px at 80px); body holds at -0.05px.
-- Cards use `{rounded.lg}` 12px corners with 1px hairline borders — never pill, rarely 16px.
-- **Product UI screenshots** dominate the page. The marketing chrome is a dark frame for the app.
-- No second chromatic color. No atmospheric gradients. No spotlight cards.
-
-## Colors
-
-> Source pages: linear.app (home), /intake, /pricing, /contact/sales, /build.
-
-### Brand & Accent
-- **Lavender-Blue** ({colors.primary}): The signature Linear accent — primary CTA, brand mark, link emphasis.
-- **Lavender Hover** ({colors.primary-hover}): Lighter lavender (#828fff) — hovered state of the primary CTA.
-- **Lavender Focus** ({colors.primary-focus}): Focus-ring tint (#5e69d1) — focused inputs, focused buttons.
-- **Brand Secure** ({colors.brand-secure}): Muted lavender-gray (#7a7fad) — used in "Linear Security" surfaces.
-
-### Surface
-- **Canvas** ({colors.canvas}): Default page background — #010102, near-pure black with a faint blue tint.
-- **Surface 1** ({colors.surface-1}): One step above canvas — feature cards, pricing cards, product screenshot panels.
-- **Surface 2** ({colors.surface-2}): Two steps above — featured pricing card, hovered cards.
-- **Surface 3** ({colors.surface-3}): Three steps above — line-tertiary backgrounds, sub-nav.
-- **Surface 4** ({colors.surface-4}): Four steps above — bg-level-3, deepest lifted surface.
-- **Hairline** ({colors.hairline}): 1px borders on cards and dividers.
-- **Hairline Strong** ({colors.hairline-strong}): Stronger 1px borders — input focus rings.
-- **Hairline Tertiary** ({colors.hairline-tertiary}): Tertiary borders for nested surfaces.
-- **Inverse Canvas** ({colors.inverse-canvas}): Pure white — surface of the inverse pill CTA on a small set of section openers.
-- **Inverse Surface 1** ({colors.inverse-surface-1}): One step above inverse canvas.
-- **Inverse Surface 2** ({colors.inverse-surface-2}): Two steps above inverse canvas.
-
-### Text
-- **Ink** ({colors.ink}): All headlines and emphasized body type — light gray #f7f8f8.
-- **Ink Muted** ({colors.ink-muted}): Secondary type at #d0d6e0 — meta info on hero panels.
-- **Ink Subtle** ({colors.ink-subtle}): Tertiary type at #8a8f98 — deselected pricing tabs, footer columns.
-- **Ink Tertiary** ({colors.ink-tertiary}): Quaternary at #62666d — disabled, footnotes.
-
-### Semantic
-- **Success Green** ({colors.semantic-success}): Status pills, success indicators. The only semantic color on marketing.
-- **Overlay** ({colors.semantic-overlay}): Pure black overlay scrim for modals.
-
-## Typography
-
-### Font Family
-
-- **Linear Display** — Linear's custom display sans; fallback `SF Pro Display, -apple-system, system-ui, Segoe UI, Roboto`. Carries display-xl through subhead.
-- **Linear Text** — Linear's custom text sans (a slightly different cut tuned for body sizes); same fallback stack. Carries body sizes, button labels, captions.
-- **Linear Mono** — Linear's custom mono; fallback `ui-monospace, SF Mono, Menlo`. Used for code snippets in product screenshots and for status / ID tokens.
-
-The marketing surface treats Display and Text as one continuous voice; the family change is silent.
-
-### Hierarchy
-
-| Token | Size | Weight | Line Height | Letter Spacing | Use |
-|---|---|---|---|---|---|
-| `{typography.display-xl}` | 80px | 600 | 1.05 | -3.0px | Largest hero headline |
-| `{typography.display-lg}` | 56px | 600 | 1.10 | -1.8px | Section opener headlines |
-| `{typography.display-md}` | 40px | 600 | 1.15 | -1.0px | Sub-section headlines |
-| `{typography.headline}` | 28px | 600 | 1.20 | -0.6px | Pricing tier titles, CTA banner heading |
-| `{typography.card-title}` | 22px | 500 | 1.25 | -0.4px | Feature card title |
-| `{typography.subhead}` | 20px | 400 | 1.40 | -0.2px | Lead body, intro paragraphs |
-| `{typography.body-lg}` | 18px | 400 | 1.50 | -0.1px | Hero subhead, lead paragraphs |
-| `{typography.body}` | 16px | 400 | 1.50 | -0.05px | Default body |
-| `{typography.body-sm}` | 14px | 400 | 1.50 | 0 | Card body, footer columns |
-| `{typography.caption}` | 12px | 400 | 1.40 | 0 | Captions, meta, status |
-| `{typography.button}` | 14px | 500 | 1.20 | 0 | All button labels |
-| `{typography.eyebrow}` | 13px | 500 | 1.30 | 0.4px | Section eyebrow (slight positive tracking) |
-| `{typography.mono}` | 13px | 400 | 1.50 | 0 | Linear Mono for code in product screenshots |
-
-### Principles
-
-- **Aggressive negative tracking on display** (-3.0px at 80px ≈ 4% of size).
-- **Single voice from display to body.** Display-xl at 600 → body at 400 — same family, narrower weights.
-- **Eyebrow uses positive tracking** (+0.4px) — contrast against the negative-tracked display marks the eyebrow as taxonomy.
-- **Mono only in code contexts.** Linear Mono lives inside product screenshots — not on marketing chrome.
-
-### Note on Font Substitutes
-
-Linear's custom typeface isn't publicly distributed; the documented fallback `SF Pro Display, -apple-system, system-ui` is the recommended substitute on macOS. For cross-platform implementation, **Inter** at weight 500 / 600 / 700 is the closest free substitute. **Geist Sans** is also viable. For mono, **JetBrains Mono** or **Geist Mono** at weight 400 closely approximates Linear Mono.
-
-## Layout
-
-### Spacing System
-
-- **Base unit**: 4px.
-- **Tokens (front matter)**: `{spacing.xxs}` 4px · `{spacing.xs}` 8px · `{spacing.sm}` 12px · `{spacing.md}` 16px · `{spacing.lg}` 24px · `{spacing.xl}` 32px · `{spacing.xxl}` 48px · `{spacing.section}` 96px.
-- Card interior padding: `{spacing.lg}` 24px on feature/pricing cards; `{spacing.xl}` 32px on testimonial cards; `{spacing.xxl}` 48px on CTA banners.
-- Pill button padding: 8px vertical · 14px horizontal — Linear's compact button spec.
-- Form input padding: 8px vertical · 12px horizontal.
-
-### Grid & Container
-
-- Max content width sits around 1280px.
-- Card grids are 3-up at desktop, 2-up at tablet, 1-up at mobile.
-- Pricing tier grid is 3-up; comparison strip below shows checkmarks per tier.
-- Product screenshot panels span full content width — they're the protagonist.
-
-### Whitespace Philosophy
-
-The dark canvas IS the whitespace. Sections separate by lift onto surface-1 panels, not by gaps in white. Within a panel, generous `{spacing.lg}` 24px gaps between content blocks; `{spacing.section}` 96px between sections.
-
-## Elevation & Depth
-
-| Level | Treatment | Use |
+| Tailwind 名稱 | 變數 | 用途 |
 |---|---|---|
-| 0 (flat) | No shadow, no border | Default for body type, hero text, footer |
-| 1 (charcoal lift) | `{colors.surface-1}` background on canvas, 1px `{colors.hairline}` | Default cards, product panels |
-| 2 (surface-2 lift) | `{colors.surface-2}` background, 1px `{colors.hairline-strong}` | Featured pricing card, hovered cards |
-| 3 (surface-3 lift) | `{colors.surface-3}` background | Sub-nav, dropdown menus |
-| 4 (focus ring) | 2px `{colors.primary-focus}` outline at 50% opacity | Focused input, focused button |
-
-Linear's depth is carried by surface ladder + hairline borders. The brand resists drop shadows on dark almost entirely.
-
-### Decorative Depth
-
-- **Product UI screenshots** dominate as decorative depth.
-- **No atmospheric gradients, no spotlight cards.**
-- **Subtle white edge highlight** on the top edge of lifted panels — gives the dark surface a faint "pixel rendered" feel.
-
-## Shapes
-
-### Border Radius Scale
-
-| Token | Value | Use |
-|---|---|---|
-| `{rounded.xs}` | 4px | Small chips, status badges |
-| `{rounded.sm}` | 6px | Inline tags |
-| `{rounded.md}` | 8px | All buttons, form inputs |
-| `{rounded.lg}` | 12px | Pricing cards, feature cards, testimonial cards |
-| `{rounded.xl}` | 16px | Product screenshot panels |
-| `{rounded.xxl}` | 24px | Oversized CTA banners (rare) |
-| `{rounded.pill}` | 9999px | Pricing tab toggles, status pills |
-| `{rounded.full}` | 9999px | Avatar circles |
-
-### Photography & Illustration Geometry
-
-- Product UI screenshots dominate; they sit in `{rounded.xl}` 16px tiles with `{spacing.lg}` 24px outer padding.
-- Customer logo tiles render at small sizes (~24px logo height) on `{colors.canvas}` with no border.
-- Avatar circles in testimonial cards use `{rounded.full}` at 32–40px sizes.
-
-## Components
-
-### Buttons
-
-**`button-primary`** — Lavender CTA. The default primary CTA across all pages.
-- Background `{colors.primary}`, text `{colors.on-primary}`, type `{typography.button}`, padding 8px 14px, rounded `{rounded.md}`.
-- Pressed state lives in `button-primary-pressed` (background shifts to `{colors.primary-focus}`).
-- Hover state lives in `button-primary-hover` (background shifts to `{colors.primary-hover}` lighter lavender).
-
-**`button-secondary`** — Charcoal button. Used for secondary CTAs ("Sign in", "Read changelog").
-- Background `{colors.surface-1}`, text `{colors.ink}`, type `{typography.button}`, padding 8px 14px, rounded `{rounded.md}`. 1px `{colors.hairline}` border.
-
-**`button-tertiary`** — Plain text button.
-- Background `{colors.canvas}`, text `{colors.ink}`, type `{typography.button}`, rounded `{rounded.md}`, padding 8px 14px.
-
-**`button-inverse`** — White-on-dark inverse CTA.
-- Background `{colors.inverse-canvas}`, text `{colors.inverse-ink}`, type `{typography.button}`, rounded `{rounded.md}`, padding 8px 14px.
-
-### Pricing Tabs
-
-**`pricing-tab-default`** + **`pricing-tab-selected`** — Pill-toggle on `/pricing`.
-- Default: `{colors.canvas}` background, `{colors.ink-subtle}` text, rounded `{rounded.pill}`, padding 6px 14px.
-- Selected: `{colors.surface-2}` background, `{colors.ink}` text — selected = surface lift.
-
-### Cards & Containers
-
-**`pricing-card`** — Each tier on `/pricing`.
-- Background `{colors.surface-1}`, text `{colors.ink}`, type `{typography.body}`, rounded `{rounded.lg}`, padding 24px. 1px `{colors.hairline}` border.
-
-**`pricing-card-featured`** — Recommended tier — surface lift to surface-2.
-- Background `{colors.surface-2}`, otherwise identical structure.
-
-**`feature-card`** — Generic feature highlight tile.
-- Background `{colors.surface-1}`, text `{colors.ink}`, type `{typography.body}`, rounded `{rounded.lg}`, padding 24px.
-
-**`product-screenshot-card`** — The dominant card type — frames a high-fidelity Linear app UI screenshot.
-- Background `{colors.surface-1}`, text `{colors.ink}`, type `{typography.body}`, rounded `{rounded.xl}`, padding 24px.
-
-**`testimonial-card`** — Customer quote with avatar + name + role.
-- Background `{colors.surface-1}`, text `{colors.ink}`, type `{typography.body-lg}`, rounded `{rounded.lg}`, padding 32px.
-
-**`customer-logo-tile`** — Small tile in the customer marquee.
-- Background `{colors.canvas}`, text `{colors.ink-subtle}`, type `{typography.caption}`, rounded `{rounded.xs}`, padding 16px.
-
-**`cta-banner`** — Closing CTA panel near page bottom.
-- Background `{colors.surface-1}`, text `{colors.ink}`, type `{typography.headline}`, rounded `{rounded.lg}`, padding 48px.
-
-### Inputs & Forms
-
-**`text-input`** + **`text-input-focused`** — Form fields on `/contact/sales` and signup overlays.
-- Background `{colors.surface-1}`, text `{colors.ink}`, type `{typography.body}`, rounded `{rounded.md}`, padding 8px 12px.
-- Focused state retains the same surface; the focus ring is a 2px `{colors.primary-focus}` outline at 50% opacity.
-
-### Status & Build Page
-
-**`changelog-row`** — Each row in `/build` (changelog page) listing version, date, and changes.
-- Background `{colors.canvas}`, text `{colors.ink}`, type `{typography.body}`, rounded `{rounded.xs}`, padding 24px 0. 1px `{colors.hairline}` bottom rule.
-
-**`status-badge`** — Small status pill.
-- Background `{colors.surface-2}`, text `{colors.ink-muted}`, type `{typography.caption}`, rounded `{rounded.pill}`, padding 2px 8px.
-
-### Navigation
-
-**`top-nav`** — Sticky dark bar with the Linear wordmark left, primary nav links centered, and a `button-secondary` ("Sign in") + `button-primary` ("Get started") pair right.
-- Background `{colors.canvas}`, text `{colors.ink}`, type `{typography.body-sm}`, height 56px.
-
-### Footer
-
-**`footer`** — Dense link grid on `{colors.canvas}` with the Linear wordmark left.
-- Background `{colors.canvas}`, text `{colors.ink-subtle}`, type `{typography.caption}`, padding 64px 32px.
-
-## Do's and Don'ts
-
-### Do
-
-- Reserve `{colors.canvas}` (#010102) as the system's anchor surface — the faint blue tint is intentional.
-- Use `{colors.primary}` lavender ONLY for: brand mark, primary CTA, focus ring, link emphasis.
-- Use the four-step surface ladder for hierarchy. Avoid skipping levels.
-- Pair display weight 600 with body weight 400 — Linear resists 700+ display weights.
-- Apply negative letter-spacing aggressively on display.
-- Use product UI screenshots as the protagonist of every section.
-- Compose CTAs as `{rounded.md}` 8px corners.
-
-### Don't
-
-- Don't ship a light-mode marketing page.
-- Don't use lavender as a section background or card fill.
-- Don't introduce a second chromatic accent (orange, pink, green for marketing).
-- Don't add atmospheric gradients or spotlight cards.
-- Don't pill-round CTAs.
-- Don't use `#000000` true black as the canvas.
-- Don't combine multiple bright accents in product screenshot mockups.
-
-## Responsive Behavior
-
-### Breakpoints
-
-| Name | Width | Key Changes |
-|---|---|---|
-| Desktop-XL | 1440px | Default desktop layout |
-| Desktop | 1280px | Card grid 3-up maintained |
-| Tablet | 1024px | Card grid 3-up → 2-up |
-| Mobile-Lg | 768px | Pricing comparison becomes accordion; nav hamburger |
-| Mobile | 480px | Single-column; display-xl scales 80px → ~36px |
-
-### Touch Targets
-
-- CTAs hold ≥40px tap height across viewports.
-- Pricing tab pills hold ≥36px tap height; touch viewports grow to ≥44px.
-- Form inputs hold ≥44px tap target on touch.
-
-### Collapsing Strategy
-
-- **Top nav**: links collapse to hamburger below 768px.
-- **Card grids**: 3-up → 2-up at 1024px → 1-up below 768px.
-- **Pricing comparison**: per-tier accordion below 768px.
-- **Display type**: `{typography.display-xl}` 80px scales toward `{typography.display-md}` 40px on mobile.
-
-### Image Behavior
-
-- Product UI screenshots maintain aspect ratio and never crop.
-- Customer logos in the marquee may collapse from 6-up to 3-up below 768px.
-
-## Iteration Guide
-
-1. Focus on ONE component at a time and reference it by its `components:` token name.
-2. When introducing a section, decide first which surface lift it lives on.
-3. Default body to `{typography.body}` at weight 400.
-4. Run `npx @google/design.md lint DESIGN.md` after edits.
-5. Add new variants as separate component entries.
-6. Treat lavender as scarce: brand mark, primary CTA, focus, link emphasis.
-7. Lead every section with a product UI screenshot.
-
-## Known Gaps
-
-- The four-step surface ladder values are extracted directly from Linear's `--color-bg-level-3`, `--color-line-tint`, etc. CSS variables; they are Linear's canonical surface spec.
-- Form-field error and validation styling is not visible on the inspected pages.
-- Light mode is not documented because the marketing site does not ship a light theme.
-- Linear's actual product UI uses a richer color-tag palette (red, orange, yellow, green, blue, purple) for issue priorities and project labels — those colors live in the in-product surfaces shown in mockups.
-- The custom display, text, and mono families are proprietary; an open-source substitute is acceptable.
-
-
-Motion System: Linear
-Category: Project Management / Productivity Fast, precise, and physically grounded — motion that feels like a native app, never a website.
-
-
-Motion Philosophy
-Linear's motion is built around the feeling of a high-performance native application. Every transition should communicate speed and control. The product is used by engineers and designers who are sensitive to latency — any animation that feels slow is felt as friction, not polish. Motion earns its place only when it aids orientation or confirms an action.
-
-The physics model is spring-based, but never playful. Springs at Linear's tuning are tight and critically damped — they reach their target quickly and stop cleanly, with no oscillation. This gives interactive elements a satisfying mechanical feel: buttons that respond to pressure, drawers that snap into place, popovers that arrive with intention. The result is motion that feels native because it behaves like the physics of real interface objects, not the bounce of a toy.
-
-Motion must never be expressive for its own sake. Linear does not celebrate, delight, or entertain through animation. If an element is entering, it fades and slides by a small amount — just enough to give the eye a vector without drawing attention to the transition itself. If something exits, it does so quickly. The interface should feel like it is always ready, always fast.
-
-
-Duration Scale
-Token	Value	Use
-instant	0ms	State changes with no visual transition (toggling background sync, silent status updates)
-fast	100ms	Hover states, checkbox ticks, small icon transitions, tooltip appearance
-default	160ms	Most UI transitions: command menu opening, modal appearing, panel sliding
-slow	240ms	Page-level view transitions, sidebar expanding/collapsing
-slower	400ms	Onboarding coach marks, empty state illustrations entering
-
-Easing
-Token	Curve	Use
-ease-out	cubic-bezier(0.16, 1, 0.3, 1)	Elements entering the screen — decelerates sharply to rest
-ease-in	cubic-bezier(0.7, 0, 0.84, 0)	Elements exiting — accelerates quickly away
-ease-in-out	cubic-bezier(0.45, 0, 0.55, 1)	Elements repositioning within the layout
-spring	See spring configs	All interactive elements: buttons, toggles, drag handles
-The ease-out curve is notably aggressive — it front-loads the motion so the element appears to arrive almost instantly and merely settles into place. This is central to the native-app feel.
-
-
-Spring Configs (Framer Motion / react-spring)
-Default: stiffness: 400, damping: 30, mass: 1
-Snappy: stiffness: 600, damping: 35, mass: 0.8
-Tight (for micro-interactions, icon morphs): stiffness: 700, damping: 40, mass: 0.6
-Gentle (for large panel transitions): stiffness: 250, damping: 28, mass: 1
-No bouncy config exists in the Linear system. Damping ratios are always at or above critical damping.
-
-
-Stagger Patterns
-List items: 20ms between each item
-Cards in grid: 30ms between each card
-Command menu results: 15ms between each result
-Children in container: 24ms delay from parent entrance
-Stagger is used sparingly — primarily for list items rendering for the first time (e.g., initial load, filtered results). It is not applied to items that already exist in the DOM being rearranged.
-
-
-Enter / Exit Patterns
-Fade + Slide (default for panels, modals, command palette)
-enter: opacity 0→1, translateY 6px→0, duration: default (160ms), ease: ease-out
-exit: opacity 1→0, translateY 0→-4px, duration: fast (100ms), ease: ease-in
-Scale Pop (popovers, context menus, tooltips)
-enter: opacity 0→1, scale 0.97→1, duration: fast (100ms), ease: ease-out
-exit: opacity 1→0, scale 1→0.97, duration: fast (100ms), ease: ease-in
-Slide (command menu, right-hand detail panel)
-enter: translateX 100%→0, duration: default (160ms), ease: ease-out
-exit: translateX 0→100%, duration: fast (100ms), ease: ease-in
-Sidebar / Left Nav Toggle
-enter: translateX -100%→0, width animates with layout, duration: slow (240ms), ease: ease-out
-exit: translateX 0→-100%, duration: default (160ms), ease: ease-in
-
-Interaction States
-Hover: Subtle background fill transition at 80ms ease-out. No scale. Icon color shifts via CSS transition, not Framer. Feels instantaneous.
-Press/Active: scale(0.97) over 80ms with Default spring config. Releases to scale(1) on pointer-up, same spring. Communicates physical depression.
-Focus: Focus ring appears instantly (0ms) with no transition — using CSS outline. Keyboard navigation should never be delayed by animation.
-Drag: Dragged item scales to 1.02 and gains a shadow over 120ms ease-out. Drop targets pulse opacity 0.5→1 on 160ms ease-in-out loop while dragging over them.
-Loading: Skeleton shimmer using CSS animation: linear gradient moving left-to-right over 1400ms, infinite, no easing. Spinners are 16px, 800ms linear rotation.
-
-Rules
-Respect prefers-reduced-motion. When set, collapse all durations to 0ms and disable transforms. Spring configs should resolve to their target value immediately.
-Never animate layout properties (width, height, padding, margin) directly. Use transforms and opacity — let layout shifts use layout prop in Framer Motion so the browser optimizes composite-layer transitions.
-Exit animations must be shorter than enter animations. The interface should clear space faster than it fills it.
-Do not stack multiple simultaneous animations on a single element. If an item is entering, it should not also be scaling on hover until the entrance is complete.
+| `canvas` | `--kago-bg` | 畫布底色 |
+| `surface` | `--kago-surface` | 視窗、卡片、頁面 |
+| `elevated` | `--kago-surface-elevated` | 側欄、標題列、工具列 |
+| `line` / `line-strong` | `--kago-border` / `--kago-border-strong` | 分隔線、輸入框邊框 |
+| `ink` / `muted` / `faint` | `--kago-text` / `--kago-text-muted` / `--kago-text-faint` | 三層文字 |
+| `accent` / `accent-fg` / `accent-soft` | `--kago-accent…` | 選取、主要按鈕、非作用中視窗的選取 |
+| `hover` | `--kago-hover` | 滑過與按下的底色 |
+| `danger` / `warning` / `success` | `--kago-danger…` | 狀態色 |
+| `folder` | `--kago-folder` | 資料夾圖示 |
+
+圓角：`sm` 4px（清單列、小標籤）、`md` 6px（按鈕、輸入框）、`lg` 10px（視窗、卡片、浮層）。
+
+密度由 `<html data-density>` 控制，影響列高、控制項高度與字級：
+
+| | 列高 | 控制項 | 字級 |
+|---|---|---|---|
+| 舒適 `comfortable` | 32px | 30px | 13px |
+| 緊湊 `compact` | 26px | 26px | 12px |
+
+## 層級
+
+| 層 | z-index |
+|---|---|
+| 檔案視窗 | 100–499 |
+| 最小化視窗列 | 550 |
+| 中轉區 | 600 |
+| 任務中心 | 700 |
+| 右鍵選單 | 800 |
+| 對話框 | 900 |
+| 通知、提示 | 1000 |
+
+## 元件
+
+- `components/ui/`：Button、Input、Select、Field、Checkbox 等基礎表單元件。
+- `components/kago/`：包裝 Base UI 的 Kago 元件（`KagoContextMenu`、`KagoDialog`、`KagoTooltip`、`KagoIconButton`、`KagoBadge`、`KagoEmptyState`、`KagoToaster`）。feature 程式碼不直接使用 Base UI primitive。
+- `features/`：依功能分資料夾，每個畫面一個檔案。
+
+規則：
+
+- 只有圖示的按鈕一律用 `KagoIconButton`，它同時提供 tooltip 與無障礙名稱。
+- 需要使用者輸入或確認時用 `promptText` / `confirmAction`，不用瀏覽器的 `prompt()` / `confirm()`。
+- 操作失敗一律用 toast 告知，包在 `run()` 裡，不讓錯誤靜默消失。
+- 每個清單都要有載入中與空狀態。
+
+## 動態
+
+動畫只用在顏色與側欄寬度的過渡，時間 150ms 以內。拖曳、縮放視窗不加動畫。尊重 `prefers-reduced-motion`。

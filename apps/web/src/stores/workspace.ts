@@ -1,11 +1,13 @@
 import { create } from "zustand";
 import type { FileWindow, Root, WorkspaceState } from "../types/kago";
+import { baseName } from "../lib/paths";
+import { toast } from "./toast";
 
 type WorkspaceStore = WorkspaceState & {
   hydrated: boolean;
-  nextZ: number;
-  notice: string | null;
   hydrate: (workspace: WorkspaceState) => void;
+  /** Pulls windows back inside the canvas after it shrinks. */
+  refitWindows: () => void;
   openRoot: (root: Root) => void;
   openWindow: (partial: Pick<FileWindow, "rootSlug" | "logicalPath" | "title">) => void;
   closeWindow: (id: string) => void;
@@ -14,108 +16,113 @@ type WorkspaceStore = WorkspaceState & {
   updateSidebar: (patch: Partial<WorkspaceState["sidebar"]>) => void;
   updateInspector: (patch: Partial<WorkspaceState["inspector"]>) => void;
   updateShelf: (patch: Partial<WorkspaceState["shelf"]>) => void;
-  clearNotice: () => void;
   selectItems: (id: string, items: string[]) => void;
   snapshot: () => WorkspaceState;
 };
 
-const ts = () => Date.now();
+export const MAX_WINDOWS = 12;
+export const MIN_WINDOW_WIDTH = 360;
+export const MIN_WINDOW_HEIGHT = 280;
+/** How much of a window must stay reachable inside the canvas. */
+const KEEP_VISIBLE = 120;
+const TITLEBAR_HEIGHT = 36;
+
 const fileWindowZBase = 100;
 const fileWindowZLimit = 499;
-const fileWindowZRebaseAt = 460;
-const titleFromPath = (logicalPath: string, rootSlug: string) => logicalPath === "/" ? rootSlug : logicalPath.split("/").filter(Boolean).at(-1) ?? rootSlug;
-const initialGeometry = (index: number) => {
-  const viewportWidth = typeof globalThis.innerWidth === "number" ? globalThis.innerWidth : 1280;
-  const viewportHeight = typeof globalThis.innerHeight === "number" ? globalThis.innerHeight : 820;
-  const minX = viewportWidth > 980 ? 292 : 12;
-  const availableWidth = Math.max(360, viewportWidth - minX - 28);
-  const width = Math.max(360, Math.min(1040, availableWidth));
-  const height = Math.max(280, Math.min(720, viewportHeight - 132));
-  return {
-    x: Math.max(minX, Math.round((viewportWidth - width + minX) / 2) + index * 28),
-    y: 92 + index * 24,
-    width,
-    height
-  };
-};
 
-const fitGeometry = (window: FileWindow): FileWindow => {
-  const viewportWidth = typeof globalThis.innerWidth === "number" ? globalThis.innerWidth : 1280;
-  const viewportHeight = typeof globalThis.innerHeight === "number" ? globalThis.innerHeight : 820;
-  const minX = viewportWidth > 980 ? 292 : 12;
-  const maxWidth = Math.max(360, viewportWidth - minX - 20);
-  const restoredWidth = Math.min(window.width, maxWidth);
-  const minUsefulDesktopWidth = viewportWidth > 1180 ? Math.min(920, maxWidth) : 360;
-  const width = Math.max(restoredWidth < 820 ? minUsefulDesktopWidth : 360, restoredWidth);
-  const height = Math.max(280, Math.min(window.height, Math.max(280, viewportHeight - 78)));
+const ts = () => Date.now();
+
+/**
+ * Window geometry is relative to the workspace canvas, not the viewport.
+ * The canvas reports its size here so the store can clamp without reading the DOM.
+ */
+let canvas = { width: Math.max(480, (globalThis.innerWidth ?? 1280) - 232), height: Math.max(360, globalThis.innerHeight ?? 800) };
+
+export const getCanvasSize = () => canvas;
+
+export function setCanvasSize(width: number, height: number) {
+  canvas = { width: Math.round(width), height: Math.round(height) };
+}
+
+export function clampWindowPosition(x: number, y: number, width: number) {
+  return {
+    x: Math.round(Math.min(canvas.width - KEEP_VISIBLE, Math.max(KEEP_VISIBLE - width, x))),
+    y: Math.round(Math.min(Math.max(0, canvas.height - TITLEBAR_HEIGHT), Math.max(0, y)))
+  };
+}
+
+export function clampWindowSize(width: number, height: number) {
+  return {
+    width: Math.round(Math.max(MIN_WINDOW_WIDTH, Math.min(width, canvas.width))),
+    height: Math.round(Math.max(MIN_WINDOW_HEIGHT, Math.min(height, canvas.height)))
+  };
+}
+
+function initialGeometry(index: number) {
+  const size = clampWindowSize(Math.min(920, canvas.width - 64), Math.min(620, canvas.height - 64));
+  const offset = (index % 6) * 28;
+  return { ...size, ...clampWindowPosition((canvas.width - size.width) / 2 + offset, Math.max(16, (canvas.height - size.height) / 2 - 16) + offset, size.width) };
+}
+
+/** Restored windows are pulled fully into view; only dragging may push one partly off-canvas. */
+function fitGeometry(window: FileWindow): FileWindow {
+  const size = clampWindowSize(window.width, window.height);
   return {
     ...window,
-    width,
-    height,
-    x: Math.max(minX, Math.min(window.x, viewportWidth - Math.min(280, width))),
-    y: Math.max(54, Math.min(window.y, viewportHeight - 120))
+    ...size,
+    x: Math.round(Math.max(0, Math.min(window.x, canvas.width - size.width))),
+    y: Math.round(Math.max(0, Math.min(window.y, canvas.height - size.height)))
   };
-};
+}
 
-const rebaseWindowStack = (windows: FileWindow[]): FileWindow[] => {
-  const orderedIds = [...windows]
-    .sort((a, b) => a.zIndex - b.zIndex || a.createdAt - b.createdAt)
-    .map((window) => window.id);
-  const zIndexById = new Map(orderedIds.map((id, index) => [id, fileWindowZBase + index]));
-  return windows.map((window) => ({ ...window, zIndex: zIndexById.get(window.id) ?? fileWindowZBase }));
-};
+/** Renumbers z-indexes from the base so they never drift past the file-window layer. */
+function restack(windows: FileWindow[]): FileWindow[] {
+  const order = [...windows].sort((a, b) => a.zIndex - b.zIndex || a.createdAt - b.createdAt).map((window) => window.id);
+  return windows.map((window) => ({ ...window, zIndex: Math.min(fileWindowZLimit, fileWindowZBase + order.indexOf(window.id)) }));
+}
 
-const maybeRebaseWindowStack = (windows: FileWindow[], nextZ: number): FileWindow[] =>
-  nextZ >= fileWindowZRebaseAt ? rebaseWindowStack(windows) : windows;
+const topZ = (windows: FileWindow[]) => Math.max(fileWindowZBase - 1, ...windows.map((window) => window.zIndex));
 
-const nextFileWindowZ = (windows: FileWindow[]): number =>
-  Math.min(fileWindowZLimit, Math.max(fileWindowZBase, ...windows.map((window) => window.zIndex + 1)));
+const titleFromPath = (logicalPath: string, fallback: string) => (logicalPath === "/" ? fallback : baseName(logicalPath) || fallback);
 
 export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   hydrated: false,
   activeWindowId: null,
   windows: [],
   sidebar: { collapsed: false },
-  inspector: { open: true, width: 320 },
-  shelf: { collapsed: false, x: 360, y: 680 },
-  nextZ: 120,
-  notice: null,
-  hydrate: (workspace) => {
-    const windows = rebaseWindowStack(workspace.windows.map(fitGeometry));
-    set({
-      ...workspace,
-      windows,
-      hydrated: true,
-      nextZ: nextFileWindowZ(windows),
-      notice: null
-    });
-  },
+  inspector: { open: false, width: 300 },
+  shelf: { collapsed: false },
+  hydrate: (workspace) => set({ ...workspace, windows: restack(workspace.windows.map(fitGeometry)), hydrated: true }),
+  refitWindows: () =>
+    set((state) => {
+      const windows = state.windows.map((window) => {
+        const next = fitGeometry(window);
+        return next.x === window.x && next.y === window.y && next.width === window.width && next.height === window.height ? window : next;
+      });
+      return windows.some((window, index) => window !== state.windows[index]) ? { windows } : state;
+    }),
   openRoot: (root) => {
     const existing = get().windows.find((window) => window.rootSlug === root.slug);
     if (existing) {
+      get().updateWindow(existing.id, { minimized: false });
       get().focusWindow(existing.id);
       return;
     }
     get().openWindow({ rootSlug: root.slug, logicalPath: "/", title: root.name });
   },
-  openWindow: (partial) =>
+  openWindow: (partial) => {
+    if (get().windows.length >= MAX_WINDOWS) {
+      toast("已達視窗數量上限", "error");
+      return;
+    }
     set((state) => {
-      if (state.windows.length >= 12) return { notice: "已達視窗數量上限" };
-      const baseWindows = maybeRebaseWindowStack(state.windows, state.nextZ);
-      const zIndex = nextFileWindowZ(baseWindows);
-      const index = state.windows.length;
+      const windows = restack(state.windows);
       const id = `win_${crypto.randomUUID()}`;
-      const geometry = initialGeometry(index);
       const window: FileWindow = {
         id,
-        rootSlug: partial.rootSlug,
-        logicalPath: partial.logicalPath,
-        title: partial.title,
-        x: geometry.x,
-        y: geometry.y,
-        width: geometry.width,
-        height: geometry.height,
-        zIndex,
+        ...partial,
+        ...initialGeometry(windows.length),
+        zIndex: topZ(windows) + 1,
         minimized: false,
         maximized: false,
         focused: true,
@@ -126,32 +133,23 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         createdAt: ts(),
         updatedAt: ts()
       };
-      return {
-        windows: [...baseWindows.map((item) => ({ ...item, focused: false })), window],
-        activeWindowId: id,
-        nextZ: zIndex + 1,
-        notice: null
-      };
-    }),
+      return { windows: [...windows.map((item) => ({ ...item, focused: false })), window], activeWindowId: id };
+    });
+  },
   closeWindow: (id) =>
     set((state) => {
       const windows = state.windows.filter((window) => window.id !== id);
-      const activeWindowId = state.activeWindowId === id ? windows.at(-1)?.id ?? null : state.activeWindowId;
-      return { windows, activeWindowId };
+      if (state.activeWindowId !== id) return { windows };
+      const next = [...windows].filter((window) => !window.minimized).sort((a, b) => b.zIndex - a.zIndex)[0];
+      return { windows: windows.map((window) => ({ ...window, focused: window.id === next?.id })), activeWindowId: next?.id ?? null };
     }),
   focusWindow: (id) =>
     set((state) => {
-      const baseWindows = maybeRebaseWindowStack(state.windows, state.nextZ);
-      const zIndex = nextFileWindowZ(baseWindows);
-      return {
-        activeWindowId: id,
-        nextZ: zIndex + 1,
-        windows: baseWindows.map((window) => ({
-          ...window,
-          focused: window.id === id,
-          zIndex: window.id === id ? zIndex : window.zIndex
-        }))
-      };
+      const current = state.windows.find((window) => window.id === id);
+      if (!current) return state;
+      if (state.activeWindowId === id && current.zIndex === topZ(state.windows)) return state;
+      const windows = restack(state.windows.map((window) => (window.id === id ? { ...window, zIndex: fileWindowZLimit + 1 } : window)));
+      return { activeWindowId: id, windows: windows.map((window) => ({ ...window, focused: window.id === id })) };
     }),
   updateWindow: (id, patch) =>
     set((state) => ({
@@ -161,31 +159,13 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
           : window
       )
     })),
-  updateSidebar: (patch) =>
-    set((state) => ({
-      sidebar: { ...state.sidebar, ...patch }
-    })),
-  updateInspector: (patch) =>
-    set((state) => ({
-      inspector: { ...state.inspector, ...patch }
-    })),
-  updateShelf: (patch) =>
-    set((state) => ({
-      shelf: { ...state.shelf, ...patch }
-    })),
-  clearNotice: () => set({ notice: null }),
+  updateSidebar: (patch) => set((state) => ({ sidebar: { ...state.sidebar, ...patch } })),
+  updateInspector: (patch) => set((state) => ({ inspector: { ...state.inspector, ...patch } })),
+  updateShelf: (patch) => set((state) => ({ shelf: { ...state.shelf, ...patch } })),
   selectItems: (id, items) =>
-    set((state) => ({
-      windows: state.windows.map((window) => (window.id === id ? { ...window, selectedItems: items } : window))
-    })),
+    set((state) => ({ windows: state.windows.map((window) => (window.id === id ? { ...window, selectedItems: items } : window)) })),
   snapshot: () => {
-    const state = get();
-    return {
-      activeWindowId: state.activeWindowId,
-      windows: state.windows,
-      sidebar: state.sidebar,
-      inspector: state.inspector,
-      shelf: state.shelf
-    };
+    const { activeWindowId, windows, sidebar, inspector, shelf } = get();
+    return { activeWindowId, windows, sidebar, inspector, shelf };
   }
 }));
