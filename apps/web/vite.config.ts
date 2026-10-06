@@ -1,10 +1,40 @@
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import fs from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 
+const libassDir = path.dirname(createRequire(import.meta.url).resolve("@jellyfin/libass-wasm"));
+const libassFiles: Record<string, string> = {
+  "subtitles-octopus-worker.js": "text/javascript",
+  "subtitles-octopus-worker.wasm": "application/wasm",
+  "default.woff2": "font/woff2"
+};
+
+/**
+ * The subtitle renderer's worker loads its .wasm from next to itself by name, so the files
+ * are served untouched under /libass/ rather than going through the hashed asset pipeline.
+ */
+function libassAssets(): Plugin {
+  return {
+    name: "kago-libass-assets",
+    configureServer(server) {
+      server.middlewares.use("/libass", (request, response, next) => {
+        const name = (request.url ?? "").split("?")[0]!.slice(1);
+        if (!libassFiles[name]) return next();
+        response.setHeader("Content-Type", libassFiles[name]);
+        fs.createReadStream(path.join(libassDir, name)).pipe(response);
+      });
+    },
+    generateBundle() {
+      for (const name of Object.keys(libassFiles)) this.emitFile({ type: "asset", fileName: `libass/${name}`, source: fs.readFileSync(path.join(libassDir, name)) });
+    }
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), libassAssets()],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src")
@@ -13,7 +43,7 @@ export default defineConfig({
   // Pre-bundle the Base UI entry points up front; discovering them lazily makes the dev
   // server re-optimise mid-session and briefly load two copies of React.
   optimizeDeps: {
-    include: ["@base-ui/react/context-menu", "@base-ui/react/dialog", "@base-ui/react/menu", "@base-ui/react/popover", "@base-ui/react/tooltip"]
+    include: ["@jellyfin/libass-wasm", "@base-ui/react/context-menu", "@base-ui/react/dialog", "@base-ui/react/menu", "@base-ui/react/popover", "@base-ui/react/tooltip"]
   },
   server: {
     port: 5173,

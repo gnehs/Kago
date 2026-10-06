@@ -15,6 +15,14 @@ export function formatDuration(seconds: number) {
   return `${Math.floor(total / 3600)} 小時 ${Math.floor((total % 3600) / 60)} 分`;
 }
 
+/** A playhead position: 1:05, or 1:02:05 once `long` (the whole length reaches an hour). */
+export function formatClock(seconds: number, long = seconds >= 3600) {
+  const total = Math.max(0, Math.floor(Number.isFinite(seconds) ? seconds : 0));
+  const minutes = Math.floor((total % 3600) / 60);
+  const tail = String(total % 60).padStart(2, "0");
+  return long ? `${Math.floor(total / 3600)}:${String(minutes).padStart(2, "0")}:${tail}` : `${Math.floor(total / 60)}:${tail}`;
+}
+
 const dateFormat = new Intl.DateTimeFormat("zh-TW", { year: "numeric", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
 
 /** File mtimes are milliseconds; database timestamps are unix seconds. */

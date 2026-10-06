@@ -26,9 +26,26 @@ export function KagoContextMenu({ menu, children, className, ...props }: Omit<Co
  * The same menu opened from a button, for pointers without a right click. Takes the
  * `KagoMenuItem`s a context menu would, so both entrances always offer identical actions.
  */
-export function KagoDropdownMenu({ label, menu, className, children }: { label: string; menu: ReactNode; className?: string; children: ReactNode }) {
+export function KagoDropdownMenu({
+  label,
+  menu,
+  className,
+  side,
+  container,
+  onOpenChange,
+  children
+}: {
+  label: string;
+  menu: ReactNode;
+  className?: string;
+  side?: "top" | "bottom";
+  /** Where the popup is mounted. An element shown fullscreen has to hold its own menu. */
+  container?: HTMLElement | null;
+  onOpenChange?: (open: boolean) => void;
+  children: ReactNode;
+}) {
   return (
-    <Menu.Root>
+    <Menu.Root onOpenChange={onOpenChange}>
       <Menu.Trigger
         aria-label={label}
         title={label}
@@ -39,8 +56,8 @@ export function KagoDropdownMenu({ label, menu, className, children }: { label: 
       >
         {children}
       </Menu.Trigger>
-      <Menu.Portal>
-        <Menu.Positioner sideOffset={4} align="end" className="z-[800] outline-none">
+      <Menu.Portal container={container ?? undefined}>
+        <Menu.Positioner side={side} sideOffset={4} align="end" className="z-[800] outline-none">
           <Menu.Popup className="min-w-44 rounded-lg bg-surface p-1 shadow-popup outline-none">{menu}</Menu.Popup>
         </Menu.Positioner>
       </Menu.Portal>

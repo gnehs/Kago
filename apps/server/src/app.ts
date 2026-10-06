@@ -16,7 +16,7 @@ import { AuditService } from "./services/audit.service.js";
 import { AuthService, changePasswordSchema, createUserSchema, loginSchema, patchUserSchema, resetPasswordSchema, setupAdminSchema } from "./services/auth.service.js";
 import { FsService, finderTagsSchema, fsQuerySchema, maxUploadFiles, mkdirSchema, renameSchema } from "./services/fs.service.js";
 import { createGroupSchema, GroupService } from "./services/group.service.js";
-import { MediaService, mediaSessionSchema } from "./services/media.service.js";
+import { MediaService, mediaSessionSchema, mediaStreamSchema } from "./services/media.service.js";
 import { PathService } from "./services/path.service.js";
 import { permissionInputSchema, PermissionService } from "./services/permission.service.js";
 import { rootPatchSchema, RootService } from "./services/root.service.js";
@@ -349,6 +349,54 @@ function registerApi(app: FastifyInstance, services: Services) {
     const query = fsQuerySchema.parse(request.query);
     const file = await services.fsService.preview(actor, query.rootSlug, query.path);
     return services.media.info(file.safe.absolutePath, file.stat);
+  });
+  app.get("/api/media/subtitles", async (request) => {
+    const actor = requireActor(request);
+    const query = fsQuerySchema.parse(request.query);
+    const file = await services.fsService.preview(actor, query.rootSlug, query.path);
+    const sidecars = await services.fsService.subtitles(actor, query.rootSlug, query.path);
+    // Something ffprobe cannot read simply has no streams of its own to offer.
+    const info = await services.media.info(file.safe.absolutePath, file.stat).catch(() => null);
+    const own = new URLSearchParams({ rootSlug: query.rootSlug, path: query.path }).toString();
+    const embedded = info?.subtitles ?? [];
+    return {
+      tracks: [
+        ...sidecars.map(({ path: sidecarPath, name, ...track }) => ({
+          ...track,
+          id: `file:${sidecarPath}`,
+          embedded: false,
+          url: `/api/fs/preview?${new URLSearchParams({ rootSlug: query.rootSlug, path: sidecarPath }).toString()}`
+        })),
+        ...embedded
+          .filter((stream) => stream.text)
+          .map(({ index, codec, text, ...track }) => ({
+            ...track,
+            format: codec === "ass" || codec === "ssa" ? "ass" : "srt",
+            id: `stream:${index}`,
+            embedded: true,
+            url: `/api/media/subtitle?${own}&index=${index}`
+          }))
+      ],
+      fonts: (info?.fonts ?? []).map((font) => `/api/media/attachment?${own}&index=${font.index}`),
+      /** Picture subtitles (Blu-ray, DVD) that cannot be drawn in the browser. */
+      unsupported: embedded.filter((stream) => !stream.text).length
+    };
+  });
+  app.get("/api/media/subtitle", async (request, reply) => {
+    const actor = requireActor(request);
+    const query = mediaStreamSchema.parse(request.query);
+    const file = await services.fsService.preview(actor, query.rootSlug, query.path);
+    const subtitle = await services.media.subtitle(file.safe.absolutePath, file.stat, query.index);
+    reply.header("Cache-Control", "private, max-age=3600");
+    return sendFile(request, reply, subtitle.file, await fs.promises.stat(subtitle.file), "text/plain; charset=utf-8");
+  });
+  app.get("/api/media/attachment", async (request, reply) => {
+    const actor = requireActor(request);
+    const query = mediaStreamSchema.parse(request.query);
+    const file = await services.fsService.preview(actor, query.rootSlug, query.path);
+    const font = await services.media.font(file.safe.absolutePath, file.stat, query.index);
+    reply.header("Cache-Control", "private, max-age=3600");
+    return sendFile(request, reply, font, await fs.promises.stat(font), "application/octet-stream");
   });
   app.post("/api/media/sessions", async (request) => {
     const actor = requireActor(request);

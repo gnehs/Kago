@@ -38,6 +38,46 @@ export function setVideoQuality(quality: VideoQualityPref) {
   }
 }
 
+const subtitleKey = "kago.subtitles";
+
+/** The subtitle choice last made by hand: `off`, or the language tag of the track that was picked. */
+export function getSubtitlePref(): string | null {
+  try {
+    return localStorage.getItem(subtitleKey);
+  } catch {
+    return null;
+  }
+}
+
+export function setSubtitlePref(value: string) {
+  try {
+    localStorage.setItem(subtitleKey, value);
+  } catch {
+    // Private browsing: the choice just lasts for this window.
+  }
+}
+
+const videoVolumeKey = "kago.videoVolume";
+
+/** The player's volume, carried from one video to the next. */
+export function getVideoVolume(): { volume: number; muted: boolean } {
+  try {
+    const saved = JSON.parse(localStorage.getItem(videoVolumeKey) ?? "{}") as { volume?: unknown; muted?: unknown };
+    const volume = typeof saved.volume === "number" && saved.volume >= 0 && saved.volume <= 1 ? saved.volume : 1;
+    return { volume, muted: saved.muted === true };
+  } catch {
+    return { volume: 1, muted: false };
+  }
+}
+
+export function setVideoVolume(volume: number, muted: boolean) {
+  try {
+    localStorage.setItem(videoVolumeKey, JSON.stringify({ volume, muted }));
+  } catch {
+    // Private browsing: the volume just lasts for this window.
+  }
+}
+
 export function applyPrefs() {
   const theme = getTheme();
   const resolved = theme === "system" ? (media?.matches ? "dark" : "light") : theme;

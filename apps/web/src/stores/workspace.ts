@@ -5,7 +5,10 @@ import { randomId } from "../lib/utils";
 import { toast } from "./toast";
 
 /** Geometry and stacking shared by every window on the canvas. */
-export type WindowFrame = Pick<FileWindow, "id" | "title" | "x" | "y" | "width" | "height" | "zIndex" | "minimized" | "maximized" | "focused" | "createdAt">;
+export type WindowFrame = Pick<FileWindow, "id" | "title" | "x" | "y" | "width" | "height" | "zIndex" | "minimized" | "maximized" | "focused" | "createdAt"> & {
+  /** Width over height of the content below the title bar. When set, resizing keeps it. */
+  aspect?: number;
+};
 
 export type AppKind = "settings" | "tasks" | "shares" | "trash";
 export type SettingsSection = "general" | "users" | "groups" | "permissions" | "audit";
@@ -31,6 +34,8 @@ type WorkspaceStore = WorkspaceState & {
   appWindows: AppWindow[];
   previewWindows: PreviewWindow[];
   openPreview: (rootSlug: string, item: FileItem) => void;
+  /** Locks a preview window to its content's proportions, reshaping it around its centre. */
+  setPreviewAspect: (id: string, aspect: number) => void;
   openApp: (app: AppKind, section?: SettingsSection) => void;
   setAppSection: (id: string, section: SettingsSection) => void;
   hydrate: (workspace: WorkspaceState) => void;
@@ -53,7 +58,7 @@ export const MIN_WINDOW_WIDTH = 360;
 export const MIN_WINDOW_HEIGHT = 280;
 /** How much of a window must stay reachable inside the canvas. */
 const KEEP_VISIBLE = 120;
-const TITLEBAR_HEIGHT = 36;
+export const TITLEBAR_HEIGHT = 36;
 
 const fileWindowZBase = 100;
 const fileWindowZLimit = 499;
@@ -86,6 +91,17 @@ export function clampWindowSize(width: number, height: number) {
   };
 }
 
+const MIN_ASPECT_WIDTH = 320;
+const MIN_ASPECT_CONTENT_HEIGHT = 180;
+
+/** The size of a window whose content keeps `aspect`, as close to `width` as the minimum and the given box allow. */
+export function fitAspectSize(aspect: number, width: number, maxWidth = canvas.width, maxHeight = canvas.height) {
+  const smallest = Math.max(MIN_ASPECT_WIDTH, MIN_ASPECT_CONTENT_HEIGHT * aspect);
+  // The box wins over the minimum, so a tall video still fits a short canvas.
+  const fitted = Math.min(Math.max(width, smallest), maxWidth, (maxHeight - TITLEBAR_HEIGHT) * aspect);
+  return { width: Math.round(fitted), height: Math.round(fitted / aspect) + TITLEBAR_HEIGHT };
+}
+
 function initialGeometry(index: number, width = 920, height = 620) {
   const size = clampWindowSize(Math.min(width, canvas.width - 64), Math.min(height, canvas.height - 64));
   const offset = (index % 6) * 28;
@@ -94,7 +110,7 @@ function initialGeometry(index: number, width = 920, height = 620) {
 
 /** Restored windows are pulled fully into view; only dragging may push one partly off-canvas. */
 function fitGeometry<T extends WindowFrame>(window: T): T {
-  const size = clampWindowSize(window.width, window.height);
+  const size = window.aspect ? fitAspectSize(window.aspect, window.width) : clampWindowSize(window.width, window.height);
   return {
     ...window,
     ...size,
@@ -223,6 +239,17 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
           ];
       return { ...restack({ ...state, previewWindows }, id), activeWindowId: id };
     }),
+  setPreviewAspect: (id, aspect) =>
+    set((state) => ({
+      previewWindows: state.previewWindows.map((window) => {
+        if (window.id !== id || !Number.isFinite(aspect) || aspect <= 0) return window;
+        // Transcoded frames are rounded to even pixels, so the same video can report a hair's difference.
+        if (window.aspect && Math.abs(window.aspect / aspect - 1) < 0.01) return window;
+        // Keep the area the window had, so a portrait video turns it tall instead of shrinking it.
+        const size = fitAspectSize(aspect, Math.sqrt(window.width * (window.height - TITLEBAR_HEIGHT) * aspect));
+        return fitGeometry({ ...window, aspect, ...size, x: window.x + (window.width - size.width) / 2, y: window.y + (window.height - size.height) / 2 });
+      })
+    })),
   setAppSection: (id, section) => set((state) => ({ appWindows: state.appWindows.map((window) => (window.id === id ? { ...window, section } : window)) })),
   closeWindow: (id) =>
     set((state) => {

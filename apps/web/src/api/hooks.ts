@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./client";
-import type { Actor, AuditLog, FileList, FileMeta, FileTask, Group, MediaInfo, PermissionRule, Root, ShareLink, Shelf, Tag, TrashItem, UserAccount, WorkspaceState } from "../types/kago";
+import type { Actor, AuditLog, FileList, FileMeta, FileTask, Group, MediaInfo, PermissionRule, Root, ShareLink, Shelf, SubtitleList, Tag, TrashItem, UserAccount, WorkspaceState } from "../types/kago";
 
 export function useSetupStatus() {
   return useQuery({ queryKey: ["auth", "setup"], queryFn: () => api<{ needsSetup: boolean }>("/api/auth/setup") });
@@ -58,6 +58,15 @@ export function useMediaInfo(rootSlug: string, path: string) {
   return useQuery({
     queryKey: ["media", "info", rootSlug, path],
     queryFn: () => api<MediaInfo>(`/api/media/info?${new URLSearchParams({ rootSlug, path }).toString()}`),
+    retry: false,
+    staleTime: 60_000
+  });
+}
+
+export function useSubtitles(rootSlug: string, path: string) {
+  return useQuery({
+    queryKey: ["media", "subtitles", rootSlug, path],
+    queryFn: () => api<SubtitleList>(`/api/media/subtitles?${new URLSearchParams({ rootSlug, path }).toString()}`),
     retry: false,
     staleTime: 60_000
   });

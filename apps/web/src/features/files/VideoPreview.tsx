@@ -1,16 +1,19 @@
-import { Check, Download } from "lucide-react";
+import { AudioLines, Captions, CaptionsOff, Check, Download } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api, downloadUrl, previewUrl } from "@/api/client";
-import { useMediaInfo } from "@/api/hooks";
+import { useMediaInfo, useSubtitles } from "@/api/hooks";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { KagoDropdownMenu, KagoMenuItem, KagoMenuSeparator } from "@/components/kago/menu";
 import { KagoWindow } from "@/features/windows/KagoWindow";
 import { triggerDownload } from "@/lib/paths";
-import { getVideoQuality, setVideoQuality, type VideoQualityPref } from "@/lib/prefs";
+import { getSubtitlePref, getVideoQuality, setSubtitlePref, setVideoQuality, type VideoQualityPref } from "@/lib/prefs";
+import { languageLabel, pickSubtitle, subtitleLabel } from "@/lib/subtitles";
 import { toast } from "@/stores/toast";
-import type { PreviewWindow } from "@/stores/workspace";
-import type { MediaInfo } from "@/types/kago";
+import { useWorkspaceStore, type PreviewWindow } from "@/stores/workspace";
+import type { MediaInfo, SubtitleTrack } from "@/types/kago";
 import { FileIcon } from "./FileIcon";
+import { useSubtitleRenderer } from "./useSubtitleRenderer";
+import { PLAYER_CONTROL_CLASS, VideoPlayer } from "./VideoPlayer";
 
 const BITRATE_HINT: Record<number, string> = { 2160: "16 Mbps", 1440: "10 Mbps", 1080: "6 Mbps", 720: "3 Mbps", 480: "1.5 Mbps", 360: "0.8 Mbps" };
 const ENCODER_LABEL: Record<string, string> = { nvenc: "NVIDIA GPU", vaapi: "Intel / AMD GPU", "vaapi-cqp": "Intel / AMD GPU", videotoolbox: "Apple GPU", software: "CPU" };
@@ -18,7 +21,9 @@ const MAX_RECOVERIES = 2;
 
 /**
  * A video preview. The original file is played as-is when the browser can decode it; otherwise,
- * or when a lower quality is picked, the server transcodes it to HLS on the fly.
+ * or when a lower quality is picked, the server transcodes it to HLS on the fly. The window takes
+ * the picture's proportions and keeps them while it is resized. Subtitle files named after the
+ * video are found and shown on their own.
  */
 export function VideoPreviewWindow({ window }: { window: PreviewWindow }) {
   const { rootSlug, item } = window.preview;
@@ -32,13 +37,27 @@ export function VideoPreviewWindow({ window }: { window: PreviewWindow }) {
   const [directFailed, setDirectFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [status, setStatus] = useState<"idle" | "preparing" | "error">("idle");
+  const subtitleList = useSubtitles(rootSlug, item.path).data;
+  const subtitles = subtitleList?.tracks ?? [];
+  // A subtitle's id, or `off`; null until a choice is made in this window.
+  const [subtitlePick, setSubtitlePick] = useState<string | null>(null);
+  const subtitle = subtitlePick === "off" ? null : (subtitles.find((track) => track.id === subtitlePick) ?? (subtitlePick === null ? pickSubtitle(subtitles, getSubtitlePref()) : null));
 
   const media = info.data;
   const qualities = media?.transcode ? media.qualities : [];
+  // Another audio track can only be had by transcoding: a browser plays the first one of a file.
+  const audioTracks = media?.transcode ? media.audio : [];
   const canDirect = !media || qualities.length === 0 || canDirectPlay(media);
   const directOk = qualities.length === 0 || (canDirect && !directFailed && audioIndex === 0);
   const height = resolveHeight(qualities, picked, directOk);
   const ready = !info.isPending;
+  const setAspect = (aspect: number) => useWorkspaceStore.getState().setPreviewAspect(window.id, aspect);
+  // ffprobe knows the shape before the first frame arrives, which a transcode can keep waiting.
+  const probedAspect = media?.video && media.video.height > 0 ? media.video.width / media.video.height : 0;
+
+  useEffect(() => {
+    if (probedAspect > 0) useWorkspaceStore.getState().setPreviewAspect(window.id, probedAspect);
+  }, [window.id, probedAspect]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -121,6 +140,17 @@ export function VideoPreviewWindow({ window }: { window: PreviewWindow }) {
     };
   }, [ready, rootSlug, item.path, height, audioIndex, attempt]);
 
+  useSubtitleRenderer(videoRef, subtitle, subtitleList?.fonts ?? [], window.aspect ?? probedAspect, () => {
+    toast("無法載入這個字幕", "error");
+    setSubtitlePick("off");
+  });
+
+  const pickTrack = (track: SubtitleTrack | null) => {
+    // Remembered by language, so the next video opens with the same kind of track.
+    setSubtitlePref(track ? track.language : "off");
+    setSubtitlePick(track ? track.id : "off");
+  };
+
   const pick = (quality: VideoQualityPref) => {
     recoveries.current = 0;
     setVideoQuality(quality);
@@ -128,39 +158,76 @@ export function VideoPreviewWindow({ window }: { window: PreviewWindow }) {
     if (quality === "direct") setAudioIndex(0);
   };
 
-  const menu =
+  const renderSettings = (slot: { container: HTMLElement | null; onOpenChange: (open: boolean) => void }) => (
+    <>
+      {subtitles.length > 0 || audioTracks.length > 1 ? (
+        <KagoDropdownMenu
+          label="字幕與音軌"
+          side="top"
+          className={`size-7! ${PLAYER_CONTROL_CLASS}`}
+          container={slot.container}
+          onOpenChange={slot.onOpenChange}
+          menu={
+            <>
+              {subtitles.length > 0 ? (
+                <>
+                  <MenuHeading>字幕</MenuHeading>
+                  <CheckItem checked={subtitle === null} onClick={() => pickTrack(null)}>關閉</CheckItem>
+                  {subtitles.map((track) => (
+                    <CheckItem key={track.id} checked={subtitle?.id === track.id} hint={track.embedded ? `內嵌 ${track.format.toUpperCase()}` : track.format.toUpperCase()} onClick={() => pickTrack(track)}>
+                      {subtitleLabel(track)}
+                    </CheckItem>
+                  ))}
+                </>
+              ) : null}
+              {subtitleList && subtitleList.unsupported > 0 ? <div className="px-2 py-1 text-xs text-muted">另有 {subtitleList.unsupported} 個圖形字幕無法顯示</div> : null}
+              {audioTracks.length > 1 ? (
+                <>
+                  {subtitles.length > 0 ? <KagoMenuSeparator /> : null}
+                  <MenuHeading>音軌</MenuHeading>
+                  {audioTracks.map((track, index) => (
+                    <CheckItem
+                      key={index}
+                      checked={(height === null ? 0 : audioIndex) === index}
+                      hint={[track.codec.toUpperCase(), track.channels > 0 ? `${track.channels}ch` : ""].filter(Boolean).join(" ")}
+                      onClick={() => {
+                        recoveries.current = 0;
+                        setAudioIndex(index);
+                      }}
+                    >
+                      {[languageLabel(track.language), track.title].filter(Boolean).join(" · ") || `音軌 ${index + 1}`}
+                    </CheckItem>
+                  ))}
+                </>
+              ) : null}
+            </>
+          }
+        >
+          {subtitle ? <Captions /> : subtitles.length > 0 ? <CaptionsOff /> : <AudioLines />}
+        </KagoDropdownMenu>
+      ) : null}
+      {qualityMenu(slot)}
+    </>
+  );
+
+  const qualityMenu = (slot: { container: HTMLElement | null; onOpenChange: (open: boolean) => void }) =>
     qualities.length > 0 ? (
       <KagoDropdownMenu
         label="畫質"
-        className="h-6! w-auto! px-1.5 text-xs tabular-nums"
+        side="top"
+        className={`h-7! w-auto! px-2 text-xs font-medium tabular-nums ${PLAYER_CONTROL_CLASS}`}
+        container={slot.container}
+        onOpenChange={slot.onOpenChange}
         menu={
           <>
             {canDirect && !directFailed ? (
-              <QualityItem checked={height === null} hint="不轉檔" onClick={() => pick("direct")}>原始檔案</QualityItem>
+              <CheckItem checked={height === null} hint="不轉檔" onClick={() => pick("direct")}>原始檔案</CheckItem>
             ) : null}
             {qualities.map((quality) => (
-              <QualityItem key={quality} checked={height === quality} hint={BITRATE_HINT[quality]} onClick={() => pick(quality)}>
+              <CheckItem key={quality} checked={height === quality} hint={BITRATE_HINT[quality]} onClick={() => pick(quality)}>
                 {quality}p
-              </QualityItem>
+              </CheckItem>
             ))}
-            {media && media.audio.length > 1 ? (
-              <>
-                <KagoMenuSeparator />
-                {media.audio.map((track, index) => (
-                  <QualityItem
-                    key={index}
-                    checked={(height === null ? 0 : audioIndex) === index}
-                    hint={[track.codec.toUpperCase(), track.channels > 0 ? `${track.channels}ch` : ""].filter(Boolean).join(" ")}
-                    onClick={() => {
-                      recoveries.current = 0;
-                      setAudioIndex(index);
-                    }}
-                  >
-                    {track.title || (track.language === "und" ? "" : track.language) || `音軌 ${index + 1}`}
-                  </QualityItem>
-                ))}
-              </>
-            ) : null}
             <KagoMenuSeparator />
             <div className="px-2 py-1 text-xs text-muted">轉檔：{ENCODER_LABEL[media?.encoder ?? ""] ?? "CPU"}</div>
           </>
@@ -174,41 +241,34 @@ export function VideoPreviewWindow({ window }: { window: PreviewWindow }) {
     <KagoWindow
       window={window}
       icon={<FileIcon item={item} />}
-      titleExtra={
-        <div className="flex items-center gap-0.5">
-          {menu}
-          <KagoIconButton label="下載" className="size-6" onClick={() => triggerDownload(downloadUrl(rootSlug, item.path))}><Download /></KagoIconButton>
-        </div>
-      }
+      titleExtra={<KagoIconButton label="下載" className="size-6" onClick={() => triggerDownload(downloadUrl(rootSlug, item.path))}><Download /></KagoIconButton>}
     >
-      <div className="relative flex min-h-0 flex-1 items-center justify-center bg-black">
-        <video
-          ref={videoRef}
-          controls
-          playsInline
-          className="max-h-full max-w-full"
-          onLoadedData={() => setStatus("idle")}
-          onPlaying={() => {
-            recoveries.current = 0;
-          }}
-          onError={() => {
-            // Only the original file reports failures here; hls.js surfaces its own.
-            if (height !== null || qualities.length === 0) return;
-            toast("瀏覽器無法直接播放這個檔案，已改用轉檔");
-            setDirectFailed(true);
-          }}
-        />
-        {status === "idle" ? null : (
-          <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-center">
-            <span className="rounded-full bg-black/70 px-3 py-1 text-xs text-white">{status === "preparing" ? "正在轉檔…" : "無法播放這個影片"}</span>
-          </div>
-        )}
-      </div>
+      <VideoPlayer
+        videoRef={videoRef}
+        fallbackDuration={media?.duration}
+        notice={status === "preparing" ? "正在轉檔…" : status === "error" ? "無法播放這個影片" : null}
+        renderSettings={renderSettings}
+        onAspect={setAspect}
+        onLoadedData={() => setStatus("idle")}
+        onPlaying={() => {
+          recoveries.current = 0;
+        }}
+        onError={() => {
+          // Only the original file reports failures here; hls.js surfaces its own.
+          if (height !== null || qualities.length === 0) return;
+          toast("瀏覽器無法直接播放這個檔案，已改用轉檔");
+          setDirectFailed(true);
+        }}
+      />
     </KagoWindow>
   );
 }
 
-function QualityItem({ checked, hint, onClick, children }: { checked: boolean; hint?: string; onClick: () => void; children: React.ReactNode }) {
+function MenuHeading({ children }: { children: React.ReactNode }) {
+  return <div className="px-2 pt-1 pb-0.5 text-xs text-muted">{children}</div>;
+}
+
+function CheckItem({ checked, hint, onClick, children }: { checked: boolean; hint?: string; onClick: () => void; children: React.ReactNode }) {
   return (
     <KagoMenuItem icon={checked ? <Check /> : <span className="size-4" />} onClick={onClick}>
       <span className="flex-1">{children}</span>

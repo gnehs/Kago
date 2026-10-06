@@ -8,10 +8,14 @@ import { z } from "zod";
 import { AppError } from "../lib/errors.js";
 import { assertNameAvailable, nfc } from "../lib/filename.js";
 import { readFinderTags, writeFinderTags } from "../lib/finder-tags.js";
+import { parseSubtitleName } from "../lib/subtitles.js";
 import type { AuditService } from "./audit.service.js";
 import type { PathService } from "./path.service.js";
 import type { PermissionService } from "./permission.service.js";
 import type { Actor } from "./types.js";
+
+/** Subtitles are read whole by the player; anything larger is not a text subtitle. */
+const MAX_SUBTITLE_BYTES = 16 * 1024 * 1024;
 
 export const fsQuerySchema = z.object({
   rootSlug: z.string().min(1),
@@ -158,6 +162,25 @@ export class FsService {
     const stat = await fsp.stat(safe.absolutePath);
     if (!stat.isFile()) throw new AppError(400, "Path is not a file", "NOT_FILE");
     return { safe, stat, contentType: lookup(safe.absolutePath) || "application/octet-stream" };
+  }
+
+  /** The subtitle files lying next to a video that are named after it and that the actor may read. */
+  async subtitles(actor: Actor, rootSlug: string, logicalPath: string) {
+    const video = await this.preview(actor, rootSlug, logicalPath);
+    const folder = path.dirname(video.safe.absolutePath);
+    const videoName = path.basename(video.safe.absolutePath);
+    const found = await Promise.all(
+      (await fsp.readdir(folder)).map(async (name) => {
+        const parsed = parseSubtitleName(videoName, name);
+        if (!parsed) return null;
+        const itemLogicalPath = path.posix.join(path.posix.dirname(video.safe.logicalPath), name);
+        if (!this.permissions.can(actor, "read", video.safe.root, itemLogicalPath).allowed) return null;
+        const stat = await fsp.lstat(path.join(folder, name));
+        if (!stat.isFile() || stat.size > MAX_SUBTITLE_BYTES) return null;
+        return { path: itemLogicalPath, name: nfc(name), ...parsed };
+      })
+    );
+    return found.filter((item) => item !== null).sort((a, b) => Number(b.default) - Number(a.default) || a.name.localeCompare(b.name));
   }
 
   async mkdir(actor: Actor, rootSlug: string, parentPath: string, name: string) {

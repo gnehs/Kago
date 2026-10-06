@@ -1,4 +1,5 @@
 import { execFile, spawn, type ChildProcess } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
@@ -7,6 +8,7 @@ import { z } from "zod";
 import { AppError } from "../lib/errors.js";
 import { id as createId } from "../lib/ids.js";
 import { logger } from "../lib/logger.js";
+import { streamLanguage, type SubtitleFormat } from "../lib/subtitles.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -17,6 +19,12 @@ export const mediaSessionSchema = z.object({
   audioIndex: z.number().int().min(0).max(63).default(0)
 });
 
+export const mediaStreamSchema = z.object({
+  rootSlug: z.string().min(1),
+  path: z.string().min(1),
+  index: z.coerce.number().int().min(0).max(255)
+});
+
 export type MediaInfo = {
   /** False when ffmpeg is missing; the client then falls back to playing the file as-is. */
   transcode: boolean;
@@ -25,6 +33,10 @@ export type MediaInfo = {
   container: string;
   video: { codec: string; profile: string; width: number; height: number; bitDepth: number } | null;
   audio: Array<{ codec: string; channels: number; language: string; title: string }>;
+  /** Subtitle streams inside the file, numbered among themselves. Only `text` ones can be handed to the player. */
+  subtitles: Array<{ index: number; codec: string; language: string; title: string; default: boolean; forced: boolean; sdh: boolean; text: boolean }>;
+  /** Fonts attached to the file for its subtitles, numbered among the attachments. */
+  fonts: Array<{ index: number; name: string }>;
   /** Heights the file can be transcoded to, tallest first. */
   qualities: number[];
   /** What does the encoding: `software`, or the GPU API in use. */
@@ -75,6 +87,11 @@ const SESSION_TTL_MS = 15 * 60_000;
 const THROTTLE_AHEAD = 20;
 const KEEP_BEHIND = 10;
 const SEGMENT_WAIT_MS = 55_000;
+/** Subtitle codecs that are text and can be rewritten as ASS or SubRip; the rest are pictures. */
+const TEXT_SUBTITLES = new Set(["ass", "ssa", "subrip", "srt", "mov_text", "webvtt", "text"]);
+/** Reading a subtitle stream out means reading through the whole file, which takes a while on a large one. */
+const EXTRACT_TIMEOUT_MS = 180_000;
+const EXTRACT_KEEP = 24;
 
 /**
  * On-the-fly video transcoding, modelled on Jellyfin: the playlist is computed up front from the
@@ -84,6 +101,9 @@ export class MediaService {
   private readonly ffmpeg = process.env.FFMPEG_PATH ?? "ffmpeg";
   private readonly ffprobe = process.env.FFPROBE_PATH ?? "ffprobe";
   private readonly baseDir: string;
+  private readonly extractDir: string;
+  /** Extractions under way or done, by output path; the oldest files are dropped as new ones arrive. */
+  private readonly extracts = new Map<string, Promise<string>>();
   private readonly available: Promise<boolean>;
   private accel: Accel = accelFor("software");
   private readonly sessions = new Map<string, Session>();
@@ -92,7 +112,9 @@ export class MediaService {
 
   constructor(appDataDir: string) {
     this.baseDir = path.join(appDataDir, "temp", "transcode");
+    this.extractDir = path.join(appDataDir, "temp", "media-extract");
     fs.rmSync(this.baseDir, { recursive: true, force: true });
+    fs.rmSync(this.extractDir, { recursive: true, force: true });
     this.available = Promise.all([execFileAsync(this.ffmpeg, ["-version"]), execFileAsync(this.ffprobe, ["-version"])]).then(
       async () => {
         this.accel = await this.detectAccel();
@@ -109,7 +131,7 @@ export class MediaService {
   }
 
   async info(absolutePath: string, stat: fs.Stats): Promise<MediaInfo> {
-    if (!(await this.available)) return { transcode: false, duration: 0, container: "", video: null, audio: [], qualities: [], encoder: "software" };
+    if (!(await this.available)) return { transcode: false, duration: 0, container: "", video: null, audio: [], subtitles: [], fonts: [], qualities: [], encoder: "software" };
     const key = `${absolutePath}:${stat.mtimeMs}:${stat.size}`;
     let probed = this.probes.get(key);
     if (!probed) {
@@ -118,6 +140,51 @@ export class MediaService {
       this.probes.set(key, probed);
     }
     return { transcode: probed.qualities.length > 0, encoder: this.accel.encoder, ...probed };
+  }
+
+  /** A subtitle stream written out as a file of its own: ASS as it is, any other text format as SubRip. */
+  async subtitle(absolutePath: string, stat: fs.Stats, index: number): Promise<{ file: string; format: SubtitleFormat }> {
+    const stream = (await this.info(absolutePath, stat)).subtitles.find((item) => item.index === index);
+    if (!stream?.text) throw new AppError(404, "Subtitle not found", "NOT_FOUND");
+    const format: SubtitleFormat = stream.codec === "ass" || stream.codec === "ssa" ? "ass" : "srt";
+    const file = await this.extract(absolutePath, stat, `sub-${index}.${format}`, (out) => [
+      "-i", absolutePath, "-map", `0:s:${index}`, "-c:s", format === "ass" ? "copy" : "srt", "-f", format, out
+    ]);
+    return { file, format };
+  }
+
+  /** A font attached to the file, e.g. the ones a Matroska release carries for its styled subtitles. */
+  async font(absolutePath: string, stat: fs.Stats, index: number): Promise<string> {
+    if (!(await this.info(absolutePath, stat)).fonts.some((item) => item.index === index)) throw new AppError(404, "Attachment not found", "NOT_FOUND");
+    return this.extract(absolutePath, stat, `font-${index}`, (out) => [`-dump_attachment:t:${index}`, out, "-i", absolutePath]);
+  }
+
+  private extract(absolutePath: string, stat: fs.Stats, name: string, args: (out: string) => string[]): Promise<string> {
+    const key = createHash("sha1").update(`${absolutePath}:${stat.mtimeMs}:${stat.size}`).digest("hex");
+    const target = path.join(this.extractDir, `${key}-${name}`);
+    let pending = this.extracts.get(target);
+    if (!pending) {
+      pending = (async () => {
+        await fsp.mkdir(this.extractDir, { recursive: true });
+        const partial = `${target}.part`;
+        // Dumping an attachment has no output file, which ffmpeg reports as an error after writing it.
+        await execFileAsync(this.ffmpeg, ["-v", "error", "-nostdin", "-y", ...args(partial)], { timeout: EXTRACT_TIMEOUT_MS }).catch(() => {});
+        try {
+          await fsp.rename(partial, target);
+        } catch {
+          throw new AppError(422, "This stream cannot be read", "MEDIA_UNREADABLE");
+        }
+        return target;
+      })();
+      this.extracts.set(target, pending);
+      pending.catch(() => this.extracts.delete(target));
+      if (this.extracts.size > EXTRACT_KEEP) {
+        const oldest = this.extracts.keys().next().value!;
+        this.extracts.delete(oldest);
+        void fsp.rm(oldest, { force: true });
+      }
+    }
+    return pending;
   }
 
   async createSession(actorId: string, absolutePath: string, stat: fs.Stats, height: number, audioIndex: number) {
@@ -388,6 +455,8 @@ export class MediaService {
     const streams = data.streams ?? [];
     const videoStream = streams.find((stream) => stream.codec_type === "video" && !stream.disposition?.attached_pic);
     const audioStreams = streams.filter((stream) => stream.codec_type === "audio");
+    const subtitleStreams = streams.filter((stream) => stream.codec_type === "subtitle");
+    const attachments = streams.filter((stream) => stream.codec_type === "attachment");
     const durations = [Number(data.format?.duration), Number(videoStream?.duration)].filter((value) => Number.isFinite(value) && value > 0);
     const duration = durations.length > 0 ? Math.min(...durations) : 0;
 
@@ -418,10 +487,27 @@ export class MediaService {
       duration,
       container: String(data.format?.format_name ?? ""),
       video,
+      subtitles: subtitleStreams.map((stream, index) => {
+        const title = String(stream.tags?.title ?? "");
+        return {
+          index,
+          codec: String(stream.codec_name ?? ""),
+          language: streamLanguage(String(stream.tags?.language ?? ""), title),
+          title,
+          default: Boolean(stream.disposition?.default),
+          forced: Boolean(stream.disposition?.forced),
+          sdh: Boolean(stream.disposition?.hearing_impaired),
+          text: TEXT_SUBTITLES.has(String(stream.codec_name ?? ""))
+        };
+      }),
+      fonts: attachments
+        .map((stream, index) => ({ index, name: String(stream.tags?.filename ?? ""), mime: String(stream.tags?.mimetype ?? "") }))
+        .filter((item) => /\.(ttf|otf|ttc|otc|woff2?)$/i.test(item.name) || /font|truetype|opentype/i.test(item.mime))
+        .map(({ index, name }) => ({ index, name })),
       audio: audioStreams.map((stream) => ({
         codec: String(stream.codec_name ?? ""),
         channels: Number(stream.channels) || 0,
-        language: String(stream.tags?.language ?? ""),
+        language: streamLanguage(String(stream.tags?.language ?? ""), String(stream.tags?.title ?? "")),
         title: String(stream.tags?.title ?? "")
       })),
       qualities

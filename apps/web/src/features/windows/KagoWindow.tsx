@@ -2,7 +2,7 @@ import { Maximize2, Minimize2, Minus, X, type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { isInteractiveTarget, usePointerDrag } from "@/lib/usePointerDrag";
 import { cn } from "@/lib/utils";
-import { clampWindowPosition, getCanvasSize, MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, useWorkspaceStore, type WindowFrame } from "@/stores/workspace";
+import { clampWindowPosition, fitAspectSize, getCanvasSize, MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, TITLEBAR_HEIGHT, useWorkspaceStore, type WindowFrame } from "@/stores/workspace";
 
 type ResizeEdge = "e" | "s" | "se";
 
@@ -95,6 +95,14 @@ function ResizeHandle({ window, edge, className }: { window: WindowFrame; edge: 
     () => ({ width: window.width, height: window.height }),
     (origin, dx, dy) => {
       const canvas = getCanvasSize();
+      if (window.aspect) {
+        // Whichever edge is dragged, the other follows; the corner goes with the larger of the two.
+        const byWidth = origin.width + dx;
+        const byHeight = (origin.height + dy - TITLEBAR_HEIGHT) * window.aspect;
+        const width = edge === "e" ? byWidth : edge === "s" ? byHeight : Math.max(byWidth, byHeight);
+        useWorkspaceStore.getState().updateWindow(window.id, fitAspectSize(window.aspect, width, canvas.width - window.x, canvas.height - window.y));
+        return;
+      }
       useWorkspaceStore.getState().updateWindow(window.id, {
         width: edge === "s" ? origin.width : Math.round(Math.max(MIN_WINDOW_WIDTH, Math.min(origin.width + dx, canvas.width - window.x))),
         height: edge === "e" ? origin.height : Math.round(Math.max(MIN_WINDOW_HEIGHT, Math.min(origin.height + dy, canvas.height - window.y)))

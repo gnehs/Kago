@@ -192,3 +192,26 @@ export type MediaInfo = {
   /** What the server encodes with: `software`, or the GPU API in use. */
   encoder: string;
 };
+
+/** A subtitle for a video: a file lying next to it, or a text stream inside it. */
+export type SubtitleTrack = {
+  id: string;
+  /** Where its text is read from. */
+  url: string;
+  embedded: boolean;
+  format: "ass" | "srt";
+  /** A BCP 47 tag, or empty when neither the name nor the stream carries a language. */
+  language: string;
+  title: string;
+  default: boolean;
+  forced: boolean;
+  sdh: boolean;
+};
+
+export type SubtitleList = {
+  tracks: SubtitleTrack[];
+  /** Fonts attached to the video for its own subtitles. */
+  fonts: string[];
+  /** How many picture subtitles (Blu-ray, DVD) the video has that a browser cannot draw. */
+  unsupported: number;
+};

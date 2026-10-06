@@ -589,6 +589,42 @@ test("videos are probed and transcoded to HLS on demand", { skip: spawnSync("ffm
     assert.deepEqual(info.json.qualities, [480, 360]);
     assert.equal((await admin.get("/api/media/info?rootSlug=photos&path=/public/readme.txt")).statusCode, 422);
 
+    // Subtitles are matched to the video by name; the rest of the name gives the language and flags.
+    const publicDir = path.join(fixture.dataDir, "photos", "public");
+    for (const name of ["clip.ass", "clip.zh.ass", "clip.en.srt", "clip.Commentary.en.sdh.srt", "clip.cht.default.ssa", "clip.final.srt", "clip2.en.srt", "clip.en.txt"]) await writeFile(path.join(publicDir, name), "");
+    const subtitles = await admin.get("/api/media/subtitles?rootSlug=photos&path=/public/clip.avi");
+    assert.equal(subtitles.statusCode, 200);
+    assert.deepEqual(
+      subtitles.json.tracks.map((item) => [item.id, item.format, item.language, item.title, item.default, item.sdh]),
+      [
+        ["file:/public/clip.cht.default.ssa", "ass", "zh-Hant", "", true, false],
+        ["file:/public/clip.ass", "ass", "", "", false, false],
+        ["file:/public/clip.Commentary.en.sdh.srt", "srt", "en", "Commentary", false, true],
+        ["file:/public/clip.en.srt", "srt", "en", "", false, false],
+        ["file:/public/clip.final.srt", "srt", "", "final", false, false],
+        ["file:/public/clip.zh.ass", "ass", "zh", "", false, false]
+      ]
+    );
+    assert.equal((await admin.get(subtitles.json.tracks[0].url)).statusCode, 200);
+
+    // Subtitles and fonts inside the container are listed too, and read out on request.
+    await writeFile(path.join(publicDir, "inner.srt"), "1\n00:00:01,000 --> 00:00:02,000\n內嵌字幕\n");
+    await writeFile(path.join(publicDir, "inner.ttf"), "not really a font");
+    const muxed = spawnSync("ffmpeg", [
+      "-loglevel", "error", "-i", clip, "-i", path.join(publicDir, "inner.srt"), "-map", "0", "-map", "1", "-c", "copy", "-c:s", "ass",
+      "-metadata:s:s:0", "language=chi", "-metadata:s:s:0", "title=繁體中文", "-attach", path.join(publicDir, "inner.ttf"), "-metadata:s:t:0", "mimetype=font/ttf",
+      path.join(publicDir, "muxed.mkv")
+    ]);
+    assert.equal(muxed.status, 0, String(muxed.stderr));
+    const inner = await admin.get("/api/media/subtitles?rootSlug=photos&path=/public/muxed.mkv");
+    assert.deepEqual(inner.json.tracks.map((item) => [item.id, item.embedded, item.format, item.language, item.title]), [["stream:0", true, "ass", "zh-Hant", "繁體中文"]]);
+    const innerBody = await admin.get(inner.json.tracks[0].url);
+    assert.equal(innerBody.statusCode, 200);
+    assert.match(innerBody.payload, /Dialogue: .*內嵌字幕/);
+    assert.equal(inner.json.fonts.length, 1);
+    assert.equal((await admin.get(inner.json.fonts[0])).payload, "not really a font");
+    assert.equal((await admin.get("/api/media/subtitle?rootSlug=photos&path=/public/muxed.mkv&index=3")).statusCode, 404);
+
     assert.equal((await admin.post("/api/media/sessions", { rootSlug: "photos", path: "/public/clip.avi", height: 1080 })).statusCode, 400);
     const session = await admin.post("/api/media/sessions", { rootSlug: "photos", path: "/public/clip.avi", height: 360 });
     assert.equal(session.statusCode, 200);
