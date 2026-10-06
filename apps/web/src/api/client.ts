@@ -13,7 +13,8 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     credentials: "include",
     ...init,
     headers: {
-      ...(init.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
+      // A JSON content type without a body makes the server reject the request as malformed.
+      ...(typeof init.body === "string" ? { "Content-Type": "application/json" } : {}),
       ...(init.method && init.method !== "GET" ? { "x-kago-csrf": "1" } : {}),
       ...init.headers
     }
@@ -30,6 +31,8 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 export const downloadUrl = (rootSlug: string, path: string) =>
   `/api/fs/download?${new URLSearchParams({ rootSlug, path }).toString()}`;
+
+export const taskDownloadUrl = (taskId: string) => `/api/tasks/${encodeURIComponent(taskId)}/download`;
 
 export const thumbnailUrl = (rootSlug: string, path: string) =>
   `/api/fs/thumbnail?${new URLSearchParams({ rootSlug, path }).toString()}`;

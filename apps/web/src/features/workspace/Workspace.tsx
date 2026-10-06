@@ -3,7 +3,6 @@ import { useLocation, useNavigate } from "react-router";
 import { useRoots } from "@/api/hooks";
 import { KagoLoading } from "@/components/kago/empty-state";
 import { FileWindowView } from "@/features/files/FileWindow";
-import { Inspector } from "@/features/files/Inspector";
 import { Shelf } from "@/features/shelves/Shelf";
 import { AppWindowView } from "@/features/windows/AppWindow";
 import { setCanvasSize, useWorkspaceStore } from "@/stores/workspace";
@@ -23,7 +22,6 @@ export function Workspace({ user }: { user: Actor }) {
   const navigate = useNavigate();
   const [paletteOpen, setPaletteOpen] = useState(false);
   const openPalette = useCallback(() => setPaletteOpen(true), []);
-  const inspectorOpen = useWorkspaceStore((state) => Boolean(state.inspector.open));
   const isAdmin = user.role === "ADMIN";
   const rootList = roots.data ?? [];
 
@@ -45,13 +43,10 @@ export function Workspace({ user }: { user: Actor }) {
         {sync.isLoading || roots.isLoading ? (
           <div className="flex-1"><KagoLoading /></div>
         ) : (
-          <>
-            <Canvas roots={rootList} user={user} />
-            {inspectorOpen ? <Inspector isAdmin={isAdmin} /> : null}
-          </>
+          <Canvas roots={rootList} user={user} />
         )}
       </main>
-      {paletteOpen ? <CommandPalette roots={rootList} onClose={() => setPaletteOpen(false)} /> : null}
+      {paletteOpen ? <CommandPalette roots={rootList} isAdmin={isAdmin} onClose={() => setPaletteOpen(false)} /> : null}
     </div>
   );
 }
@@ -82,7 +77,7 @@ function Canvas({ roots, user }: { roots: Root[]; user: Actor }) {
     <div ref={element} className="relative isolate min-w-0 flex-1 overflow-hidden">
       <DesktopIcons roots={roots} isAdmin={user.role === "ADMIN"} />
       {windows.map((window) => (
-        <FileWindowView key={window.id} window={window} rootName={roots.find((root) => root.slug === window.rootSlug)?.name ?? window.rootSlug} />
+        <FileWindowView key={window.id} window={window} isAdmin={user.role === "ADMIN"} rootName={roots.find((root) => root.slug === window.rootSlug)?.name ?? window.rootSlug} />
       ))}
       {appWindows.map((window) => (
         <AppWindowView key={window.id} window={window} roots={roots} user={user} />

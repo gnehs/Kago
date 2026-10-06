@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/input";
 import { Card, Page, Row, RowList } from "@/features/workspace/Page";
 import { run } from "@/lib/run";
+import { promptText } from "@/stores/dialogs";
+import { toast } from "@/stores/toast";
 import type { UserAccount } from "@/types/kago";
 
 type Role = UserAccount["role"];
@@ -44,6 +46,19 @@ export function UsersPage({ currentUserId }: { currentUserId: string }) {
     });
   }
 
+  async function resetPassword(user: UserAccount) {
+    const password = await promptText({ title: `重設 ${user.display_name} 的密碼`, description: "至少 8 個字元。這位使用者會從所有裝置登出，需要用新密碼重新登入。", placeholder: "新密碼", confirmLabel: "重設密碼" });
+    if (password === null) return;
+    if (password.length < 8) {
+      toast("密碼至少要 8 個字元", "error");
+      return;
+    }
+    await run(async () => {
+      await api(`/api/users/${user.id}/password`, { method: "POST", body: JSON.stringify({ password }) });
+      toast(`已重設 ${user.display_name} 的密碼`);
+    }, "重設密碼失敗");
+  }
+
   return (
     <Page title="使用者" description="管理員可以存取所有位置；其他角色需要透過權限規則授權。">
       <Card title="新增使用者">
@@ -66,6 +81,7 @@ export function UsersPage({ currentUserId }: { currentUserId: string }) {
             <Row key={user.id} icon={<UserRound />} title={user.display_name} subtitle={user.email}>
               <KagoBadge tone={user.role === "ADMIN" ? "accent" : "neutral"}>{roleLabels[user.role]}</KagoBadge>
               {user.disabled ? <KagoBadge tone="danger">已停用</KagoBadge> : null}
+              {user.id === currentUserId ? null : <Button onClick={() => void resetPassword(user)}>重設密碼</Button>}
               {user.id === currentUserId ? null : <Button onClick={() => void setDisabled(user, !user.disabled)}>{user.disabled ? "啟用" : "停用"}</Button>}
             </Row>
           ))}

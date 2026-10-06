@@ -1,32 +1,42 @@
 import type { ReactNode } from "react";
-import { HardDrive, Settings, Share2, Trash2 } from "lucide-react";
+import { ExternalLink, FolderOpen, HardDrive, Share2, Trash2 } from "lucide-react";
+import { KagoContextMenu, KagoMenuItem } from "@/components/kago/menu";
 import { useWorkspaceStore } from "@/stores/workspace";
 import type { Root } from "@/types/kago";
 
 /**
- * Desktop shortcuts. They sit underneath every window and double as the root picker:
- * Kago never opens a root on its own, the user picks one here.
+ * Desktop shortcuts: the places you go to. They sit underneath every window and double as
+ * the root picker: Kago never opens a root on its own, the user picks one here.
  */
 export function DesktopIcons({ roots, isAdmin }: { roots: Root[]; isAdmin: boolean }) {
   const store = useWorkspaceStore.getState;
+  const openNew = (root: Root) => store().openWindow({ rootSlug: root.slug, logicalPath: "/", title: root.name });
 
   return (
     <div className="absolute inset-y-4 left-4 flex flex-col flex-wrap content-start gap-1">
       {roots.map((root) => (
-        <DesktopIcon
+        <KagoContextMenu
           key={root.id}
-          icon={<HardDrive />}
-          label={root.name}
-          hint={root.readonly ? "唯讀" : undefined}
-          onClick={(event) => (event.metaKey || event.ctrlKey ? store().openWindow({ rootSlug: root.slug, logicalPath: "/", title: root.name }) : store().openRoot(root))}
-          onAuxClick={(event) => event.button === 1 && store().openWindow({ rootSlug: root.slug, logicalPath: "/", title: root.name })}
-        />
+          menu={
+            <>
+              <KagoMenuItem icon={<FolderOpen />} onClick={() => store().openRoot(root)}>開啟</KagoMenuItem>
+              <KagoMenuItem icon={<ExternalLink />} onClick={() => openNew(root)}>在新視窗開啟</KagoMenuItem>
+            </>
+          }
+        >
+          <DesktopIcon
+            icon={<HardDrive />}
+            label={root.name}
+            hint={root.readonly ? "唯讀" : undefined}
+            onClick={(event) => (event.metaKey || event.ctrlKey ? openNew(root) : store().openRoot(root))}
+            onAuxClick={(event) => event.button === 1 && openNew(root)}
+          />
+        </KagoContextMenu>
       ))}
       <DesktopIcon icon={<Share2 />} label="分享" onClick={() => store().openApp("shares")} />
       <DesktopIcon icon={<Trash2 />} label="垃圾桶" onClick={() => store().openApp("trash")} />
-      <DesktopIcon icon={<Settings />} label="設定" onClick={() => store().openApp("settings")} />
       {roots.length === 0 ? (
-        <p className="m-0 w-20 px-1 pt-2 text-center text-xs text-muted">{isAdmin ? "到「設定」新增第一個位置" : "尚無可用的位置，請聯絡管理員"}</p>
+        <p className="m-0 w-20 px-1 pt-2 text-center text-xs text-muted">{isAdmin ? "/data 底下還沒有資料夾" : "尚無可用的位置，請聯絡管理員"}</p>
       ) : null}
     </div>
   );

@@ -8,6 +8,7 @@ import { Page, Row, RowList } from "@/features/workspace/Page";
 import { formatUnixDate } from "@/lib/format";
 import { baseName } from "@/lib/paths";
 import { run } from "@/lib/run";
+import { confirmAction } from "@/stores/dialogs";
 import { toast } from "@/stores/toast";
 
 export function TrashPage() {
@@ -24,10 +25,30 @@ export function TrashPage() {
     }, "還原失敗");
   }
 
+  async function empty() {
+    const confirmed = await confirmAction({
+      title: "清空垃圾桶？",
+      description: `會永久刪除垃圾桶裡的 ${trash.data?.length ?? 0} 個項目，無法復原。`,
+      confirmLabel: "清空",
+      destructive: true
+    });
+    if (!confirmed) return;
+    await run(async () => {
+      await api("/api/trash", { method: "DELETE" });
+      await queryClient.invalidateQueries({ queryKey: ["trash"] });
+      toast("已清空垃圾桶");
+    }, "清空垃圾桶失敗");
+  }
+
   return (
     <Page title="垃圾桶" description="刪除的項目會先放在這裡，可以還原到原本的位置。">
       {trash.isLoading ? <KagoLoading /> : null}
       {trash.data?.length === 0 ? <KagoEmptyState icon={<Trash2 />} title="垃圾桶是空的" /> : null}
+      {trash.data?.length ? (
+        <div className="flex justify-end">
+          <Button variant="destructive" onClick={() => void empty()}>清空垃圾桶</Button>
+        </div>
+      ) : null}
       {trash.data?.length ? (
         <RowList>
           {trash.data.map((item) => (

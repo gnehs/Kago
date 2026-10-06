@@ -1,16 +1,17 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { api, downloadUrl } from "@/api/client";
+import { api, downloadUrl, taskDownloadUrl } from "@/api/client";
 import { KagoBadge } from "@/components/kago/badge";
 import { Button } from "@/components/ui/button";
 import { triggerDownload } from "@/lib/paths";
 import { run } from "@/lib/run";
 import type { FileTask } from "@/types/kago";
-import { canRetryTask, compressDownloadTarget, isActiveTask, taskProgressLabel, taskProgressMax, taskProgressValue, taskStatus, taskTypeLabel } from "./taskUtils";
+import { canCancelTask, canRetryTask, compressDownloadTarget, hasTaskDownload, isActiveTask, taskErrorLabel, taskProgressLabel, taskProgressMax, taskProgressValue, taskStatus, taskTypeLabel } from "./taskUtils";
 
 export function TaskRow({ task }: { task: FileTask }) {
   const queryClient = useQueryClient();
   const status = taskStatus(task);
   const download = compressDownloadTarget(task);
+  const downloadHref = download ? downloadUrl(download.rootSlug, download.path) : hasTaskDownload(task) ? taskDownloadUrl(task.id) : null;
 
   async function act(verb: "cancel" | "pause" | "resume" | "retry") {
     await run(async () => {
@@ -26,13 +27,13 @@ export function TaskRow({ task }: { task: FileTask }) {
         <KagoBadge tone={status.tone}>{status.label}</KagoBadge>
       </div>
       {isActiveTask(task) ? <progress value={taskProgressValue(task)} max={taskProgressMax(task)} /> : null}
-      <span className="truncate text-xs text-muted">{task.error_message ?? taskProgressLabel(task)}</span>
-      {download || task.status === "queued" || task.status === "paused" || canRetryTask(task) ? (
+      <span className="truncate text-xs text-muted">{task.error_message ? taskErrorLabel(task.error_message) : taskProgressLabel(task)}</span>
+      {downloadHref || canCancelTask(task) || canRetryTask(task) ? (
         <div className="flex gap-1.5">
-          {download ? <Button onClick={() => triggerDownload(downloadUrl(download.rootSlug, download.path))}>下載</Button> : null}
+          {downloadHref ? <Button onClick={() => triggerDownload(downloadHref)}>下載</Button> : null}
           {task.status === "queued" ? <Button onClick={() => void act("pause")}>暫停</Button> : null}
           {task.status === "paused" ? <Button onClick={() => void act("resume")}>繼續</Button> : null}
-          {task.status === "queued" || task.status === "paused" ? <Button onClick={() => void act("cancel")}>取消</Button> : null}
+          {canCancelTask(task) ? <Button onClick={() => void act("cancel")}>取消</Button> : null}
           {canRetryTask(task) ? <Button onClick={() => void act("retry")}>重試</Button> : null}
         </div>
       ) : null}

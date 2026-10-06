@@ -31,7 +31,7 @@ export function AppWindowView({ window, roots, user }: { window: AppWindow; root
       {window.app === "trash" ? <TrashPage /> : null}
       {window.app === "settings" ? (
         <SettingsLayout section={isAdmin ? window.section : "general"} isAdmin={isAdmin} onSection={(section) => useWorkspaceStore.getState().setAppSection(window.id, section)}>
-          {!isAdmin || window.section === "general" ? <SettingsPage roots={roots} isAdmin={isAdmin} /> : null}
+          {!isAdmin || window.section === "general" ? <SettingsPage roots={roots} user={user} /> : null}
           {isAdmin && window.section === "users" ? <UsersPage currentUserId={user.id} /> : null}
           {isAdmin && window.section === "groups" ? <GroupsPage /> : null}
           {isAdmin && window.section === "permissions" ? <PermissionsPage roots={roots} /> : null}

@@ -1,5 +1,6 @@
 import { FolderX, HardDrive, ShieldAlert } from "lucide-react";
 import { ApiError } from "@/api/client";
+import { useAdminContacts } from "@/api/hooks";
 import { KagoEmptyState } from "@/components/kago/empty-state";
 import { Button } from "@/components/ui/button";
 import { errorMessage } from "@/lib/format";
@@ -20,11 +21,15 @@ export function classifyFileWindowError(error: unknown): FileWindowError | null 
 /** A restored window whose target is gone stays open so the user decides what to do with it. */
 export function WindowErrorState({ error, window, onRetry }: { error: FileWindowError; window: FileWindow; onRetry: () => void }) {
   const store = useWorkspaceStore.getState;
+  const admins = useAdminContacts(error.kind === "forbidden").data ?? [];
+  // Named in the text as well, so the request is not a dead end without a mail app.
+  const contact = admins.length > 0 ? `請聯絡管理員：${admins.map((admin) => `${admin.displayName}（${admin.email}）`).join("、")}` : "";
 
   function requestAccess() {
+    const recipients = admins.map((admin) => encodeURIComponent(admin.email)).join(",");
     const subject = encodeURIComponent(`Kago 存取申請：${window.rootSlug}:${window.logicalPath}`);
     const body = encodeURIComponent(`位置：${window.rootSlug}\n路徑：${window.logicalPath}\n\n請協助開通這個資料夾的存取權限。`);
-    globalThis.open(`mailto:?subject=${subject}&body=${body}`, "_blank");
+    globalThis.open(`mailto:${recipients}?subject=${subject}&body=${body}`, "_blank");
   }
 
   return (
@@ -32,10 +37,10 @@ export function WindowErrorState({ error, window, onRetry }: { error: FileWindow
       className="h-full"
       icon={error.kind === "root_missing" ? <HardDrive /> : error.kind === "forbidden" ? <ShieldAlert /> : <FolderX />}
       title={error.title}
-      description={error.message}
+      description={error.kind === "forbidden" && contact ? `${error.message}${contact}。` : error.message}
     >
       {error.kind === "path_missing" ? <Button onClick={() => store().updateWindow(window.id, { logicalPath: "/", selectedItems: [] })}>回到最上層</Button> : null}
-      {error.kind === "forbidden" ? <Button onClick={requestAccess}>申請存取</Button> : null}
+      {error.kind === "forbidden" && admins.length > 0 ? <Button onClick={requestAccess}>寄信申請存取</Button> : null}
       {error.kind === "unknown" ? <Button onClick={onRetry}>重試</Button> : null}
       <Button onClick={() => store().closeWindow(window.id)}>關閉視窗</Button>
     </KagoEmptyState>

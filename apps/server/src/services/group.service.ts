@@ -1,16 +1,30 @@
 import { z } from "zod";
 import type { Db } from "../db/db.js";
-import { row } from "../db/db.js";
+import { row, rows } from "../db/db.js";
 import { AppError } from "../lib/errors.js";
 import { id, now } from "../lib/ids.js";
 
 export const createGroupSchema = z.object({ name: z.string().min(1).max(120) });
 
+type GroupMember = { id: string; email: string; display_name: string };
+
 export class GroupService {
   constructor(private readonly db: Db) {}
 
   list() {
-    return this.db.prepare("SELECT * FROM groups ORDER BY name ASC").all();
+    const members = rows<GroupMember & { group_id: string }>(
+      this.db
+        .prepare(
+          `SELECT group_members.group_id, users.id, users.email, users.display_name
+          FROM group_members JOIN users ON users.id = group_members.user_id
+          ORDER BY users.email ASC`
+        )
+        .all()
+    );
+    return rows<{ id: string }>(this.db.prepare("SELECT * FROM groups ORDER BY name ASC").all()).map((group) => ({
+      ...group,
+      members: members.filter((member) => member.group_id === group.id).map(({ group_id: _groupId, ...member }) => member)
+    }));
   }
 
   create(name: string) {

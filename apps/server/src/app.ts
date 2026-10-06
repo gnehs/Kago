@@ -11,12 +11,12 @@ import type { Env } from "./config/env.js";
 import { openDb } from "./db/db.js";
 import { AppError, publicError } from "./lib/errors.js";
 import { AuditService } from "./services/audit.service.js";
-import { AuthService, createUserSchema, loginSchema, patchUserSchema, setupAdminSchema } from "./services/auth.service.js";
+import { AuthService, changePasswordSchema, createUserSchema, loginSchema, patchUserSchema, resetPasswordSchema, setupAdminSchema } from "./services/auth.service.js";
 import { FsService, fsQuerySchema, maxUploadFileBytes, maxUploadFiles, mkdirSchema, renameSchema } from "./services/fs.service.js";
 import { createGroupSchema, GroupService } from "./services/group.service.js";
 import { PathService } from "./services/path.service.js";
 import { permissionInputSchema, PermissionService } from "./services/permission.service.js";
-import { rootInputSchema, RootService } from "./services/root.service.js";
+import { rootPatchSchema, RootService } from "./services/root.service.js";
 import { ShareService, shareSchema } from "./services/share.service.js";
 import { ShelfService } from "./services/shelf.service.js";
 import { TagService, tagSchema } from "./services/tag.service.js";
@@ -83,6 +83,7 @@ export async function buildApp(env: Env) {
   });
 
   await auth.ensureInitialAdminFromEnv();
+  roots.syncFromDataDir();
   registerApi(app, { auth, audit, roots, paths, permissions, fsService, workspace, tasks, shelves, tags, shares, groups, events, db });
 
   app.get("/ws", {
@@ -116,6 +117,12 @@ export async function buildApp(env: Env) {
 
   workers.start();
   return app;
+}
+
+/** Header values must be latin1, so non-ASCII names travel in the RFC 5987 `filename*` form. */
+function contentDisposition(kind: "attachment" | "inline", fileName: string): string {
+  const fallback = fileName.replace(/[^\x20-\x7e]/g, "_").replaceAll('"', "");
+  return `${kind}; filename="${fallback}"; filename*=UTF-8''${encodeURIComponent(fileName)}`;
 }
 
 function resolveWebDist(env: Env): string {
@@ -202,7 +209,17 @@ function registerApi(app: FastifyInstance, services: Services) {
   });
 
   app.get("/api/auth/me", async (request) => ({ user: services.auth.actorFromRequest(request) }));
+  app.post("/api/auth/password", async (request) => {
+    const actor = requireActor(request);
+    await services.auth.changePassword(request, actor, changePasswordSchema.parse(request.body));
+    services.audit.write({ actorType: "user", actorId: actor.id, action: "password_change", result: "success" });
+    return { ok: true };
+  });
 
+  app.get("/api/admins", async (request) => {
+    requireActor(request);
+    return services.auth.listAdminContacts();
+  });
   app.get("/api/users", async (request) => {
     requireAdmin(request);
     return services.auth.listUsers();
@@ -224,6 +241,13 @@ function registerApi(app: FastifyInstance, services: Services) {
     return user;
   });
 
+  app.post("/api/users/:id/password", async (request) => {
+    const actor = requireAdmin(request);
+    const params = z.object({ id: z.string() }).parse(request.params);
+    await services.auth.setPassword(request, params.id, resetPasswordSchema.parse(request.body).password);
+    services.audit.write({ actorType: "user", actorId: actor.id, action: "password_reset", target: { userId: params.id }, result: "success" });
+    return { ok: true };
+  });
   app.get("/api/groups", async (request) => {
     requireAdmin(request);
     return services.groups.list();
@@ -253,32 +277,19 @@ function registerApi(app: FastifyInstance, services: Services) {
   app.get("/api/roots", async (request) => {
     const actor = requireActor(request);
     return services.roots
-      .list()
+      .listMounted()
       .filter((root) =>
         services.permissions.can(actor, "list", root, "/").allowed ||
         services.permissions.canReachListableDescendant(actor, root, "/")
       )
       .map(({ base_path: _basePath, ...root }) => root);
   });
-  app.post("/api/roots", async (request) => {
-    const actor = requireAdmin(request);
-    const root = services.roots.create(rootInputSchema.parse(request.body));
-    services.audit.write({ actorType: "user", actorId: actor.id, action: "root_create", rootId: root.id, result: "success" });
-    return { ...root, base_path: undefined };
-  });
   app.patch("/api/roots/:id", async (request) => {
     const actor = requireAdmin(request);
     const params = z.object({ id: z.string() }).parse(request.params);
-    const root = services.roots.patch(params.id, rootInputSchema.partial().parse(request.body));
+    const root = services.roots.patch(params.id, rootPatchSchema.parse(request.body));
     services.audit.write({ actorType: "user", actorId: actor.id, action: "root_update", rootId: root.id, result: "success" });
     return { ...root, base_path: undefined };
-  });
-  app.delete("/api/roots/:id", async (request) => {
-    const actor = requireAdmin(request);
-    const params = z.object({ id: z.string() }).parse(request.params);
-    services.roots.delete(params.id);
-    services.audit.write({ actorType: "user", actorId: actor.id, action: "root_delete", target: params, result: "success" });
-    return { ok: true };
   });
 
   app.get("/api/workspace", async (request) => {
@@ -309,7 +320,7 @@ function registerApi(app: FastifyInstance, services: Services) {
     const file = await services.fsService.download(actor, query.rootSlug, query.path);
     reply.header("Content-Type", file.contentType);
     reply.header("Content-Length", String(file.stat.size));
-    reply.header("Content-Disposition", `attachment; filename="${path.basename(file.safe.absolutePath).replaceAll('"', "")}"`);
+    reply.header("Content-Disposition", contentDisposition("attachment", path.basename(file.safe.absolutePath)));
     return fs.createReadStream(file.safe.absolutePath);
   });
   app.get("/api/fs/preview", async (request, reply) => {
@@ -363,6 +374,14 @@ function registerApi(app: FastifyInstance, services: Services) {
     const actor = requireActor(request);
     return services.tasks.getForActor(actor, z.object({ id: z.string() }).parse(request.params).id);
   });
+  app.get("/api/tasks/:id/download", async (request, reply) => {
+    const actor = requireActor(request);
+    const file = await services.tasks.openDownload(actor, z.object({ id: z.string() }).parse(request.params).id);
+    reply.header("Content-Type", "application/zip");
+    reply.header("Content-Length", String(file.size));
+    reply.header("Content-Disposition", contentDisposition("attachment", file.fileName));
+    return fs.createReadStream(file.path);
+  });
   app.post("/api/tasks/:id/cancel", async (request) => {
     const actor = requireActor(request);
     return services.tasks.cancel(actor, z.object({ id: z.string() }).parse(request.params).id);
@@ -381,6 +400,7 @@ function registerApi(app: FastifyInstance, services: Services) {
   });
 
   app.get("/api/trash", async (request) => services.tasks.listTrash(requireActor(request)));
+  app.delete("/api/trash", async (request) => services.tasks.emptyTrash(requireActor(request)));
   app.post("/api/trash/:id/restore", async (request) => {
     const actor = requireActor(request);
     const params = z.object({ id: z.string() }).parse(request.params);
@@ -522,7 +542,7 @@ function registerApi(app: FastifyInstance, services: Services) {
     if (!stat.isFile()) throw new AppError(400, "Path is not a file", "NOT_FILE");
     reply.header("Content-Type", lookup(safe.absolutePath) || "application/octet-stream");
     reply.header("Content-Length", String(stat.size));
-    reply.header("Content-Disposition", `attachment; filename="${path.basename(safe.absolutePath).replaceAll('"', "")}"`);
+    reply.header("Content-Disposition", contentDisposition("attachment", path.basename(safe.absolutePath)));
     return fs.createReadStream(safe.absolutePath);
   });
 
@@ -533,7 +553,7 @@ function registerApi(app: FastifyInstance, services: Services) {
     if (!stat.isFile()) throw new AppError(400, "Path is not a file", "NOT_FILE");
     reply.header("Content-Type", lookup(safe.absolutePath) || "application/octet-stream");
     reply.header("Content-Length", String(stat.size));
-    reply.header("Content-Disposition", `inline; filename="${path.basename(safe.absolutePath).replaceAll('"', "")}"`);
+    reply.header("Content-Disposition", contentDisposition("inline", path.basename(safe.absolutePath)));
     return fs.createReadStream(safe.absolutePath);
   });
 

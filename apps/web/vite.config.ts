@@ -13,7 +13,7 @@ export default defineConfig({
   // Pre-bundle the Base UI entry points up front; discovering them lazily makes the dev
   // server re-optimise mid-session and briefly load two copies of React.
   optimizeDeps: {
-    include: ["@base-ui/react/context-menu", "@base-ui/react/dialog", "@base-ui/react/popover", "@base-ui/react/tooltip"]
+    include: ["@base-ui/react/context-menu", "@base-ui/react/dialog", "@base-ui/react/menu", "@base-ui/react/popover", "@base-ui/react/tooltip"]
   },
   server: {
     port: 5173,

@@ -1,9 +1,12 @@
-import { ChevronLeft, ChevronRight, Columns3, FolderPlus, Info, LayoutGrid, List, Search, Upload, X } from "lucide-react";
+import type { ReactNode } from "react";
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, Columns3, Ellipsis, FolderPlus, Info, LayoutGrid, List, Search, Upload, X } from "lucide-react";
 import { KagoIconButton } from "@/components/kago/icon-button";
+import { KagoDropdownMenu, KagoMenuItem } from "@/components/kago/menu";
 import { cn } from "@/lib/utils";
 import { useWorkspaceStore } from "@/stores/workspace";
 import type { FileWindow } from "@/types/kago";
 import { Breadcrumb } from "./Breadcrumb";
+import { sortColumns, toggleSort } from "./FileList";
 
 const viewModes = [
   { mode: "list", label: "列表", icon: <List /> },
@@ -23,10 +26,11 @@ type FileToolbarProps = {
   onNavigate: (path: string) => void;
   onNewFolder: () => void;
   onUpload: () => void;
+  /** The same actions as the right-click menu, for the selection or else the folder. Null when the folder cannot be read. */
+  menu: ReactNode;
 };
 
-export function FileToolbar({ window, rootName, readonly, canGoBack, canGoForward, search, onSearch, onGo, onNavigate, onNewFolder, onUpload }: FileToolbarProps) {
-  const inspectorOpen = useWorkspaceStore((state) => Boolean(state.inspector.open));
+export function FileToolbar({ window, rootName, readonly, canGoBack, canGoForward, search, onSearch, onGo, onNavigate, onNewFolder, onUpload, menu }: FileToolbarProps) {
   const store = useWorkspaceStore.getState;
 
   return (
@@ -59,9 +63,29 @@ export function FileToolbar({ window, rootName, readonly, canGoBack, canGoForwar
         ))}
       </div>
 
+      {/* The list view sorts from its column headers; the other views have none. */}
+      {window.viewMode === "list" ? null : (
+        <KagoDropdownMenu
+          label="排序方式"
+          menu={sortColumns.map(({ sortBy, label }) => (
+            <KagoMenuItem
+              key={sortBy}
+              closeOnClick={false}
+              icon={window.sortBy !== sortBy ? <span className="size-4" /> : window.sortDirection === "asc" ? <ArrowUp /> : <ArrowDown />}
+              onClick={() => toggleSort(window, sortBy)}
+            >
+              {label}
+            </KagoMenuItem>
+          ))}
+        >
+          <ArrowUpDown />
+        </KagoDropdownMenu>
+      )}
+
       <KagoIconButton label="新增資料夾" disabled={readonly} onClick={onNewFolder}><FolderPlus /></KagoIconButton>
       <KagoIconButton label="上傳檔案" disabled={readonly} onClick={onUpload}><Upload /></KagoIconButton>
-      <KagoIconButton label="資訊（⌘I）" active={inspectorOpen} onClick={() => store().updateInspector({ open: !inspectorOpen })}><Info /></KagoIconButton>
+      <KagoIconButton label="資訊（⌘I）" active={Boolean(window.inspectorOpen)} onClick={() => store().updateWindow(window.id, { inspectorOpen: !window.inspectorOpen })}><Info /></KagoIconButton>
+      {menu ? <KagoDropdownMenu label={window.selectedItems.length > 0 ? "選取項目的所有動作" : "資料夾動作"} menu={menu}><Ellipsis /></KagoDropdownMenu> : null}
     </div>
   );
 }

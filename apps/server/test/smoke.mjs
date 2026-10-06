@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { access, mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { access, mkdtemp, mkdir, readdir, readFile, rm, symlink, truncate, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -22,13 +22,10 @@ test("minimum file-manager demo flow", async () => {
     });
     assert.equal(setup.statusCode, 200);
 
-    const root = await admin.post("/api/roots", {
-      slug: "photos",
-      name: "Photos",
-      basePath: "/data/photos",
-      readonly: false
-    });
-    assert.equal(root.statusCode, 200);
+    // Folders directly under the data dir are mounted as roots by default.
+    const roots = await admin.get("/api/roots");
+    assert.deepEqual(roots.json.map((item) => item.slug), ["photos"]);
+    const root = { json: roots.json[0] };
 
     const emptyWorkspace = await admin.get("/api/workspace");
     assert.deepEqual(emptyWorkspace.json.windows, []);
@@ -91,6 +88,9 @@ test("minimum file-manager demo flow", async () => {
     });
     const group = await admin.post("/api/groups", { name: "public-readers" });
     assert.equal((await admin.post(`/api/groups/${group.json.id}/members`, { userId: reader.json.id })).statusCode, 200);
+    assert.deepEqual((await admin.get("/api/groups")).json.map((item) => ({ name: item.name, members: item.members })), [
+      { name: "public-readers", members: [{ id: reader.json.id, email: "reader@example.test", display_name: "Reader" }] }
+    ]);
     assert.equal((await admin.post("/api/permissions", {
       principalType: "group",
       principalId: group.json.id,
@@ -140,6 +140,18 @@ test("minimum file-manager demo flow", async () => {
     assert.ok(trashedUpload);
     const restoreTask = await admin.post(`/api/trash/${trashedUpload.id}/restore`);
     assert.equal((await waitTask(admin, restoreTask.json.id)).status, "done");
+    assert.equal((await admin.get("/api/fs/download?rootSlug=photos&path=/public/uploaded.txt")).payload, "uploaded");
+
+    assert.equal((await admin.post("/api/fs/mkdir", { rootSlug: "photos", path: "/public", name: "to-empty" })).statusCode, 200);
+    const emptyTask = await admin.post("/api/tasks", {
+      type: "delete_to_trash",
+      sources: [{ rootSlug: "photos", path: "/public/to-empty" }]
+    });
+    assert.equal((await waitTask(admin, emptyTask.json.id)).status, "done");
+    assert.equal((await readdir(path.join(fixture.appDataDir, "trash"))).length, 1);
+    assert.deepEqual((await admin.delete("/api/trash")).json, { deleted: 1 });
+    assert.deepEqual((await admin.get("/api/trash")).json, []);
+    assert.deepEqual(await readdir(path.join(fixture.appDataDir, "trash")), []);
     assert.equal((await admin.get("/api/fs/download?rootSlug=photos&path=/public/uploaded.txt")).payload, "uploaded");
 
     const shelf = await admin.post("/api/shelves", { name: "Smoke shelf" });
@@ -234,13 +246,10 @@ test("security boundaries reject unsafe requests", async () => {
       password: "fake-admin-password-123",
       displayName: "Smoke Admin"
     })).statusCode, 200);
-    const root = await admin.post("/api/roots", {
-      slug: "photos",
-      name: "Photos",
-      basePath: "/data/photos",
-      readonly: false
-    });
-    assert.equal(root.statusCode, 200);
+    // Folders directly under the data dir are mounted as roots by default.
+    const roots = await admin.get("/api/roots");
+    assert.deepEqual(roots.json.map((item) => item.slug), ["photos"]);
+    const root = { json: roots.json[0] };
 
     const traversal = await admin.get(`/api/fs/list?rootSlug=photos&path=${encodeURIComponent("/../private")}`);
     assert.equal(traversal.statusCode, 400);
@@ -350,12 +359,13 @@ test("production startup creates a persisted session secret and rejects recursiv
         password: "fake-admin-password-123",
         displayName: "Smoke Admin"
       })).statusCode, 200);
-      assert.equal((await admin.post("/api/roots", {
-        slug: "photos",
-        name: "Photos",
-        basePath: "/data/photos",
-        readonly: false
-      })).statusCode, 200);
+      // Roots cannot be added by hand; new folders under the data dir show up on their own.
+      assert.equal((await admin.post("/api/roots", { slug: "manual", name: "Manual" })).statusCode, 404);
+      await mkdir(path.join(fixture.dataDir, "相片"));
+      await mkdir(path.join(fixture.dataDir, ".hidden"));
+      const mounted = (await admin.get("/api/roots")).json;
+      assert.deepEqual(mounted.map((item) => item.name).sort(), ["photos", "相片"]);
+      assert.match(mounted.find((item) => item.name === "相片").slug, /^folder-[0-9a-f]{8}$/);
       const rejected = await admin.post("/api/tasks", {
         type: "copy",
         sources: [{ rootSlug: "photos", path: "/src" }],
@@ -368,6 +378,106 @@ test("production startup creates a persisted session secret and rejects recursiv
     }
   } finally {
     restoreEnv(previousEnv);
+    await rm(fixture.baseDir, { recursive: true, force: true });
+  }
+});
+
+test("download archives stay out of the data dir and running tasks can be cancelled", async () => {
+  const fixture = await createFixture("kago-smoke-tasks.");
+  const app = await buildApp(testEnv(fixture));
+  const admin = client(app);
+
+  try {
+    await app.ready();
+    assert.equal((await admin.post("/api/auth/setup", { email: "admin@example.test", password: "fake-admin-password-123", displayName: "Smoke Admin" })).statusCode, 200);
+
+    await writeFile(path.join(fixture.dataDir, "photos", "public", "相片.txt"), "unicode");
+    const before = await readdir(path.join(fixture.dataDir, "photos", "public"));
+    const zipTask = await admin.post("/api/tasks", {
+      type: "download_zip",
+      sources: [{ rootSlug: "photos", path: "/public/readme.txt" }, { rootSlug: "photos", path: "/public/相片.txt" }]
+    });
+    assert.equal(zipTask.statusCode, 200);
+    assert.equal((await waitTask(admin, zipTask.json.id)).status, "done");
+    assert.deepEqual(await readdir(path.join(fixture.dataDir, "photos", "public")), before);
+    const archive = await admin.get(`/api/tasks/${zipTask.json.id}/download`);
+    assert.equal(archive.statusCode, 200);
+    assert.match(String(archive.headers["content-disposition"]), /^attachment; filename="Kago-[\d-]+\.zip"/);
+    assert.deepEqual(new AdmZip(archive.raw).getEntries().map((entry) => entry.entryName).sort(), ["readme.txt", "相片.txt"].sort());
+
+    const folderTask = await admin.post("/api/tasks", { type: "download_zip", sources: [{ rootSlug: "photos", path: "/public" }] });
+    assert.equal((await waitTask(admin, folderTask.json.id)).status, "done");
+    const folderArchive = await admin.get(`/api/tasks/${folderTask.json.id}/download`);
+    assert.match(String(folderArchive.headers["content-disposition"]), /filename="public\.zip"/);
+
+    // A plain compress task is not downloadable through the task endpoint.
+    const copyTask = await admin.post("/api/tasks", {
+      type: "copy",
+      sources: [{ rootSlug: "photos", path: "/2026/demo.txt" }],
+      destination: { rootSlug: "photos", path: "/public" }
+    });
+    assert.equal((await waitTask(admin, copyTask.json.id)).status, "done");
+    assert.equal((await admin.get(`/api/tasks/${copyTask.json.id}/download`)).statusCode, 409);
+
+    const unicodeDownload = await admin.get(`/api/fs/download?rootSlug=photos&path=${encodeURIComponent("/public/相片.txt")}`);
+    assert.equal(unicodeDownload.statusCode, 200);
+    assert.equal(unicodeDownload.payload, "unicode");
+
+    const member = await admin.post("/api/users", { email: "member@example.test", password: "fake-member-password-1", displayName: "Member", role: "USER" });
+    const firstSession = client(app);
+    const secondSession = client(app);
+    for (const session of [firstSession, secondSession]) {
+      assert.equal((await session.post("/api/auth/login", { email: "member@example.test", password: "fake-member-password-1" })).statusCode, 200);
+    }
+    assert.deepEqual((await firstSession.get("/api/admins")).json, [{ displayName: "Smoke Admin", email: "admin@example.test" }]);
+    assert.equal((await client(app).get("/api/admins")).statusCode, 401);
+    assert.equal((await firstSession.post("/api/auth/password", { currentPassword: "not-the-password", newPassword: "fake-member-password-2" })).statusCode, 403);
+    assert.equal((await firstSession.post("/api/auth/password", { currentPassword: "fake-member-password-1", newPassword: "short" })).statusCode, 400);
+    assert.equal((await firstSession.post("/api/auth/password", { currentPassword: "fake-member-password-1", newPassword: "fake-member-password-2" })).statusCode, 200);
+    // The session that changed the password stays signed in; every other one is dropped.
+    assert.ok((await firstSession.get("/api/auth/me")).json.user);
+    assert.equal((await secondSession.get("/api/auth/me")).json.user, null);
+    assert.equal((await client(app).post("/api/auth/login", { email: "member@example.test", password: "fake-member-password-1" })).statusCode, 401);
+    assert.equal((await firstSession.post(`/api/users/${member.json.id}/password`, { password: "fake-member-password-3" })).statusCode, 403);
+    assert.equal((await admin.post(`/api/users/${member.json.id}/password`, { password: "fake-member-password-3" })).statusCode, 200);
+    assert.equal((await firstSession.get("/api/auth/me")).json.user, null);
+    assert.equal((await client(app).post("/api/auth/login", { email: "member@example.test", password: "fake-member-password-3" })).statusCode, 200);
+
+    // Sparse on most filesystems, but the copy still has to stream every byte.
+    await truncate(path.join(fixture.dataDir, "photos", "src", "file.txt"), 1024 * 1024 * 1024);
+    const bigCopy = await admin.post("/api/tasks", {
+      type: "copy",
+      sources: [{ rootSlug: "photos", path: "/src/file.txt" }],
+      destination: { rootSlug: "photos", path: "/private" }
+    });
+    let running = null;
+    for (let attempt = 0; attempt < 200 && !running; attempt += 1) {
+      const task = (await admin.get(`/api/tasks/${bigCopy.json.id}`)).json;
+      if (task.status === "running" && task.processed_bytes > 0) running = task;
+      else {
+        assert.ok(["queued", "running"].includes(task.status), `copy finished before it could be cancelled: ${task.status}`);
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+    }
+    assert.ok(running, "copy never reported progress");
+    const cancelled = await admin.post(`/api/tasks/${bigCopy.json.id}/cancel`);
+    assert.equal(cancelled.statusCode, 200);
+    assert.equal(cancelled.json.status, "cancelled");
+    const partial = path.join(fixture.dataDir, "photos", "private", "file.txt");
+    for (let attempt = 0; attempt < 100 && (await pathExists(partial)); attempt += 1) await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.equal(await pathExists(partial), false);
+    assert.equal(await pathExists(path.join(fixture.dataDir, "photos", "src", "file.txt")), true);
+    assert.equal((await admin.get(`/api/tasks/${bigCopy.json.id}`)).json.status, "cancelled");
+
+    // The worker moves on to the next task after a cancellation.
+    const afterCancel = await admin.post("/api/tasks", {
+      type: "copy",
+      sources: [{ rootSlug: "photos", path: "/public/readme.txt" }],
+      destination: { rootSlug: "photos", path: "/2026" }
+    });
+    assert.equal((await waitTask(admin, afterCancel.json.id)).status, "done");
+  } finally {
+    await app.close();
     await rm(fixture.baseDir, { recursive: true, force: true });
   }
 });
@@ -448,6 +558,7 @@ function responseOf(response) {
     statusCode: response.statusCode,
     headers: response.headers,
     payload: response.payload,
+    raw: response.rawPayload,
     json: contentType.includes("application/json") && response.payload ? JSON.parse(response.payload) : null
   };
 }

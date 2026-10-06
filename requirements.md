@@ -978,8 +978,6 @@ KagoWindowTitleBar
 
 ```txt
 支援 dark mode
-支援 compact density
-支援 comfortable density
 支援 sidebar collapse
 支援 resizable panels
 支援高度客製化 icon / color / spacing
@@ -1053,6 +1051,10 @@ Cmd/Ctrl + N:
 
 Cmd/Ctrl + W:
   關閉 active window
+
+Alt + N / Alt + W:
+  同 Cmd/Ctrl + N、Cmd/Ctrl + W。一般瀏覽器分頁會攔走 Cmd/Ctrl + N 與 Cmd/Ctrl + W，
+  所以這兩組才是分頁內實際可用的快捷鍵
 
 Cmd/Ctrl + L:
   聚焦 active window 的 breadcrumb / address bar
@@ -1309,6 +1311,7 @@ Task types：
 copy
 move
 compress
+download_zip
 extract
 rsync_pull
 rsync_push
@@ -1933,9 +1936,7 @@ DELETE /api/permissions/:id
 
 ```txt
 GET    /api/roots
-POST   /api/roots
 PATCH  /api/roots/:id
-DELETE /api/roots/:id
 ```
 
 ### Shares

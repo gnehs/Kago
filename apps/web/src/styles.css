@@ -58,12 +58,6 @@
   color-scheme: dark;
 }
 
-:root[data-density="compact"] {
-  --kago-row-h: 26px;
-  --kago-control-h: 26px;
-  --kago-font-size: 12px;
-}
-
 @theme inline {
   --color-canvas: var(--kago-bg);
   --color-surface: var(--kago-surface);

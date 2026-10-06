@@ -30,6 +30,13 @@ export const patchUserSchema = z.object({
   disabled: z.boolean().optional()
 });
 
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z.string().min(8)
+});
+
+export const resetPasswordSchema = z.object({ password: z.string().min(8) });
+
 export class AuthService {
   constructor(
     private readonly db: Db,
@@ -96,6 +103,14 @@ export class AuthService {
     );
   }
 
+  /** Who a user without access can turn to. Deliberately limited to name and email. */
+  listAdminContacts(): Array<{ displayName: string; email: string }> {
+    return rows<User>(this.db.prepare("SELECT * FROM users WHERE role = 'ADMIN' AND disabled = 0 ORDER BY created_at ASC").all()).map((user) => ({
+      displayName: user.display_name,
+      email: user.email
+    }));
+  }
+
   patchUser(userId: string, input: z.infer<typeof patchUserSchema>): PublicUser {
     const user = this.getUser(userId);
     const nextRole = input.role ?? user.role;
@@ -113,6 +128,21 @@ export class AuthService {
         userId
       );
     return this.publicUser(this.getUser(userId));
+  }
+
+  /** Changes the caller's own password after re-checking the current one. */
+  async changePassword(request: FastifyRequest, actor: Actor, input: z.infer<typeof changePasswordSchema>): Promise<void> {
+    if (!(await verifyPassword(input.currentPassword, this.getUser(actor.id).password_hash))) {
+      throw new AppError(403, "Current password is incorrect", "INVALID_CURRENT_PASSWORD");
+    }
+    await this.setPassword(request, actor.id, input.newPassword);
+  }
+
+  /** Stores a new password and signs the user out everywhere except the session making the request. */
+  async setPassword(request: FastifyRequest, userId: string, password: string): Promise<void> {
+    this.getUser(userId);
+    this.db.prepare("UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?").run(await hashPassword(password), now(), userId);
+    this.db.prepare("DELETE FROM sessions WHERE user_id = ? AND token_hash != ?").run(userId, sha256(request.cookies.kago_session ?? ""));
   }
 
   async login(request: FastifyRequest, reply: FastifyReply, email: string, password: string): Promise<Actor> {

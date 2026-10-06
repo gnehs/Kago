@@ -13,24 +13,23 @@ import { TagEditor } from "@/features/tags/TagEditor";
 import { formatDate, formatSize, kindLabel } from "@/lib/format";
 import { usePointerDrag } from "@/lib/usePointerDrag";
 import { useWorkspaceStore } from "@/stores/workspace";
+import type { FileWindow } from "@/types/kago";
 import { FileIcon } from "./FileIcon";
 
 const MIN_WIDTH = 260;
 const MAX_WIDTH = 440;
 
-/** Docked panel describing the active window's selection, or its folder when nothing is selected. */
-export function Inspector({ isAdmin }: { isAdmin: boolean }) {
-  const activeWindow = useWorkspaceStore((state) => state.windows.find((window) => window.id === state.activeWindowId));
+/** Panel inside a file window describing its selection, or its folder when nothing is selected. */
+export function Inspector({ window: activeWindow, isAdmin }: { window: FileWindow; isAdmin: boolean }) {
   const width = useWorkspaceStore((state) => Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, state.inspector.width ?? 300)));
   const store = useWorkspaceStore.getState;
-  const rootSlug = activeWindow?.rootSlug ?? "";
-  const path = activeWindow?.selectedItems.at(-1) ?? activeWindow?.logicalPath ?? "/";
-  const selectedCount = activeWindow?.selectedItems.length ?? 0;
-  const enabled = Boolean(activeWindow);
-  const meta = useFileMeta(rootSlug, path, enabled);
+  const rootSlug = activeWindow.rootSlug;
+  const path = activeWindow.selectedItems.at(-1) ?? activeWindow.logicalPath;
+  const selectedCount = activeWindow.selectedItems.length;
+  const meta = useFileMeta(rootSlug, path, true);
   const roots = useRoots();
   const shares = useShares();
-  const permissions = usePathPermissions(rootSlug, path, enabled && isAdmin);
+  const permissions = usePathPermissions(rootSlug, path, isAdmin);
   const rootId = roots.data?.find((root) => root.slug === rootSlug)?.id;
   const pathShares = (shares.data ?? []).filter((share) => share.root_id === rootId && share.path === path);
 
@@ -40,16 +39,14 @@ export function Inspector({ isAdmin }: { isAdmin: boolean }) {
   );
 
   return (
-    <aside className="relative flex shrink-0 flex-col border-l border-line bg-surface" style={{ width }} aria-label="資訊">
+    <aside className="relative flex max-w-[60%] shrink-0 flex-col border-l border-line bg-surface" style={{ width }} aria-label="資訊">
       <div className="absolute inset-y-0 -left-1 z-10 w-2 cursor-ew-resize touch-none" {...resizeHandlers} />
-      <header className="flex h-11 shrink-0 items-center gap-2 border-b border-line pr-2 pl-4">
+      <header className="flex h-9 shrink-0 items-center gap-2 border-b border-line pr-2 pl-4">
         <strong className="flex-1 font-semibold">資訊</strong>
-        <KagoIconButton label="關閉資訊面板" onClick={() => store().updateInspector({ open: false })}><X /></KagoIconButton>
+        <KagoIconButton label="關閉資訊面板" onClick={() => store().updateWindow(activeWindow.id, { inspectorOpen: false })}><X /></KagoIconButton>
       </header>
 
-      {!activeWindow ? (
-        <p className="m-0 p-4 text-muted">開啟一個檔案視窗後，這裡會顯示所選項目的資訊。</p>
-      ) : meta.isLoading ? (
+      {meta.isLoading ? (
         <KagoLoading />
       ) : meta.error || !meta.data ? (
         <p className="m-0 p-4 text-muted">無法讀取這個項目的資訊。</p>

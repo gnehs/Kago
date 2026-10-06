@@ -24,6 +24,7 @@ const fileWindowSchema = z.object({
   sortDirection: z.enum(["asc", "desc"]),
   selectedItems: z.array(z.string()).default([]),
   scrollTop: z.number().optional(),
+  inspectorOpen: z.boolean().optional(),
   createdAt: z.number().optional(),
   updatedAt: z.number().optional()
 });

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Archive, ArchiveRestore, Download, ExternalLink, Folder, FolderOpen, FolderPlus, Inbox, Info, Pencil, RefreshCw, Trash2, Upload } from "lucide-react";
+import { Archive, ArchiveRestore, ClipboardPaste, Copy, Download, ExternalLink, Folder, FolderOpen, FolderPlus, Inbox, Info, Pencil, RefreshCw, Scissors, Trash2, Upload } from "lucide-react";
 import { useFileList } from "@/api/hooks";
 import { KagoBadge } from "@/components/kago/badge";
 import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
@@ -9,14 +9,16 @@ import { Button } from "@/components/ui/button";
 import { KagoWindow } from "@/features/windows/KagoWindow";
 import { OPEN_ITEM_EVENT } from "@/features/workspace/useShortcuts";
 import { formatSize } from "@/lib/format";
-import { parentPath } from "@/lib/paths";
+import { baseName, parentPath } from "@/lib/paths";
 import { cn } from "@/lib/utils";
+import { useClipboardStore } from "@/stores/clipboard";
 import { useRecentStore } from "@/stores/recent";
 import { useWorkspaceStore } from "@/stores/workspace";
 import type { FileItem, FileWindow } from "@/types/kago";
 import { isArchive } from "./FileIcon";
 import { FileList } from "./FileList";
 import { FileToolbar } from "./FileToolbar";
+import { Inspector } from "./Inspector";
 import { PreviewDialog } from "./PreviewDialog";
 import { readDraggedFiles, useFileActions, type FileRef } from "./useFileActions";
 import { useMarqueeSelection } from "./useMarqueeSelection";
@@ -34,7 +36,7 @@ function sortItems(items: FileItem[], sortBy: FileWindow["sortBy"], direction: F
   });
 }
 
-export function FileWindowView({ window: win, rootName }: { window: FileWindow; rootName: string }) {
+export function FileWindowView({ window: win, rootName, isAdmin }: { window: FileWindow; rootName: string; isAdmin: boolean }) {
   const store = useWorkspaceStore.getState;
   const fileList = useFileList(win.rootSlug, win.logicalPath);
   const actions = useFileActions(win);
@@ -45,7 +47,8 @@ export function FileWindowView({ window: win, rootName }: { window: FileWindow; 
   const [menuItem, setMenuItem] = useState<FileItem | null>(null);
   const [previewItem, setPreviewItem] = useState<FileItem | null>(null);
   const [dropActive, setDropActive] = useState(false);
-  const [dropChoice, setDropChoice] = useState<{ sources: FileRef[]; x: number; y: number } | null>(null);
+  const [dropChoice, setDropChoice] = useState<{ sources: FileRef[]; destination: string; x: number; y: number } | null>(null);
+  const clip = useClipboardStore((state) => state.clip);
   const [history, setHistory] = useState({ stack: [win.logicalPath], index: 0 });
 
   // Record every path change (breadcrumb, shortcut, double-click) unless it came from back/forward.
@@ -126,50 +129,57 @@ export function FileWindowView({ window: win, rootName }: { window: FileWindow; 
     }
   }
 
-  function onDrop(event: React.DragEvent<HTMLElement>) {
+  /** Handles a drop on the window (its current folder) or on one of the folders listed in it. */
+  function dropInto(event: React.DragEvent, destination: string) {
     event.preventDefault();
     setDropActive(false);
     if (readonly || error) return;
     if (event.dataTransfer.files.length > 0) {
-      void actions.upload(Array.from(event.dataTransfer.files));
+      void actions.upload(Array.from(event.dataTransfer.files), destination);
       return;
     }
-    // Dropping items back onto the folder they already live in is a no-op.
-    const sources = readDraggedFiles(event.dataTransfer).filter((source) => source.rootSlug !== win.rootSlug || parentPath(source.path) !== win.logicalPath);
-    if (sources.length === 0) return;
-    const rect = event.currentTarget.getBoundingClientRect();
-    setDropChoice({ sources, x: Math.min(event.clientX - rect.left, rect.width - 180), y: Math.min(event.clientY - rect.top, rect.height - 130) });
+    // Dropping items onto the folder they already live in, or a folder onto itself, is a no-op.
+    const sources = readDraggedFiles(event.dataTransfer).filter((source) => source.rootSlug !== win.rootSlug || (parentPath(source.path) !== destination && source.path !== destination));
+    const rect = event.currentTarget.closest("[data-window]")?.getBoundingClientRect();
+    if (sources.length === 0 || !rect) return;
+    setDropChoice({ sources, destination, x: Math.min(event.clientX - rect.left, rect.width - 180), y: Math.min(event.clientY - rect.top, rect.height - 130) });
   }
 
-  // The menu acts on the whole selection when the clicked item is part of it.
+  // Right-clicking acts on the whole selection when the clicked item is part of it.
   const menuTargets = menuItem && selectedItems.some((item) => item.path === menuItem.path) ? selectedItems : menuItem ? [menuItem] : [];
-  const menuPaths = menuTargets.map((item) => item.path);
-  const single = menuTargets.length === 1 ? menuTargets[0]! : null;
-  const countSuffix = menuTargets.length > 1 ? ` ${menuTargets.length} 個項目` : "";
 
-  const menu = menuItem ? (
-    <>
-      {single ? <KagoMenuItem icon={<FolderOpen />} onClick={() => openItem(single)}>開啟</KagoMenuItem> : null}
-      {single?.kind === "folder" ? <KagoMenuItem icon={<ExternalLink />} onClick={() => openItem(single, true)}>在新視窗開啟</KagoMenuItem> : null}
-      <KagoMenuItem icon={<Download />} onClick={() => void actions.download(menuTargets)}>下載{countSuffix}</KagoMenuItem>
-      <KagoMenuItem icon={<Inbox />} onClick={() => void actions.addToShelf(menuPaths)}>加入中轉區</KagoMenuItem>
-      <KagoMenuItem icon={<Info />} onClick={() => store().updateInspector({ open: true })}>資訊、標籤與分享</KagoMenuItem>
-      <KagoMenuSeparator />
-      {single ? <KagoMenuItem icon={<Pencil />} disabled={readonly || single.readonly} onClick={() => void actions.rename(single)}>重新命名</KagoMenuItem> : null}
-      <KagoMenuItem icon={<Archive />} disabled={readonly} onClick={() => void actions.compress(menuPaths)}>壓縮{countSuffix}</KagoMenuItem>
-      {menuTargets.every(isArchive) ? <KagoMenuItem icon={<ArchiveRestore />} disabled={readonly} onClick={() => void actions.extract(menuPaths)}>解壓縮到這裡</KagoMenuItem> : null}
-      <KagoMenuSeparator />
-      <KagoMenuItem icon={<Trash2 />} destructive disabled={readonly || menuTargets.some((item) => item.readonly)} onClick={() => void actions.trash(menuPaths)}>移到垃圾桶</KagoMenuItem>
-    </>
-  ) : (
-    <>
-      <KagoMenuItem icon={<FolderPlus />} disabled={readonly} onClick={() => void actions.newFolder()}>新增資料夾</KagoMenuItem>
-      <KagoMenuItem icon={<Upload />} disabled={readonly} onClick={() => uploadInput.current?.click()}>上傳檔案</KagoMenuItem>
-      <KagoMenuSeparator />
-      <KagoMenuItem icon={<ExternalLink />} onClick={() => store().openWindow({ rootSlug: win.rootSlug, logicalPath: win.logicalPath, title: win.title })}>在新視窗開啟此資料夾</KagoMenuItem>
-      <KagoMenuItem icon={<RefreshCw />} onClick={() => void actions.refresh()}>重新整理</KagoMenuItem>
-    </>
-  );
+  /** Every action for a set of items, or for the folder itself when there are none. Shared by right click and the toolbar. */
+  function renderMenu(targets: FileItem[]) {
+    const paths = targets.map((item) => item.path);
+    const single = targets.length === 1 ? targets[0]! : null;
+    const countSuffix = targets.length > 1 ? ` ${targets.length} 個項目` : "";
+    return targets.length > 0 ? (
+      <>
+        {single ? <KagoMenuItem icon={<FolderOpen />} onClick={() => openItem(single)}>開啟</KagoMenuItem> : null}
+        {single?.kind === "folder" ? <KagoMenuItem icon={<ExternalLink />} onClick={() => openItem(single, true)}>在新視窗開啟</KagoMenuItem> : null}
+        <KagoMenuItem icon={<Download />} onClick={() => void actions.download(targets)}>下載{countSuffix}</KagoMenuItem>
+        <KagoMenuItem icon={<Inbox />} onClick={() => void actions.addToShelf(paths)}>加入中轉區</KagoMenuItem>
+        <KagoMenuItem icon={<Info />} onClick={() => store().updateWindow(win.id, { inspectorOpen: true })}>資訊、標籤與分享</KagoMenuItem>
+        <KagoMenuSeparator />
+        <KagoMenuItem icon={<Copy />} onClick={() => actions.copy(paths)}>複製</KagoMenuItem>
+        <KagoMenuItem icon={<Scissors />} disabled={readonly || targets.some((item) => item.readonly)} onClick={() => actions.cut(paths)}>剪下</KagoMenuItem>
+        {single ? <KagoMenuItem icon={<Pencil />} disabled={readonly || single.readonly} onClick={() => void actions.rename(single)}>重新命名</KagoMenuItem> : null}
+        <KagoMenuItem icon={<Archive />} disabled={readonly} onClick={() => void actions.compress(paths)}>壓縮{countSuffix}</KagoMenuItem>
+        {targets.every(isArchive) ? <KagoMenuItem icon={<ArchiveRestore />} disabled={readonly} onClick={() => void actions.extract(paths)}>解壓縮到這裡</KagoMenuItem> : null}
+        <KagoMenuSeparator />
+        <KagoMenuItem icon={<Trash2 />} destructive disabled={readonly || targets.some((item) => item.readonly)} onClick={() => void actions.trash(paths)}>移到垃圾桶</KagoMenuItem>
+      </>
+    ) : (
+      <>
+        <KagoMenuItem icon={<FolderPlus />} disabled={readonly} onClick={() => void actions.newFolder()}>新增資料夾</KagoMenuItem>
+        <KagoMenuItem icon={<Upload />} disabled={readonly} onClick={() => uploadInput.current?.click()}>上傳檔案</KagoMenuItem>
+        <KagoMenuItem icon={<ClipboardPaste />} disabled={readonly || !clip} onClick={() => void actions.paste()}>{clip ? `貼上 ${clip.items.length} 個項目` : "貼上"}</KagoMenuItem>
+        <KagoMenuSeparator />
+        <KagoMenuItem icon={<ExternalLink />} onClick={() => store().openWindow({ rootSlug: win.rootSlug, logicalPath: win.logicalPath, title: win.title })}>在新視窗開啟此資料夾（⌥N）</KagoMenuItem>
+        <KagoMenuItem icon={<RefreshCw />} onClick={() => void actions.refresh()}>重新整理</KagoMenuItem>
+      </>
+    );
+  }
 
   return (
     <KagoWindow
@@ -181,7 +191,7 @@ export function FileWindowView({ window: win, rootName }: { window: FileWindow; 
         setDropActive(true);
       }}
       onDragLeave={(event) => !event.currentTarget.contains(event.relatedTarget as Node | null) && setDropActive(false)}
-      onDrop={onDrop}
+      onDrop={(event) => dropInto(event, win.logicalPath)}
     >
       <FileToolbar
         window={win}
@@ -195,29 +205,33 @@ export function FileWindowView({ window: win, rootName }: { window: FileWindow; 
         onNavigate={navigate}
         onNewFolder={() => void actions.newFolder()}
         onUpload={() => uploadInput.current?.click()}
+        menu={error ? null : renderMenu(selectedItems)}
       />
 
-      {error ? (
-        <div className="min-h-0 flex-1">
-          <WindowErrorState error={error} window={win} onRetry={() => void fileList.refetch()} />
-        </div>
-      ) : (
-        <KagoContextMenu menu={menu} className="flex min-h-0 flex-1">
-          <div className="relative min-w-0 flex-1 overflow-auto select-none" onContextMenuCapture={() => setMenuItem(null)} {...marquee.handlers}>
-            {fileList.isLoading ? <KagoLoading /> : null}
-            {fileList.data && items.length === 0 ? (
-              <KagoEmptyState
-                className="h-full"
-                icon={<Folder />}
-                title={search ? "沒有符合的項目" : "這個資料夾是空的"}
-                description={search ? `找不到名稱包含「${search.trim()}」的項目。` : readonly ? "這個位置是唯讀的。" : "把檔案拖進來，或使用工具列上傳。"}
-              />
-            ) : null}
-            {items.length > 0 ? <FileList window={win} items={items} onSelect={selectItem} onOpen={openItem} onContextItem={onContextItem} /> : null}
-            {marquee.style ? <div className="pointer-events-none absolute border border-accent bg-accent/15" style={marquee.style} /> : null}
+      <div className="flex min-h-0 flex-1">
+        {error ? (
+          <div className="min-h-0 min-w-0 flex-1">
+            <WindowErrorState error={error} window={win} onRetry={() => void fileList.refetch()} />
           </div>
-        </KagoContextMenu>
-      )}
+        ) : (
+          <KagoContextMenu menu={renderMenu(menuTargets)} className="flex min-h-0 min-w-0 flex-1">
+            <div className="relative min-w-0 flex-1 overflow-auto select-none" onContextMenuCapture={() => setMenuItem(null)} {...marquee.handlers}>
+              {fileList.isLoading ? <KagoLoading /> : null}
+              {fileList.data && items.length === 0 ? (
+                <KagoEmptyState
+                  className="h-full"
+                  icon={<Folder />}
+                  title={search ? "沒有符合的項目" : "這個資料夾是空的"}
+                  description={search ? `找不到名稱包含「${search.trim()}」的項目。` : readonly ? "這個位置是唯讀的。" : "把檔案拖進來，或使用工具列上傳。"}
+                />
+              ) : null}
+              {items.length > 0 ? <FileList window={win} items={items} onSelect={selectItem} onOpen={openItem} onContextItem={onContextItem} onDropInto={readonly ? undefined : (event, folder) => dropInto(event, folder.path)} /> : null}
+              {marquee.style ? <div className="pointer-events-none absolute border border-accent bg-accent/15" style={marquee.style} /> : null}
+            </div>
+          </KagoContextMenu>
+        )}
+        {win.inspectorOpen ? <Inspector window={win} isAdmin={isAdmin} /> : null}
+      </div>
 
       <footer className="flex h-8 shrink-0 items-center gap-1 border-t border-line bg-elevated px-3 text-xs text-muted">
         {selectedItems.length > 0 ? (
@@ -241,14 +255,16 @@ export function FileWindowView({ window: win, rootName }: { window: FileWindow; 
         <>
           <div className="absolute inset-0 z-20" onClick={() => setDropChoice(null)} />
           <div className={cn("absolute z-30 flex w-44 flex-col gap-1 rounded-lg bg-surface p-1.5 shadow-popup")} style={{ left: Math.max(8, dropChoice.x), top: Math.max(44, dropChoice.y) }}>
-            <span className="px-1.5 py-0.5 text-xs text-muted">{dropChoice.sources.length} 個項目</span>
+            <span className="truncate px-1.5 py-0.5 text-xs text-muted">
+              {dropChoice.sources.length} 個項目{dropChoice.destination === win.logicalPath ? "" : ` → ${baseName(dropChoice.destination)}`}
+            </span>
             {(["copy", "move"] as const).map((type) => (
               <Button
                 key={type}
                 variant={type === "copy" ? "default" : "outline"}
                 autoFocus={type === "copy"}
                 onClick={() => {
-                  void actions.transfer(type, dropChoice.sources);
+                  void actions.transfer(type, dropChoice.sources, dropChoice.destination);
                   setDropChoice(null);
                 }}
               >

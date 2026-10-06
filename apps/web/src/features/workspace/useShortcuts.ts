@@ -1,7 +1,9 @@
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { pasteClipboard, setClipboard } from "@/features/files/useFileActions";
 import { baseName, parentPath } from "@/lib/paths";
 import { isEditableTarget } from "@/lib/usePointerDrag";
+import { useClipboardStore } from "@/stores/clipboard";
 import { useWorkspaceStore } from "@/stores/workspace";
 
 export const EDIT_ADDRESS_EVENT = "kago:edit-address";
@@ -16,6 +18,11 @@ export function useShortcuts({ enabled, onOpenPalette }: { enabled: boolean; onO
 
     function onKeyDown(event: KeyboardEvent) {
       const mod = event.metaKey || event.ctrlKey;
+      // Browsers keep ⌘W and ⌘N for themselves in a normal tab, so Alt+W and Alt+N do the same job.
+      // Alt changes the typed character on macOS, hence the physical key.
+      const altKey = event.altKey && !mod ? event.code : "";
+      const closes = altKey === "KeyW" || (mod && event.key.toLowerCase() === "w");
+      const opensNew = altKey === "KeyN" || (mod && event.key.toLowerCase() === "n");
       const key = event.key.toLowerCase();
 
       if (mod && (key === "p" || key === "k")) {
@@ -29,7 +36,7 @@ export function useShortcuts({ enabled, onOpenPalette }: { enabled: boolean; onO
       if (isEditableTarget(event.target)) return;
 
       const store = useWorkspaceStore.getState();
-      if (mod && key === "w" && store.appWindows.some((window) => window.id === store.activeWindowId)) {
+      if (closes && store.appWindows.some((window) => window.id === store.activeWindowId)) {
         event.preventDefault();
         store.closeWindow(store.activeWindowId!);
         return;
@@ -38,10 +45,10 @@ export function useShortcuts({ enabled, onOpenPalette }: { enabled: boolean; onO
       if (!active) return;
       const rows = () => Array.from(document.querySelectorAll<HTMLElement>(`[data-window="${active.id}"] [data-file-path]`));
 
-      if (mod && key === "w") {
+      if (closes) {
         event.preventDefault();
         store.closeWindow(active.id);
-      } else if (mod && key === "n") {
+      } else if (opensNew) {
         event.preventDefault();
         store.openWindow({ rootSlug: active.rootSlug, logicalPath: active.logicalPath, title: active.title });
       } else if (mod && key === "r") {
@@ -52,10 +59,19 @@ export function useShortcuts({ enabled, onOpenPalette }: { enabled: boolean; onO
         window.dispatchEvent(new CustomEvent(EDIT_ADDRESS_EVENT, { detail: active.id }));
       } else if (mod && key === "i") {
         event.preventDefault();
-        store.updateInspector({ open: !store.inspector.open });
+        store.updateWindow(active.id, { inspectorOpen: !active.inspectorOpen });
       } else if (mod && key === "a") {
         event.preventDefault();
         store.selectItems(active.id, rows().map((row) => row.dataset.filePath!).filter(Boolean));
+      } else if (mod && (key === "c" || key === "x")) {
+        // Leave the shortcut to the browser when there is text selected or no file to pick up.
+        if (active.selectedItems.length === 0 || globalThis.getSelection()?.toString()) return;
+        event.preventDefault();
+        setClipboard(key === "c" ? "copy" : "cut", active.selectedItems.map((path) => ({ rootSlug: active.rootSlug, path })));
+      } else if (mod && key === "v") {
+        if (!useClipboardStore.getState().clip) return;
+        event.preventDefault();
+        void pasteClipboard(queryClient, { rootSlug: active.rootSlug, path: active.logicalPath });
       } else if (event.key === "Backspace" && active.logicalPath !== "/") {
         event.preventDefault();
         store.updateWindow(active.id, { logicalPath: parentPath(active.logicalPath), selectedItems: [] });

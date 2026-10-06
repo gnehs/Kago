@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
@@ -31,11 +32,9 @@ const reservedSlugs = new Set([
   "robots.txt"
 ]);
 
-export const rootInputSchema = z.object({
-  slug: z.string().regex(/^[a-z0-9_-]+$/).min(1).max(64),
-  name: z.string().min(1).max(120),
-  basePath: z.string().min(1).optional(),
-  readonly: z.boolean().optional().default(false)
+export const rootPatchSchema = z.object({
+  name: z.string().min(1).max(120).optional(),
+  readonly: z.boolean().optional()
 });
 
 export class RootService {
@@ -46,6 +45,32 @@ export class RootService {
 
   list(): Root[] {
     return rows<Root>(this.db.prepare("SELECT * FROM roots ORDER BY name ASC").all());
+  }
+
+  /** Roots whose folder is currently present under the data dir, after picking up any new folders. */
+  listMounted(): Root[] {
+    this.syncFromDataDir();
+    return this.list().filter((root) => fs.existsSync(root.base_path));
+  }
+
+  // Roots are not created by hand: every folder directly under the data dir is mounted as one.
+  syncFromDataDir(): Root[] {
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(this.dataDir, { withFileTypes: true });
+    } catch {
+      return [];
+    }
+    const dataRoot = path.resolve(this.dataDir);
+    const known = new Set(this.list().map((root) => root.base_path));
+    const created: Root[] = [];
+    for (const entry of entries) {
+      if (!entry.isDirectory() || /^[.@#]/.test(entry.name)) continue;
+      const basePath = path.join(dataRoot, entry.name);
+      if (known.has(basePath)) continue;
+      created.push(this.insert(this.availableSlug(entry.name), entry.name.slice(0, 120), basePath, false));
+    }
+    return created;
   }
 
   getBySlug(slug: string): Root {
@@ -60,21 +85,14 @@ export class RootService {
     return root;
   }
 
-  create(input: z.infer<typeof rootInputSchema>): Root {
-    if (reservedSlugs.has(input.slug)) throw new AppError(400, "Reserved root slug", "RESERVED_SLUG");
-    if (row<Root>(this.db.prepare("SELECT * FROM roots WHERE slug = ?").get(input.slug))) {
-      throw new AppError(409, "Root slug already exists", "ROOT_SLUG_EXISTS");
-    }
-    const basePath = this.resolveBasePath(input.basePath ?? `/data/${input.slug}`);
-    fs.mkdirSync(basePath, { recursive: true });
-    this.assertBasePathInsideData(basePath);
+  private insert(slug: string, name: string, basePath: string, readonly: boolean): Root {
     const ts = now();
     const root: Root = {
       id: id("root"),
-      slug: input.slug,
-      name: input.name,
+      slug,
+      name,
       base_path: basePath,
-      readonly: input.readonly ? 1 : 0,
+      readonly: readonly ? 1 : 0,
       created_at: ts,
       updated_at: ts
     };
@@ -86,49 +104,22 @@ export class RootService {
     return root;
   }
 
-  patch(rootId: string, input: Partial<z.infer<typeof rootInputSchema>>): Root {
+  private availableSlug(folderName: string): string {
+    const cleaned = folderName.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 56);
+    // Names without any ASCII letters (e.g. CJK) get a stable hash-based slug instead.
+    const base = cleaned || `folder-${createHash("sha1").update(folderName).digest("hex").slice(0, 8)}`;
+    const taken = new Set(this.list().map((root) => root.slug));
+    let slug = base;
+    for (let n = 2; reservedSlugs.has(slug) || taken.has(slug); n += 1) slug = `${base}-${n}`;
+    return slug;
+  }
+
+  patch(rootId: string, input: z.infer<typeof rootPatchSchema>): Root {
     const root = this.getById(rootId);
-    const next = {
-      name: input.name ?? root.name,
-      basePath: input.basePath ? this.resolveBasePath(input.basePath) : root.base_path,
-      readonly: input.readonly === undefined ? root.readonly : input.readonly ? 1 : 0
-    };
-    fs.mkdirSync(next.basePath, { recursive: true });
-    this.assertBasePathInsideData(next.basePath);
+    const readonly = input.readonly === undefined ? root.readonly : input.readonly ? 1 : 0;
     this.db
-      .prepare("UPDATE roots SET name = ?, base_path = ?, readonly = ?, updated_at = ? WHERE id = ?")
-      .run(next.name, next.basePath, next.readonly, now(), rootId);
+      .prepare("UPDATE roots SET name = ?, readonly = ?, updated_at = ? WHERE id = ?")
+      .run(input.name ?? root.name, readonly, now(), rootId);
     return this.getById(rootId);
   }
-
-  delete(rootId: string): void {
-    this.getById(rootId);
-    this.db.prepare("DELETE FROM roots WHERE id = ?").run(rootId);
-  }
-
-  private resolveBasePath(basePath: string): string {
-    if (basePath !== "/data" && !basePath.startsWith("/data/")) {
-      throw new AppError(400, "Root base path must be inside /data", "ROOT_PATH_OUTSIDE_DATA");
-    }
-
-    const dataRoot = path.resolve(this.dataDir);
-    const candidate = basePath === "/data" ? dataRoot : path.resolve(dataRoot, basePath.slice("/data/".length));
-    if (!isInside(dataRoot, candidate)) {
-      throw new AppError(400, "Root base path escapes /data", "ROOT_PATH_ESCAPES_DATA");
-    }
-    return candidate;
-  }
-
-  private assertBasePathInsideData(candidate: string): void {
-    const dataRoot = fs.realpathSync(this.dataDir);
-    const target = fs.realpathSync(candidate);
-    if (!isInside(dataRoot, target)) {
-      throw new AppError(400, "Root base path escapes /data", "ROOT_PATH_ESCAPES_DATA");
-    }
-  }
-}
-
-function isInside(rootPath: string, targetPath: string): boolean {
-  const relative = path.relative(rootPath, targetPath);
-  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
 }

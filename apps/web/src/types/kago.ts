@@ -28,6 +28,7 @@ export type UserAccount = {
 export type Group = {
   id: string;
   name: string;
+  members: Array<Pick<UserAccount, "id" | "email" | "display_name">>;
   created_at: number;
   updated_at: number;
 };
@@ -50,6 +51,7 @@ export type FileWindow = {
   sortDirection: "asc" | "desc";
   selectedItems: string[];
   scrollTop?: number;
+  inspectorOpen?: boolean;
   createdAt: number;
   updatedAt: number;
 };

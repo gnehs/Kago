@@ -50,7 +50,7 @@ export function PermissionsPage({ roots }: { roots: Root[] }) {
   if (roots.length === 0) {
     return (
       <Page title="權限">
-        <KagoEmptyState icon={<KeyRound />} title="還沒有任何位置" description="先在設定中新增 Root，才能設定權限。" />
+        <KagoEmptyState icon={<KeyRound />} title="還沒有任何位置" description="/data 底下有資料夾後，才能設定權限。" />
       </Page>
     );
   }

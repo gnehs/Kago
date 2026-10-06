@@ -14,6 +14,10 @@ export function useUsers() {
   return useQuery({ queryKey: ["users"], queryFn: () => api<UserAccount[]>("/api/users"), retry: false });
 }
 
+export function useAdminContacts(enabled = true) {
+  return useQuery({ queryKey: ["admins"], queryFn: () => api<Array<{ displayName: string; email: string }>>("/api/admins"), enabled });
+}
+
 export function useGroups() {
   return useQuery({ queryKey: ["groups"], queryFn: () => api<Group[]>("/api/groups"), retry: false });
 }

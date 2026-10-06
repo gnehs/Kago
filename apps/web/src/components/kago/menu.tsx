@@ -1,5 +1,6 @@
 import type { ComponentProps, ReactNode } from "react";
 import { ContextMenu } from "@base-ui/react/context-menu";
+import { Menu } from "@base-ui/react/menu";
 import { cn } from "@/lib/utils";
 
 /**
@@ -18,6 +19,32 @@ export function KagoContextMenu({ menu, children, className, ...props }: Omit<Co
         </ContextMenu.Positioner>
       </ContextMenu.Portal>
     </ContextMenu.Root>
+  );
+}
+
+/**
+ * The same menu opened from a button, for pointers without a right click. Takes the
+ * `KagoMenuItem`s a context menu would, so both entrances always offer identical actions.
+ */
+export function KagoDropdownMenu({ label, menu, className, children }: { label: string; menu: ReactNode; className?: string; children: ReactNode }) {
+  return (
+    <Menu.Root>
+      <Menu.Trigger
+        aria-label={label}
+        title={label}
+        className={cn(
+          "flex size-(--kago-control-h) shrink-0 items-center justify-center rounded-md text-muted outline-none hover:bg-hover hover:text-ink focus-visible:ring-2 focus-visible:ring-accent/50 data-[popup-open]:bg-hover data-[popup-open]:text-ink",
+          className
+        )}
+      >
+        {children}
+      </Menu.Trigger>
+      <Menu.Portal>
+        <Menu.Positioner sideOffset={4} align="end" className="z-[800] outline-none">
+          <Menu.Popup className="min-w-44 rounded-lg bg-surface p-1 shadow-popup outline-none">{menu}</Menu.Popup>
+        </Menu.Positioner>
+      </Menu.Portal>
+    </Menu.Root>
   );
 }
 

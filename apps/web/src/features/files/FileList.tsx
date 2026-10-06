@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ArrowDown, ArrowUp } from "lucide-react";
 import { previewUrl, thumbnailUrl } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { formatDate, formatSize, kindLabel } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { useClipboardStore } from "@/stores/clipboard";
 import { useWorkspaceStore } from "@/stores/workspace";
 import type { FileItem, FileWindow } from "@/types/kago";
 import { FileIcon } from "./FileIcon";
@@ -15,12 +16,36 @@ type FileListProps = {
   onSelect: (event: React.MouseEvent, item: FileItem) => void;
   onOpen: (item: FileItem, newWindow?: boolean) => void;
   onContextItem: (item: FileItem) => void;
+  /** Dropping onto a folder puts the items inside it. Omitted when the window cannot be written to. */
+  onDropInto?: (event: React.DragEvent, folder: FileItem) => void;
 };
 
-/** Behaviour shared by every view: selection, open, drag source and context-menu target. */
-function itemProps({ window, onSelect, onOpen, onContextItem }: FileListProps, item: FileItem) {
+type ViewProps = FileListProps & { dropTarget: string | null; setDropTarget: (path: string | null) => void; cutPaths: Set<string> };
+
+/** Behaviour shared by every view: selection, open, drag source, folder drop target and context-menu target. */
+function itemProps({ window, onSelect, onOpen, onContextItem, onDropInto, setDropTarget }: ViewProps, item: FileItem) {
   const selected = window.selectedItems.includes(item.path);
+  const dropHandlers =
+    item.kind === "folder" && onDropInto
+      ? {
+          onDragOver(event: React.DragEvent) {
+            event.preventDefault();
+            setDropTarget(item.path);
+          },
+          onDragLeave(event: React.DragEvent) {
+            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropTarget(null);
+          },
+          onDrop(event: React.DragEvent) {
+            event.preventDefault();
+            // The window underneath is a drop target too; this drop belongs to the folder.
+            event.stopPropagation();
+            setDropTarget(null);
+            onDropInto(event, item);
+          }
+        }
+      : {};
   return {
+    ...dropHandlers,
     "data-file-path": item.path,
     "data-file-kind": item.kind,
     "aria-selected": selected,
@@ -41,13 +66,21 @@ function itemProps({ window, onSelect, onOpen, onContextItem }: FileListProps, i
 
 const selectedClass = (window: FileWindow, selected: boolean) => (selected ? (window.focused ? "bg-accent text-accent-fg" : "bg-accent-soft") : "hover:bg-hover");
 
+/** Folder under a drag, and items waiting to be moved by a cut. */
+const stateClass = ({ dropTarget, cutPaths }: ViewProps, item: FileItem) => cn(dropTarget === item.path && "ring-2 ring-accent ring-inset", cutPaths.has(item.path) && "opacity-50");
+
 export function FileList(props: FileListProps) {
-  if (props.window.viewMode === "grid") return <GridView {...props} />;
-  if (props.window.viewMode === "columns") return <ColumnsView {...props} />;
-  return <ListView {...props} />;
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const clip = useClipboardStore((state) => state.clip);
+  const rootSlug = props.window.rootSlug;
+  const cutPaths = useMemo(() => new Set(clip?.mode === "cut" ? clip.items.filter((item) => item.rootSlug === rootSlug).map((item) => item.path) : []), [clip, rootSlug]);
+  const view = { ...props, dropTarget, setDropTarget, cutPaths };
+  if (props.window.viewMode === "grid") return <GridView {...view} />;
+  if (props.window.viewMode === "columns") return <ColumnsView {...view} />;
+  return <ListView {...view} />;
 }
 
-function ListView(props: FileListProps) {
+function ListView(props: ViewProps) {
   const { window, items } = props;
   return (
     <div className="@container min-w-0 pb-2" role="listbox" aria-multiselectable>
@@ -60,7 +93,7 @@ function ListView(props: FileListProps) {
       {items.map((item) => {
         const selected = window.selectedItems.includes(item.path);
         return (
-          <div key={item.path} role="option" className={cn("mx-1 flex h-(--kago-row-h) items-center gap-2 rounded-sm px-2", selectedClass(window, selected))} {...itemProps(props, item)}>
+          <div key={item.path} role="option" className={cn("mx-1 flex h-(--kago-row-h) items-center gap-2 rounded-sm px-2", selectedClass(window, selected), stateClass(props, item))} {...itemProps(props, item)}>
             <span className="flex min-w-0 flex-1 items-center gap-2">
               <FileIcon item={item} className={cn(selected && window.focused && item.kind === "file" && "text-inherit")} />
               <span className="truncate">{item.name}</span>
@@ -75,14 +108,23 @@ function ListView(props: FileListProps) {
   );
 }
 
+export const sortColumns: Array<{ sortBy: FileWindow["sortBy"]; label: string }> = [
+  { sortBy: "name", label: "名稱" },
+  { sortBy: "mtime", label: "修改時間" },
+  { sortBy: "size", label: "大小" },
+  { sortBy: "type", label: "種類" }
+];
+
+/** Picks a sort column; picking the current one again flips its direction. Sizes and dates start largest or newest first. */
+export function toggleSort(window: FileWindow, sortBy: FileWindow["sortBy"]) {
+  const sortDirection = window.sortBy === sortBy ? (window.sortDirection === "asc" ? "desc" : "asc") : sortBy === "size" || sortBy === "mtime" ? "desc" : "asc";
+  useWorkspaceStore.getState().updateWindow(window.id, { sortBy, sortDirection });
+}
+
 function SortHeader({ window, sortBy, label, className }: { window: FileWindow; sortBy: FileWindow["sortBy"]; label: string; className?: string }) {
   const active = window.sortBy === sortBy;
   const ascending = window.sortDirection === "asc";
-
-  function sort() {
-    const sortDirection = active ? (ascending ? "desc" : "asc") : sortBy === "size" || sortBy === "mtime" ? "desc" : "asc";
-    useWorkspaceStore.getState().updateWindow(window.id, { sortBy, sortDirection });
-  }
+  const sort = () => toggleSort(window, sortBy);
 
   return (
     <button className={cn("flex h-full items-center gap-1 outline-none hover:text-ink", active && "font-medium text-ink", className)} aria-sort={active ? (ascending ? "ascending" : "descending") : "none"} onClick={sort}>
@@ -92,14 +134,14 @@ function SortHeader({ window, sortBy, label, className }: { window: FileWindow; 
   );
 }
 
-function GridView(props: FileListProps) {
+function GridView(props: ViewProps) {
   const { window, items } = props;
   return (
     <div className="grid grid-cols-[repeat(auto-fill,minmax(104px,1fr))] content-start gap-1 p-2" role="listbox" aria-multiselectable>
       {items.map((item) => {
         const selected = window.selectedItems.includes(item.path);
         return (
-          <div key={item.path} role="option" className="flex flex-col items-center gap-1 rounded-md p-1.5" {...itemProps(props, item)}>
+          <div key={item.path} role="option" className={cn("flex flex-col items-center gap-1 rounded-md p-1.5", stateClass(props, item))} {...itemProps(props, item)}>
             <div className={cn("flex size-20 items-center justify-center rounded-md", selected ? "bg-hover" : "")}>
               <Thumbnail rootSlug={window.rootSlug} item={item} />
             </div>
@@ -120,7 +162,7 @@ function Thumbnail({ rootSlug, item }: { rootSlug: string; item: FileItem }) {
 }
 
 /** Name column on the left, a preview of the selected item on the right. */
-function ColumnsView(props: FileListProps) {
+function ColumnsView(props: ViewProps) {
   const { window, items, onOpen } = props;
   const current = items.find((item) => item.path === window.selectedItems.at(-1));
   return (
@@ -129,7 +171,7 @@ function ColumnsView(props: FileListProps) {
         {items.map((item) => {
           const selected = window.selectedItems.includes(item.path);
           return (
-            <div key={item.path} role="option" className={cn("mx-1 flex h-(--kago-row-h) items-center gap-2 rounded-sm px-2", selectedClass(window, selected))} {...itemProps(props, item)}>
+            <div key={item.path} role="option" className={cn("mx-1 flex h-(--kago-row-h) items-center gap-2 rounded-sm px-2", selectedClass(window, selected), stateClass(props, item))} {...itemProps(props, item)}>
               <FileIcon item={item} className={cn(selected && window.focused && item.kind === "file" && "text-inherit")} />
               <span className="truncate">{item.name}</span>
             </div>

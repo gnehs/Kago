@@ -21,6 +21,8 @@ const maxExtractEntries = 10_000;
 const maxExtractBytes = 1024 * 1024 * 1024 * 2;
 const progressFlushIntervalMs = 500;
 const progressFlushBytes = 1024 * 1024 * 16;
+const cancelCheckIntervalMs = 300;
+const downloadMaxAgeMs = 24 * 60 * 60 * 1000;
 const symlinkFileType = 0o120000;
 const unixFileTypeMask = 0o170000;
 
@@ -36,6 +38,7 @@ export const taskInputSchema = z.object({
     "delete_to_trash",
     "restore_trash",
     "compress",
+    "download_zip",
     "extract",
     "rsync_pull",
     "rsync_push",
@@ -51,8 +54,12 @@ export const taskInputSchema = z.object({
   }).optional()
 });
 
+/** Thrown inside a running task once its row is no longer `running`. */
+class TaskCancelledError extends Error {}
+
 export class TaskService {
   private readonly progressBuffers = new Map<string, ProgressBuffer>();
+  private readonly cancelChecks = new Map<string, number>();
 
   constructor(
     private readonly db: Db,
@@ -68,7 +75,7 @@ export class TaskService {
     if (["copy", "move", "compress", "extract"].includes(input.type) && !input.destination) {
       throw new AppError(400, "Destination required", "DESTINATION_REQUIRED");
     }
-    if (["copy", "move", "delete_to_trash", "restore_trash", "compress", "extract", "thumbnail"].includes(input.type) && input.sources.length === 0) {
+    if (["copy", "move", "delete_to_trash", "restore_trash", "compress", "download_zip", "extract", "thumbnail"].includes(input.type) && input.sources.length === 0) {
       throw new AppError(400, "Sources required", "SOURCES_REQUIRED");
     }
     if (input.type === "rsync_pull" && (!input.remote || !input.destination)) {
@@ -82,9 +89,11 @@ export class TaskService {
     const destination =
       input.type === "rsync_push"
         ? JSON.stringify({ remote: input.remote, options: input.options ?? {} })
-        : input.destination
-          ? JSON.stringify({ ...input.destination, options: input.options ?? {} })
-          : null;
+        : input.type === "download_zip"
+          ? JSON.stringify({ fileName: downloadFileName(sources) })
+          : input.destination
+            ? JSON.stringify({ ...input.destination, options: input.options ?? {} })
+            : null;
 
     await this.assertTaskPermissions(actor, input);
 
@@ -159,6 +168,25 @@ export class TaskService {
       .all(actor.id);
   }
 
+  /** Permanently deletes everything the actor can see in the trash. */
+  async emptyTrash(actor: Actor): Promise<{ deleted: number }> {
+    const trashDir = path.resolve(this.appDataDir, "trash");
+    const items = rows<RestorableTrashItem>(
+      actor.role === "ADMIN"
+        ? this.db.prepare("SELECT * FROM trash_items WHERE restored_at IS NULL").all()
+        : this.db.prepare("SELECT * FROM trash_items WHERE deleted_by = ? AND restored_at IS NULL").all(actor.id)
+    );
+    for (const item of items) {
+      // Trashed entries always sit directly inside the trash dir; never remove anything else.
+      if (path.dirname(path.resolve(item.trash_path)) === trashDir) {
+        await fsp.rm(item.trash_path, { recursive: true, force: true });
+      }
+      this.db.prepare("DELETE FROM trash_items WHERE id = ?").run(item.id);
+    }
+    this.audit.write({ actorType: "user", actorId: actor.id, action: "trash_empty", target: { count: items.length }, result: "success" });
+    return { deleted: items.length };
+  }
+
   get(taskId: string): FileTask {
     const task = row<FileTask>(this.db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId));
     if (!task) throw new AppError(404, "Task not found", "TASK_NOT_FOUND");
@@ -175,11 +203,12 @@ export class TaskService {
     const task = this.get(taskId);
     this.requireTaskAccess(actor, task);
     if (task.status === "cancelled") return task;
-    if (!["queued", "paused"].includes(task.status)) {
-      throw new AppError(409, "Only queued or paused tasks can be cancelled", "TASK_CANCEL_NOT_ALLOWED");
+    if (!["queued", "paused", "running"].includes(task.status)) {
+      throw new AppError(409, "Only queued, paused, or running tasks can be cancelled", "TASK_CANCEL_NOT_ALLOWED");
     }
+    // A running task belongs to the worker; it sees this status change at its next checkpoint and stops.
     this.db
-      .prepare("UPDATE tasks SET status = 'cancelled', updated_at = ?, finished_at = ? WHERE id = ? AND status IN ('queued', 'paused')")
+      .prepare("UPDATE tasks SET status = 'cancelled', updated_at = ?, finished_at = ? WHERE id = ? AND status IN ('queued', 'paused', 'running')")
       .run(now(), now(), taskId);
     this.audit.write({ actorType: "user", actorId: actor.id, action: "task_cancel", target: { taskId }, result: "success" });
     const cancelled = this.get(taskId);
@@ -299,15 +328,19 @@ export class TaskService {
       else if (task.type === "delete_to_trash") await this.runTrash(task, actor);
       else if (task.type === "restore_trash") await this.runRestore(task, actor);
       else if (task.type === "compress") await this.runCompress(task, actor);
+      else if (task.type === "download_zip") await this.runDownloadZip(task, actor);
       else if (task.type === "extract") await this.runExtract(task, actor);
       else if (task.type === "rsync_pull") await this.runRsyncPull(task, actor);
       else if (task.type === "rsync_push") await this.runRsyncPush(task, actor);
       else if (task.type === "thumbnail") await this.runThumbnail(task, actor);
-      this.finish(task.id, "done");
-      this.events.publish({ type: "task.done", userId: task.created_by, taskId: task.id });
+      if (this.finish(task.id, "done")) this.events.publish({ type: "task.done", userId: task.created_by, taskId: task.id });
     } catch (error) {
+      if (error instanceof TaskCancelledError) {
+        this.flushProgress(task.id, true);
+        return;
+      }
       const message = taskFailureMessage(error);
-      this.finish(task.id, "failed", message);
+      if (!this.finish(task.id, "failed", message)) return;
       this.audit.write({
         actorType: "user",
         actorId: actor.id,
@@ -316,6 +349,8 @@ export class TaskService {
         result: "failure"
       });
       this.events.publish({ type: "task.failed", userId: task.created_by, taskId: task.id, error: message });
+    } finally {
+      this.cancelChecks.delete(task.id);
     }
   }
 
@@ -351,7 +386,7 @@ export class TaskService {
         const streamed = await movePath(safeSource.absolutePath, target, (processedBytes) => this.bumpProcessedBytes(task.id, processedBytes));
         shouldCountBytesAfterOperation = !streamed;
       } else {
-        await copyPath(safeSource.absolutePath, target, (processedBytes) => this.bumpProcessedBytes(task.id, processedBytes));
+        await copyTree(safeSource.absolutePath, target, (processedBytes) => this.bumpProcessedBytes(task.id, processedBytes));
       }
       if (move) {
         this.audit.write({
@@ -473,12 +508,40 @@ export class TaskService {
     this.permissions.require(actor, "upload", dest.root, path.posix.dirname(dest.logicalPath));
     this.permissions.require(actor, "compress", dest.root, path.posix.dirname(dest.logicalPath));
     await assertPathDoesNotExist(dest.absolutePath);
+    const zipped = await this.zipSources(task, actor, "read", dest.absolutePath);
+    this.audit.write({
+      actorType: "user",
+      actorId: actor.id,
+      action: "compress",
+      rootId: dest.root.id,
+      path: dest.logicalPath,
+      target: { taskId: task.id, sources: zipped },
+      result: "success"
+    });
+  }
+
+  /** Zips a selection into Kago's own temp dir so a multi-file download leaves nothing behind in the user's folders. */
+  private async runDownloadZip(task: FileTask, actor: Actor): Promise<void> {
+    const target = this.downloadPath(task.id);
+    await fsp.mkdir(path.dirname(target), { recursive: true });
+    const zipped = await this.zipSources(task, actor, "download", target);
+    this.audit.write({
+      actorType: "user",
+      actorId: actor.id,
+      action: "download_zip",
+      target: { taskId: task.id, sources: zipped },
+      result: "success"
+    });
+  }
+
+  private async zipSources(task: FileTask, actor: Actor, sourceAction: Action, targetPath: string): Promise<Array<{ rootSlug: string; path: string }>> {
+    const sources = JSON.parse(task.sources_json) as Array<{ rootSlug: string; path: string }>;
     const zip = new AdmZip();
     const operations = [];
     let totalBytes = 0;
     for (const source of sources) {
       const safe = await this.paths.resolveExisting(source.rootSlug, source.path);
-      this.permissions.require(actor, "read", safe.root, safe.logicalPath);
+      this.permissions.require(actor, sourceAction, safe.root, safe.logicalPath);
       await assertNoSymlinksDeep(safe.absolutePath);
       const stats = await collectPathStats(safe.absolutePath);
       totalBytes += stats.bytes;
@@ -487,22 +550,54 @@ export class TaskService {
     await this.updateTotals(task.id, operations.length, totalBytes);
 
     for (const { safe, bytes } of operations) {
+      await this.progress(task.id, safe.logicalPath);
       const stat = await fsp.stat(safe.absolutePath);
       if (stat.isDirectory()) zip.addLocalFolder(safe.absolutePath, path.basename(safe.absolutePath));
       else zip.addLocalFile(safe.absolutePath);
       await this.bumpProcessedBytes(task.id, bytes);
       await this.bumpProcessed(task.id);
     }
-    zip.writeZip(dest.absolutePath);
-    this.audit.write({
-      actorType: "user",
-      actorId: actor.id,
-      action: "compress",
-      rootId: dest.root.id,
-      path: dest.logicalPath,
-      target: { taskId: task.id, sources: operations.map(({ safe }) => ({ rootSlug: safe.root.slug, path: safe.logicalPath })) },
-      result: "success"
-    });
+    zip.writeZip(targetPath);
+    return operations.map(({ safe }) => ({ rootSlug: safe.root.slug, path: safe.logicalPath }));
+  }
+
+  /** The finished archive of a `download_zip` task, re-checking that the actor may still download every source. */
+  async openDownload(actor: Actor, taskId: string): Promise<{ path: string; size: number; fileName: string }> {
+    const task = this.getForActor(actor, taskId);
+    if (task.type !== "download_zip" || task.status !== "done") {
+      throw new AppError(409, "Task has no download", "TASK_DOWNLOAD_NOT_READY");
+    }
+    const sources = JSON.parse(task.sources_json) as Array<{ rootSlug: string; path: string }>;
+    for (const source of sources) {
+      const safe = await this.paths.resolveForCreate(source.rootSlug, source.path);
+      this.permissions.require(actor, "download", safe.root, safe.logicalPath);
+    }
+    const filePath = this.downloadPath(task.id);
+    let size: number;
+    try {
+      size = (await fsp.stat(filePath)).size;
+    } catch (error) {
+      if (isMissingPathError(error)) throw new AppError(410, "Download has expired", "TASK_DOWNLOAD_EXPIRED");
+      throw error;
+    }
+    this.audit.write({ actorType: "user", actorId: actor.id, action: "download", target: { taskId, sources }, result: "success" });
+    const { fileName } = JSON.parse(task.destination ?? "{}") as { fileName?: string };
+    return { path: filePath, size, fileName: fileName || "download.zip" };
+  }
+
+  /** Download archives are throwaway; drop the ones nobody fetched within a day. */
+  async cleanupExpiredDownloads(): Promise<void> {
+    const dir = path.join(this.appDataDir, "temp", "downloads");
+    const entries = await fsp.readdir(dir).catch(() => [] as string[]);
+    for (const entry of entries) {
+      const filePath = path.join(dir, entry);
+      const stat = await fsp.stat(filePath).catch(() => null);
+      if (stat && Date.now() - stat.mtimeMs > downloadMaxAgeMs) await fsp.rm(filePath, { force: true });
+    }
+  }
+
+  private downloadPath(taskId: string): string {
+    return path.join(this.appDataDir, "temp", "downloads", `${taskId}.zip`);
   }
 
   private async runExtract(task: FileTask, actor: Actor): Promise<void> {
@@ -603,7 +698,7 @@ export class TaskService {
     this.permissions.require(actor, "upload", dest.root, dest.logicalPath);
     this.permissions.require(actor, "run_rsync", dest.root, dest.logicalPath);
     await this.progress(task.id, remote);
-    await runRsync([...rsyncFlags(destination.options), "--", ensureTrailingSlash(remote), ensureTrailingSlash(dest.absolutePath)]);
+    await runRsync([...rsyncFlags(destination.options), "--", ensureTrailingSlash(remote), ensureTrailingSlash(dest.absolutePath)], () => this.isCancelled(task.id));
     await this.bumpProcessed(task.id);
     this.audit.write({
       actorType: "user",
@@ -625,7 +720,7 @@ export class TaskService {
       this.permissions.require(actor, "read", safe.root, safe.logicalPath);
       this.permissions.require(actor, "run_rsync", safe.root, safe.logicalPath);
       await this.progress(task.id, safe.logicalPath);
-      await runRsync([...rsyncFlags(destination.options), "--", safe.absolutePath, ensureTrailingSlash(destination.remote)]);
+      await runRsync([...rsyncFlags(destination.options), "--", safe.absolutePath, ensureTrailingSlash(destination.remote)], () => this.isCancelled(task.id));
       await this.bumpProcessed(task.id);
       this.audit.write({
         actorType: "user",
@@ -693,6 +788,14 @@ export class TaskService {
       return;
     }
 
+    if (input.type === "download_zip") {
+      for (const source of input.sources) {
+        const safe = await this.paths.resolveExisting(source.rootSlug, source.path);
+        this.permissions.require(actor, "download", safe.root, safe.logicalPath);
+      }
+      return;
+    }
+
     if (input.type === "extract") {
       const destination = this.requiredDestination(input);
       const dest = await this.paths.resolveExisting(destination.rootSlug, destination.path);
@@ -756,13 +859,27 @@ export class TaskService {
     throw new AppError(403, results[0]?.result.reason ?? "Forbidden", "FORBIDDEN");
   }
 
+  private isCancelled(taskId: string): boolean {
+    return this.get(taskId).status !== "running";
+  }
+
+  /** Checkpoint for running tasks; throttled so it costs one row read every few hundred ms at most. */
+  private assertNotCancelled(taskId: string): void {
+    const ts = Date.now();
+    if (ts - (this.cancelChecks.get(taskId) ?? 0) < cancelCheckIntervalMs) return;
+    this.cancelChecks.set(taskId, ts);
+    if (this.isCancelled(taskId)) throw new TaskCancelledError();
+  }
+
   private async progress(taskId: string, currentPath: string): Promise<void> {
+    this.assertNotCancelled(taskId);
     const buffer = this.progressBuffer(taskId);
     buffer.currentPath = currentPath;
     this.flushProgress(taskId);
   }
 
   private async bumpProcessed(taskId: string): Promise<void> {
+    this.assertNotCancelled(taskId);
     const buffer = this.progressBuffer(taskId);
     buffer.processedFiles += 1;
     this.flushProgress(taskId);
@@ -770,6 +887,7 @@ export class TaskService {
 
   private bumpProcessedBytes(taskId: string, bytes: number): void {
     if (bytes <= 0) return;
+    this.assertNotCancelled(taskId);
     const buffer = this.progressBuffer(taskId);
     buffer.processedBytes += bytes;
     this.flushProgress(taskId);
@@ -789,11 +907,13 @@ export class TaskService {
     });
   }
 
-  private finish(taskId: string, status: "done" | "failed", error?: string): void {
+  /** Returns false when the task was cancelled in the meantime, in which case its row is left alone. */
+  private finish(taskId: string, status: "done" | "failed", error?: string): boolean {
     this.flushProgress(taskId, true);
-    this.db
-      .prepare("UPDATE tasks SET status = ?, error_message = ?, updated_at = ?, finished_at = ? WHERE id = ?")
+    const result = this.db
+      .prepare("UPDATE tasks SET status = ?, error_message = ?, updated_at = ?, finished_at = ? WHERE id = ? AND status = 'running'")
       .run(status, error ?? null, now(), now(), taskId);
+    return Number(result.changes) > 0;
   }
 
   private progressBuffer(taskId: string): ProgressBuffer {
@@ -981,16 +1101,34 @@ function isSafeRsyncRemote(value: string): boolean {
   return /^[A-Za-z0-9._~+/@:%=-]+$/.test(remotePath);
 }
 
-function runRsync(args: string[]): Promise<void> {
+function runRsync(args: string[], isCancelled: () => boolean): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn("rsync", args, { stdio: ["ignore", "ignore", "pipe"] });
+    let cancelled = false;
+    const watcher = setInterval(() => {
+      if (!isCancelled()) return;
+      cancelled = true;
+      child.kill();
+    }, 500);
     child.stderr.resume();
-    child.on("error", reject);
+    child.on("error", (error) => {
+      clearInterval(watcher);
+      reject(error);
+    });
     child.on("close", (code) => {
-      if (code === 0) resolve();
+      clearInterval(watcher);
+      if (cancelled) reject(new TaskCancelledError());
+      else if (code === 0) resolve();
       else reject(new AppError(500, "rsync failed", "RSYNC_FAILED"));
     });
   });
+}
+
+function downloadFileName(sources: Array<{ path: string }>): string {
+  const single = sources.length === 1 ? path.posix.basename(sources[0]!.path) : "";
+  if (single) return `${single}.zip`;
+  const stamp = new Date().toISOString().slice(0, 19).replaceAll(":", "").replace("T", "-");
+  return `Kago-${stamp}.zip`;
 }
 
 function taskFailureMessage(error: unknown): string {
@@ -1077,12 +1215,30 @@ async function copyPath(sourcePath: string, targetPath: string, onBytes: (bytes:
   await fsp.mkdir(path.dirname(targetPath), { recursive: true });
   const byteCounter = new Transform({
     transform(chunk, _encoding, callback) {
-      onBytes(Buffer.byteLength(chunk));
-      callback(null, chunk);
+      // onBytes is also the cancellation checkpoint; route its throw through the pipeline.
+      try {
+        onBytes(Buffer.byteLength(chunk));
+        callback(null, chunk);
+      } catch (error) {
+        callback(error as Error);
+      }
     }
   });
   await pipeline(createReadStream(sourcePath), byteCounter, createWriteStream(targetPath, { flags: "wx", mode: Number(stat.mode) }));
   await preservePathMetadata(targetPath, stat);
+}
+
+/**
+ * Copies a file or folder to a target that did not exist before. A cancelled copy removes the
+ * partial target again; cancellation only fires mid-stream, after this call created it.
+ */
+async function copyTree(sourcePath: string, targetPath: string, onBytes: (bytes: number) => void): Promise<void> {
+  try {
+    await copyPath(sourcePath, targetPath, onBytes);
+  } catch (error) {
+    if (error instanceof TaskCancelledError) await fsp.rm(targetPath, { recursive: true, force: true });
+    throw error;
+  }
 }
 
 async function preservePathMetadata(targetPath: string, stat: Awaited<ReturnType<typeof fsp.lstat>>): Promise<void> {
@@ -1096,7 +1252,7 @@ async function movePath(sourcePath: string, targetPath: string, onBytes: (bytes:
     return false;
   } catch (error) {
     if (!isNodeError(error, "EXDEV")) throw error;
-    await copyPath(sourcePath, targetPath, onBytes);
+    await copyTree(sourcePath, targetPath, onBytes);
     await fsp.rm(sourcePath, { recursive: true, force: false });
     return true;
   }

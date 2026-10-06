@@ -1,7 +1,7 @@
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Popover } from "@base-ui/react/popover";
-import { Folder, ListChecks, LogOut, Monitor, Moon, Search, Settings, Sun } from "lucide-react";
+import { Folder, ListChecks, LogOut, Search, Settings } from "lucide-react";
 import { api } from "@/api/client";
 import { useTasks } from "@/api/hooks";
 import { KagoSpinner } from "@/components/kago/empty-state";
@@ -10,18 +10,10 @@ import { Button } from "@/components/ui/button";
 import { BrandMark } from "@/features/auth/AuthCard";
 import { TaskRow } from "@/features/tasks/TaskRow";
 import { isActiveTask } from "@/features/tasks/taskUtils";
-import { getTheme, setTheme, type ThemePref } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 import { appIcons } from "@/features/windows/AppWindow";
 import { useWorkspaceStore, type WindowFrame } from "@/stores/workspace";
 import type { Actor } from "@/types/kago";
-
-const themeOrder: ThemePref[] = ["system", "light", "dark"];
-const themeMeta: Record<ThemePref, { label: string; icon: ReactNode }> = {
-  system: { label: "外觀：跟隨系統", icon: <Monitor /> },
-  light: { label: "外觀：淺色", icon: <Sun /> },
-  dark: { label: "外觀：深色", icon: <Moon /> }
-};
 
 /** The workspace's only chrome: open windows on the left, status and account on the right. */
 export function TopBar({ user, onOpenPalette }: { user: Actor; onOpenPalette: () => void }) {
@@ -29,7 +21,6 @@ export function TopBar({ user, onOpenPalette }: { user: Actor; onOpenPalette: ()
   const windows = useWorkspaceStore((state) => state.windows);
   const appWindows = useWorkspaceStore((state) => state.appWindows);
   const settingsFocused = appWindows.some((window) => window.app === "settings" && window.focused && !window.minimized);
-  const [theme, setThemeState] = useState(getTheme);
   const ordered = [...windows, ...appWindows].sort((a, b) => a.createdAt - b.createdAt);
   const anyVisible = ordered.some((window) => !window.minimized);
 
@@ -48,12 +39,6 @@ export function TopBar({ user, onOpenPalette }: { user: Actor; onOpenPalette: ()
   function toggleDesktop() {
     const store = useWorkspaceStore.getState();
     for (const window of ordered) store.updateWindow(window.id, { minimized: anyVisible });
-  }
-
-  function cycleTheme() {
-    const next = themeOrder[(themeOrder.indexOf(theme) + 1) % themeOrder.length]!;
-    setTheme(next);
-    setThemeState(next);
   }
 
   async function logout() {
@@ -100,7 +85,6 @@ export function TopBar({ user, onOpenPalette }: { user: Actor; onOpenPalette: ()
         <kbd className="font-sans text-xs">⌘K</kbd>
       </button>
       <TaskStatus />
-      <KagoIconButton label={themeMeta[theme].label} onClick={cycleTheme}>{themeMeta[theme].icon}</KagoIconButton>
       <KagoIconButton label="設定" active={settingsFocused} onClick={() => useWorkspaceStore.getState().openApp("settings")}><Settings /></KagoIconButton>
       <KagoIconButton label={`登出 ${user.email}`} onClick={() => void logout()}><LogOut /></KagoIconButton>
     </header>
@@ -116,16 +100,19 @@ function TaskStatus() {
   // Active tasks first, then the most recent finished ones.
   const visible = [...all.filter(isActiveTask), ...all.filter((task) => !isActiveTask(task))].slice(0, 5);
 
+  const label = activeCount > 0 ? `${activeCount} 個任務進行中` : "任務";
+
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
       <Popover.Trigger
+        aria-label={label}
+        title={label}
         className={cn(
-          "flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-muted outline-none hover:bg-hover hover:text-ink focus-visible:ring-2 focus-visible:ring-accent/50 data-[popup-open]:bg-hover",
+          "flex size-7 shrink-0 items-center justify-center rounded-md text-muted outline-none hover:bg-hover hover:text-ink focus-visible:ring-2 focus-visible:ring-accent/50 data-[popup-open]:bg-hover",
           activeCount > 0 && "text-accent hover:text-accent"
         )}
       >
         {activeCount > 0 ? <KagoSpinner className="text-accent" /> : <ListChecks />}
-        {activeCount > 0 ? `${activeCount} 個任務進行中` : "任務"}
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Positioner sideOffset={6} align="end" className="z-[700]">

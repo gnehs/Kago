@@ -31,14 +31,14 @@ export function KagoWindow({ window, icon, titleExtra, className, children, ...p
       {...props}
     >
       <header
-        className="group/titlebar flex h-9 shrink-0 touch-none items-center gap-2 border-b border-line bg-elevated px-3 select-none"
+        className="flex h-9 shrink-0 touch-none items-center gap-2 border-b border-line bg-elevated px-3 select-none"
         onDoubleClick={(event) => !isInteractiveTarget(event.target) && update({ maximized: !window.maximized })}
         {...moveHandlers}
       >
         <div className="flex items-center gap-2">
-          <TrafficLight label="關閉視窗" tone="bg-danger" hoverTone="group-hover/titlebar:bg-danger" focused={window.focused} onClick={() => store().closeWindow(window.id)} />
-          <TrafficLight label="最小化" tone="bg-warning" hoverTone="group-hover/titlebar:bg-warning" focused={window.focused} onClick={() => update({ minimized: true })} />
-          <TrafficLight label={window.maximized ? "還原大小" : "最大化"} tone="bg-success" hoverTone="group-hover/titlebar:bg-success" focused={window.focused} onClick={() => update({ maximized: !window.maximized })} />
+          <TrafficLight label="關閉視窗（⌥W）" tone="bg-danger" focused={window.focused} onClick={() => store().closeWindow(window.id)} />
+          <TrafficLight label="最小化" tone="bg-warning" focused={window.focused} onClick={() => update({ minimized: true })} />
+          <TrafficLight label={window.maximized ? "還原大小" : "最大化"} tone="bg-success" focused={window.focused} onClick={() => update({ maximized: !window.maximized })} />
         </div>
         <div className={cn("flex min-w-0 flex-1 items-center justify-center gap-1.5 font-medium", !window.focused && "text-muted")}>
           {icon}
@@ -59,13 +59,13 @@ export function KagoWindow({ window, icon, titleExtra, className, children, ...p
   );
 }
 
-function TrafficLight({ label, tone, hoverTone, focused, onClick }: { label: string; tone: string; hoverTone: string; focused: boolean; onClick: () => void }) {
+function TrafficLight({ label, tone, focused, onClick }: { label: string; tone: string; focused: boolean; onClick: () => void }) {
   return (
     <button
       type="button"
       aria-label={label}
       title={label}
-      className={cn("size-3 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-accent/50", focused ? tone : ["bg-line-strong", hoverTone])}
+      className={cn("size-3 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-accent/50", focused ? tone : "bg-line-strong")}
       onClick={onClick}
     />
   );
