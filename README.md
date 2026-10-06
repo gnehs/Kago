@@ -100,3 +100,9 @@ Docker image 內建 `rsync` 供 `rsync_pull` / `rsync_push` task 使用，並沿
 | `UMASK` | `022` | 新檔案與資料夾的 umask；`022` 產生 `644` / `755`，`000` 產生 `666` / `777` |
 
 容器以 root 啟動後會把 `/app-data` 的 owner 調整成 `PUID:PGID`，再降權執行；`/data` 不會被 chown，請確認該目錄本身可由 `PUID:PGID` 寫入。例如 Unraid 使用 `PUID=99`、`PGID=100`、`UMASK=000`。若改用 `docker run --user` 指定身分，`PUID` / `PGID` 會被忽略，只有 `UMASK` 生效。
+
+### 影片轉檔
+
+Docker image 內建 `ffmpeg`。預覽影片時，瀏覽器能直接解碼的檔案會原檔播放；不能直接播放的（例如 HEVC / AC3 的 mkv、avi、rmvb），或是在視窗標題列手動選了較低畫質時，伺服器會即時轉成 H.264 + AAC 的 HLS 串流，暫存檔放在 `/app-data/temp/transcode`，關閉視窗或閒置一段時間後自動清除。
+
+轉檔使用軟體編碼（libx264），會吃 CPU。本機開發若沒有安裝 `ffmpeg` / `ffprobe`，影片仍會以原檔播放，只是沒有轉檔與畫質選單；執行檔不在 `PATH` 時可用 `FFMPEG_PATH`、`FFPROBE_PATH` 指定。

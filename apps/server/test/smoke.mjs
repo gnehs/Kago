@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { access, mkdtemp, mkdir, readdir, readFile, rm, symlink, truncate, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -562,6 +563,61 @@ test("filenames are written in NFC while existing names keep their on-disk form"
 
     // Renaming onto another entry is still refused.
     assert.equal((await admin.post("/api/fs/rename", { rootSlug: "photos", path: "/public/が.txt", name: nfd("café.txt") })).statusCode, 409);
+  } finally {
+    await app.close();
+    await rm(fixture.baseDir, { recursive: true, force: true });
+  }
+});
+
+test("videos are probed and transcoded to HLS on demand", { skip: spawnSync("ffmpeg", ["-version"]).status !== 0 && "ffmpeg is not installed" }, async () => {
+  const fixture = await createFixture("kago-smoke-media.");
+  const clip = path.join(fixture.dataDir, "photos", "public", "clip.avi");
+  const encoded = spawnSync("ffmpeg", ["-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=size=640x480:rate=24", "-f", "lavfi", "-i", "sine", "-t", "14", "-c:v", "mpeg4", "-c:a", "mp3", clip]);
+  assert.equal(encoded.status, 0, String(encoded.stderr));
+  const app = await buildApp(testEnv(fixture));
+  const admin = client(app);
+
+  try {
+    await app.ready();
+    await admin.post("/api/auth/setup", { email: "admin@example.test", password: "fake-admin-password-123", displayName: "Smoke Admin" });
+
+    const info = await admin.get("/api/media/info?rootSlug=photos&path=/public/clip.avi");
+    assert.equal(info.statusCode, 200);
+    assert.equal(info.json.transcode, true);
+    assert.equal(info.json.video.codec, "mpeg4");
+    assert.deepEqual(info.json.qualities, [480, 360]);
+    assert.equal((await admin.get("/api/media/info?rootSlug=photos&path=/public/readme.txt")).statusCode, 422);
+
+    assert.equal((await admin.post("/api/media/sessions", { rootSlug: "photos", path: "/public/clip.avi", height: 1080 })).statusCode, 400);
+    const session = await admin.post("/api/media/sessions", { rootSlug: "photos", path: "/public/clip.avi", height: 360 });
+    assert.equal(session.statusCode, 200);
+
+    const playlist = await admin.get(session.json.playlistUrl);
+    assert.equal(playlist.statusCode, 200);
+    assert.deepEqual(playlist.payload.split("\n").filter((line) => line.endsWith(".ts")), ["0.ts", "1.ts", "2.ts"]);
+
+    // Asking for the last segment first is a seek: ffmpeg starts there rather than at the beginning.
+    const base = `/api/media/sessions/${session.json.id}`;
+    for (const index of [2, 0, 1]) {
+      const segment = await admin.get(`${base}/${index}.ts`);
+      assert.equal(segment.statusCode, 200);
+      assert.equal(segment.raw[0], 0x47, "segments are MPEG-TS");
+    }
+    assert.equal((await admin.get(`${base}/3.ts`)).statusCode, 404);
+    assert.equal((await admin.get(`${base}/../../fs/list`)).statusCode !== 200, true);
+
+    // Sessions belong to whoever opened them.
+    await admin.post("/api/users", { email: "viewer@example.test", password: "fake-viewer-password-123", displayName: "Viewer", role: "USER" });
+    const viewer = client(app);
+    await viewer.post("/api/auth/login", { email: "viewer@example.test", password: "fake-viewer-password-123" });
+    assert.equal((await viewer.get(`${base}/index.m3u8`)).statusCode, 404);
+    assert.equal((await viewer.post("/api/media/sessions", { rootSlug: "photos", path: "/public/clip.avi", height: 360 })).statusCode, 403);
+
+    assert.equal((await admin.delete(base)).statusCode, 200);
+    assert.equal((await admin.get(`${base}/index.m3u8`)).statusCode, 404);
+    const transcodeDir = path.join(fixture.appDataDir, "temp", "transcode");
+    for (let tries = 0; tries < 40 && (await readdir(transcodeDir)).length > 0; tries += 1) await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.deepEqual(await readdir(transcodeDir), []);
   } finally {
     await app.close();
     await rm(fixture.baseDir, { recursive: true, force: true });

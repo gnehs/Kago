@@ -179,3 +179,14 @@ export type AuditLog = {
   user_agent: string | null;
   created_at: number;
 };
+
+/** What the server knows about a video, and whether it can transcode it on the fly. */
+export type MediaInfo = {
+  transcode: boolean;
+  duration: number;
+  container: string;
+  video: { codec: string; profile: string; width: number; height: number; bitDepth: number } | null;
+  audio: Array<{ codec: string; channels: number; language: string; title: string }>;
+  /** Heights the file can be transcoded to, tallest first. */
+  qualities: number[];
+};

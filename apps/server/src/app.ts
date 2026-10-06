@@ -16,6 +16,7 @@ import { AuditService } from "./services/audit.service.js";
 import { AuthService, changePasswordSchema, createUserSchema, loginSchema, patchUserSchema, resetPasswordSchema, setupAdminSchema } from "./services/auth.service.js";
 import { FsService, finderTagsSchema, fsQuerySchema, maxUploadFiles, mkdirSchema, renameSchema } from "./services/fs.service.js";
 import { createGroupSchema, GroupService } from "./services/group.service.js";
+import { MediaService, mediaSessionSchema } from "./services/media.service.js";
 import { PathService } from "./services/path.service.js";
 import { permissionInputSchema, PermissionService } from "./services/permission.service.js";
 import { rootPatchSchema, RootService } from "./services/root.service.js";
@@ -43,6 +44,7 @@ export async function buildApp(env: Env) {
   const tags = new TagService(db, paths, permissions, audit);
   const shares = new ShareService(db, paths, permissions, audit, events);
   const groups = new GroupService(db);
+  const media = new MediaService(env.appDataDir);
   const workers = new WorkerManager(tasks, env, events);
 
   await app.register(cookie, { secret: env.sessionSecret });
@@ -87,7 +89,7 @@ export async function buildApp(env: Env) {
 
   await auth.ensureInitialAdminFromEnv();
   roots.syncFromDataDir();
-  registerApi(app, { auth, audit, roots, paths, permissions, fsService, workspace, tasks, shelves, tags, shares, groups, events, db });
+  registerApi(app, { auth, audit, roots, paths, permissions, fsService, workspace, tasks, shelves, tags, shares, groups, media, events, db });
 
   app.get("/ws", {
     websocket: true,
@@ -115,6 +117,7 @@ export async function buildApp(env: Env) {
 
   app.addHook("onClose", async () => {
     await workers.stop();
+    media.stop();
     db.close();
   });
 
@@ -157,6 +160,7 @@ type Services = {
   tags: TagService;
   shares: ShareService;
   groups: GroupService;
+  media: MediaService;
   events: EventHub;
   db: ReturnType<typeof openDb>;
 };
@@ -340,6 +344,40 @@ function registerApi(app: FastifyInstance, services: Services) {
     reply.header("Cache-Control", "private, max-age=86400");
     return fs.createReadStream(thumbnail.path);
   });
+  app.get("/api/media/info", async (request) => {
+    const actor = requireActor(request);
+    const query = fsQuerySchema.parse(request.query);
+    const file = await services.fsService.preview(actor, query.rootSlug, query.path);
+    return services.media.info(file.safe.absolutePath, file.stat);
+  });
+  app.post("/api/media/sessions", async (request) => {
+    const actor = requireActor(request);
+    const input = mediaSessionSchema.parse(request.body);
+    const file = await services.fsService.preview(actor, input.rootSlug, input.path);
+    const session = await services.media.createSession(actor.id, file.safe.absolutePath, file.stat, input.height, input.audioIndex);
+    return { id: session.id, playlistUrl: `/api/media/sessions/${session.id}/index.m3u8` };
+  });
+  app.get("/api/media/sessions/:id/:file", async (request, reply) => {
+    const actor = requireActor(request);
+    const params = z.object({ id: z.string().min(1), file: z.string().regex(/^(index\.m3u8|\d{1,9}\.ts)$/) }).parse(request.params);
+    reply.header("Cache-Control", "no-store");
+    if (params.file === "index.m3u8") {
+      reply.header("Content-Type", "application/vnd.apple.mpegurl");
+      return services.media.playlist(actor.id, params.id);
+    }
+    const segment = await services.media.segment(actor.id, params.id, Number.parseInt(params.file, 10));
+    const stat = await fs.promises.stat(segment);
+    reply.header("Content-Type", "video/mp2t");
+    reply.header("Content-Length", String(stat.size));
+    return reply.send(fs.createReadStream(segment));
+  });
+  app.delete("/api/media/sessions/:id", async (request) => {
+    const actor = requireActor(request);
+    const params = z.object({ id: z.string().min(1) }).parse(request.params);
+    services.media.close(actor.id, params.id);
+    return { ok: true };
+  });
+
   app.post("/api/fs/mkdir", async (request) => {
     const actor = requireActor(request);
     const input = mkdirSchema.parse(request.body);

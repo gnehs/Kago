@@ -25,7 +25,7 @@ RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
 FROM node:24-bookworm-slim AS runtime
 WORKDIR /app
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends rsync attr \
+  && apt-get install -y --no-install-recommends rsync attr ffmpeg \
   && rm -rf /var/lib/apt/lists/* \
   && groupmod -n kago node \
   && usermod -l kago -d /app -s /usr/sbin/nologin node \

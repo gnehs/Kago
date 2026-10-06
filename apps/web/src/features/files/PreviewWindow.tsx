@@ -5,10 +5,12 @@ import { KagoWindow } from "@/features/windows/KagoWindow";
 import { triggerDownload } from "@/lib/paths";
 import type { PreviewWindow } from "@/stores/workspace";
 import { FileIcon } from "./FileIcon";
+import { VideoPreviewWindow } from "./VideoPreview";
 
 /** A file opened for viewing, in the same movable, resizable window chrome as a folder. */
 export function PreviewWindowView({ window }: { window: PreviewWindow }) {
   const { rootSlug, item } = window.preview;
+  if (item.type.startsWith("video/") || item.type.startsWith("application/vnd.rn-realmedia")) return <VideoPreviewWindow window={window} />;
   const source = previewUrl(rootSlug, item.path);
   return (
     <KagoWindow
@@ -19,8 +21,6 @@ export function PreviewWindowView({ window }: { window: PreviewWindow }) {
       <div className="flex min-h-0 flex-1 items-center justify-center bg-elevated">
         {item.type.startsWith("image/") ? (
           <img alt={item.name} src={source} draggable={false} className="max-h-full max-w-full object-contain" />
-        ) : item.type.startsWith("video/") ? (
-          <video src={source} controls className="max-h-full max-w-full" />
         ) : item.type.startsWith("audio/") ? (
           <audio src={source} controls />
         ) : (

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./client";
-import type { Actor, AuditLog, FileList, FileMeta, FileTask, Group, PermissionRule, Root, ShareLink, Shelf, Tag, TrashItem, UserAccount, WorkspaceState } from "../types/kago";
+import type { Actor, AuditLog, FileList, FileMeta, FileTask, Group, MediaInfo, PermissionRule, Root, ShareLink, Shelf, Tag, TrashItem, UserAccount, WorkspaceState } from "../types/kago";
 
 export function useSetupStatus() {
   return useQuery({ queryKey: ["auth", "setup"], queryFn: () => api<{ needsSetup: boolean }>("/api/auth/setup") });
@@ -51,6 +51,15 @@ export function useFileMeta(rootSlug: string, path: string, enabled = true) {
     queryKey: ["fs", "meta", rootSlug, path],
     queryFn: () => api<FileMeta>(`/api/fs/meta?${new URLSearchParams({ rootSlug, path }).toString()}`),
     enabled
+  });
+}
+
+export function useMediaInfo(rootSlug: string, path: string) {
+  return useQuery({
+    queryKey: ["media", "info", rootSlug, path],
+    queryFn: () => api<MediaInfo>(`/api/media/info?${new URLSearchParams({ rootSlug, path }).toString()}`),
+    retry: false,
+    staleTime: 60_000
   });
 }
 
