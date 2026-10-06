@@ -165,6 +165,26 @@ test("minimum file-manager demo flow", async () => {
     const download = await admin.get("/api/fs/download?rootSlug=photos&path=/public/readme.txt", { accept: "text/plain" });
     assert.equal(download.payload, "public");
 
+    // Range requests let browsers seek media instead of refetching the whole file.
+    const previewPath = "/api/fs/preview?rootSlug=photos&path=/public/readme.txt";
+    const whole = await admin.get(previewPath);
+    assert.equal(whole.statusCode, 200);
+    assert.equal(whole.headers["accept-ranges"], "bytes");
+    const partial = await admin.get(previewPath, { headers: { range: "bytes=1-3" } });
+    assert.equal(partial.statusCode, 206);
+    assert.equal(partial.payload, "ubl");
+    assert.equal(partial.headers["content-range"], "bytes 1-3/6");
+    assert.equal(partial.headers["content-length"], "3");
+    assert.equal((await admin.get(previewPath, { headers: { range: "bytes=4-" } })).payload, "ic");
+    assert.equal((await admin.get(previewPath, { headers: { range: "bytes=-2" } })).payload, "ic");
+    assert.equal((await admin.get(previewPath, { headers: { range: "bytes=2-999" } })).headers["content-range"], "bytes 2-5/6");
+    const unsatisfiable = await admin.get(previewPath, { headers: { range: "bytes=6-" } });
+    assert.equal(unsatisfiable.statusCode, 416);
+    assert.equal(unsatisfiable.headers["content-range"], "bytes */6");
+    assert.equal((await admin.get(previewPath, { headers: { range: "bytes=0-1,3-4" } })).statusCode, 200);
+    assert.equal((await admin.get(previewPath, { headers: { range: "bytes=1-3", "if-range": '"stale"' } })).statusCode, 200);
+    assert.equal((await admin.get(previewPath, { headers: { range: "bytes=1-3", "if-range": whole.headers["last-modified"] } })).statusCode, 206);
+
     const share = await admin.post("/api/shares", {
       rootSlug: "photos",
       path: "/public/readme.txt",

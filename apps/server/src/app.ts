@@ -10,6 +10,7 @@ import { z } from "zod";
 import type { Env } from "./config/env.js";
 import { openDb } from "./db/db.js";
 import { AppError, publicError } from "./lib/errors.js";
+import { sendFile } from "./lib/send-file.js";
 import { AuditService } from "./services/audit.service.js";
 import { AuthService, changePasswordSchema, createUserSchema, loginSchema, patchUserSchema, resetPasswordSchema, setupAdminSchema } from "./services/auth.service.js";
 import { FsService, fsQuerySchema, maxUploadFileBytes, maxUploadFiles, mkdirSchema, renameSchema } from "./services/fs.service.js";
@@ -318,18 +319,14 @@ function registerApi(app: FastifyInstance, services: Services) {
     const actor = requireActor(request);
     const query = fsQuerySchema.parse(request.query);
     const file = await services.fsService.download(actor, query.rootSlug, query.path);
-    reply.header("Content-Type", file.contentType);
-    reply.header("Content-Length", String(file.stat.size));
     reply.header("Content-Disposition", contentDisposition("attachment", path.basename(file.safe.absolutePath)));
-    return fs.createReadStream(file.safe.absolutePath);
+    return sendFile(request, reply, file.safe.absolutePath, file.stat, file.contentType);
   });
   app.get("/api/fs/preview", async (request, reply) => {
     const actor = requireActor(request);
     const query = fsQuerySchema.parse(request.query);
     const file = await services.fsService.preview(actor, query.rootSlug, query.path);
-    reply.header("Content-Type", file.contentType);
-    reply.header("Content-Length", String(file.stat.size));
-    return fs.createReadStream(file.safe.absolutePath);
+    return sendFile(request, reply, file.safe.absolutePath, file.stat, file.contentType);
   });
   app.get("/api/fs/thumbnail", async (request, reply) => {
     const actor = requireActor(request);
@@ -540,10 +537,8 @@ function registerApi(app: FastifyInstance, services: Services) {
     const safe = await services.shares.publicDownload(params.token, shareAccessCookie(request, params.token));
     const stat = await fs.promises.stat(safe.absolutePath);
     if (!stat.isFile()) throw new AppError(400, "Path is not a file", "NOT_FILE");
-    reply.header("Content-Type", lookup(safe.absolutePath) || "application/octet-stream");
-    reply.header("Content-Length", String(stat.size));
     reply.header("Content-Disposition", contentDisposition("attachment", path.basename(safe.absolutePath)));
-    return fs.createReadStream(safe.absolutePath);
+    return sendFile(request, reply, safe.absolutePath, stat, lookup(safe.absolutePath) || "application/octet-stream");
   });
 
   app.get("/s/:token/preview", async (request, reply) => {
@@ -551,10 +546,8 @@ function registerApi(app: FastifyInstance, services: Services) {
     const safe = await services.shares.publicPreview(params.token, shareAccessCookie(request, params.token));
     const stat = await fs.promises.stat(safe.absolutePath);
     if (!stat.isFile()) throw new AppError(400, "Path is not a file", "NOT_FILE");
-    reply.header("Content-Type", lookup(safe.absolutePath) || "application/octet-stream");
-    reply.header("Content-Length", String(stat.size));
     reply.header("Content-Disposition", contentDisposition("inline", path.basename(safe.absolutePath)));
-    return fs.createReadStream(safe.absolutePath);
+    return sendFile(request, reply, safe.absolutePath, stat, lookup(safe.absolutePath) || "application/octet-stream");
   });
 
   app.post("/s/:token/upload", async (request) => {
