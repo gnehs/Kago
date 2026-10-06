@@ -14,7 +14,7 @@ import { nfc } from "./lib/filename.js";
 import { sendFile } from "./lib/send-file.js";
 import { AuditService } from "./services/audit.service.js";
 import { AuthService, changePasswordSchema, createUserSchema, loginSchema, patchUserSchema, resetPasswordSchema, setupAdminSchema } from "./services/auth.service.js";
-import { FsService, fsQuerySchema, maxUploadFiles, mkdirSchema, renameSchema } from "./services/fs.service.js";
+import { FsService, finderTagsSchema, fsQuerySchema, maxUploadFiles, mkdirSchema, renameSchema } from "./services/fs.service.js";
 import { createGroupSchema, GroupService } from "./services/group.service.js";
 import { PathService } from "./services/path.service.js";
 import { permissionInputSchema, PermissionService } from "./services/permission.service.js";
@@ -350,6 +350,7 @@ function registerApi(app: FastifyInstance, services: Services) {
     const input = renameSchema.parse(request.body);
     return services.fsService.rename(actor, input.rootSlug, input.path, input.name);
   });
+  app.put("/api/fs/finder-tags", async (request) => services.fsService.setFinderTags(requireActor(request), finderTagsSchema.parse(request.body)));
   app.post("/api/fs/upload", async (request) => {
     const actor = requireActor(request);
     // Files are streamed straight to their destination, so an upload is bounded by free disk space rather than by a temp copy.

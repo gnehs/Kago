@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { RuleList } from "@/features/permissions/RuleList";
 import { ShareForm } from "@/features/shares/ShareForm";
 import { parseShareMode, shareModeLabel } from "@/features/shares/shareUtils";
-import { FinderTagChips } from "@/features/tags/FinderTags";
+import { FinderTagEditor } from "@/features/tags/FinderTagEditor";
 import { TagEditor } from "@/features/tags/TagEditor";
 import { formatDate, formatSize, kindLabel } from "@/lib/format";
 import { usePointerDrag } from "@/lib/usePointerDrag";
@@ -31,7 +31,9 @@ export function Inspector({ window: activeWindow, isAdmin }: { window: FileWindo
   const roots = useRoots();
   const shares = useShares();
   const permissions = usePathPermissions(rootSlug, path, isAdmin);
-  const rootId = roots.data?.find((root) => root.slug === rootSlug)?.id;
+  const root = roots.data?.find((root) => root.slug === rootSlug);
+  const rootId = root?.id;
+  const readonly = Boolean(root?.readonly);
   const pathShares = (shares.data ?? []).filter((share) => share.root_id === rootId && share.path === path);
 
   const resizeHandlers = usePointerDrag(
@@ -72,11 +74,11 @@ export function Inspector({ window: activeWindow, isAdmin }: { window: FileWindo
             </dl>
           </Section>
 
-          {meta.data.finderTags?.length ? (
+          {readonly && !meta.data.finderTags?.length ? null : (
             <Section title="Finder 標籤">
-              <FinderTagChips tags={meta.data.finderTags} />
+              <FinderTagEditor rootSlug={rootSlug} path={path} tags={meta.data.finderTags ?? []} readonly={readonly} />
             </Section>
-          ) : null}
+          )}
 
           <Section title="標籤">
             <TagEditor rootSlug={rootSlug} path={path} />

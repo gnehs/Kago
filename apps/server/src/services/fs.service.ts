@@ -7,7 +7,7 @@ import { lookup } from "mime-types";
 import { z } from "zod";
 import { AppError } from "../lib/errors.js";
 import { assertNameAvailable, nfc } from "../lib/filename.js";
-import { readFinderTags } from "../lib/finder-tags.js";
+import { readFinderTags, writeFinderTags } from "../lib/finder-tags.js";
 import type { AuditService } from "./audit.service.js";
 import type { PathService } from "./path.service.js";
 import type { PermissionService } from "./permission.service.js";
@@ -28,6 +28,20 @@ export const renameSchema = z.object({
   rootSlug: z.string().min(1),
   path: z.string().min(1),
   name: z.string().min(1).max(255).refine((value) => !value.includes("/") && value !== ".." && !value.includes("\0"))
+});
+
+// Object references in the stored list are one byte, and the path limit of a name is plenty for a tag.
+export const finderTagsSchema = z.object({
+  rootSlug: z.string().min(1),
+  path: z.string().min(1),
+  tags: z
+    .array(
+      z.object({
+        name: z.string().trim().min(1).max(255).refine((value) => !/[\n\r\0]/.test(value)),
+        color: z.enum(["gray", "green", "purple", "blue", "yellow", "red", "orange"]).nullable()
+      })
+    )
+    .max(100)
 });
 
 export const maxUploadFiles = 20;
@@ -99,6 +113,27 @@ export class FsService {
       type: stat.isDirectory() ? "folder" : lookup(safe.absolutePath) || "application/octet-stream",
       finderTags: finderTags.get(name) ?? []
     };
+  }
+
+  async setFinderTags(actor: Actor, input: z.infer<typeof finderTagsSchema>) {
+    const safe = await this.paths.resolveExisting(input.rootSlug, input.path);
+    this.permissions.require(actor, "manage_tags", safe.root, safe.logicalPath);
+    const tags = input.tags.filter((tag, index) => input.tags.findIndex((other) => other.name === tag.name) === index);
+    try {
+      await writeFinderTags(path.dirname(safe.absolutePath), path.basename(safe.absolutePath), tags);
+    } catch {
+      throw new AppError(500, "This location cannot store Finder tags", "FINDER_TAGS_UNSUPPORTED");
+    }
+    this.audit.write({
+      actorType: "user",
+      actorId: actor.id,
+      action: "finder_tag_update",
+      rootId: safe.root.id,
+      path: safe.logicalPath,
+      target: { tags: tags.map((tag) => tag.name) },
+      result: "success"
+    });
+    return this.meta(actor, input.rootSlug, safe.logicalPath);
   }
 
   async download(actor: Actor, rootSlug: string, logicalPath: string) {

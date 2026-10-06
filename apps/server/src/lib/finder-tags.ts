@@ -47,11 +47,11 @@ export async function readFinderTags(directory: string, names: string[]): Promis
   return result;
 }
 
-function run(command: string, args: string[], cwd: string): Promise<string> {
+/** Reads tolerate a non-zero exit, which both tools use for files without the attribute; writes pass `strict`. */
+function run(command: string, args: string[], cwd: string, strict = false): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(command, args, { cwd, timeout: TIMEOUT_MS, maxBuffer: 64 * 1024 * 1024, encoding: "utf8" }, (error, stdout) => {
-      // Both tools exit non-zero when some of the files have no such attribute, with the rest still on stdout.
-      if (error && (typeof error.code === "string" || error.killed)) reject(error);
+      if (error && (strict || typeof error.code === "string" || error.killed)) reject(error);
       else resolve(stdout);
     });
   });
@@ -79,23 +79,67 @@ async function readDarwin(directory: string, names: string[]): Promise<Map<strin
   return values;
 }
 
+// Linux keeps the attribute under whichever name the software serving macOS clients gave it.
+const LINUX_ATTRIBUTE = `user.${ATTRIBUTE}`;
+const SAMBA_ATTRIBUTE = `user.DosStream.${ATTRIBUTE}:$DATA`;
+const isTagAttribute = (attribute: string) => attribute.includes("_kMDItemUserTags");
+
 // `getfattr -e hex` prints "# file: name" and then "attribute=0x…" lines.
-// Matching on the name's tail also finds the copies Linux keeps for macOS clients, such as
-// "user.com.apple.metadata:_kMDItemUserTags" and Samba's "user.DosStream.…:$DATA".
-async function readLinux(directory: string, names: string[]): Promise<Map<string, Buffer>> {
-  const stdout = await run("getfattr", ["-h", "-d", "-e", "hex", "-m", "_kMDItemUserTags", "--", ...names.map((name) => `./${name}`)], directory);
-  const values = new Map<string, Buffer>();
-  let current: string | null = null;
+async function getfattr(directory: string, pattern: string, names: string[]): Promise<Map<string, Map<string, Buffer>>> {
+  const stdout = await run("getfattr", ["-h", "-d", "-e", "hex", "-m", pattern, "--", ...names.map((name) => `./${name}`)], directory);
+  const files = new Map<string, Map<string, Buffer>>();
+  let current: Map<string, Buffer> | null = null;
   for (const line of stdout.split("\n")) {
     if (line.startsWith("# file: ")) {
       // The leading "./" the names were given with is dropped again in the output.
-      current = unescapeOctal(line.slice("# file: ".length).replace(/^\.\//, ""));
-    } else if (current !== null) {
+      current = new Map();
+      files.set(unescapeOctal(line.slice("# file: ".length).replace(/^\.\//, "")), current);
+    } else if (current) {
       const separator = line.lastIndexOf("=0x");
-      if (separator !== -1 && line.slice(0, separator).includes("_kMDItemUserTags") && !values.has(current)) values.set(current, Buffer.from(line.slice(separator + 3), "hex"));
+      if (separator !== -1) current.set(line.slice(0, separator), Buffer.from(line.slice(separator + 3), "hex"));
     }
   }
+  return files;
+}
+
+// Matching on the name's tail finds both LINUX_ATTRIBUTE and SAMBA_ATTRIBUTE.
+async function readLinux(directory: string, names: string[]): Promise<Map<string, Buffer>> {
+  const values = new Map<string, Buffer>();
+  for (const [name, attributes] of await getfattr(directory, "_kMDItemUserTags", names)) {
+    const value = [...attributes].find(([attribute]) => isTagAttribute(attribute))?.[1];
+    if (value) values.set(name, value);
+  }
   return values;
+}
+
+/**
+ * Replaces the Finder tags of one entry of a directory; an empty list removes the attribute, as Finder does.
+ * Throws when the volume refuses the change.
+ */
+export async function writeFinderTags(directory: string, name: string, tags: FinderTag[]): Promise<void> {
+  if (name.includes("\n")) throw new Error("Name cannot be tagged");
+  const file = `./${name}`;
+  const value = encodeStringArray(tags.map((tag) => (tag.color ? `${tag.name}\n${colors.indexOf(tag.color) + 1}` : tag.name)));
+
+  if (process.platform === "darwin") {
+    if (tags.length > 0) await run("/usr/bin/xattr", ["-wx", ATTRIBUTE, value.toString("hex"), file], directory, true);
+    else if ((await readDarwin(directory, [name])).has(name)) await run("/usr/bin/xattr", ["-d", ATTRIBUTE, file], directory, true);
+    return;
+  }
+
+  // The entry's own attributes, and its folder's, say how this volume stores them.
+  const found = await getfattr(directory, "_kMDItemUserTags|^user\\.DosStream\\.|^user\\.DOSATTRIB$", [name, "."]);
+  const existing = [...(found.get(name)?.keys() ?? [])].filter(isTagAttribute);
+  if (tags.length === 0) {
+    for (const attribute of existing) await run("setfattr", ["-h", "-x", attribute, "--", file], directory, true);
+    return;
+  }
+  const samba = [...found.values()].some((attributes) => attributes.size > 0);
+  for (const attribute of existing.length > 0 ? existing : [samba ? SAMBA_ATTRIBUTE : LINUX_ATTRIBUTE]) {
+    // Samba expects stream data to end with a NUL.
+    const data = attribute.startsWith("user.DosStream.") ? Buffer.concat([value, Buffer.alloc(1)]) : value;
+    await run("setfattr", ["-h", "-n", attribute, "-v", `0x${data.toString("hex")}`, "--", file], directory, true);
+  }
 }
 
 // getfattr writes bytes outside printable ASCII, and the backslash itself, as \ooo.
@@ -164,4 +208,37 @@ function parseStringArray(data: Buffer): string[] | null {
   } catch {
     return null;
   }
+}
+
+/** Writes an array of strings as a binary property list. */
+function encodeStringArray(strings: string[]): Buffer {
+  // Type in the high nibble, length in the low one; lengths of 15 and up follow as an integer object.
+  const marker = (type: number, length: number) => {
+    if (length < 15) return Buffer.from([(type << 4) | length]);
+    const long = Buffer.alloc(4);
+    long[0] = (type << 4) | 0x0f;
+    long[1] = 0x11;
+    long.writeUInt16BE(length, 2);
+    return long;
+  };
+  const objects = [
+    Buffer.concat([marker(0xa, strings.length), Buffer.from(strings.map((_, index) => index + 1))]),
+    ...strings.map((value) =>
+      /^[\x00-\x7f]*$/.test(value)
+        ? Buffer.concat([marker(0x5, value.length), Buffer.from(value, "latin1")])
+        : Buffer.concat([marker(0x6, value.length), Buffer.from(value, "utf16le").swap16()])
+    )
+  ];
+  const offsets = Buffer.alloc(objects.length * 2);
+  let offset = 8;
+  objects.forEach((object, index) => {
+    offsets.writeUInt16BE(offset, index * 2);
+    offset += object.length;
+  });
+  const trailer = Buffer.alloc(32);
+  trailer[6] = 2; // bytes per offset
+  trailer[7] = 1; // bytes per object reference
+  trailer.writeBigUInt64BE(BigInt(objects.length), 8);
+  trailer.writeBigUInt64BE(BigInt(offset), 24);
+  return Buffer.concat([Buffer.from("bplist00", "latin1"), ...objects, offsets, trailer]);
 }
