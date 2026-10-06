@@ -83,11 +83,20 @@ docker run -d \
   -e APP_DATA_DIR=/app-data \
   -e PORT=8080 \
   -e SESSION_SECRET='replace-with-a-long-random-value' \
-  --user 1000:1000 \
+  -e PUID=1000 \
+  -e PGID=1000 \
   --restart unless-stopped \
   kago:local
 ```
 
 第一次啟動會初始化 SQLite，並在 `/app-data/app.db` 保存 workspace、權限、任務、tags、shares、audit logs 與 shelf references。建議在 production 提供 `SESSION_SECRET`；若未提供，Kago 會在 `/app-data/session.secret` 產生並重用一組隨機 secret。管理員可以透過初始化頁面建立，或用 `ADMIN_EMAIL` / `ADMIN_PASSWORD` 預先建立。
 
-Docker image 預設使用容器內的 `kago` 使用者（UID/GID 1000）執行，並內建 `rsync` 供 `rsync_pull` / `rsync_push` task 使用。若掛載的 host 目錄不是 UID 1000 可寫，請調整目錄 owner，或在 `docker run` 以符合 host 權限的 `--user` 覆寫。
+Docker image 內建 `rsync` 供 `rsync_pull` / `rsync_push` task 使用，並沿用 linuxserver.io 的慣例，用環境變數決定執行身分與新檔案的權限：
+
+| 變數 | 預設 | 說明 |
+| --- | --- | --- |
+| `PUID` | `1000` | 執行 Kago 的 UID，寫入 `/data` 的檔案會屬於這個使用者 |
+| `PGID` | `1000` | 執行 Kago 的 GID |
+| `UMASK` | `022` | 新檔案與資料夾的 umask；`022` 產生 `644` / `755`，`000` 產生 `666` / `777` |
+
+容器以 root 啟動後會把 `/app-data` 的 owner 調整成 `PUID:PGID`，再降權執行；`/data` 不會被 chown，請確認該目錄本身可由 `PUID:PGID` 寫入。例如 Unraid 使用 `PUID=99`、`PGID=100`、`UMASK=000`。若改用 `docker run --user` 指定身分，`PUID` / `PGID` 會被忽略，只有 `UMASK` 生效。

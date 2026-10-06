@@ -38,6 +38,11 @@ ENV WEB_DIST_DIR=/app/apps/web/dist
 ENV PORT=8080
 COPY --from=build --chown=kago:kago /prod ./
 COPY --from=build --chown=kago:kago /app/apps/web/dist ./apps/web/dist
+COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/kago-entrypoint
 EXPOSE 8080
-USER kago
+# The entrypoint starts as root only to drop to PUID:PGID (default 1000:1000, the kago user).
+ENV PUID=1000
+ENV PGID=1000
+ENV UMASK=022
+ENTRYPOINT ["kago-entrypoint"]
 CMD ["node", "dist/main.js"]

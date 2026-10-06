@@ -172,7 +172,7 @@ export class FsService {
     this.permissions.require(actor, "upload", parent.root, parent.logicalPath);
     const target = await this.paths.resolveForCreate(rootSlug, path.posix.join(parent.logicalPath, fileName));
     await assertNameAvailable(parent.absolutePath, path.basename(target.absolutePath));
-    const writeStream = fs.createWriteStream(target.absolutePath, { flags: "wx", mode: 0o644 });
+    const writeStream = fs.createWriteStream(target.absolutePath, { flags: "wx", mode: 0o666 });
     await this.writeUploadStream(stream, writeStream, target.absolutePath);
     this.audit.write({
       actorType: "user",
@@ -192,7 +192,7 @@ export class FsService {
     const parent = await this.paths.resolveExisting(rootSlug, parentPath);
     const target = await this.paths.resolveForCreate(rootSlug, path.posix.join(parent.logicalPath, fileName));
     await assertNameAvailable(parent.absolutePath, path.basename(target.absolutePath));
-    const writeStream = fs.createWriteStream(target.absolutePath, { flags: "wx", mode: 0o644 });
+    const writeStream = fs.createWriteStream(target.absolutePath, { flags: "wx", mode: 0o666 });
     await this.writeUploadStream(stream, writeStream, target.absolutePath);
     this.audit.write({
       actorType: "share_link",

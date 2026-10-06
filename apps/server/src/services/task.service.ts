@@ -691,7 +691,7 @@ export class TaskService {
     await assertRealPathInside(destinationPath, parent);
     const data = entry.getData();
     if (data.length > maxExtractBytes) throw new AppError(413, "Zip is too large to extract", "ZIP_SIZE_LIMIT");
-    await fsp.writeFile(target, data, { flag: "wx", mode: 0o644 });
+    await fsp.writeFile(target, data, { flag: "wx", mode: 0o666 });
     return data.length;
   }
 
