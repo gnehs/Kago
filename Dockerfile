@@ -7,7 +7,10 @@ FROM --platform=$BUILDPLATFORM node:24-bookworm-slim AS base
 WORKDIR /app
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
-RUN corepack enable
+# Keep in sync with "packageManager" in package.json.
+ARG PNPM_VERSION=9.15.4
+# `pnpm setup` (run by get-pnpm) refuses to continue unless it can tell which shell to configure.
+RUN SHELL="$(which bash)" ENV="$HOME/.bashrc" npx --yes get-pnpm "$PNPM_VERSION"
 
 FROM base AS deps
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
