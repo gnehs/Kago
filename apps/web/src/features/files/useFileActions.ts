@@ -2,6 +2,7 @@ import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { api, downloadUrl } from "@/api/client";
 import { ensureZipName, joinLogicalPath, needsNormalizing, nfc, parentPath, triggerDownload } from "@/lib/paths";
 import { run } from "@/lib/run";
+import type { UploadTree } from "@/lib/uploadTree";
 import { useClipboardStore, type FileRef } from "@/stores/clipboard";
 import { promptText } from "@/stores/dialogs";
 import { toast } from "@/stores/toast";
@@ -10,6 +11,9 @@ import { useWorkspaceStore } from "@/stores/workspace";
 import type { FileItem, FileTask, FileWindow } from "@/types/kago";
 
 export type { FileRef };
+
+/** The server takes at most this many files per upload request. */
+const uploadBatchSize = 20;
 
 export const KAGO_DRAG_TYPE = "application/kago-files";
 
@@ -76,22 +80,38 @@ export function useFileActions(window: FileWindow) {
         await api("/api/fs/mkdir", { method: "POST", body: JSON.stringify({ rootSlug: window.rootSlug, path: window.logicalPath, name }) });
         await refresh();
       }, "建立資料夾失敗"),
-    upload: (files: File[], path = window.logicalPath) =>
+    /** Creates the tree's folders, then uploads its files folder by folder in batches the server accepts. */
+    upload: (source: UploadTree | Promise<UploadTree>, path = window.logicalPath) =>
       run(async () => {
-        if (files.length === 0) return;
-        const form = new FormData();
-        form.append("rootSlug", window.rootSlug);
-        form.append("path", path);
-        for (const file of files) form.append("file", file, nfc(file.name));
+        const tree = await source;
+        if (tree.files.length === 0 && tree.dirs.length === 0) return;
+        const target = (dir: string) => (dir ? `${path === "/" ? "" : path}/${dir}` : path);
         try {
-          await uploadForm("/api/fs/upload", form, uploadLabel(files));
+          for (const dir of tree.dirs) {
+            const full = target(dir);
+            await api("/api/fs/mkdir", { method: "POST", body: JSON.stringify({ rootSlug: window.rootSlug, path: parentPath(full), name: full.slice(full.lastIndexOf("/") + 1) }) });
+          }
+          const byDir = new Map<string, File[]>();
+          for (const { file, dir } of tree.files) byDir.set(dir, [...(byDir.get(dir) ?? []), file]);
+          for (const [dir, files] of byDir) {
+            for (let start = 0; start < files.length; start += uploadBatchSize) {
+              const batch = files.slice(start, start + uploadBatchSize);
+              const form = new FormData();
+              form.append("rootSlug", window.rootSlug);
+              form.append("path", target(dir));
+              for (const file of batch) form.append("file", file, nfc(file.name));
+              await uploadForm("/api/fs/upload", form, uploadLabel(batch));
+            }
+          }
         } catch (error) {
+          // Whatever made it across before the failure is already on disk.
+          await refresh();
           if (!isUploadCancelled(error)) throw error;
           toast("已取消上傳");
           return;
         }
         await refresh();
-        toast(`已上傳 ${files.length} 個檔案`);
+        toast(tree.files.length > 0 ? `已上傳 ${tree.files.length} 個檔案` : `已建立 ${tree.dirs.length} 個資料夾`);
       }, "上傳失敗"),
     rename: (item: FileItem) =>
       run(async () => {

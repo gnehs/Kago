@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Archive, ArchiveRestore, ClipboardPaste, Copy, Download, ExternalLink, Folder, FolderOpen, FolderPlus, Inbox, Info, Pencil, RefreshCw, Scissors, Trash2, Upload } from "lucide-react";
+import { Archive, ArchiveRestore, ClipboardPaste, Copy, Download, ExternalLink, Folder, FolderOpen, FolderPlus, FolderUp, Inbox, Info, Pencil, RefreshCw, Scissors, Trash2, Upload } from "lucide-react";
 import { useFileList } from "@/api/hooks";
 import { KagoBadge } from "@/components/kago/badge";
 import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
@@ -10,6 +10,7 @@ import { KagoWindow } from "@/features/windows/KagoWindow";
 import { OPEN_ITEM_EVENT } from "@/features/workspace/useShortcuts";
 import { formatSize } from "@/lib/format";
 import { baseName, nfc, parentPath } from "@/lib/paths";
+import { droppedTree, flatTree, pickedFolderTree } from "@/lib/uploadTree";
 import { cn } from "@/lib/utils";
 import { useClipboardStore } from "@/stores/clipboard";
 import { useRecentStore } from "@/stores/recent";
@@ -42,6 +43,7 @@ export function FileWindowView({ window: win, rootName, isAdmin }: { window: Fil
   const actions = useFileActions(win);
   const marquee = useMarqueeSelection(win.id);
   const uploadInput = useRef<HTMLInputElement>(null);
+  const folderInput = useRef<HTMLInputElement>(null);
   const [search, setSearch] = useState("");
   const [anchorPath, setAnchorPath] = useState<string | null>(null);
   const [menuItem, setMenuItem] = useState<FileItem | null>(null);
@@ -134,8 +136,9 @@ export function FileWindowView({ window: win, rootName, isAdmin }: { window: Fil
     event.preventDefault();
     setDropActive(false);
     if (readonly || error) return;
-    if (event.dataTransfer.files.length > 0) {
-      void actions.upload(Array.from(event.dataTransfer.files), destination);
+    const dropped = droppedTree(event.dataTransfer);
+    if (dropped) {
+      void actions.upload(dropped, destination);
       return;
     }
     // Dropping items onto the folder they already live in, or a folder onto itself, is a no-op.
@@ -173,6 +176,7 @@ export function FileWindowView({ window: win, rootName, isAdmin }: { window: Fil
       <>
         <KagoMenuItem icon={<FolderPlus />} disabled={readonly} onClick={() => void actions.newFolder()}>新增資料夾</KagoMenuItem>
         <KagoMenuItem icon={<Upload />} disabled={readonly} onClick={() => uploadInput.current?.click()}>上傳檔案</KagoMenuItem>
+        <KagoMenuItem icon={<FolderUp />} disabled={readonly} onClick={() => folderInput.current?.click()}>上傳資料夾</KagoMenuItem>
         <KagoMenuItem icon={<ClipboardPaste />} disabled={readonly || !clip} onClick={() => void actions.paste()}>{clip ? `貼上 ${clip.items.length} 個項目` : "貼上"}</KagoMenuItem>
         <KagoMenuSeparator />
         <KagoMenuItem icon={<ExternalLink />} onClick={() => store().openWindow({ rootSlug: win.rootSlug, logicalPath: win.logicalPath, title: win.title })}>在新視窗開啟此資料夾（⌥N）</KagoMenuItem>
@@ -283,7 +287,17 @@ export function FileWindowView({ window: win, rootName, isAdmin }: { window: Fil
         multiple
         hidden
         onChange={(event) => {
-          void actions.upload(Array.from(event.target.files ?? []));
+          void actions.upload(flatTree(Array.from(event.target.files ?? [])));
+          event.target.value = "";
+        }}
+      />
+      <input
+        ref={folderInput}
+        type="file"
+        hidden
+        {...{ webkitdirectory: "" }}
+        onChange={(event) => {
+          void actions.upload(pickedFolderTree(Array.from(event.target.files ?? [])));
           event.target.value = "";
         }}
       />
