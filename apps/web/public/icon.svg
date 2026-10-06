@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5a9cf8" />
+      <stop offset="1" stop-color="#2459d6" />
+    </linearGradient>
+    <mask id="weave" maskUnits="userSpaceOnUse" x="0" y="0" width="120" height="120">
+      <path d="M30.6 63h58.8l-5.3 25.4q-1.1 5.6-7.1 5.6H43q-6 0-7.1-5.6z" fill="#fff" />
+      <path d="M28 73.5h64M28 84h64M47 61l2 35M60 61v35M73 61l-2 35" fill="none" stroke="#000" stroke-width="3" />
+    </mask>
+  </defs>
+  <rect width="120" height="120" rx="27" fill="url(#bg)" />
+  <path d="M40 52c0-30 40-30 40 0" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round" />
+  <rect x="25" y="49" width="70" height="11" rx="5.5" fill="#fff" />
+  <rect x="0" y="0" width="120" height="120" fill="#fff" mask="url(#weave)" />
+</svg>
