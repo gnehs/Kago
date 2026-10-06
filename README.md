@@ -64,6 +64,14 @@ docker stop kago-verify
 
 ## Docker
 
+每次 push 到 `main` 或推送 `v*` tag 時，GitHub Actions 會自動 build `linux/amd64` 與 `linux/arm64` image 並推送到 `ghcr.io/gnehs/kago`（`latest`、`sha-<commit>`，以及 tag 對應的版本號）。可以直接 pull，把下方的 `kago:local` 換成 `ghcr.io/gnehs/kago:latest`：
+
+```bash
+docker pull ghcr.io/gnehs/kago:latest
+```
+
+或自行 build：
+
 ```bash
 docker build -t kago:local .
 docker run -d \
