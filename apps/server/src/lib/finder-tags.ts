@@ -79,7 +79,7 @@ async function readDarwin(directory: string, names: string[]): Promise<Map<strin
   return values;
 }
 
-// `getfattr -e hex` prints "# file: ./name" and then "attribute=0x…" lines.
+// `getfattr -e hex` prints "# file: name" and then "attribute=0x…" lines.
 // Matching on the name's tail also finds the copies Linux keeps for macOS clients, such as
 // "user.com.apple.metadata:_kMDItemUserTags" and Samba's "user.DosStream.…:$DATA".
 async function readLinux(directory: string, names: string[]): Promise<Map<string, Buffer>> {
@@ -87,11 +87,12 @@ async function readLinux(directory: string, names: string[]): Promise<Map<string
   const values = new Map<string, Buffer>();
   let current: string | null = null;
   for (const line of stdout.split("\n")) {
-    if (line.startsWith("# file: ./")) {
-      current = unescapeOctal(line.slice("# file: ./".length));
+    if (line.startsWith("# file: ")) {
+      // The leading "./" the names were given with is dropped again in the output.
+      current = unescapeOctal(line.slice("# file: ".length).replace(/^\.\//, ""));
     } else if (current !== null) {
       const separator = line.lastIndexOf("=0x");
-      if (separator !== -1 && !values.has(current)) values.set(current, Buffer.from(line.slice(separator + 3), "hex"));
+      if (separator !== -1 && line.slice(0, separator).includes("_kMDItemUserTags") && !values.has(current)) values.set(current, Buffer.from(line.slice(separator + 3), "hex"));
     }
   }
   return values;
