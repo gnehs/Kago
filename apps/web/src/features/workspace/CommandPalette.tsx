@@ -2,7 +2,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { Dialog } from "@base-ui/react/dialog";
 import { Clock, Folder, HardDrive, KeyRound, ScrollText, Search, UserRound, UsersRound } from "lucide-react";
 import { appIcons } from "@/features/windows/AppWindow";
-import { baseName, normalizeLogicalPath } from "@/lib/paths";
+import { baseName, nfc, normalizeLogicalPath } from "@/lib/paths";
 import { cn } from "@/lib/utils";
 import { useRecentStore, type RecentFolder } from "@/stores/recent";
 import { useWorkspaceStore, type AppKind, type SettingsSection } from "@/stores/workspace";
@@ -44,7 +44,7 @@ function suggestions(query: string, roots: Root[], activeRootSlug: string | unde
   const activeRoot = roots.find((root) => root.slug === activeRootSlug);
   if (activeRoot && trimmed.startsWith("/")) pushPath(activeRoot, trimmed);
 
-  const lower = trimmed.toLowerCase();
+  const lower = nfc(trimmed).toLowerCase();
   for (const root of roots) {
     if (!lower || root.name.toLowerCase().includes(lower) || root.slug.includes(lower)) pushPath(root, "/");
   }

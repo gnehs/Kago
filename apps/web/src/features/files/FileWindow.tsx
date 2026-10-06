@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { KagoWindow } from "@/features/windows/KagoWindow";
 import { OPEN_ITEM_EVENT } from "@/features/workspace/useShortcuts";
 import { formatSize } from "@/lib/format";
-import { baseName, parentPath } from "@/lib/paths";
+import { baseName, nfc, parentPath } from "@/lib/paths";
 import { cn } from "@/lib/utils";
 import { useClipboardStore } from "@/stores/clipboard";
 import { useRecentStore } from "@/stores/recent";
@@ -61,7 +61,7 @@ export function FileWindowView({ window: win, rootName, isAdmin }: { window: Fil
   const readonly = Boolean(fileList.data?.readonly);
   const allItems = useMemo(() => sortItems(fileList.data?.items ?? [], win.sortBy, win.sortDirection), [fileList.data, win.sortBy, win.sortDirection]);
   const items = useMemo(() => {
-    const query = search.trim().toLocaleLowerCase();
+    const query = nfc(search.trim()).toLocaleLowerCase();
     return query ? allItems.filter((item) => item.name.toLocaleLowerCase().includes(query)) : allItems;
   }, [allItems, search]);
   const selectedItems = allItems.filter((item) => win.selectedItems.includes(item.path));

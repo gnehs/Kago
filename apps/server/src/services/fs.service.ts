@@ -7,6 +7,7 @@ import { pipeline } from "node:stream/promises";
 import { lookup } from "mime-types";
 import { z } from "zod";
 import { AppError } from "../lib/errors.js";
+import { assertNameAvailable, nfc } from "../lib/filename.js";
 import type { AuditService } from "./audit.service.js";
 import type { PathService } from "./path.service.js";
 import type { PermissionService } from "./permission.service.js";
@@ -65,7 +66,8 @@ export class FsService {
             return null;
           }
           return {
-            name: entry.name,
+            // `path` keeps the on-disk spelling and stays the item's identity; `name` is only for display.
+            name: nfc(entry.name),
             path: itemLogicalPath,
             kind: entry.isDirectory() ? "folder" : "file",
             size: itemStat.size,
@@ -87,7 +89,7 @@ export class FsService {
     return {
       rootSlug,
       path: safe.logicalPath,
-      name: path.basename(safe.absolutePath),
+      name: nfc(path.basename(safe.absolutePath)),
       kind: stat.isDirectory() ? "folder" : "file",
       size: stat.size,
       mtime: stat.mtimeMs,
@@ -124,6 +126,7 @@ export class FsService {
     this.permissions.require(actor, "create_folder", parent.root, parent.logicalPath);
     const targetLogical = path.posix.join(parent.logicalPath, name);
     const target = await this.paths.resolveForCreate(rootSlug, targetLogical);
+    await assertNameAvailable(parent.absolutePath, path.basename(target.absolutePath));
     await fsp.mkdir(target.absolutePath);
     this.audit.write({
       actorType: "user",
@@ -133,7 +136,7 @@ export class FsService {
       path: target.logicalPath,
       result: "success"
     });
-    return this.meta(actor, rootSlug, targetLogical);
+    return this.meta(actor, rootSlug, target.logicalPath);
   }
 
   async rename(actor: Actor, rootSlug: string, logicalPath: string, name: string) {
@@ -141,11 +144,12 @@ export class FsService {
     this.permissions.require(actor, "rename", source.root, source.logicalPath);
     const targetLogical = path.posix.join(path.posix.dirname(source.logicalPath), name);
     const target = await this.paths.resolveForCreate(rootSlug, targetLogical);
-    try {
-      await fsp.access(target.absolutePath);
+    const sourceStat = await fsp.lstat(source.absolutePath);
+    await assertNameAvailable(path.dirname(target.absolutePath), path.basename(target.absolutePath), path.basename(source.absolutePath));
+    // The source may answer to the new name itself (NFD -> NFC, or a case change on a case-insensitive volume); anything else there is a clash.
+    const occupant = await fsp.lstat(target.absolutePath).catch(() => null);
+    if (occupant && (occupant.dev !== sourceStat.dev || occupant.ino !== sourceStat.ino)) {
       throw new AppError(409, "Target already exists", "TARGET_EXISTS");
-    } catch (error) {
-      if (error instanceof AppError) throw error;
     }
     await fsp.rename(source.absolutePath, target.absolutePath);
     this.audit.write({
@@ -167,6 +171,7 @@ export class FsService {
     const parent = await this.paths.resolveExisting(rootSlug, parentPath);
     this.permissions.require(actor, "upload", parent.root, parent.logicalPath);
     const target = await this.paths.resolveForCreate(rootSlug, path.posix.join(parent.logicalPath, fileName));
+    await assertNameAvailable(parent.absolutePath, path.basename(target.absolutePath));
     const writeStream = fs.createWriteStream(target.absolutePath, { flags: "wx", mode: 0o644 });
     await this.writeUploadStream(stream, writeStream, target.absolutePath);
     this.audit.write({
@@ -186,6 +191,7 @@ export class FsService {
     }
     const parent = await this.paths.resolveExisting(rootSlug, parentPath);
     const target = await this.paths.resolveForCreate(rootSlug, path.posix.join(parent.logicalPath, fileName));
+    await assertNameAvailable(parent.absolutePath, path.basename(target.absolutePath));
     const writeStream = fs.createWriteStream(target.absolutePath, { flags: "wx", mode: 0o644 });
     await this.writeUploadStream(stream, writeStream, target.absolutePath);
     this.audit.write({
@@ -196,7 +202,7 @@ export class FsService {
       path: target.logicalPath,
       result: "success"
     });
-    return { rootSlug, path: target.logicalPath, name: fileName };
+    return { rootSlug, path: target.logicalPath, name: nfc(fileName) };
   }
 
   async thumbnail(actor: Actor, rootSlug: string, logicalPath: string) {

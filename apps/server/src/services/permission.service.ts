@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { Db } from "../db/db.js";
 import { row, rows } from "../db/db.js";
 import { AppError } from "../lib/errors.js";
+import { nfc } from "../lib/filename.js";
 import { id, now } from "../lib/ids.js";
 import type { AuditService } from "./audit.service.js";
 import type { Actor, Root } from "./types.js";
@@ -264,14 +265,19 @@ export class PermissionService {
     if (!existing) throw new AppError(400, "Permission principal not found", "PRINCIPAL_NOT_FOUND");
   }
 
-  private pathMatches(rule: PermissionRule, logicalPath: string): boolean {
-    if (logicalPath === rule.path_prefix) return true;
+  // Compared in NFC so a rule covers a name however the filesystem happens to store it.
+  private pathMatches(rule: PermissionRule, rawLogicalPath: string): boolean {
+    const logicalPath = nfc(rawLogicalPath);
+    const prefix = nfc(rule.path_prefix);
+    if (logicalPath === prefix) return true;
     if (!rule.recursive) return false;
-    return logicalPath.startsWith(rule.path_prefix.endsWith("/") ? rule.path_prefix : `${rule.path_prefix}/`);
+    return logicalPath.startsWith(prefix.endsWith("/") ? prefix : `${prefix}/`);
   }
 }
 
-function isDescendantPath(candidate: string, logicalPath: string): boolean {
+function isDescendantPath(rawCandidate: string, rawLogicalPath: string): boolean {
+  const candidate = nfc(rawCandidate);
+  const logicalPath = nfc(rawLogicalPath);
   if (candidate === logicalPath) return true;
   if (logicalPath === "/") return candidate.startsWith("/");
   return candidate.startsWith(logicalPath.endsWith("/") ? logicalPath : `${logicalPath}/`);

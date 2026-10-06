@@ -1,13 +1,22 @@
+/** Names are shown, compared and sent in NFC; paths from the server keep their on-disk spelling and stay the identity. */
+export const nfc = (value: string) => value.normalize("NFC");
+
 export function parentPath(value: string) {
   const parts = value.split("/").filter(Boolean);
   parts.pop();
   return parts.length ? `/${parts.join("/")}` : "/";
 }
 
-export const baseName = (value: string) => value.split("/").filter(Boolean).at(-1) ?? "";
+const rawBaseName = (value: string) => value.split("/").filter(Boolean).at(-1) ?? "";
+
+/** Display name of a path. */
+export const baseName = (value: string) => nfc(rawBaseName(value));
+
+/** True when the name on disk is not NFC yet, i.e. renaming it to its own display name still changes something. */
+export const needsNormalizing = (path: string) => rawBaseName(path) !== baseName(path);
 
 export function joinLogicalPath(parent: string, name: string) {
-  const cleanName = name.replaceAll("\\", "-").replaceAll("/", "-").replaceAll("\0", "");
+  const cleanName = nfc(name).replaceAll("\\", "-").replaceAll("/", "-").replaceAll("\0", "");
   return `${parent === "/" ? "" : parent}/${cleanName}`;
 }
 

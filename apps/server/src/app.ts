@@ -10,6 +10,7 @@ import { z } from "zod";
 import type { Env } from "./config/env.js";
 import { openDb } from "./db/db.js";
 import { AppError, publicError } from "./lib/errors.js";
+import { nfc } from "./lib/filename.js";
 import { sendFile } from "./lib/send-file.js";
 import { AuditService } from "./services/audit.service.js";
 import { AuthService, changePasswordSchema, createUserSchema, loginSchema, patchUserSchema, resetPasswordSchema, setupAdminSchema } from "./services/auth.service.js";
@@ -121,7 +122,8 @@ export async function buildApp(env: Env) {
 }
 
 /** Header values must be latin1, so non-ASCII names travel in the RFC 5987 `filename*` form. */
-function contentDisposition(kind: "attachment" | "inline", fileName: string): string {
+function contentDisposition(kind: "attachment" | "inline", rawFileName: string): string {
+  const fileName = nfc(rawFileName);
   const fallback = fileName.replace(/[^\x20-\x7e]/g, "_").replaceAll('"', "");
   return `${kind}; filename="${fallback}"; filename*=UTF-8''${encodeURIComponent(fileName)}`;
 }

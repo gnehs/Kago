@@ -2,6 +2,7 @@ import path from "node:path";
 import type { Db } from "../db/db.js";
 import { row, rows } from "../db/db.js";
 import { AppError } from "../lib/errors.js";
+import { nfc } from "../lib/filename.js";
 import { id, now } from "../lib/ids.js";
 import type { EventPublisher } from "../ws/events.js";
 import type { AuditService } from "./audit.service.js";
@@ -79,7 +80,7 @@ export class ShelfService {
       root_id: safe.root.id,
       path: safe.logicalPath,
       kind: stat.isDirectory() ? "folder" : "file",
-      name: path.basename(safe.absolutePath),
+      name: nfc(path.basename(safe.absolutePath)),
       size: stat.size,
       added_at: now()
     };

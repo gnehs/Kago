@@ -9,6 +9,7 @@ import { z } from "zod";
 import type { Db } from "../db/db.js";
 import { row, rows } from "../db/db.js";
 import { AppError } from "../lib/errors.js";
+import { assertNameAvailable, nfc } from "../lib/filename.js";
 import { id, now } from "../lib/ids.js";
 import type { EventPublisher } from "../ws/events.js";
 import type { AuditService } from "./audit.service.js";
@@ -372,9 +373,10 @@ export class TaskService {
       totalBytes += stats.bytes;
       const target = path.join(dest.absolutePath, path.basename(safeSource.absolutePath));
       await assertTargetOutsideSource(safeSource.absolutePath, target);
-      if (targetPaths.has(target)) throw new AppError(409, "Multiple sources resolve to the same target", "TARGET_COLLISION");
-      targetPaths.add(target);
-      await assertPathDoesNotExist(target);
+      // Existing names are carried over as they are, so sources that only differ in normalisation still collide.
+      if (targetPaths.has(nfc(target))) throw new AppError(409, "Multiple sources resolve to the same target", "TARGET_COLLISION");
+      targetPaths.add(nfc(target));
+      await assertNameAvailable(dest.absolutePath, path.basename(target));
       operations.push({ safeSource, target, bytes: stats.bytes });
     }
     await this.updateTotals(task.id, operations.length, totalBytes);
@@ -473,7 +475,7 @@ export class TaskService {
       this.permissions.require(actor, "upload", safe.root, safe.logicalPath);
       const target = path.join(safe.absolutePath, path.basename(item.original_path));
       await assertRealPathInside(trashDir, item.trash_path);
-      await assertPathDoesNotExist(target);
+      await assertNameAvailable(safe.absolutePath, path.basename(target));
       const stats = await collectPathStats(item.trash_path);
       const streamed = await movePath(item.trash_path, target, (processedBytes) => this.bumpProcessedBytes(task.id, processedBytes));
       this.db.prepare("UPDATE trash_items SET restored_at = ? WHERE id = ?").run(now(), item.id);
@@ -507,7 +509,7 @@ export class TaskService {
     const dest = await this.paths.resolveForCreate(destination.rootSlug, destination.path);
     this.permissions.require(actor, "upload", dest.root, path.posix.dirname(dest.logicalPath));
     this.permissions.require(actor, "compress", dest.root, path.posix.dirname(dest.logicalPath));
-    await assertPathDoesNotExist(dest.absolutePath);
+    await assertNameAvailable(path.dirname(dest.absolutePath), path.basename(dest.absolutePath));
     const zipped = await this.zipSources(task, actor, "read", dest.absolutePath);
     this.audit.write({
       actorType: "user",
@@ -678,7 +680,8 @@ export class TaskService {
   }
 
   private safeZipEntrySegments(entry: AdmZip.IZipEntry): string[] {
-    const name = entry.entryName.replaceAll("\\", "/");
+    // Archives made on macOS carry NFD names; extracted files are new, so they are written in NFC.
+    const name = nfc(entry.entryName.replaceAll("\\", "/"));
     if (!name || name.includes("\0") || name.startsWith("/") || /^[A-Za-z]:\//.test(name)) {
       throw new AppError(400, "Unsafe zip entry", "UNSAFE_ZIP_ENTRY");
     }
@@ -1125,7 +1128,7 @@ function runRsync(args: string[], isCancelled: () => boolean): Promise<void> {
 }
 
 function downloadFileName(sources: Array<{ path: string }>): string {
-  const single = sources.length === 1 ? path.posix.basename(sources[0]!.path) : "";
+  const single = sources.length === 1 ? nfc(path.posix.basename(sources[0]!.path)) : "";
   if (single) return `${single}.zip`;
   const stamp = new Date().toISOString().slice(0, 19).replaceAll(":", "").replace("T", "-");
   return `Kago-${stamp}.zip`;
@@ -1156,16 +1159,6 @@ async function assertRealPathInside(rootPath: string, targetPath: string): Promi
   if (relative.startsWith("..") || path.isAbsolute(relative)) {
     throw new AppError(403, "Extract target escapes destination", "ZIP_TARGET_ESCAPES_DESTINATION");
   }
-}
-
-async function assertPathDoesNotExist(targetPath: string): Promise<void> {
-  try {
-    await fsp.lstat(targetPath);
-  } catch (error) {
-    if (isMissingPathError(error)) return;
-    throw error;
-  }
-  throw new AppError(409, "Target already exists", "TARGET_EXISTS");
 }
 
 async function collectPathStats(targetPath: string): Promise<PathStats> {

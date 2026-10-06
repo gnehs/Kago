@@ -2,7 +2,7 @@ import { Fragment, useEffect, useState } from "react";
 import { ChevronRight } from "lucide-react";
 import { controlClass } from "@/components/ui/input";
 import { EDIT_ADDRESS_EVENT } from "@/features/workspace/useShortcuts";
-import { normalizeLogicalPath } from "@/lib/paths";
+import { nfc, normalizeLogicalPath } from "@/lib/paths";
 import { cn } from "@/lib/utils";
 import { toast } from "@/stores/toast";
 import type { FileWindow } from "@/types/kago";
@@ -50,7 +50,7 @@ export function Breadcrumb({ window, rootName, onNavigate }: { window: FileWindo
   }
 
   const segments = window.logicalPath.split("/").filter(Boolean);
-  const crumbs = [{ label: rootName, path: "/" }, ...segments.map((label, index) => ({ label, path: `/${segments.slice(0, index + 1).join("/")}` }))];
+  const crumbs = [{ label: rootName, path: "/" }, ...segments.map((segment, index) => ({ label: nfc(segment), path: `/${segments.slice(0, index + 1).join("/")}` }))];
   const hidden = Math.max(0, crumbs.length - MAX_VISIBLE_SEGMENTS);
   const visible = hidden > 0 ? [crumbs[0]!, ...crumbs.slice(hidden + 1)] : crumbs;
 

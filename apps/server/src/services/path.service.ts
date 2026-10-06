@@ -3,6 +3,7 @@ import path from "node:path";
 import type { RootService } from "./root.service.js";
 import type { Root } from "./types.js";
 import { AppError } from "../lib/errors.js";
+import { nfc, sameName } from "../lib/filename.js";
 
 export type SafePath = {
   root: Root;
@@ -32,17 +33,17 @@ export class PathService {
 
   async resolveExisting(rootSlug: string, logicalPath: string): Promise<SafePath> {
     const root = this.roots.getBySlug(rootSlug);
-    const normalized = this.normalizeLogicalPath(logicalPath);
-    await this.assertNoSymlinkSegments(root, normalized);
+    const normalized = await this.resolveSegments(root, this.normalizeLogicalPath(logicalPath));
     const absolutePath = await this.resolveInsideRoot(root, normalized);
     return { root, logicalPath: normalized, absolutePath };
   }
 
   async resolveForCreate(rootSlug: string, logicalPath: string): Promise<SafePath> {
     const root = this.roots.getBySlug(rootSlug);
-    const normalized = this.normalizeLogicalPath(logicalPath);
-    const parentLogical = path.posix.dirname(normalized);
-    await this.assertNoSymlinkSegments(root, parentLogical === "." ? "/" : parentLogical);
+    const requested = this.normalizeLogicalPath(logicalPath);
+    const parentLogical = await this.resolveSegments(root, path.posix.dirname(requested));
+    // Anything Kago creates is written in NFC, whatever form the client sent.
+    const normalized = path.posix.join(parentLogical, nfc(path.posix.basename(requested)));
     const absolutePath = path.join(root.base_path, normalized.slice(1));
     await this.assertParentInsideRoot(root, absolutePath);
     return { root, logicalPath: normalized, absolutePath };
@@ -50,22 +51,35 @@ export class PathService {
 
   async resolveRootById(rootId: string, logicalPath: string): Promise<SafePath> {
     const root = this.roots.getById(rootId);
-    const normalized = this.normalizeLogicalPath(logicalPath);
-    await this.assertNoSymlinkSegments(root, normalized);
+    const normalized = await this.resolveSegments(root, this.normalizeLogicalPath(logicalPath));
     const absolutePath = await this.resolveInsideRoot(root, normalized);
     return { root, logicalPath: normalized, absolutePath };
   }
 
-  private async assertNoSymlinkSegments(root: Root, logicalPath: string): Promise<void> {
-    const segments = logicalPath.split("/").filter(Boolean);
+  /**
+   * Walks the path on disk, rejecting symlinks, and returns it spelled the way the filesystem stores it.
+   * A segment that is missing byte-for-byte falls back to the one entry with the same NFC form,
+   * so a typed NFC path still reaches a file whose name is stored as NFD (and vice versa).
+   */
+  private async resolveSegments(root: Root, logicalPath: string): Promise<string> {
+    const resolved: string[] = [];
     let current = root.base_path;
-    for (const segment of segments) {
-      current = path.join(current, segment);
-      const stat = await lstatExisting(current);
+    for (const segment of logicalPath.split("/").filter(Boolean)) {
+      let name = segment;
+      let stat = await lstatIfExists(path.join(current, name));
+      if (!stat) {
+        const matches = (await readdirIfExists(current)).filter((entry) => sameName(entry, segment));
+        if (matches.length !== 1) throw new AppError(404, "Path not found", "PATH_NOT_FOUND");
+        name = matches[0]!;
+        stat = await lstatExisting(path.join(current, name));
+      }
       if (stat.isSymbolicLink()) {
         throw new AppError(403, "Symlink paths are not allowed", "SYMLINK_FORBIDDEN");
       }
+      current = path.join(current, name);
+      resolved.push(name);
     }
+    return `/${resolved.join("/")}`;
   }
 
   private async resolveInsideRoot(root: Root, logicalPath: string): Promise<string> {
@@ -97,6 +111,24 @@ async function lstatExisting(targetPath: string) {
     return await fs.lstat(targetPath);
   } catch (error) {
     if (isMissingPathError(error)) throw new AppError(404, "Path not found", "PATH_NOT_FOUND");
+    throw error;
+  }
+}
+
+async function lstatIfExists(targetPath: string) {
+  try {
+    return await fs.lstat(targetPath);
+  } catch (error) {
+    if (isMissingPathError(error)) return null;
+    throw error;
+  }
+}
+
+async function readdirIfExists(targetPath: string): Promise<string[]> {
+  try {
+    return await fs.readdir(targetPath);
+  } catch (error) {
+    if (isMissingPathError(error)) return [];
     throw error;
   }
 }

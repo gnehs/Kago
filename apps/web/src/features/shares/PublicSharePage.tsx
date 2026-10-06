@@ -6,7 +6,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/input";
 import { AuthCard, FormError } from "@/features/auth/AuthCard";
 import { errorMessage } from "@/lib/format";
-import { baseName } from "@/lib/paths";
+import { baseName, nfc } from "@/lib/paths";
 
 type PublicShareInfo = {
   id: string;
@@ -62,7 +62,7 @@ export function PublicSharePage({ token }: { token: string }) {
     setUploaded(false);
     try {
       const form = new FormData();
-      for (const file of files) form.append("file", file);
+      for (const file of files) form.append("file", file, nfc(file.name));
       await api(`/s/${token}/upload`, { method: "POST", body: form });
       setUploaded(true);
       event.target.value = "";

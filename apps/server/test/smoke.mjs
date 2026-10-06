@@ -502,6 +502,58 @@ test("download archives stay out of the data dir and running tasks can be cancel
   }
 });
 
+test("filenames are written in NFC while existing names keep their on-disk form", async () => {
+  const fixture = await createFixture("kago-smoke-nfc.");
+  const app = await buildApp(testEnv(fixture));
+  const admin = client(app);
+  const publicDir = path.join(fixture.dataDir, "photos", "public");
+  const nfd = (value) => value.normalize("NFD");
+  const names = async () => readdir(publicDir);
+
+  try {
+    await app.ready();
+    assert.equal((await admin.post("/api/auth/setup", { email: "admin@example.test", password: "fake-admin-password-123", displayName: "Smoke Admin" })).statusCode, 200);
+
+    // New names arrive decomposed (as macOS sends them) and land composed.
+    const folder = await admin.post("/api/fs/mkdir", { rootSlug: "photos", path: "/public", name: nfd("ガイド") });
+    assert.equal(folder.statusCode, 200);
+    assert.equal(folder.json.path, "/public/ガイド");
+    const upload = await admin.multipart("/api/fs/upload", { rootSlug: "photos", path: "/public", filename: nfd("café.txt"), content: "nfc" });
+    assert.equal(upload.statusCode, 200);
+    assert.ok((await names()).includes("ガイド"));
+    assert.ok((await names()).includes("café.txt"));
+
+    // A file that already exists as NFD is not renamed by reading it: display is NFC, the path stays as stored.
+    const stored = nfd("が.txt");
+    await writeFile(path.join(publicDir, stored), "legacy");
+    const listed = (await admin.get("/api/fs/list?rootSlug=photos&path=/public")).json.items.find((item) => item.name === "が.txt");
+    assert.equal(listed.path, `/public/${stored}`);
+    assert.ok((await names()).includes(stored));
+
+    // Either spelling reaches it, and the answer names the stored one.
+    const typed = await admin.get(`/api/fs/meta?${new URLSearchParams({ rootSlug: "photos", path: "/public/が.txt" })}`);
+    assert.equal(typed.statusCode, 200);
+    assert.equal(typed.json.name, "が.txt");
+
+    // Creating its NFC twin is a collision, not a second file.
+    assert.equal((await admin.post("/api/fs/mkdir", { rootSlug: "photos", path: "/public", name: "が.txt" })).statusCode, 409);
+    assert.equal((await admin.multipart("/api/fs/upload", { rootSlug: "photos", path: "/public", filename: "が.txt", content: "twin" })).statusCode, 409);
+
+    // Renaming it to its own display name normalises it in place.
+    const renamed = await admin.post("/api/fs/rename", { rootSlug: "photos", path: listed.path, name: "が.txt" });
+    assert.equal(renamed.statusCode, 200);
+    assert.equal(renamed.json.path, "/public/が.txt");
+    assert.deepEqual((await names()).filter((name) => name.normalize("NFC") === "が.txt"), ["が.txt"]);
+    assert.equal((await readFile(path.join(publicDir, "が.txt"), "utf8")), "legacy");
+
+    // Renaming onto another entry is still refused.
+    assert.equal((await admin.post("/api/fs/rename", { rootSlug: "photos", path: "/public/が.txt", name: nfd("café.txt") })).statusCode, 409);
+  } finally {
+    await app.close();
+    await rm(fixture.baseDir, { recursive: true, force: true });
+  }
+});
+
 function testEnv(fixture) {
   return {
     port: 0,

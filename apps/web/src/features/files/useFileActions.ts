@@ -1,6 +1,6 @@
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { api, downloadUrl } from "@/api/client";
-import { ensureZipName, joinLogicalPath, parentPath, triggerDownload } from "@/lib/paths";
+import { ensureZipName, joinLogicalPath, needsNormalizing, nfc, parentPath, triggerDownload } from "@/lib/paths";
 import { run } from "@/lib/run";
 import { useClipboardStore, type FileRef } from "@/stores/clipboard";
 import { promptText } from "@/stores/dialogs";
@@ -70,7 +70,7 @@ export function useFileActions(window: FileWindow) {
     refresh,
     newFolder: () =>
       run(async () => {
-        const name = await promptText({ title: "新增資料夾", defaultValue: "未命名資料夾", confirmLabel: "建立" });
+        const name = nfc((await promptText({ title: "新增資料夾", defaultValue: "未命名資料夾", confirmLabel: "建立" })) ?? "");
         if (!name) return;
         await api("/api/fs/mkdir", { method: "POST", body: JSON.stringify({ rootSlug: window.rootSlug, path: window.logicalPath, name }) });
         await refresh();
@@ -81,15 +81,16 @@ export function useFileActions(window: FileWindow) {
         const form = new FormData();
         form.append("rootSlug", window.rootSlug);
         form.append("path", path);
-        for (const file of files) form.append("file", file);
+        for (const file of files) form.append("file", file, nfc(file.name));
         await api("/api/fs/upload", { method: "POST", body: form });
         await refresh();
         toast(`已上傳 ${files.length} 個檔案`);
       }, "上傳失敗"),
     rename: (item: FileItem) =>
       run(async () => {
-        const name = await promptText({ title: "重新命名", defaultValue: item.name, confirmLabel: "重新命名" });
-        if (!name || name === item.name) return;
+        const name = nfc((await promptText({ title: "重新命名", defaultValue: item.name, confirmLabel: "重新命名" })) ?? "");
+        // Confirming the unchanged name still goes through for an NFD file, which rewrites it as NFC.
+        if (!name || (name === item.name && !needsNormalizing(item.path))) return;
         await api("/api/fs/rename", { method: "POST", body: JSON.stringify({ rootSlug: window.rootSlug, path: item.path, name }) });
         clearSelection();
         await refresh();
