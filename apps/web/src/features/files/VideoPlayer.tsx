@@ -6,6 +6,7 @@ import { KagoIconButton } from "@/components/kago/icon-button";
 import { formatClock } from "@/lib/format";
 import { getVideoVolume, setVideoVolume } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
+import { startCompositePip } from "./compositePip";
 
 const IDLE_MS = 2500;
 const SEEK_STEP = 5;
@@ -84,6 +85,7 @@ export function VideoPlayer({
     return element;
   });
   const home = useRef<HTMLDivElement>(null);
+  const endComposite = useRef<(() => void) | null>(null);
   const [floating, setFloating] = useState<Window | null>(null);
 
   useLayoutEffect(() => {
@@ -92,6 +94,7 @@ export function VideoPlayer({
   }, [host]);
 
   useEffect(() => () => floating?.close(), [floating]);
+  useEffect(() => () => endComposite.current?.(), []);
   const [active, setActive] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
   const [scrubbing, setScrubbing] = useState(false);
@@ -170,10 +173,22 @@ export function VideoPlayer({
     else (videoRef.current as (HTMLVideoElement & { webkitEnterFullscreen?: () => void }) | null)?.webkitEnterFullscreen?.();
   };
 
-  /** Only the video's own frames float this way, which leaves the subtitles behind. */
+  /** The browser's own picture-in-picture. Only a video's frames float this way, so subtitles are painted into them. */
   const toggleVideoPip = () => {
-    if (document.pictureInPictureElement) void document.exitPictureInPicture().catch(() => {});
-    else void videoRef.current?.requestPictureInPicture().catch(() => {});
+    if (endComposite.current) return endComposite.current();
+    if (document.pictureInPictureElement) return void document.exitPictureInPicture().catch(() => {});
+    const video = videoRef.current;
+    if (!video) return;
+    const plain = () => void video.requestPictureInPicture().catch(() => {});
+    const subtitles = () => container?.querySelector<HTMLCanvasElement>("canvas.libassjs-canvas") ?? null;
+    if (!subtitles() || video.videoHeight === 0) return plain();
+    startCompositePip(video, subtitles, () => {
+      endComposite.current = null;
+      setPip(false);
+    }).then((end) => {
+      endComposite.current = end;
+      setPip(true);
+    }, plain);
   };
 
   /** Moves the player between documents. A media element may start over when it changes document, so the playhead is put back. */
