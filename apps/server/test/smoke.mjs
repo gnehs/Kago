@@ -546,6 +546,20 @@ test("filenames are written in NFC while existing names keep their on-disk form"
     assert.deepEqual((await names()).filter((name) => name.normalize("NFC") === "が.txt"), ["が.txt"]);
     assert.equal((await readFile(path.join(publicDir, "が.txt"), "utf8")), "legacy");
 
+    // Extracting merges into a folder stored as NFD instead of creating its NFC twin, and refuses to shadow a file in it.
+    const storedDir = nfd("プロジェクト");
+    await mkdir(path.join(publicDir, storedDir));
+    const zip = new AdmZip();
+    zip.addFile(`${nfd("プロジェクト")}/${nfd("メモ.txt")}`, Buffer.from("memo"));
+    zip.writeZip(path.join(publicDir, "nfd.zip"));
+    const extract = () => admin.post("/api/tasks", { type: "extract", sources: [{ rootSlug: "photos", path: "/public/nfd.zip" }], destination: { rootSlug: "photos", path: "/public" } });
+    assert.equal((await waitTask(admin, (await extract()).json.id)).status, "done");
+    assert.deepEqual((await names()).filter((name) => name.normalize("NFC") === "プロジェクト"), [storedDir]);
+    assert.deepEqual(await readdir(path.join(publicDir, storedDir)), ["メモ.txt"]);
+    const again = await waitTask(admin, (await extract()).json.id);
+    assert.equal(again.status, "failed");
+    assert.equal(again.error_message, "Target already exists");
+
     // Renaming onto another entry is still refused.
     assert.equal((await admin.post("/api/fs/rename", { rootSlug: "photos", path: "/public/が.txt", name: nfd("café.txt") })).statusCode, 409);
   } finally {

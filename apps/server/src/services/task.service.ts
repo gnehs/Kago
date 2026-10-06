@@ -623,10 +623,11 @@ export class TaskService {
     }
     await this.updateTotals(task.id, Math.max(totalFiles, 1), totalBytes);
 
+    const storedNames = new StoredNames();
     for (const archive of archives) {
       for (const entry of archive.entries) {
         await this.progress(task.id, entry.entryName);
-        const processedBytes = await this.extractEntry(entry, dest.absolutePath);
+        const processedBytes = await this.extractEntry(entry, dest.absolutePath, storedNames);
         await this.bumpProcessedBytes(task.id, processedBytes);
         await this.bumpProcessed(task.id);
       }
@@ -660,9 +661,24 @@ export class TaskService {
     return { totalFiles: Math.max(totalFiles, 1), totalBytes };
   }
 
-  private async extractEntry(entry: AdmZip.IZipEntry, destinationPath: string): Promise<number> {
+  private async extractEntry(entry: AdmZip.IZipEntry, destinationPath: string, storedNames: StoredNames): Promise<number> {
     const segments = this.safeZipEntrySegments(entry);
-    const target = safeJoin(destinationPath, segments);
+    const fileName = entry.isDirectory ? undefined : segments.pop()!;
+    // Folders merge into the one already there, spelled as it is stored; a file never lands beside its NFC/NFD twin.
+    const resolved: string[] = [];
+    let folder = destinationPath;
+    for (const segment of segments) {
+      const stored = (await storedNames.find(folder, segment)) ?? segment;
+      await storedNames.add(folder, stored);
+      resolved.push(stored);
+      folder = path.join(folder, stored);
+    }
+    if (fileName !== undefined) {
+      if (await storedNames.find(folder, fileName)) throw new AppError(409, "Target already exists", "TARGET_EXISTS");
+      await storedNames.add(folder, fileName);
+      resolved.push(fileName);
+    }
+    const target = safeJoin(destinationPath, resolved);
     if (entry.isDirectory) {
       await assertNoExistingSymlinkSegments(destinationPath, target);
       await fsp.mkdir(target, { recursive: true });
@@ -1125,6 +1141,32 @@ function runRsync(args: string[], isCancelled: () => boolean): Promise<void> {
       else reject(new AppError(500, "rsync failed", "RSYNC_FAILED"));
     });
   });
+}
+
+/** Per-folder index of on-disk names by their NFC form, kept current while one task writes into those folders. */
+class StoredNames {
+  private readonly folders = new Map<string, Map<string, string>>();
+
+  async find(folder: string, name: string): Promise<string | undefined> {
+    return (await this.load(folder)).get(nfc(name));
+  }
+
+  async add(folder: string, name: string): Promise<void> {
+    (await this.load(folder)).set(nfc(name), name);
+  }
+
+  private async load(folder: string): Promise<Map<string, string>> {
+    let names = this.folders.get(folder);
+    if (!names) {
+      const entries = await fsp.readdir(folder).catch((error: unknown) => {
+        if (isMissingPathError(error)) return [] as string[];
+        throw error;
+      });
+      names = new Map(entries.map((entry) => [nfc(entry), entry]));
+      this.folders.set(folder, names);
+    }
+    return names;
+  }
 }
 
 function downloadFileName(sources: Array<{ path: string }>): string {
