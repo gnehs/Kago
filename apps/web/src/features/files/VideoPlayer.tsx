@@ -95,7 +95,8 @@ export function VideoPlayer({
   const [active, setActive] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
   const [scrubbing, setScrubbing] = useState(false);
-  const [height, setHeight] = useState(0);
+  const [frame, setFrame] = useState({ width: 0, height: 0 });
+  const [pictureAspect, setPictureAspect] = useState(0);
 
   const duration = ownDuration || fallbackDuration;
   const long = duration >= 3600;
@@ -131,7 +132,7 @@ export function VideoPlayer({
     container.focus({ preventScroll: true });
     const onChange = () => setFullscreen(document.fullscreenElement === container);
     document.addEventListener("fullscreenchange", onChange);
-    const observer = new ResizeObserver(() => setHeight(container.clientHeight));
+    const observer = new ResizeObserver(() => setFrame({ width: container.clientWidth, height: container.clientHeight }));
     observer.observe(container);
     return () => {
       document.removeEventListener("fullscreenchange", onChange);
@@ -247,7 +248,7 @@ export function VideoPlayer({
         "[&_.libassjs-canvas]:origin-top [&_.libassjs-canvas]:scale-(--subtitle-scale) [&_.libassjs-canvas]:transition-transform [&_.libassjs-canvas]:duration-150",
         !controlsShown && "cursor-none"
       )}
-      style={{ "--subtitle-scale": controlsShown && height > CONTROLS_HEIGHT * 2 ? (height - CONTROLS_HEIGHT) / height : 1 } as React.CSSProperties}
+      style={{ "--subtitle-scale": controlsShown ? subtitleScale(frame, pictureAspect) : 1 } as React.CSSProperties}
       onPointerMove={wake}
       onPointerLeave={() => setActive(false)}
       onKeyDown={onKeyDown}
@@ -281,7 +282,9 @@ export function VideoPlayer({
         }}
         onLoadedMetadata={(event) => {
           const { videoWidth, videoHeight } = event.currentTarget;
-          if (videoWidth > 0 && videoHeight > 0) onAspect?.(videoWidth / videoHeight);
+          if (videoWidth <= 0 || videoHeight <= 0) return;
+          setPictureAspect(videoWidth / videoHeight);
+          onAspect?.(videoWidth / videoHeight);
         }}
         onLoadedData={onLoadedData}
         onPlaying={onPlaying}
@@ -365,6 +368,17 @@ export function VideoPlayer({
       {createPortal(player, host)}
     </>
   );
+}
+
+/**
+ * How much the subtitles shrink to clear the control bar. They cover the picture, not the frame: when the picture
+ * is letterboxed, the bar sits partly or wholly in the black below it and less room, or none, has to be made.
+ */
+function subtitleScale(frame: { width: number; height: number }, aspect: number) {
+  if (frame.height <= 0) return 1;
+  const picture = aspect > 0 ? Math.min(frame.height, frame.width / aspect) : frame.height;
+  const covered = CONTROLS_HEIGHT - (frame.height - picture) / 2;
+  return covered > 0 && picture > CONTROLS_HEIGHT * 2 ? (picture - covered) / picture : 1;
 }
 
 function PlayerButton({ className, ...props }: ComponentProps<typeof KagoIconButton>) {
