@@ -2,7 +2,7 @@
   "name": "kago",
   "version": "0.1.0",
   "private": true,
-  "packageManager": "pnpm@9.15.4",
+  "packageManager": "pnpm@12.9.1",
   "scripts": {
     "dev": "pnpm --parallel --filter @kago/server --filter @kago/web dev",
     "build": "pnpm -r build",

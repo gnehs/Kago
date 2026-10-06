@@ -2,3 +2,9 @@ packages:
   - "apps/*"
 allowBuilds:
   esbuild: true
+# Published 2026-10-06, inside pnpm's default 24h minimumReleaseAge. Safe to remove after 2026-10-07.
+minimumReleaseAgeExclude:
+  - "@expo-google-fonts/noto-sans-jp@0.4.4"
+  - "@expo-google-fonts/noto-sans-kr@0.4.4"
+  - "@expo-google-fonts/noto-sans-sc@0.4.4"
+  - "@expo-google-fonts/noto-sans-tc@0.4.4"

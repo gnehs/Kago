@@ -6,11 +6,11 @@
 FROM --platform=$BUILDPLATFORM node:24-bookworm-slim AS base
 WORKDIR /app
 ENV PNPM_HOME="/pnpm"
-ENV PATH="$PNPM_HOME:$PATH"
+ENV PATH="$PNPM_HOME/bin:$PATH"
 # Keep in sync with "packageManager" in package.json.
-ARG PNPM_VERSION=9.15.4
-# `npx get-pnpm` rejects 9.15.4: it was signed with an npm key that has since expired.
-RUN npm install -g "pnpm@$PNPM_VERSION"
+ARG PNPM_VERSION=12.9.1
+# `pnpm setup` (run by get-pnpm) needs to know which shell to configure.
+RUN SHELL="$(which bash)" ENV="$HOME/.bashrc" npx --yes get-pnpm "$PNPM_VERSION"
 
 FROM base AS deps
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
