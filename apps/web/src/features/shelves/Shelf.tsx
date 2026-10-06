@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronUp, Inbox, X } from "lucide-react";
 import { api } from "@/api/client";
@@ -31,14 +31,32 @@ export function Shelf() {
   const element = useRef<HTMLElement>(null);
   const [size, setSize] = useState({ width: 264, height: 40 });
   const [dropActive, setDropActive] = useState(false);
+  const [dragging, setDragging] = useState(false);
   const store = useWorkspaceStore.getState;
   const shelf = shelves.data?.[0];
   const collapsed = Boolean(shelfState.collapsed);
   const itemCount = shelf?.items.length ?? 0;
 
+  // The shelf stays out of the way until there is something to drop on it.
+  useEffect(() => {
+    const onDragStart = (event: DragEvent) => setDragging(Boolean(event.dataTransfer?.types.includes(KAGO_DRAG_TYPE)));
+    const onDragEnd = () => {
+      setDragging(false);
+      setDropActive(false);
+    };
+    window.addEventListener("dragstart", onDragStart);
+    window.addEventListener("dragend", onDragEnd);
+    window.addEventListener("drop", onDragEnd);
+    return () => {
+      window.removeEventListener("dragstart", onDragStart);
+      window.removeEventListener("dragend", onDragEnd);
+      window.removeEventListener("drop", onDragEnd);
+    };
+  }, []);
+
   useLayoutEffect(() => {
     if (element.current) setSize({ width: element.current.offsetWidth, height: element.current.offsetHeight });
-  }, [collapsed, itemCount, Boolean(shelf)]);
+  }, [collapsed, itemCount, dragging, Boolean(shelf)]);
 
   const canvas = getCanvasSize();
   const clamp = (x: number, y: number) => ({
@@ -54,7 +72,7 @@ export function Shelf() {
     (origin, dx, dy) => store().updateShelf(clamp(origin.x + dx, origin.y + dy))
   );
 
-  if (!shelf) return null;
+  if (!shelf || (itemCount === 0 && !dragging)) return null;
   const shelfId = shelf.id;
   const canSend = Boolean(active) && !activeList.data?.readonly && itemCount > 0;
 
@@ -113,7 +131,7 @@ export function Shelf() {
         </KagoIconButton>
       </header>
 
-      {collapsed ? null : itemCount === 0 ? (
+      {collapsed && itemCount > 0 ? null : itemCount === 0 ? (
         <p className="m-2 mt-0 rounded-md border border-dashed border-line-strong px-3 py-5 text-center text-muted">
           把檔案拖到這裡暫放
           <span className="mt-0.5 block text-xs text-faint">只記錄位置，不會複製檔案</span>
