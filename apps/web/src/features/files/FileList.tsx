@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { ArrowDown, ArrowUp } from "lucide-react";
 import { previewUrl, thumbnailUrl } from "@/api/client";
 import { Button } from "@/components/ui/button";
+import { FinderTagDots } from "@/features/tags/FinderTags";
 import { formatDate, formatSize, kindLabel } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useClipboardStore } from "@/stores/clipboard";
@@ -108,6 +109,7 @@ function ListView(props: ViewProps) {
               <span className="flex min-w-0 flex-1 items-center gap-2">
                 <FileIcon item={item} className={cn(selected && window.focused && item.kind === "file" && "text-inherit")} />
                 <span className="truncate">{item.name}</span>
+                <FinderTagDots tags={item.finderTags} />
               </span>
               <span className={cn("hidden w-36 truncate tabular-nums @md:block", !selected && "text-muted")}>{formatDate(item.mtime)}</span>
               <span className={cn("w-20 text-right tabular-nums", !selected && "text-muted")}>{item.kind === "folder" ? "—" : formatSize(item.size)}</span>
@@ -164,7 +166,10 @@ function GridView(props: ViewProps) {
             <div className={cn("flex size-20 shrink-0 items-center justify-center rounded-md", selected ? "bg-hover" : "")}>
               <Thumbnail rootSlug={window.rootSlug} item={item} />
             </div>
-            <span className={cn("line-clamp-2 max-w-full rounded-sm px-1.5 text-center leading-4 break-words", selectedClass(window, selected))}>{item.name}</span>
+            <span className={cn("line-clamp-2 max-w-full rounded-sm px-1.5 text-center leading-4 break-words", selectedClass(window, selected))}>
+              <FinderTagDots tags={item.finderTags} className="mr-1 inline-flex align-[-1px]" />
+              {item.name}
+            </span>
           </div>
         );
       })}
@@ -193,7 +198,8 @@ function ColumnsView(props: ViewProps) {
           return (
             <div key={item.path} role="option" className={cn("mx-1 flex h-(--kago-row-h) items-center gap-2 rounded-sm px-2", selectedClass(window, selected), stateClass(props, item))} {...itemProps(props, item, range.start + offset)}>
               <FileIcon item={item} className={cn(selected && window.focused && item.kind === "file" && "text-inherit")} />
-              <span className="truncate">{item.name}</span>
+              <span className="min-w-0 flex-1 truncate">{item.name}</span>
+              <FinderTagDots tags={item.finderTags} />
             </div>
           );
         })}

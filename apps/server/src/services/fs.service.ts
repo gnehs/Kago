@@ -7,6 +7,7 @@ import { lookup } from "mime-types";
 import { z } from "zod";
 import { AppError } from "../lib/errors.js";
 import { assertNameAvailable, nfc } from "../lib/filename.js";
+import { readFinderTags } from "../lib/finder-tags.js";
 import type { AuditService } from "./audit.service.js";
 import type { PathService } from "./path.service.js";
 import type { PermissionService } from "./permission.service.js";
@@ -49,6 +50,7 @@ export class FsService {
     if (!stat.isDirectory()) throw new AppError(400, "Path is not a folder", "NOT_FOLDER");
 
     const entries = await fsp.readdir(safe.absolutePath, { withFileTypes: true });
+    const finderTags = await readFinderTags(safe.absolutePath, entries.map((entry) => entry.name));
     const listedItems = await Promise.all(
       entries
         .filter((entry) => !entry.name.includes("\0"))
@@ -71,7 +73,8 @@ export class FsService {
             size: itemStat.size,
             mtime: itemStat.mtimeMs,
             type: entry.isDirectory() ? "folder" : lookup(entry.name) || "application/octet-stream",
-            readonly: Boolean(safe.root.readonly)
+            readonly: Boolean(safe.root.readonly),
+            finderTags: finderTags.get(entry.name) ?? []
           };
         })
     );
@@ -84,6 +87,8 @@ export class FsService {
     const safe = await this.paths.resolveExisting(rootSlug, logicalPath);
     this.permissions.require(actor, "read", safe.root, safe.logicalPath);
     const stat = await fsp.lstat(safe.absolutePath);
+    const name = path.basename(safe.absolutePath);
+    const finderTags = await readFinderTags(path.dirname(safe.absolutePath), [name]);
     return {
       rootSlug,
       path: safe.logicalPath,
@@ -91,7 +96,8 @@ export class FsService {
       kind: stat.isDirectory() ? "folder" : "file",
       size: stat.size,
       mtime: stat.mtimeMs,
-      type: stat.isDirectory() ? "folder" : lookup(safe.absolutePath) || "application/octet-stream"
+      type: stat.isDirectory() ? "folder" : lookup(safe.absolutePath) || "application/octet-stream",
+      finderTags: finderTags.get(name) ?? []
     };
   }
 

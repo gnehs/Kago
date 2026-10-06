@@ -22,6 +22,13 @@
   --kago-success: #17804a;
   --kago-folder: #4a9be8;
   --kago-overlay: rgb(15 23 42 / 0.32);
+  --kago-tag-gray: #8e8e93;
+  --kago-tag-green: #34c759;
+  --kago-tag-purple: #af52de;
+  --kago-tag-blue: #0a84ff;
+  --kago-tag-yellow: #ffcc00;
+  --kago-tag-red: #ff453a;
+  --kago-tag-orange: #ff9f0a;
   --kago-shadow-window: 0 0 0 1px rgb(15 23 42 / 0.1), 0 12px 32px rgb(15 23 42 / 0.16);
   --kago-shadow-window-active: 0 0 0 1px rgb(15 23 42 / 0.14), 0 20px 48px rgb(15 23 42 / 0.24);
   --kago-shadow-popup: 0 0 0 1px rgb(15 23 42 / 0.1), 0 8px 24px rgb(15 23 42 / 0.16);
@@ -76,6 +83,13 @@
   --color-success: var(--kago-success);
   --color-folder: var(--kago-folder);
   --color-overlay: var(--kago-overlay);
+  --color-tag-gray: var(--kago-tag-gray);
+  --color-tag-green: var(--kago-tag-green);
+  --color-tag-purple: var(--kago-tag-purple);
+  --color-tag-blue: var(--kago-tag-blue);
+  --color-tag-yellow: var(--kago-tag-yellow);
+  --color-tag-red: var(--kago-tag-red);
+  --color-tag-orange: var(--kago-tag-orange);
   --radius-sm: var(--kago-radius-sm);
   --radius-md: var(--kago-radius-md);
   --radius-lg: var(--kago-radius-lg);

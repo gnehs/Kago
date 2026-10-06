@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { RuleList } from "@/features/permissions/RuleList";
 import { ShareForm } from "@/features/shares/ShareForm";
 import { parseShareMode, shareModeLabel } from "@/features/shares/shareUtils";
+import { FinderTagChips } from "@/features/tags/FinderTags";
 import { TagEditor } from "@/features/tags/TagEditor";
 import { formatDate, formatSize, kindLabel } from "@/lib/format";
 import { usePointerDrag } from "@/lib/usePointerDrag";
@@ -70,6 +71,12 @@ export function Inspector({ window: activeWindow, isAdmin }: { window: FileWindo
               <Detail label="位置">{rootSlug}:{path}</Detail>
             </dl>
           </Section>
+
+          {meta.data.finderTags?.length ? (
+            <Section title="Finder 標籤">
+              <FinderTagChips tags={meta.data.finderTags} />
+            </Section>
+          ) : null}
 
           <Section title="標籤">
             <TagEditor rootSlug={rootSlug} path={path} />

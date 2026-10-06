@@ -72,6 +72,7 @@ export type FileItem = {
   mtime: number;
   type: string;
   readonly: boolean;
+  finderTags?: FinderTag[];
 };
 
 export type FileList = {
@@ -89,6 +90,13 @@ export type FileMeta = {
   size: number;
   mtime: number;
   type: string;
+  finderTags?: FinderTag[];
+};
+
+/** A tag set in macOS Finder, read from the file itself. Read-only in Kago. */
+export type FinderTag = {
+  name: string;
+  color: "gray" | "green" | "purple" | "blue" | "yellow" | "red" | "orange" | null;
 };
 
 export type Tag = {
