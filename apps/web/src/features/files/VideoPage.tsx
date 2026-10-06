@@ -7,7 +7,7 @@ export const videoPageUrl = (rootSlug: string, path: string) => `/_kago/play?${n
 
 /** A video in a browser tab of its own: the same player as the preview window, filling the page. */
 export function VideoPage() {
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
   const rootSlug = params.get("rootSlug");
   const path = params.get("path");
 
@@ -23,7 +23,7 @@ export function VideoPage() {
   if (!rootSlug || !path) return <Navigate to="/" replace />;
   return (
     <div className="flex h-full flex-col bg-black">
-      <VideoPreview rootSlug={rootSlug} path={path} />
+      <VideoPreview rootSlug={rootSlug} path={path} onNavigate={(item) => setParams({ rootSlug, path: item.path })} />
     </div>
   );
 }

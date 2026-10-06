@@ -1,16 +1,17 @@
 import { AudioLines, Captions, CaptionsOff, Check, Download } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api, downloadUrl, previewUrl } from "@/api/client";
-import { useMediaInfo, useSubtitles } from "@/api/hooks";
+import { useFileList, useMediaInfo, useSubtitles } from "@/api/hooks";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { KagoDropdownMenu, KagoMenuItem, KagoMenuSeparator } from "@/components/kago/menu";
 import { KagoWindow } from "@/features/windows/KagoWindow";
-import { triggerDownload } from "@/lib/paths";
+import { isVideoType } from "@/lib/format";
+import { parentPath, triggerDownload } from "@/lib/paths";
 import { getSubtitlePref, getVideoQuality, setSubtitlePref, setVideoQuality, type VideoQualityPref } from "@/lib/prefs";
 import { languageLabel, pickSubtitle, subtitleLabel } from "@/lib/subtitles";
 import { toast } from "@/stores/toast";
 import { useWorkspaceStore, type PreviewWindow } from "@/stores/workspace";
-import type { MediaInfo, SubtitleTrack } from "@/types/kago";
+import type { FileItem, MediaInfo, SubtitleTrack } from "@/types/kago";
 import { FileIcon } from "./FileIcon";
 import { useSubtitleRenderer } from "./useSubtitleRenderer";
 import { PLAYER_CONTROL_CLASS, VideoPlayer } from "./VideoPlayer";
@@ -18,6 +19,8 @@ import { PLAYER_CONTROL_CLASS, VideoPlayer } from "./VideoPlayer";
 const BITRATE_HINT: Record<number, string> = { 2160: "16 Mbps", 1440: "10 Mbps", 1080: "6 Mbps", 720: "3 Mbps", 480: "1.5 Mbps", 360: "0.8 Mbps" };
 const ENCODER_LABEL: Record<string, string> = { nvenc: "NVIDIA GPU", vaapi: "Intel / AMD GPU", "vaapi-cqp": "Intel / AMD GPU", videotoolbox: "Apple GPU", software: "CPU" };
 const MAX_RECOVERIES = 2;
+// Numbered episodes sort as numbers, the way the file list shows them.
+const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 
 /**
  * A video preview. The original file is played as-is when the browser can decode it; otherwise,
@@ -33,14 +36,39 @@ export function VideoPreviewWindow({ window }: { window: PreviewWindow }) {
       icon={<FileIcon item={item} />}
       titleExtra={<KagoIconButton label="下載" className="size-6" onClick={() => triggerDownload(downloadUrl(rootSlug, item.path))}><Download /></KagoIconButton>}
     >
-      <VideoPreview rootSlug={rootSlug} path={item.path} aspect={window.aspect} onAspect={(aspect) => useWorkspaceStore.getState().setPreviewAspect(window.id, aspect)} />
+      <VideoPreview
+        rootSlug={rootSlug}
+        path={item.path}
+        aspect={window.aspect}
+        onAspect={(aspect) => useWorkspaceStore.getState().setPreviewAspect(window.id, aspect)}
+        onNavigate={(target) => useWorkspaceStore.getState().setPreviewItem(window.id, target)}
+      />
     </KagoWindow>
   );
 }
 
 /** The player and everything that feeds it, for whatever frame it is put in: a window, or a tab of its own. */
-export function VideoPreview({ rootSlug, path, aspect, onAspect }: { rootSlug: string; path: string; aspect?: number; onAspect?: (aspect: number) => void }) {
+export function VideoPreview({
+  rootSlug,
+  path,
+  aspect,
+  onAspect,
+  onNavigate
+}: {
+  rootSlug: string;
+  path: string;
+  aspect?: number;
+  onAspect?: (aspect: number) => void;
+  /** Puts another video of the same folder in this frame. Without it there is no stepping between videos. */
+  onNavigate?: (item: FileItem) => void;
+}) {
   const info = useMediaInfo(rootSlug, path);
+  const folder = useFileList(rootSlug, parentPath(path), Boolean(onNavigate)).data;
+  const videos = useMemo(() => (folder?.items ?? []).filter((item) => item.kind === "file" && isVideoType(item.type)).sort((a, b) => collator.compare(a.name, b.name)), [folder]);
+  const position = videos.findIndex((item) => item.path === path);
+  const neighbour = (item: FileItem | undefined) => (item && onNavigate ? { label: item.name, go: () => onNavigate(item) } : null);
+  const latestPath = useRef(path);
+  latestPath.current = path;
   const videoRef = useRef<HTMLVideoElement>(null);
   // Carries the playhead across a change of source.
   const resume = useRef({ time: 0, playing: false });
@@ -54,6 +82,17 @@ export function VideoPreview({ rootSlug, path, aspect, onAspect }: { rootSlug: s
   const subtitles = subtitleList?.tracks ?? [];
   // A subtitle's id, or `off`; null until a choice is made in this window.
   const [subtitlePick, setSubtitlePick] = useState<string | null>(null);
+  // The player stays mounted from one video to the next, so fullscreen survives; what was chosen for the last one does not carry over.
+  const [shownPath, setShownPath] = useState(path);
+  if (shownPath !== path) {
+    setShownPath(path);
+    setPicked(null);
+    setAudioIndex(0);
+    setDirectFailed(false);
+    setAttempt(0);
+    setStatus("idle");
+    setSubtitlePick(null);
+  }
   const subtitle = subtitlePick === "off" ? null : (subtitles.find((track) => track.id === subtitlePick) ?? (subtitlePick === null ? pickSubtitle(subtitles, getSubtitlePref()) : null));
 
   const media = info.data;
@@ -146,7 +185,9 @@ export function VideoPreview({ rootSlug, path, aspect, onAspect }: { rootSlug: s
     return () => {
       cancelled = true;
       video.removeEventListener("loadedmetadata", restore);
-      resume.current = { time: video.readyState > 0 ? video.currentTime : startAt, playing: video.readyState > 0 ? !video.paused && !video.ended : playing };
+      // Another rendition picks up where this one stopped; another video starts from the top, playing.
+      if (latestPath.current !== path) resume.current = { time: 0, playing: true };
+      else resume.current = { time: video.readyState > 0 ? video.currentTime : startAt, playing: video.readyState > 0 ? !video.paused && !video.ended : playing };
       teardown();
       video.removeAttribute("src");
       video.load();
@@ -254,6 +295,9 @@ export function VideoPreview({ rootSlug, path, aspect, onAspect }: { rootSlug: s
   return (
       <VideoPlayer
         videoRef={videoRef}
+        mediaKey={path}
+        previous={videos.length > 1 && position !== -1 ? neighbour(videos[position - 1]) : undefined}
+        next={videos.length > 1 && position !== -1 ? neighbour(videos[position + 1]) : undefined}
         fallbackDuration={media?.duration}
         notice={status === "preparing" ? "正在轉檔…" : status === "error" ? "無法播放這個影片" : null}
         renderSettings={renderSettings}

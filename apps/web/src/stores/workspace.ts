@@ -34,6 +34,8 @@ type WorkspaceStore = WorkspaceState & {
   appWindows: AppWindow[];
   previewWindows: PreviewWindow[];
   openPreview: (rootSlug: string, item: FileItem) => void;
+  /** Shows another file in a preview window that is already open, e.g. the next video of a folder. */
+  setPreviewItem: (id: string, item: FileItem) => void;
   /** Locks a preview window to its content's proportions, reshaping it around its centre. */
   setPreviewAspect: (id: string, aspect: number) => void;
   openApp: (app: AppKind, section?: SettingsSection) => void;
@@ -239,6 +241,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
           ];
       return { ...restack({ ...state, previewWindows }, id), activeWindowId: id };
     }),
+  setPreviewItem: (id, item) =>
+    set((state) => ({ previewWindows: state.previewWindows.map((window) => (window.id === id ? { ...window, title: item.name, preview: { ...window.preview, item } } : window)) })),
   setPreviewAspect: (id, aspect) =>
     set((state) => ({
       previewWindows: state.previewWindows.map((window) => {

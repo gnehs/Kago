@@ -1,4 +1,4 @@
-import { Maximize, Minimize, Pause, PictureInPicture2, Play, Volume1, Volume2, VolumeX } from "lucide-react";
+import { Maximize, Minimize, Pause, PictureInPicture2, Play, SkipBack, SkipForward, Volume1, Volume2, VolumeX } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type ComponentProps, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
@@ -41,6 +41,9 @@ function copyStyles(target: Document) {
   target.body.style.minWidth = "0";
 }
 
+/** Another video to go to from this one. */
+export type PlayerNeighbour = { label: string; go: () => void };
+
 type SettingsSlot = { container: HTMLElement | null; onOpenChange: (open: boolean) => void };
 
 /**
@@ -49,7 +52,10 @@ type SettingsSlot = { container: HTMLElement | null; onOpenChange: (open: boolea
  */
 export function VideoPlayer({
   videoRef,
+  mediaKey,
   fallbackDuration = 0,
+  previous,
+  next,
   notice,
   renderSettings,
   onAspect,
@@ -60,6 +66,11 @@ export function VideoPlayer({
   videoRef: RefObject<HTMLVideoElement | null>;
   /** The length to show until the element knows its own. */
   fallbackDuration?: number;
+  /** Changes when a different video is put in the player, as opposed to another rendition of the same one. */
+  mediaKey?: string;
+  /** The videos before and after this one, where it is one of several; null at either end. */
+  previous?: PlayerNeighbour | null;
+  next?: PlayerNeighbour | null;
   notice?: string | null;
   /** The quality menu, given where to mount its popup and a way to keep the controls up while it is open. */
   renderSettings?: (slot: SettingsSlot) => ReactNode;
@@ -100,6 +111,13 @@ export function VideoPlayer({
   const [scrubbing, setScrubbing] = useState(false);
   const [frame, setFrame] = useState({ width: 0, height: 0 });
   const [pictureAspect, setPictureAspect] = useState(0);
+
+  // A change of quality keeps the playhead on screen while it loads; a change of video starts the display over.
+  useEffect(() => {
+    setTime(0);
+    setBuffered(0);
+    setOwnDuration(0);
+  }, [mediaKey]);
 
   const duration = ownDuration || fallbackDuration;
   const long = duration >= 3600;
@@ -244,6 +262,8 @@ export function VideoPlayer({
     else if (key === "arrowdown") changeSound(sound.volume - VOLUME_STEP, false);
     else if (key === "m") changeSound(sound.volume, !sound.muted);
     else if (key === "f") toggleFullscreen();
+    else if (key === "n" && event.shiftKey && next) next.go();
+    else if (key === "p" && event.shiftKey && previous) previous.go();
     else return;
     event.preventDefault();
     wake();
@@ -336,9 +356,19 @@ export function VideoPlayer({
           onCommit={seekTo}
         />
         <div className="flex items-center gap-0.5">
+          {previous !== undefined ? (
+            <PlayerButton label={previous ? `上一部：${previous.label}（⇧P）` : "沒有上一部"} disabled={!previous} onClick={() => previous?.go()}>
+              <SkipBack className="fill-current" />
+            </PlayerButton>
+          ) : null}
           <PlayerButton label={playing ? "暫停（空白鍵）" : "播放（空白鍵）"} onClick={togglePlay}>
             {playing ? <Pause className="fill-current" /> : <Play className="fill-current" />}
           </PlayerButton>
+          {next !== undefined ? (
+            <PlayerButton label={next ? `下一部：${next.label}（⇧N）` : "沒有下一部"} disabled={!next} onClick={() => next?.go()}>
+              <SkipForward className="fill-current" />
+            </PlayerButton>
+          ) : null}
           <PlayerButton label={silent ? "取消靜音（M）" : "靜音（M）"} onClick={() => changeSound(sound.volume || 1, !silent)}>
             <VolumeIcon />
           </PlayerButton>
@@ -350,7 +380,7 @@ export function VideoPlayer({
             format={(volume) => `${Math.round(volume * 100)}%`}
             onChange={(volume) => changeSound(volume, false)}
           />
-          <span className="truncate px-1.5 text-xs text-white/85 tabular-nums">
+          <span className="min-w-0 truncate px-1.5 text-xs text-white/85 tabular-nums">
             {formatClock(time, long)} / {formatClock(duration, long)}
           </span>
           <div className="flex-1" />
