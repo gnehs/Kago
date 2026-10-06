@@ -15,6 +15,8 @@ export function sendFile(request: FastifyRequest, reply: FastifyReply, absoluteP
   reply.header("Accept-Ranges", "bytes");
   reply.header("Last-Modified", lastModified.toUTCString());
   reply.header("ETag", etag);
+  // A reverse proxy that buffers would pull a whole multi-gigabyte file off the disk for a player that only wants its first seconds.
+  reply.header("X-Accel-Buffering", "no");
 
   const header = request.headers.range;
   const range = header && size > 0 && ifRangeMatches(request.headers["if-range"], lastModified) ? parseRange(header, size) : null;

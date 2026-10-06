@@ -109,6 +109,8 @@ export function VideoPlayer({
   const [active, setActive] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
   const [scrubbing, setScrubbing] = useState(false);
+  // Waiting on the network: before the first frame, or stalled mid-way with nothing left buffered.
+  const [loading, setLoading] = useState(false);
   const [frame, setFrame] = useState({ width: 0, height: 0 });
   const [pictureAspect, setPictureAspect] = useState(0);
 
@@ -291,6 +293,12 @@ export function VideoPlayer({
       <video
         ref={videoRef}
         playsInline
+        // The original file is buffered ahead as soon as it opens, as a transcoded stream is, rather than on the first press of play.
+        preload="auto"
+        onLoadStart={() => setLoading(true)}
+        onWaiting={() => setLoading(true)}
+        onCanPlay={() => setLoading(false)}
+        onEmptied={() => setLoading(false)}
         className="absolute inset-0 size-full object-contain"
         onClick={(event) => {
           // A tap first brings the controls back; there is no hover to do that on a touch screen.
@@ -322,13 +330,16 @@ export function VideoPlayer({
           onAspect?.(videoWidth / videoHeight);
         }}
         onLoadedData={onLoadedData}
-        onPlaying={onPlaying}
+        onPlaying={() => {
+          setLoading(false);
+          onPlaying?.();
+        }}
         onError={onError}
       />
 
-      {notice ? (
+      {(notice ?? (loading ? "載入中…" : null)) ? (
         <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-center">
-          <span className="rounded-full bg-black/75 px-3 py-1 text-xs text-white">{notice}</span>
+          <span className="rounded-full bg-black/75 px-3 py-1 text-xs text-white">{notice ?? "載入中…"}</span>
         </div>
       ) : playing ? null : (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
