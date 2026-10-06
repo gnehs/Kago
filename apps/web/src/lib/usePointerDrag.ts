@@ -29,7 +29,8 @@ export function usePointerDrag<T>(start: (event: React.PointerEvent<HTMLElement>
 }
 
 export function isInteractiveTarget(target: EventTarget | null): boolean {
-  return target instanceof HTMLElement && Boolean(target.closest("button, a, input, textarea, select, label"));
+  // Element, not HTMLElement: the target is often the <svg> icon inside a button.
+  return target instanceof Element && Boolean(target.closest("button, a, input, textarea, select, label"));
 }
 
 export function isEditableTarget(target: EventTarget | null): boolean {
