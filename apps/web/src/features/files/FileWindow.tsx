@@ -20,7 +20,6 @@ import { isArchive } from "./FileIcon";
 import { FileList } from "./FileList";
 import { FileToolbar } from "./FileToolbar";
 import { Inspector } from "./Inspector";
-import { PreviewDialog } from "./PreviewDialog";
 import { readDraggedFiles, useFileActions, type FileRef } from "./useFileActions";
 import { useMarqueeSelection } from "./useMarqueeSelection";
 import { classifyFileWindowError, WindowErrorState } from "./WindowErrorState";
@@ -47,7 +46,6 @@ export function FileWindowView({ window: win, rootName, isAdmin }: { window: Fil
   const [search, setSearch] = useState("");
   const [anchorPath, setAnchorPath] = useState<string | null>(null);
   const [menuItem, setMenuItem] = useState<FileItem | null>(null);
-  const [previewItem, setPreviewItem] = useState<FileItem | null>(null);
   const [dropActive, setDropActive] = useState(false);
   const [dropChoice, setDropChoice] = useState<{ sources: FileRef[]; destination: string; x: number; y: number } | null>(null);
   const clip = useClipboardStore((state) => state.clip);
@@ -86,11 +84,11 @@ export function FileWindowView({ window: win, rootName, isAdmin }: { window: Fil
     const onOpenItem = (event: Event) => {
       const detail = (event as CustomEvent<{ windowId: string; path: string }>).detail;
       const item = detail.windowId === win.id ? allItems.find((entry) => entry.path === detail.path) : undefined;
-      if (item) setPreviewItem(item);
+      if (item) store().openPreview(win.rootSlug, item);
     };
     globalThis.addEventListener(OPEN_ITEM_EVENT, onOpenItem);
     return () => globalThis.removeEventListener(OPEN_ITEM_EVENT, onOpenItem);
-  }, [allItems, win.id]);
+  }, [allItems, win.id, win.rootSlug]);
 
   const navigate = (logicalPath: string) => store().updateWindow(win.id, { logicalPath, selectedItems: [] });
 
@@ -103,7 +101,7 @@ export function FileWindowView({ window: win, rootName, isAdmin }: { window: Fil
   }
 
   function openItem(item: FileItem, newWindow = false) {
-    if (item.kind === "file") setPreviewItem(item);
+    if (item.kind === "file") store().openPreview(win.rootSlug, item);
     else if (newWindow) store().openWindow({ rootSlug: win.rootSlug, logicalPath: item.path, title: item.name });
     else navigate(item.path);
   }
@@ -280,7 +278,6 @@ export function FileWindowView({ window: win, rootName, isAdmin }: { window: Fil
         </>
       ) : null}
 
-      {previewItem ? <PreviewDialog rootSlug={win.rootSlug} item={previewItem} onClose={() => setPreviewItem(null)} /> : null}
       <input
         ref={uploadInput}
         type="file"

@@ -4,6 +4,7 @@ import { useRoots } from "@/api/hooks";
 import { KagoLoading } from "@/components/kago/empty-state";
 import { FileWindowView } from "@/features/files/FileWindow";
 import { Shelf } from "@/features/shelves/Shelf";
+import { PreviewWindowView } from "@/features/files/PreviewWindow";
 import { AppWindowView } from "@/features/windows/AppWindow";
 import { setCanvasSize, useWorkspaceStore } from "@/stores/workspace";
 import type { Actor, Root } from "@/types/kago";
@@ -51,10 +52,11 @@ export function Workspace({ user }: { user: Actor }) {
   );
 }
 
-/** The desktop: shortcuts underneath, file and app windows on top, and the workspace-level shelf. */
+/** The desktop: shortcuts underneath, file, app and preview windows on top, and the workspace-level shelf. */
 function Canvas({ roots, user }: { roots: Root[]; user: Actor }) {
   const windows = useWorkspaceStore((state) => state.windows);
   const appWindows = useWorkspaceStore((state) => state.appWindows);
+  const previewWindows = useWorkspaceStore((state) => state.previewWindows);
   const element = useRef<HTMLDivElement>(null);
   // Bumped on resize so canvas-relative children (the shelf) re-clamp.
   const [, setResizeTick] = useState(0);
@@ -81,6 +83,9 @@ function Canvas({ roots, user }: { roots: Root[]; user: Actor }) {
       ))}
       {appWindows.map((window) => (
         <AppWindowView key={window.id} window={window} roots={roots} user={user} />
+      ))}
+      {previewWindows.map((window) => (
+        <PreviewWindowView key={window.id} window={window} />
       ))}
       <Shelf />
     </div>

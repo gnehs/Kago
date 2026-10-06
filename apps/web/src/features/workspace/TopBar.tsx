@@ -11,6 +11,7 @@ import { BrandMark } from "@/features/auth/AuthCard";
 import { TaskRow } from "@/features/tasks/TaskRow";
 import { isActiveTask } from "@/features/tasks/taskUtils";
 import { cn } from "@/lib/utils";
+import { FileIcon } from "@/features/files/FileIcon";
 import { appIcons } from "@/features/windows/AppWindow";
 import { useWorkspaceStore, type WindowFrame } from "@/stores/workspace";
 import type { Actor } from "@/types/kago";
@@ -20,8 +21,9 @@ export function TopBar({ user, onOpenPalette }: { user: Actor; onOpenPalette: ()
   const queryClient = useQueryClient();
   const windows = useWorkspaceStore((state) => state.windows);
   const appWindows = useWorkspaceStore((state) => state.appWindows);
+  const previewWindows = useWorkspaceStore((state) => state.previewWindows);
   const settingsFocused = appWindows.some((window) => window.app === "settings" && window.focused && !window.minimized);
-  const ordered = [...windows, ...appWindows].sort((a, b) => a.createdAt - b.createdAt);
+  const ordered = [...windows, ...appWindows, ...previewWindows].sort((a, b) => a.createdAt - b.createdAt);
   const anyVisible = ordered.some((window) => !window.minimized);
 
   /** Taskbar behaviour: restore or focus a window, or minimize it when it is already in front. */
@@ -61,7 +63,7 @@ export function TopBar({ user, onOpenPalette }: { user: Actor; onOpenPalette: ()
         {ordered.map((window) => (
           <button
             key={window.id}
-            title={"rootSlug" in window ? `${window.rootSlug}:${window.logicalPath}` : window.title}
+            title={"rootSlug" in window ? `${window.rootSlug}:${window.logicalPath}` : "preview" in window ? `${window.preview.rootSlug}:${window.preview.item.path}` : window.title}
             aria-pressed={window.focused && !window.minimized}
             className={cn(
               "flex h-7 max-w-40 min-w-0 items-center gap-1.5 rounded-md px-2 outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-accent/50",
@@ -70,7 +72,7 @@ export function TopBar({ user, onOpenPalette }: { user: Actor; onOpenPalette: ()
             )}
             onClick={() => activate(window)}
           >
-            {"app" in window ? appIcons[window.app] : <Folder className="fill-folder/25 text-folder" />}
+            {"app" in window ? appIcons[window.app] : "preview" in window ? <FileIcon item={window.preview.item} className="text-current" /> : <Folder className="fill-folder/25 text-folder" />}
             <span className="truncate">{window.title}</span>
           </button>
         ))}

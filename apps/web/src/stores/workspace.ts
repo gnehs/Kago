@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { FileWindow, Root, WorkspaceState } from "../types/kago";
+import type { FileItem, FileWindow, Root, WorkspaceState } from "../types/kago";
 import { baseName } from "../lib/paths";
 import { randomId } from "../lib/utils";
 import { toast } from "./toast";
@@ -16,6 +16,9 @@ export type SettingsSection = "general" | "users" | "groups" | "permissions" | "
  */
 export type AppWindow = WindowFrame & { app: AppKind; section: SettingsSection };
 
+/** A file opened for viewing. Like app windows, previews are not persisted with the workspace. */
+export type PreviewWindow = WindowFrame & { preview: { rootSlug: string; item: FileItem } };
+
 const appMeta: Record<AppKind, { title: string; width: number; height: number }> = {
   settings: { title: "設定", width: 880, height: 620 },
   tasks: { title: "任務", width: 560, height: 520 },
@@ -26,6 +29,8 @@ const appMeta: Record<AppKind, { title: string; width: number; height: number }>
 type WorkspaceStore = WorkspaceState & {
   hydrated: boolean;
   appWindows: AppWindow[];
+  previewWindows: PreviewWindow[];
+  openPreview: (rootSlug: string, item: FileItem) => void;
   openApp: (app: AppKind, section?: SettingsSection) => void;
   setAppSection: (id: string, section: SettingsSection) => void;
   hydrate: (workspace: WorkspaceState) => void;
@@ -98,14 +103,14 @@ function fitGeometry<T extends WindowFrame>(window: T): T {
   };
 }
 
-type Stack = { windows: FileWindow[]; appWindows: AppWindow[] };
+type Stack = { windows: FileWindow[]; appWindows: AppWindow[]; previewWindows: PreviewWindow[] };
 
-const frames = (stack: Stack): WindowFrame[] => [...stack.windows, ...stack.appWindows];
+const frames = (stack: Stack): WindowFrame[] => [...stack.windows, ...stack.appWindows, ...stack.previewWindows];
 
 const topZ = (stack: Stack) => Math.max(fileWindowZBase - 1, ...frames(stack).map((window) => window.zIndex));
 
 /**
- * Renumbers z-indexes from the base across file and app windows, optionally raising one
+ * Renumbers z-indexes from the base across file, app and preview windows, optionally raising one
  * to the front, so they never drift past the window layer. Also syncs the focused flag.
  */
 function restack(stack: Stack, frontId?: string | null, focusId: string | null | undefined = frontId): Stack {
@@ -122,7 +127,7 @@ function restack(stack: Stack, frontId?: string | null, focusId: string | null |
     const next = list.map(apply);
     return next.some((window, index) => window !== list[index]) ? next : list;
   };
-  return { windows: keep(stack.windows), appWindows: keep(stack.appWindows) };
+  return { windows: keep(stack.windows), appWindows: keep(stack.appWindows), previewWindows: keep(stack.previewWindows) };
 }
 
 const titleFromPath = (logicalPath: string, fallback: string) => (logicalPath === "/" ? fallback : baseName(logicalPath) || fallback);
@@ -135,12 +140,13 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   inspector: { open: false, width: 300 },
   shelf: { collapsed: false },
   appWindows: [],
+  previewWindows: [],
   hydrate: (workspace) =>
     set((state) => {
-      // A remote update only describes file windows; an app window keeps focus, and stays in front, if it had it.
-      const appFocused = state.appWindows.some((window) => window.id === state.activeWindowId);
+      // A remote update only describes file windows; an app or preview window keeps focus, and stays in front, if it had it.
+      const appFocused = [...state.appWindows, ...state.previewWindows].some((window) => window.id === state.activeWindowId);
       const activeWindowId = appFocused ? state.activeWindowId : workspace.activeWindowId;
-      return { ...workspace, activeWindowId, ...restack({ windows: workspace.windows.map(fitGeometry), appWindows: state.appWindows }, appFocused ? activeWindowId : undefined, activeWindowId), hydrated: true };
+      return { ...workspace, activeWindowId, ...restack({ windows: workspace.windows.map(fitGeometry), appWindows: state.appWindows, previewWindows: state.previewWindows }, appFocused ? activeWindowId : undefined, activeWindowId), hydrated: true };
     }),
   refitWindows: () =>
     set((state) => {
@@ -150,8 +156,12 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       };
       const windows = state.windows.map(refit);
       const appWindows = state.appWindows.map(refit);
-      const changed = windows.some((window, index) => window !== state.windows[index]) || appWindows.some((window, index) => window !== state.appWindows[index]);
-      return changed ? { windows, appWindows } : state;
+      const previewWindows = state.previewWindows.map(refit);
+      const changed =
+        windows.some((window, index) => window !== state.windows[index]) ||
+        appWindows.some((window, index) => window !== state.appWindows[index]) ||
+        previewWindows.some((window, index) => window !== state.previewWindows[index]);
+      return changed ? { windows, appWindows, previewWindows } : state;
     }),
   openRoot: (root) => {
     const existing = get().windows.find((window) => window.rootSlug === root.slug);
@@ -184,7 +194,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         createdAt: ts(),
         updatedAt: ts()
       };
-      return { ...restack({ windows: [...state.windows, window], appWindows: state.appWindows }, id), activeWindowId: id };
+      return { ...restack({ ...state, windows: [...state.windows, window] }, id), activeWindowId: id };
     });
   },
   openApp: (app, section) =>
@@ -198,12 +208,29 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
             ...state.appWindows,
             { id, app, section: section ?? "general", title: meta.title, ...initialGeometry(frames(state).length, meta.width, meta.height), zIndex: topZ(state) + 1, minimized: false, maximized: false, focused: true, createdAt: ts() }
           ];
-      return { ...restack({ windows: state.windows, appWindows }, id), activeWindowId: id };
+      return { ...restack({ ...state, appWindows }, id), activeWindowId: id };
+    }),
+  openPreview: (rootSlug, item) =>
+    set((state) => {
+      // Opening a file that is already being previewed brings its window back instead of duplicating it.
+      const existing = state.previewWindows.find((window) => window.preview.rootSlug === rootSlug && window.preview.item.path === item.path);
+      const id = existing?.id ?? `preview_${randomId()}`;
+      const previewWindows = existing
+        ? state.previewWindows.map((window) => (window.id === id ? { ...window, minimized: false, title: item.name, preview: { rootSlug, item } } : window))
+        : [
+            ...state.previewWindows,
+            { id, preview: { rootSlug, item }, title: item.name, ...initialGeometry(frames(state).length, 760, 560), zIndex: topZ(state) + 1, minimized: false, maximized: false, focused: true, createdAt: ts() }
+          ];
+      return { ...restack({ ...state, previewWindows }, id), activeWindowId: id };
     }),
   setAppSection: (id, section) => set((state) => ({ appWindows: state.appWindows.map((window) => (window.id === id ? { ...window, section } : window)) })),
   closeWindow: (id) =>
     set((state) => {
-      const stack = { windows: state.windows.filter((window) => window.id !== id), appWindows: state.appWindows.filter((window) => window.id !== id) };
+      const stack = {
+        windows: state.windows.filter((window) => window.id !== id),
+        appWindows: state.appWindows.filter((window) => window.id !== id),
+        previewWindows: state.previewWindows.filter((window) => window.id !== id)
+      };
       if (state.activeWindowId !== id) return stack;
       const next = frames(stack).filter((window) => !window.minimized).sort((a, b) => b.zIndex - a.zIndex)[0];
       return { ...restack(stack, next?.id ?? null), activeWindowId: next?.id ?? null };
@@ -222,10 +249,13 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
           ? { ...window, ...patch, title: patch.logicalPath ? titleFromPath(patch.logicalPath, window.rootSlug) : patch.title ?? window.title, updatedAt: ts() }
           : window
       ),
-      // App windows only take frame changes (move, resize, minimize, maximize).
+      // App and preview windows only take frame changes (move, resize, minimize, maximize).
       appWindows: state.appWindows.some((window) => window.id === id)
         ? state.appWindows.map((window) => (window.id === id ? { ...window, ...(patch as Partial<WindowFrame>) } : window))
-        : state.appWindows
+        : state.appWindows,
+      previewWindows: state.previewWindows.some((window) => window.id === id)
+        ? state.previewWindows.map((window) => (window.id === id ? { ...window, ...(patch as Partial<WindowFrame>) } : window))
+        : state.previewWindows
     })),
   updateSidebar: (patch) => set((state) => ({ sidebar: { ...state.sidebar, ...patch } })),
   updateInspector: (patch) => set((state) => ({ inspector: { ...state.inspector, ...patch } })),

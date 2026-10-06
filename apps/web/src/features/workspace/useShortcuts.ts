@@ -36,7 +36,9 @@ export function useShortcuts({ enabled, onOpenPalette }: { enabled: boolean; onO
       if (isEditableTarget(event.target)) return;
 
       const store = useWorkspaceStore.getState();
-      if (closes && store.appWindows.some((window) => window.id === store.activeWindowId)) {
+      const previewActive = store.previewWindows.some((window) => window.id === store.activeWindowId && !window.minimized);
+      // Escape dismisses a preview the way it used to dismiss the preview dialog.
+      if ((closes || (previewActive && event.key === "Escape")) && [...store.appWindows, ...store.previewWindows].some((window) => window.id === store.activeWindowId)) {
         event.preventDefault();
         store.closeWindow(store.activeWindowId!);
         return;
