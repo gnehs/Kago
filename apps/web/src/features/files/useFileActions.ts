@@ -1,6 +1,7 @@
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { api, downloadUrl } from "@/api/client";
-import { ensureZipName, joinLogicalPath, needsNormalizing, nfc, parentPath, triggerDownload } from "@/lib/paths";
+import { formatSize } from "@/lib/format";
+import { baseName, ensureZipName, joinLogicalPath, needsNormalizing, nfc, parentPath, triggerDownload } from "@/lib/paths";
 import { run } from "@/lib/run";
 import type { UploadTree } from "@/lib/uploadTree";
 import { useClipboardStore, type FileRef } from "@/stores/clipboard";
@@ -14,6 +15,8 @@ export type { FileRef };
 
 /** The server takes at most this many files per upload request. */
 const uploadBatchSize = 20;
+/** Mirrors the server's per-file upload limit. */
+const maxUploadFileBytes = 1024 * 1024 * 512;
 
 export const KAGO_DRAG_TYPE = "application/kago-files";
 
@@ -69,6 +72,8 @@ export function useFileActions(window: FileWindow) {
   const refs = (paths: string[]): FileRef[] => paths.map((path) => ({ rootSlug: window.rootSlug, path }));
   const here = (path = window.logicalPath): FileRef => ({ rootSlug: window.rootSlug, path });
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["fs", "list", window.rootSlug, window.logicalPath] });
+  /** An upload can land in folders other windows are showing, so every listing of the root is refetched. */
+  const refreshRoot = () => queryClient.invalidateQueries({ queryKey: ["fs", "list", window.rootSlug] });
   const clearSelection = () => useWorkspaceStore.getState().selectItems(window.id, []);
 
   return {
@@ -85,6 +90,9 @@ export function useFileActions(window: FileWindow) {
       run(async () => {
         const tree = await source;
         if (tree.files.length === 0 && tree.dirs.length === 0) return;
+        // Checked up front: the server only rejects an oversized file after receiving all of it.
+        const oversized = tree.files.find(({ file }) => file.size > maxUploadFileBytes);
+        if (oversized) throw new Error(`「${nfc(oversized.file.name)}」超過單檔上限 ${formatSize(maxUploadFileBytes)}`);
         const target = (dir: string) => (dir ? `${path === "/" ? "" : path}/${dir}` : path);
         try {
           for (const dir of tree.dirs) {
@@ -105,13 +113,15 @@ export function useFileActions(window: FileWindow) {
           }
         } catch (error) {
           // Whatever made it across before the failure is already on disk.
-          await refresh();
+          await refreshRoot();
           if (!isUploadCancelled(error)) throw error;
           toast("已取消上傳");
           return;
         }
-        await refresh();
-        toast(tree.files.length > 0 ? `已上傳 ${tree.files.length} 個檔案` : `已建立 ${tree.dirs.length} 個資料夾`);
+        await refreshRoot();
+        // A drop on a folder row lands inside that folder, out of sight; say so.
+        const where = path === window.logicalPath ? "" : `到「${baseName(path)}」`;
+        toast(tree.files.length > 0 ? `已上傳 ${tree.files.length} 個檔案${where}` : `已建立 ${tree.dirs.length} 個資料夾${where}`);
       }, "上傳失敗"),
     rename: (item: FileItem) =>
       run(async () => {
