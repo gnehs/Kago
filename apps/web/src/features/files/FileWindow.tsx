@@ -72,6 +72,14 @@ export function FileWindowView({ window: win, rootName, isAdmin }: { window: Fil
     return allItems.filter((item) => selected.has(item.path));
   }, [allItems, win.selectedItems]);
   const selectedPaths = selectedItems.map((item) => item.path);
+  // What the folder holds, for the status bar: how many of each, and how much the files weigh.
+  const summary = useMemo(() => {
+    const files = allItems.filter((item) => item.kind === "file");
+    const folders = allItems.length - files.length;
+    if (allItems.length === 0) return "0 個項目";
+    const counts = [folders > 0 ? `${folders} 個資料夾` : null, files.length > 0 ? `${files.length} 個檔案` : null].filter(Boolean).join("、");
+    return files.length > 0 ? `${counts} · ${formatSize(files.reduce((total, item) => total + item.size, 0))}` : counts;
+  }, [allItems]);
   const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
   const layout = useFileLayout(scroller, win.viewMode);
   const marquee = useMarqueeSelection(win.id, (area) => indexesInArea(layout, items.length, area).map((index) => items[index]!.path));
@@ -267,7 +275,7 @@ export function FileWindowView({ window: win, rootName, isAdmin }: { window: Fil
             <KagoIconButton label="移到垃圾桶" className="size-6" disabled={readonly} onClick={() => void actions.trash(selectedPaths)}><Trash2 /></KagoIconButton>
           </>
         ) : (
-          <span className="truncate">{error ? "無法讀取" : search ? `${items.length} / ${allItems.length} 個項目` : `${allItems.length} 個項目`}</span>
+          <span className="truncate">{error ? "無法讀取" : search ? `符合 ${items.length} / ${allItems.length} 個項目` : summary}</span>
         )}
       </footer>
 

@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { KeyRound } from "lucide-react";
+import { KeyRound, Plus, X } from "lucide-react";
 import { api } from "@/api/client";
 import { useGroups, usePermissions, useUsers } from "@/api/hooks";
 import { KagoEmptyState } from "@/components/kago/empty-state";
+import { KagoIconButton } from "@/components/kago/icon-button";
 import { Button } from "@/components/ui/button";
 import { Checkbox, Field, Input, Select } from "@/components/ui/input";
 import { Card, Page } from "@/features/workspace/Page";
@@ -27,6 +28,8 @@ export function PermissionsPage({ roots }: { roots: Root[] }) {
   const [principalId, setPrincipalId] = useState("");
   const [decisions, setDecisions] = useState<Partial<Record<PermissionAction, Decision>>>({ list: "allow", read: "allow", download: "allow" });
   const [recursive, setRecursive] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const rootName = roots.find((root) => root.id === rootId)?.name ?? "";
   const rules = usePermissions(rootId, Boolean(rootId));
   const normalizedPath = normalizeLogicalPath(pathPrefix);
   const allow = permissionActions.filter((action) => decisions[action.key] === "allow").map((action) => action.key);
@@ -43,6 +46,7 @@ export function PermissionsPage({ roots }: { roots: Root[] }) {
     await run(async () => {
       await api("/api/permissions", { method: "POST", body: JSON.stringify({ principalType, principalId, rootId, pathPrefix: normalizedPath, allow, deny, recursive }) });
       await Promise.all(["permissions", "roots", "fs"].map((key) => queryClient.invalidateQueries({ queryKey: [key] })));
+      setCreating(false);
       toast("已新增權限規則");
     }, "新增規則失敗");
   }
@@ -56,8 +60,28 @@ export function PermissionsPage({ roots }: { roots: Root[] }) {
   }
 
   return (
-    <Page title="權限" description="沒有被明確允許的動作一律拒絕；同一路徑上「禁止」優先於「允許」。">
-      <Card title="新增規則">
+    <Page
+      title="權限"
+      description="沒有被明確允許的動作一律拒絕；同一路徑上「禁止」優先於「允許」。"
+      actions={
+        // The location is the scope of the whole page: the rules listed and the rule being added.
+        <Select aria-label="位置" className="w-40" value={rootId} onChange={(event) => setSelectedRootId(event.target.value)}>
+          {roots.map((root) => <option key={root.id} value={root.id}>{root.name}</option>)}
+        </Select>
+      }
+    >
+      <Card
+        title={`「${rootName}」的規則`}
+        description={rules.data?.length ? `${rules.data.length} 條規則` : undefined}
+        action={creating ? null : <Button onClick={() => setCreating(true)}><Plus />新增規則</Button>}
+      >
+        {rules.error ? <span className="text-danger">無法讀取權限規則</span> : null}
+        {rules.data?.length === 0 ? <span className="text-faint">這個位置還沒有任何規則，只有管理員可以存取。</span> : null}
+        {rules.data?.length ? <div className="-my-2.5"><RuleList rules={rules.data} /></div> : null}
+      </Card>
+
+      {creating ? (
+      <Card title={`在「${rootName}」新增規則`} action={<KagoIconButton label="取消新增" onClick={() => setCreating(false)}><X /></KagoIconButton>}>
         <form className="flex flex-col gap-4" onSubmit={save}>
           <div className="grid grid-cols-2 gap-3">
             <Field label="套用對象">
@@ -74,12 +98,7 @@ export function PermissionsPage({ roots }: { roots: Root[] }) {
                   : users.data?.map((user) => <option key={user.id} value={user.id}>{user.email}</option>)}
               </Select>
             </Field>
-            <Field label="位置">
-              <Select value={rootId} onChange={(event) => setSelectedRootId(event.target.value)}>
-                {roots.map((root) => <option key={root.id} value={root.id}>{root.name}</option>)}
-              </Select>
-            </Field>
-            <Field label="路徑" hint={normalizedPath ? undefined : "路徑格式無效"}>
+            <Field label="路徑" hint={normalizedPath ? undefined : "路徑格式無效"} className="col-span-2">
               <Input value={pathPrefix} onChange={(event) => setPathPrefix(event.target.value)} placeholder="/public" />
             </Field>
           </div>
@@ -126,12 +145,7 @@ export function PermissionsPage({ roots }: { roots: Root[] }) {
           </div>
         </form>
       </Card>
-
-      <Card title={`「${roots.find((root) => root.id === rootId)?.name ?? ""}」的規則`}>
-        {rules.error ? <span className="text-danger">無法讀取權限規則</span> : null}
-        {rules.data?.length === 0 ? <span className="text-faint">這個位置還沒有任何規則，只有管理員可以存取。</span> : null}
-        {rules.data?.length ? <RuleList rules={rules.data} /> : null}
-      </Card>
+      ) : null}
     </Page>
   );
 }

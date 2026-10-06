@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { ListChecks, Settings, Share2, Trash2 } from "lucide-react";
 import { AuditPage } from "@/features/admin/AuditPage";
 import { GroupsPage } from "@/features/admin/GroupsPage";
+import { LocationsPage } from "@/features/admin/LocationsPage";
 import { SettingsLayout } from "@/features/admin/SettingsLayout";
 import { SettingsPage } from "@/features/admin/SettingsPage";
 import { UsersPage } from "@/features/admin/UsersPage";
@@ -31,7 +32,8 @@ export function AppWindowView({ window, roots, user }: { window: AppWindow; root
       {window.app === "trash" ? <TrashPage /> : null}
       {window.app === "settings" ? (
         <SettingsLayout section={isAdmin ? window.section : "general"} isAdmin={isAdmin} onSection={(section) => useWorkspaceStore.getState().setAppSection(window.id, section)}>
-          {!isAdmin || window.section === "general" ? <SettingsPage roots={roots} user={user} /> : null}
+          {!isAdmin || window.section === "general" ? <SettingsPage user={user} /> : null}
+          {isAdmin && window.section === "locations" ? <LocationsPage roots={roots} /> : null}
           {isAdmin && window.section === "users" ? <UsersPage currentUserId={user.id} /> : null}
           {isAdmin && window.section === "groups" ? <GroupsPage /> : null}
           {isAdmin && window.section === "permissions" ? <PermissionsPage roots={roots} /> : null}

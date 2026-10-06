@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { UsersRound, X } from "lucide-react";
+import { Plus, UsersRound, X } from "lucide-react";
 import { api } from "@/api/client";
 import { useGroups, useUsers } from "@/api/hooks";
 import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
@@ -16,6 +16,7 @@ export function GroupsPage() {
   const groups = useGroups();
   const users = useUsers();
   const [name, setName] = useState("");
+  const [creating, setCreating] = useState(false);
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["groups"] });
 
   async function createGroup(event: React.FormEvent) {
@@ -24,20 +25,31 @@ export function GroupsPage() {
     await run(async () => {
       await api("/api/groups", { method: "POST", body: JSON.stringify({ name: name.trim() }) });
       setName("");
+      setCreating(false);
       await refresh();
     }, "新增群組失敗");
   }
 
   return (
-    <Page title="群組" description="把使用者編成群組，再用權限規則一次授權給整個群組。">
-      <Card title="新增群組">
+    <Page
+      title="群組"
+      description="把使用者編成群組，再用權限規則一次授權給整個群組。"
+      actions={creating || !groups.data?.length ? null : <Button variant="default" onClick={() => setCreating(true)}><Plus />新增群組</Button>}
+    >
+      {creating ? (
+      <Card title="新增群組" action={<KagoIconButton label="取消新增" onClick={() => setCreating(false)}><X /></KagoIconButton>}>
         <form className="flex items-end gap-3" onSubmit={createGroup}>
-          <Field label="群組名稱" className="flex-1"><Input value={name} onChange={(event) => setName(event.target.value)} /></Field>
+          <Field label="群組名稱" className="flex-1"><Input autoFocus value={name} onChange={(event) => setName(event.target.value)} /></Field>
           <Button type="submit" variant="default" disabled={!name.trim()}>新增群組</Button>
         </form>
       </Card>
+      ) : null}
       {groups.isLoading ? <KagoLoading /> : null}
-      {groups.data?.length === 0 ? <KagoEmptyState icon={<UsersRound />} title="還沒有群組" /> : null}
+      {groups.data?.length === 0 && !creating ? (
+        <KagoEmptyState icon={<UsersRound />} title="還沒有群組" description="群組讓你一次把權限授給好幾個人。">
+          <Button variant="default" onClick={() => setCreating(true)}><Plus />新增群組</Button>
+        </KagoEmptyState>
+      ) : null}
       {groups.data?.map((group) => <GroupCard key={group.id} group={group} users={users.data ?? []} onChange={refresh} />)}
     </Page>
   );
@@ -66,12 +78,7 @@ function GroupCard({ group, users, onChange }: { group: Group; users: UserAccoun
   }
 
   return (
-    <Card>
-      <h2 className="m-0 mb-3 flex items-center gap-2 text-sm font-semibold">
-        <UsersRound className="text-muted" />
-        <span className="min-w-0 flex-1 truncate">{group.name}</span>
-        <span className="text-xs font-normal text-muted">{group.members.length} 位成員</span>
-      </h2>
+    <Card title={group.name} description={`${group.members.length} 位成員`}>
       {group.members.length > 0 ? (
         <ul className="m-0 mb-3 flex list-none flex-col divide-y divide-line rounded-md border border-line p-0">
           {group.members.map((member) => (

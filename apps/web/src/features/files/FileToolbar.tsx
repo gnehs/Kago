@@ -30,6 +30,9 @@ type FileToolbarProps = {
   menu: ReactNode;
 };
 
+/** Sets one group of controls apart from the next. */
+const Divider = () => <span aria-hidden className="mx-1 h-4 w-px shrink-0 bg-line-strong/70" />;
+
 export function FileToolbar({ window, rootName, readonly, canGoBack, canGoForward, search, onSearch, onGo, onNavigate, onNewFolder, onUpload, menu }: FileToolbarProps) {
   const store = useWorkspaceStore.getState;
 
@@ -47,6 +50,7 @@ export function FileToolbar({ window, rootName, readonly, canGoBack, canGoForwar
         ) : null}
       </label>
 
+      <Divider />
       <div className="flex rounded-md border border-line bg-surface p-px" role="radiogroup" aria-label="檢視方式">
         {viewModes.map(({ mode, label, icon }) => (
           <button
@@ -82,8 +86,10 @@ export function FileToolbar({ window, rootName, readonly, canGoBack, canGoForwar
         </KagoDropdownMenu>
       )}
 
+      <Divider />
       <KagoIconButton label="新增資料夾" disabled={readonly} onClick={onNewFolder}><FolderPlus /></KagoIconButton>
       <KagoIconButton label="上傳檔案" disabled={readonly} onClick={onUpload}><Upload /></KagoIconButton>
+      <Divider />
       <KagoIconButton label="資訊（⌘I）" active={Boolean(window.inspectorOpen)} onClick={() => store().updateWindow(window.id, { inspectorOpen: !window.inspectorOpen })}><Info /></KagoIconButton>
       {menu ? <KagoDropdownMenu label={window.selectedItems.length > 0 ? "選取項目的所有動作" : "資料夾動作"} menu={menu}><Ellipsis /></KagoDropdownMenu> : null}
     </div>

@@ -1,5 +1,5 @@
-import type { ReactNode } from "react";
-import { X } from "lucide-react";
+import { useState, type ReactNode } from "react";
+import { Link2, X } from "lucide-react";
 import { previewUrl } from "@/api/client";
 import { useFileMeta, usePathPermissions, useRoots, useShares } from "@/api/hooks";
 import { KagoBadge } from "@/components/kago/badge";
@@ -12,6 +12,7 @@ import { parseShareMode, shareModeLabel } from "@/features/shares/shareUtils";
 import { FinderTagEditor } from "@/features/tags/FinderTagEditor";
 import { TagEditor } from "@/features/tags/TagEditor";
 import { formatDate, formatSize, kindLabel } from "@/lib/format";
+import { displayPath } from "@/lib/paths";
 import { usePointerDrag } from "@/lib/usePointerDrag";
 import { useWorkspaceStore } from "@/stores/workspace";
 import type { FileWindow } from "@/types/kago";
@@ -35,6 +36,9 @@ export function Inspector({ window: activeWindow, isAdmin }: { window: FileWindo
   const rootId = root?.id;
   const readonly = Boolean(root?.readonly);
   const pathShares = (shares.data ?? []).filter((share) => share.root_id === rootId && share.path === path);
+  // The share form only opens on request, and only for the item it was opened on.
+  const [sharingKey, setSharingKey] = useState<string | null>(null);
+  const shareKey = `${rootSlug}:${path}`;
 
   const resizeHandlers = usePointerDrag(
     () => width,
@@ -61,27 +65,32 @@ export function Inspector({ window: activeWindow, isAdmin }: { window: FileWindo
             ) : (
               <FileIcon item={meta.data} className="size-14 stroke-1" />
             )}
-            <strong className="max-w-full font-medium break-words">{path === "/" ? activeWindow.title : meta.data.name}</strong>
+            <strong className="max-w-full text-sm font-semibold break-words">{path === "/" ? activeWindow.title : meta.data.name}</strong>
+            <span className="-mt-1.5 text-muted">
+              {kindLabel(meta.data)}
+              {meta.data.kind === "file" ? ` · ${formatSize(meta.data.size)}` : ""}
+            </span>
             {selectedCount > 1 ? <KagoBadge>已選取 {selectedCount} 項，顯示最後一項</KagoBadge> : null}
           </div>
 
           <Section title="一般">
             <dl className="m-0 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5">
-              <Detail label="種類">{kindLabel(meta.data)}</Detail>
-              {meta.data.kind === "file" ? <Detail label="大小">{formatSize(meta.data.size)}</Detail> : null}
               <Detail label="修改時間">{formatDate(meta.data.mtime)}</Detail>
-              <Detail label="位置">{rootSlug}:{path}</Detail>
+              <Detail label="位置"><span title={`${rootSlug}:${path}`}>{displayPath(root?.name ?? rootSlug, path)}</span></Detail>
+              {readonly ? <Detail label="存取">唯讀</Detail> : null}
             </dl>
           </Section>
 
-          {readonly && !meta.data.finderTags?.length ? null : (
-            <Section title="Finder 標籤">
-              <FinderTagEditor rootSlug={rootSlug} path={path} tags={meta.data.finderTags ?? []} readonly={readonly} />
-            </Section>
-          )}
-
+          {/* Two kinds of tag, one place: where each is kept is what tells them apart. */}
           <Section title="標籤">
-            <TagEditor rootSlug={rootSlug} path={path} />
+            {readonly && !meta.data.finderTags?.length ? null : (
+              <TagGroup label="Finder" hint="存在檔案上，Finder 也看得到">
+                <FinderTagEditor rootSlug={rootSlug} path={path} tags={meta.data.finderTags ?? []} readonly={readonly} />
+              </TagGroup>
+            )}
+            <TagGroup label="Kago" hint="只存在 Kago 裡">
+              <TagEditor rootSlug={rootSlug} path={path} />
+            </TagGroup>
           </Section>
 
           <Section title="分享連結">
@@ -95,7 +104,17 @@ export function Inspector({ window: activeWindow, isAdmin }: { window: FileWindo
                 ))}
               </ul>
             ) : null}
-            <ShareForm key={`${rootSlug}:${path}`} target={{ rootSlug, path }} compact />
+            {sharingKey === shareKey ? (
+              <>
+                <ShareForm key={shareKey} target={{ rootSlug, path }} compact />
+                <Button variant="ghost" className="mt-2 w-full" onClick={() => setSharingKey(null)}>收合</Button>
+              </>
+            ) : (
+              <>
+                {pathShares.length === 0 ? <p className="m-0 mb-2 text-faint">還沒有分享出去</p> : null}
+                <Button className="w-full" onClick={() => setSharingKey(shareKey)}><Link2 />建立分享連結</Button>
+              </>
+            )}
             {pathShares.length > 0 ? <Button variant="ghost" className="mt-2 w-full" onClick={() => store().openApp("shares")}>管理所有分享</Button> : null}
           </Section>
 
@@ -114,9 +133,21 @@ export function Inspector({ window: activeWindow, isAdmin }: { window: FileWindo
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="border-t border-line p-4">
-      <h3 className="m-0 mb-2 text-xs font-medium text-muted">{title}</h3>
+      <h3 className="m-0 mb-2.5 font-semibold">{title}</h3>
       {children}
     </section>
+  );
+}
+
+function TagGroup({ label, hint, children }: { label: string; hint: string; children: ReactNode }) {
+  return (
+    <div className="mt-3 flex flex-col gap-1.5 first-of-type:mt-0">
+      <div className="flex items-baseline gap-2 text-xs">
+        <span className="font-medium text-muted">{label}</span>
+        <span className="truncate text-faint">{hint}</span>
+      </div>
+      {children}
+    </div>
   );
 }
 

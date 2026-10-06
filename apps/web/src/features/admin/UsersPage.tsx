@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { UserRound } from "lucide-react";
+import { Plus, UserRound, X } from "lucide-react";
 import { api } from "@/api/client";
 import { useUsers } from "@/api/hooks";
 import { KagoBadge } from "@/components/kago/badge";
 import { KagoLoading } from "@/components/kago/empty-state";
+import { KagoIconButton } from "@/components/kago/icon-button";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/input";
 import { Card, Page, Row, RowList } from "@/features/workspace/Page";
@@ -14,7 +15,7 @@ import { toast } from "@/stores/toast";
 import type { UserAccount } from "@/types/kago";
 
 type Role = UserAccount["role"];
-const roleLabels: Record<Role, string> = { ADMIN: "管理員", USER: "一般使用者", GUEST: "訪客" };
+export const roleLabels: Record<Role, string> = { ADMIN: "管理員", USER: "一般使用者", GUEST: "訪客" };
 
 export function UsersPage({ currentUserId }: { currentUserId: string }) {
   const queryClient = useQueryClient();
@@ -23,6 +24,7 @@ export function UsersPage({ currentUserId }: { currentUserId: string }) {
   const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<Role>("USER");
+  const [creating, setCreating] = useState(false);
   const canCreate = Boolean(email) && password.length >= 8;
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["users"] });
 
@@ -35,6 +37,7 @@ export function UsersPage({ currentUserId }: { currentUserId: string }) {
       setDisplayName("");
       setPassword("");
       setRole("USER");
+      setCreating(false);
       await refresh();
     }, "新增使用者失敗");
   }
@@ -60,10 +63,15 @@ export function UsersPage({ currentUserId }: { currentUserId: string }) {
   }
 
   return (
-    <Page title="使用者" description="管理員可以存取所有位置；其他角色需要透過權限規則授權。">
-      <Card title="新增使用者">
+    <Page
+      title="使用者"
+      description="管理員可以存取所有位置；其他角色需要透過權限規則授權。"
+      actions={creating ? null : <Button variant="default" onClick={() => setCreating(true)}><Plus />新增使用者</Button>}
+    >
+      {creating ? (
+      <Card title="新增使用者" action={<KagoIconButton label="取消新增" onClick={() => setCreating(false)}><X /></KagoIconButton>}>
         <form className="grid grid-cols-2 gap-3" onSubmit={create}>
-          <Field label="Email"><Input type="email" autoComplete="off" value={email} onChange={(event) => setEmail(event.target.value)} /></Field>
+          <Field label="Email"><Input autoFocus type="email" autoComplete="off" value={email} onChange={(event) => setEmail(event.target.value)} /></Field>
           <Field label="顯示名稱"><Input autoComplete="off" value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></Field>
           <Field label="初始密碼" hint="至少 8 個字元"><Input type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} /></Field>
           <Field label="角色">
@@ -74,6 +82,7 @@ export function UsersPage({ currentUserId }: { currentUserId: string }) {
           <div className="col-span-2 flex justify-end"><Button type="submit" variant="default" disabled={!canCreate}>新增使用者</Button></div>
         </form>
       </Card>
+      ) : null}
       {users.isLoading ? <KagoLoading /> : null}
       {users.data?.length ? (
         <RowList>

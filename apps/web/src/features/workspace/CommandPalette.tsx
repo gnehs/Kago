@@ -16,6 +16,7 @@ const apps: Array<{ app: AppKind; section?: SettingsSection; label: string; icon
   { app: "trash", label: "垃圾桶", icon: appIcons.trash },
   { app: "tasks", label: "任務", icon: appIcons.tasks },
   { app: "settings", section: "general", label: "設定", icon: appIcons.settings },
+  { app: "settings", section: "locations", label: "位置", icon: <HardDrive />, adminOnly: true },
   { app: "settings", section: "users", label: "使用者", icon: <UserRound />, adminOnly: true },
   { app: "settings", section: "groups", label: "群組", icon: <UsersRound />, adminOnly: true },
   { app: "settings", section: "permissions", label: "權限", icon: <KeyRound />, adminOnly: true },

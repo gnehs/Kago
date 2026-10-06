@@ -21,6 +21,11 @@
   --kago-warning: #b54708;
   --kago-success: #17804a;
   --kago-folder: #4a9be8;
+  --kago-kind-image: #2f9a6a;
+  --kago-kind-video: #8364d9;
+  --kago-kind-audio: #cf7a2b;
+  --kago-kind-archive: #a3823a;
+  --kago-kind-document: #d05a4e;
   --kago-overlay: rgb(15 23 42 / 0.32);
   --kago-tag-gray: #8e8e93;
   --kago-tag-green: #34c759;
@@ -58,6 +63,11 @@
   --kago-warning: #f5b54a;
   --kago-success: #4cc38a;
   --kago-folder: #6aaef0;
+  --kago-kind-image: #5cc296;
+  --kago-kind-video: #a68cf0;
+  --kago-kind-audio: #e6a05c;
+  --kago-kind-archive: #c9a95f;
+  --kago-kind-document: #ec8479;
   --kago-overlay: rgb(0 0 0 / 0.5);
   --kago-shadow-window: 0 0 0 1px rgb(255 255 255 / 0.08), 0 12px 32px rgb(0 0 0 / 0.4);
   --kago-shadow-window-active: 0 0 0 1px rgb(255 255 255 / 0.14), 0 20px 48px rgb(0 0 0 / 0.55);
@@ -82,6 +92,11 @@
   --color-warning: var(--kago-warning);
   --color-success: var(--kago-success);
   --color-folder: var(--kago-folder);
+  --color-kind-image: var(--kago-kind-image);
+  --color-kind-video: var(--kago-kind-video);
+  --color-kind-audio: var(--kago-kind-audio);
+  --color-kind-archive: var(--kago-kind-archive);
+  --color-kind-document: var(--kago-kind-document);
   --color-overlay: var(--kago-overlay);
   --color-tag-gray: var(--kago-tag-gray);
   --color-tag-green: var(--kago-tag-green);

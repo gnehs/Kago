@@ -44,9 +44,7 @@ export function TagEditor({ rootSlug, path }: { rootSlug: string; path: string }
             </li>
           ))}
         </ul>
-      ) : (
-        <span className="text-faint">{tags.isLoading ? "讀取中…" : "尚未加上標籤"}</span>
-      )}
+      ) : null}
       <form className="flex gap-2" onSubmit={add}>
         <Input placeholder="新增標籤" value={name} onChange={(event) => setName(event.target.value)} />
         <Button type="submit" disabled={!name.trim()}>加入</Button>

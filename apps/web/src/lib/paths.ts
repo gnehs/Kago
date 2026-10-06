@@ -12,6 +12,9 @@ const rawBaseName = (value: string) => value.split("/").filter(Boolean).at(-1) ?
 /** Display name of a path. */
 export const baseName = (value: string) => nfc(rawBaseName(value));
 
+/** A path as people read it: under the name of its location, not the location's slug. */
+export const displayPath = (rootName: string, path: string) => `${rootName}${path === "/" ? "" : nfc(path)}`;
+
 /** True when the name on disk is not NFC yet, i.e. renaming it to its own display name still changes something. */
 export const needsNormalizing = (path: string) => rawBaseName(path) !== baseName(path);
 

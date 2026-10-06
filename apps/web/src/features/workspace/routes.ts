@@ -9,6 +9,7 @@ const appRoutes: Record<string, { app: AppKind; section?: SettingsSection; admin
   "/_kago/shares": { app: "shares" },
   "/_kago/trash": { app: "trash" },
   "/_kago/settings": { app: "settings", section: "general" },
+  "/_kago/admin/locations": { app: "settings", section: "locations", adminOnly: true },
   "/_kago/admin/users": { app: "settings", section: "users", adminOnly: true },
   "/_kago/admin/groups": { app: "settings", section: "groups", adminOnly: true },
   "/_kago/admin/permissions": { app: "settings", section: "permissions", adminOnly: true },

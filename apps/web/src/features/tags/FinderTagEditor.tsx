@@ -66,9 +66,7 @@ export function FinderTagEditor({ rootSlug, path, tags, readonly }: { rootSlug: 
             </li>
           ))}
         </ul>
-      ) : (
-        <span className="text-faint">尚未加上 Finder 標籤</span>
-      )}
+      ) : null}
       {readonly ? null : (
         <form className="flex flex-col gap-2" onSubmit={add}>
           <div className="flex items-center gap-1.5" role="radiogroup" aria-label="標籤顏色">
