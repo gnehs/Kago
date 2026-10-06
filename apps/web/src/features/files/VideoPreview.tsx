@@ -27,7 +27,20 @@ const MAX_RECOVERIES = 2;
  */
 export function VideoPreviewWindow({ window }: { window: PreviewWindow }) {
   const { rootSlug, item } = window.preview;
-  const info = useMediaInfo(rootSlug, item.path);
+  return (
+    <KagoWindow
+      window={window}
+      icon={<FileIcon item={item} />}
+      titleExtra={<KagoIconButton label="下載" className="size-6" onClick={() => triggerDownload(downloadUrl(rootSlug, item.path))}><Download /></KagoIconButton>}
+    >
+      <VideoPreview rootSlug={rootSlug} path={item.path} aspect={window.aspect} onAspect={(aspect) => useWorkspaceStore.getState().setPreviewAspect(window.id, aspect)} />
+    </KagoWindow>
+  );
+}
+
+/** The player and everything that feeds it, for whatever frame it is put in: a window, or a tab of its own. */
+export function VideoPreview({ rootSlug, path, aspect, onAspect }: { rootSlug: string; path: string; aspect?: number; onAspect?: (aspect: number) => void }) {
+  const info = useMediaInfo(rootSlug, path);
   const videoRef = useRef<HTMLVideoElement>(null);
   // Carries the playhead across a change of source.
   const resume = useRef({ time: 0, playing: false });
@@ -37,7 +50,7 @@ export function VideoPreviewWindow({ window }: { window: PreviewWindow }) {
   const [directFailed, setDirectFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [status, setStatus] = useState<"idle" | "preparing" | "error">("idle");
-  const subtitleList = useSubtitles(rootSlug, item.path).data;
+  const subtitleList = useSubtitles(rootSlug, path).data;
   const subtitles = subtitleList?.tracks ?? [];
   // A subtitle's id, or `off`; null until a choice is made in this window.
   const [subtitlePick, setSubtitlePick] = useState<string | null>(null);
@@ -51,13 +64,14 @@ export function VideoPreviewWindow({ window }: { window: PreviewWindow }) {
   const directOk = qualities.length === 0 || (canDirect && !directFailed && audioIndex === 0);
   const height = resolveHeight(qualities, picked, directOk);
   const ready = !info.isPending;
-  const setAspect = (aspect: number) => useWorkspaceStore.getState().setPreviewAspect(window.id, aspect);
+  const reportAspect = useRef(onAspect);
+  reportAspect.current = onAspect;
   // ffprobe knows the shape before the first frame arrives, which a transcode can keep waiting.
   const probedAspect = media?.video && media.video.height > 0 ? media.video.width / media.video.height : 0;
 
   useEffect(() => {
-    if (probedAspect > 0) useWorkspaceStore.getState().setPreviewAspect(window.id, probedAspect);
-  }, [window.id, probedAspect]);
+    if (probedAspect > 0) reportAspect.current?.(probedAspect);
+  }, [probedAspect]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -73,14 +87,14 @@ export function VideoPreviewWindow({ window }: { window: PreviewWindow }) {
 
     if (height === null) {
       setStatus("idle");
-      video.src = previewUrl(rootSlug, item.path);
+      video.src = previewUrl(rootSlug, path);
       video.addEventListener("loadedmetadata", restore, { once: true });
     } else {
       setStatus("preparing");
       void (async () => {
         const session = await api<{ id: string; playlistUrl: string }>("/api/media/sessions", {
           method: "POST",
-          body: JSON.stringify({ rootSlug, path: item.path, height, audioIndex })
+          body: JSON.stringify({ rootSlug, path, height, audioIndex })
         });
         if (cancelled) return closeSession(session.id);
         sessionId = session.id;
@@ -138,9 +152,9 @@ export function VideoPreviewWindow({ window }: { window: PreviewWindow }) {
       video.load();
       if (sessionId) closeSession(sessionId);
     };
-  }, [ready, rootSlug, item.path, height, audioIndex, attempt]);
+  }, [ready, rootSlug, path, height, audioIndex, attempt]);
 
-  useSubtitleRenderer(videoRef, subtitle, subtitleList?.fonts ?? [], window.aspect ?? probedAspect, () => {
+  useSubtitleRenderer(videoRef, subtitle, subtitleList?.fonts ?? [], aspect ?? probedAspect, () => {
     toast("無法載入這個字幕", "error");
     setSubtitlePick("off");
   });
@@ -238,17 +252,12 @@ export function VideoPreviewWindow({ window }: { window: PreviewWindow }) {
     ) : null;
 
   return (
-    <KagoWindow
-      window={window}
-      icon={<FileIcon item={item} />}
-      titleExtra={<KagoIconButton label="下載" className="size-6" onClick={() => triggerDownload(downloadUrl(rootSlug, item.path))}><Download /></KagoIconButton>}
-    >
       <VideoPlayer
         videoRef={videoRef}
         fallbackDuration={media?.duration}
         notice={status === "preparing" ? "正在轉檔…" : status === "error" ? "無法播放這個影片" : null}
         renderSettings={renderSettings}
-        onAspect={setAspect}
+        onAspect={onAspect}
         onLoadedData={() => setStatus("idle")}
         onPlaying={() => {
           recoveries.current = 0;
@@ -260,7 +269,6 @@ export function VideoPreviewWindow({ window }: { window: PreviewWindow }) {
           setDirectFailed(true);
         }}
       />
-    </KagoWindow>
   );
 }
 
@@ -309,10 +317,10 @@ function canDirectPlay(info: MediaInfo): boolean {
   if (container.includes("mp4") || container.includes("mov")) {
     mime = "video/mp4";
   } else if (container.includes("matroska") || container.includes("webm")) {
-    const webm = ["vp8", "vp9", "av1"].includes(info.video.codec) && (!info.audio[0] || ["opus", "vorbis"].includes(info.audio[0].codec));
-    // Chromium also plays H.264/HEVC Matroska, though it will not say so for the container's own MIME type.
-    if (!webm && !("chrome" in globalThis)) return false;
-    mime = webm ? "video/webm" : "video/mp4";
+    // WebM is the one kind of Matroska browsers play. Anything else in an .mkv is transcoded, even where a browser
+    // would take the codecs: playback of it is unreliable, and its extra audio tracks and subtitles are out of reach.
+    if (!["vp8", "vp9", "av1"].includes(info.video.codec) || (info.audio[0] && !["opus", "vorbis"].includes(info.audio[0].codec))) return false;
+    mime = "video/webm";
   } else {
     return false;
   }

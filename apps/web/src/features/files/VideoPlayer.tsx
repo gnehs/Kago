@@ -1,5 +1,7 @@
 import { Maximize, Minimize, Pause, PictureInPicture2, Play, Volume1, Volume2, VolumeX } from "lucide-react";
-import { useEffect, useRef, useState, type ComponentProps, type ReactNode, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ComponentProps, type ReactNode, type RefObject } from "react";
+import { createPortal } from "react-dom";
+import { Button } from "@/components/ui/button";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { formatClock } from "@/lib/format";
 import { getVideoVolume, setVideoVolume } from "@/lib/prefs";
@@ -13,6 +15,30 @@ const CONTROLS_HEIGHT = 68;
 
 /** Classes that put a ghost control on the player's dark bar, whatever the app theme is. */
 export const PLAYER_CONTROL_CLASS = "text-white/85 hover:bg-white/15 hover:text-white data-[popup-open]:bg-white/15 data-[popup-open]:text-white";
+
+/** Chromium's Document Picture-in-Picture: a floating window that holds page content, not just a video's frames. */
+const documentPip = (globalThis as { documentPictureInPicture?: { requestWindow: (options: { width: number; height: number }) => Promise<Window> } }).documentPictureInPicture;
+
+/** Gives a floating window the page's styles, which it does not inherit. */
+function copyStyles(target: Document) {
+  for (const sheet of document.styleSheets) {
+    try {
+      const style = target.createElement("style");
+      style.textContent = [...sheet.cssRules].map((rule) => rule.cssText).join("\n");
+      target.head.append(style);
+    } catch {
+      // A cross-origin sheet hides its rules; link it instead.
+      if (!sheet.href) continue;
+      const link = target.createElement("link");
+      link.rel = "stylesheet";
+      link.href = sheet.href;
+      target.head.append(link);
+    }
+  }
+  target.documentElement.dataset.theme = document.documentElement.dataset.theme;
+  target.body.className = "flex flex-col bg-black";
+  target.body.style.minWidth = "0";
+}
 
 type SettingsSlot = { container: HTMLElement | null; onOpenChange: (open: boolean) => void };
 
@@ -50,6 +76,22 @@ export function VideoPlayer({
   const [sound, setSound] = useState(getVideoVolume);
   const [fullscreen, setFullscreen] = useState(false);
   const [pip, setPip] = useState(false);
+  // The player lives in an element of its own so it can be carried into a floating window whole, subtitles and
+  // controls included. React listens for events on that element, so they keep arriving wherever it is.
+  const [host] = useState(() => {
+    const element = document.createElement("div");
+    element.className = "flex min-h-0 flex-1 flex-col";
+    return element;
+  });
+  const home = useRef<HTMLDivElement>(null);
+  const [floating, setFloating] = useState<Window | null>(null);
+
+  useLayoutEffect(() => {
+    home.current?.append(host);
+    return () => host.remove();
+  }, [host]);
+
+  useEffect(() => () => floating?.close(), [floating]);
   const [active, setActive] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
   const [scrubbing, setScrubbing] = useState(false);
@@ -120,15 +162,51 @@ export function VideoPlayer({
   };
 
   const toggleFullscreen = () => {
+    if (floating) return;
     if (document.fullscreenElement) void document.exitFullscreen();
     else if (container?.requestFullscreen) void container.requestFullscreen().catch(() => {});
     // iPhone Safari can only take the video itself fullscreen, with its own controls.
     else (videoRef.current as (HTMLVideoElement & { webkitEnterFullscreen?: () => void }) | null)?.webkitEnterFullscreen?.();
   };
 
-  const togglePip = () => {
+  /** Only the video's own frames float this way, which leaves the subtitles behind. */
+  const toggleVideoPip = () => {
     if (document.pictureInPictureElement) void document.exitPictureInPicture().catch(() => {});
     else void videoRef.current?.requestPictureInPicture().catch(() => {});
+  };
+
+  /** Moves the player between documents. A media element may start over when it changes document, so the playhead is put back. */
+  const carry = (move: () => void) => {
+    const video = videoRef.current;
+    const time = video?.currentTime ?? 0;
+    const playing = video ? !video.paused && !video.ended : false;
+    move();
+    if (!video) return;
+    const restore = () => {
+      if (Math.abs(video.currentTime - time) > 1) video.currentTime = time;
+      if (playing && video.paused) void video.play().catch(() => {});
+    };
+    if (video.readyState > 0) restore();
+    else video.addEventListener("loadedmetadata", restore, { once: true });
+  };
+
+  const togglePip = () => {
+    if (floating) return floating.close();
+    if (!documentPip || pip) return toggleVideoPip();
+    const video = videoRef.current;
+    const ratio = video && video.videoHeight > 0 ? video.videoWidth / video.videoHeight : 16 / 9;
+    const width = ratio >= 1 ? 480 : 270;
+    void documentPip.requestWindow({ width, height: Math.round(width / ratio) }).then((target) => {
+      copyStyles(target.document);
+      target.document.title = document.title;
+      carry(() => target.document.body.append(host));
+      target.addEventListener("pagehide", () => {
+        carry(() => home.current?.append(host));
+        setFloating(null);
+      });
+      setFloating(target);
+      // A browser that has the API but will not open the window still gets a floating video.
+    }, toggleVideoPip);
   };
 
   const onKeyDown = (event: React.KeyboardEvent) => {
@@ -158,7 +236,7 @@ export function VideoPlayer({
   const silent = sound.muted || sound.volume === 0;
   const VolumeIcon = silent ? VolumeX : sound.volume < 0.5 ? Volume1 : Volume2;
 
-  return (
+  const player = (
     <div
       ref={setContainer}
       tabIndex={-1}
@@ -258,18 +336,34 @@ export function VideoPlayer({
             {formatClock(time, long)} / {formatClock(duration, long)}
           </span>
           <div className="flex-1" />
-          {renderSettings?.({ container: fullscreen ? container : null, onOpenChange: setMenuOpen })}
-          {document.pictureInPictureEnabled ? (
-            <PlayerButton label={pip ? "結束子母畫面" : "子母畫面"} className="hidden @sm:inline-flex" onClick={togglePip}>
+          {renderSettings?.({ container: fullscreen || floating ? container : null, onOpenChange: setMenuOpen })}
+          {documentPip || document.pictureInPictureEnabled ? (
+            <PlayerButton label={pip || floating ? "結束子母畫面" : "子母畫面"} className={floating ? undefined : "hidden @sm:inline-flex"} onClick={togglePip}>
               <PictureInPicture2 />
             </PlayerButton>
           ) : null}
-          <PlayerButton label={fullscreen ? "結束全螢幕（F）" : "全螢幕（F）"} onClick={toggleFullscreen}>
-            {fullscreen ? <Minimize /> : <Maximize />}
-          </PlayerButton>
+          {floating ? null : (
+            <PlayerButton label={fullscreen ? "結束全螢幕（F）" : "全螢幕（F）"} onClick={toggleFullscreen}>
+              {fullscreen ? <Minimize /> : <Maximize />}
+            </PlayerButton>
+          )}
         </div>
       </div>
     </div>
+  );
+
+  return (
+    <>
+      {floating ? (
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 bg-black text-white/80">
+          <PictureInPicture2 />
+          <span>正在子母畫面中播放</span>
+          <Button onClick={() => floating.close()}>回到這裡播放</Button>
+        </div>
+      ) : null}
+      <div ref={home} className="contents" />
+      {createPortal(player, host)}
+    </>
   );
 }
 

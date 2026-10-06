@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Archive, ArchiveRestore, ClipboardPaste, Copy, Download, ExternalLink, Folder, FolderOpen, FolderPlus, FolderUp, Inbox, Info, Pencil, RefreshCw, Scissors, Trash2, Upload } from "lucide-react";
+import { Archive, ArchiveRestore, ClipboardPaste, Copy, Download, ExternalLink, Folder, FolderOpen, FolderPlus, FolderUp, Inbox, Info, Pencil, RefreshCw, Scissors, SquareArrowOutUpRight, Trash2, Upload } from "lucide-react";
 import { useFileList } from "@/api/hooks";
 import { KagoBadge } from "@/components/kago/badge";
 import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
@@ -8,7 +8,7 @@ import { KagoContextMenu, KagoMenuItem, KagoMenuSeparator } from "@/components/k
 import { Button } from "@/components/ui/button";
 import { KagoWindow } from "@/features/windows/KagoWindow";
 import { OPEN_ITEM_EVENT } from "@/features/workspace/useShortcuts";
-import { formatSize } from "@/lib/format";
+import { formatSize, isVideoType } from "@/lib/format";
 import { baseName, nfc, parentPath } from "@/lib/paths";
 import { droppedTree, flatTree, pickedFolderTree } from "@/lib/uploadTree";
 import { cn } from "@/lib/utils";
@@ -23,6 +23,7 @@ import { FileToolbar } from "./FileToolbar";
 import { Inspector } from "./Inspector";
 import { readDraggedFiles, useFileActions, type FileRef } from "./useFileActions";
 import { useMarqueeSelection } from "./useMarqueeSelection";
+import { videoPageUrl } from "./VideoPage";
 import { classifyFileWindowError, WindowErrorState } from "./WindowErrorState";
 
 // A shared collator sorts a folder of tens of thousands of names far faster than localeCompare does.
@@ -173,6 +174,9 @@ export function FileWindowView({ window: win, rootName, isAdmin }: { window: Fil
       <>
         {single ? <KagoMenuItem icon={<FolderOpen />} onClick={() => openItem(single)}>開啟</KagoMenuItem> : null}
         {single?.kind === "folder" ? <KagoMenuItem icon={<ExternalLink />} onClick={() => openItem(single, true)}>在新視窗開啟</KagoMenuItem> : null}
+        {single?.kind === "file" && isVideoType(single.type) ? (
+          <KagoMenuItem icon={<SquareArrowOutUpRight />} onClick={() => globalThis.open(videoPageUrl(win.rootSlug, single.path), "_blank", "noopener")}>在新分頁中播放</KagoMenuItem>
+        ) : null}
         <KagoMenuItem icon={<Download />} onClick={() => void actions.download(targets)}>下載{countSuffix}</KagoMenuItem>
         <KagoMenuItem icon={<Inbox />} onClick={() => void actions.addToShelf(paths)}>加入中轉區</KagoMenuItem>
         <KagoMenuItem icon={<Info />} onClick={() => store().updateWindow(win.id, { inspectorOpen: true })}>資訊、標籤與分享</KagoMenuItem>

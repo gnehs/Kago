@@ -29,6 +29,9 @@ const dateFormat = new Intl.DateTimeFormat("zh-TW", { year: "numeric", month: "n
 export const formatDate = (ms: number) => dateFormat.format(new Date(ms));
 export const formatUnixDate = (seconds: number) => dateFormat.format(new Date(seconds * 1000));
 
+/** Files the video player takes; RealMedia has no `video/` type of its own. */
+export const isVideoType = (type: string) => type.startsWith("video/") || type.startsWith("application/vnd.rn-realmedia");
+
 export function kindLabel(item: Pick<FileItem, "kind" | "type" | "name">) {
   if (item.kind === "folder") return "資料夾";
   const type = item.type;

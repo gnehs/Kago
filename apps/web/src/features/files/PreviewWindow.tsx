@@ -2,6 +2,7 @@ import { Download } from "lucide-react";
 import { downloadUrl, previewUrl } from "@/api/client";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { KagoWindow } from "@/features/windows/KagoWindow";
+import { isVideoType } from "@/lib/format";
 import { triggerDownload } from "@/lib/paths";
 import type { PreviewWindow } from "@/stores/workspace";
 import { FileIcon } from "./FileIcon";
@@ -10,7 +11,7 @@ import { VideoPreviewWindow } from "./VideoPreview";
 /** A file opened for viewing, in the same movable, resizable window chrome as a folder. */
 export function PreviewWindowView({ window }: { window: PreviewWindow }) {
   const { rootSlug, item } = window.preview;
-  if (item.type.startsWith("video/") || item.type.startsWith("application/vnd.rn-realmedia")) return <VideoPreviewWindow window={window} />;
+  if (isVideoType(item.type)) return <VideoPreviewWindow window={window} />;
   const source = previewUrl(rootSlug, item.path);
   return (
     <KagoWindow
