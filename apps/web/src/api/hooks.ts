@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { api } from "./client";
 import type { Actor, AuditLog, FileList, FileMeta, FileTask, Group, MediaInfo, PermissionRule, Root, ShareLink, Shelf, SubtitleList, Tag, TrashItem, UserAccount, WorkspaceState } from "../types/kago";
 
@@ -43,6 +43,20 @@ export function useFileList(rootSlug: string, path: string, enabled = true) {
     queryKey: ["fs", "list", rootSlug, path],
     queryFn: () => api<FileList>(`/api/fs/list?${new URLSearchParams({ rootSlug, path }).toString()}`),
     enabled
+  });
+}
+
+const folderContents = (results: UseQueryResult<FileList>[]) => results.map((result) => result.data?.items);
+
+/** The contents of several folders at once, in the order asked; a folder still loading has none yet. */
+export function useFolderContents(rootSlug: string, paths: string[]) {
+  return useQueries({
+    // Same keys as `useFileList`, so whatever refreshes a folder's window refreshes it here too.
+    queries: paths.map((path) => ({
+      queryKey: ["fs", "list", rootSlug, path],
+      queryFn: () => api<FileList>(`/api/fs/list?${new URLSearchParams({ rootSlug, path }).toString()}`)
+    })),
+    combine: folderContents
   });
 }
 

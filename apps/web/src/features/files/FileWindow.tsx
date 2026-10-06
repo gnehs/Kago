@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Archive, ArchiveRestore, ClipboardPaste, Copy, Download, ExternalLink, Folder, FolderOpen, FolderPlus, FolderUp, Inbox, Info, Pencil, RefreshCw, Scissors, SquareArrowOutUpRight, Trash2, Upload } from "lucide-react";
-import { useFileList } from "@/api/hooks";
+import { useFileList, useFolderContents } from "@/api/hooks";
 import { KagoBadge } from "@/components/kago/badge";
 import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
@@ -17,7 +17,7 @@ import { useRecentStore } from "@/stores/recent";
 import { useWorkspaceStore } from "@/stores/workspace";
 import type { FileItem, FileWindow } from "@/types/kago";
 import { isArchive } from "./FileIcon";
-import { fileViews, indexesInArea, revealIndex, useFileLayout } from "./fileLayout";
+import { fileViews, indexesInArea, revealIndex, useFileLayout, type FileTree } from "./fileLayout";
 import { FileList } from "./FileList";
 import { FileToolbar } from "./FileToolbar";
 import { Inspector } from "./Inspector";
@@ -60,17 +60,38 @@ export function FileWindowView({ window: win, rootName, isAdmin }: { window: Fil
     setHistory({ stack, index: stack.length - 1 });
   }
 
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
+  // Folders open in place in the list view only, and a search looks through the window's own folder.
+  const showsTree = win.viewMode === "list" && !search.trim();
+  const expandedPaths = useMemo(() => (showsTree ? [...expanded] : []), [showsTree, expanded]);
+  const expandedContents = useFolderContents(win.rootSlug, expandedPaths);
+
   const error = classifyFileWindowError(fileList.error);
   const readonly = Boolean(fileList.data?.readonly);
   const allItems = useMemo(() => sortItems(fileList.data?.items ?? [], win.sortBy, win.sortDirection), [fileList.data, win.sortBy, win.sortDirection]);
-  const items = useMemo(() => {
+  const { items, depths } = useMemo(() => {
     const query = nfc(search.trim()).toLocaleLowerCase();
-    return query ? allItems.filter((item) => item.name.toLocaleLowerCase().includes(query)) : allItems;
-  }, [allItems, search]);
+    if (query) return { items: allItems.filter((item) => item.name.toLocaleLowerCase().includes(query)), depths: [] };
+    if (expandedPaths.length === 0) return { items: allItems, depths: [] };
+    // Each open folder is followed by its own contents, sorted like the rest and one level further in.
+    const contents = new Map(expandedPaths.map((path, index) => [path, expandedContents[index]]));
+    const items: FileItem[] = [];
+    const depths: number[] = [];
+    const walk = (list: FileItem[], depth: number) => {
+      for (const item of list) {
+        items.push(item);
+        depths.push(depth);
+        const inside = item.kind === "folder" ? contents.get(item.path) : undefined;
+        if (inside) walk(sortItems(inside, win.sortBy, win.sortDirection), depth + 1);
+      }
+    };
+    walk(allItems, 0);
+    return { items, depths };
+  }, [allItems, search, expandedPaths, expandedContents, win.sortBy, win.sortDirection]);
   const selectedItems = useMemo(() => {
     const selected = new Set(win.selectedItems);
-    return allItems.filter((item) => selected.has(item.path));
-  }, [allItems, win.selectedItems]);
+    return (search.trim() ? allItems : items).filter((item) => selected.has(item.path));
+  }, [allItems, items, search, win.selectedItems]);
   const selectedPaths = selectedItems.map((item) => item.path);
   // What the folder holds, for the status bar: how many of each, and how much the files weigh.
   const summary = useMemo(() => {
@@ -90,7 +111,27 @@ export function FileWindowView({ window: win, rootName, isAdmin }: { window: Fil
 
   useEffect(() => {
     setSearch("");
-  }, [win.logicalPath]);
+    setExpanded(new Set());
+  }, [win.logicalPath, win.rootSlug]);
+
+  const tree = useMemo<FileTree | undefined>(() => {
+    if (!showsTree) return undefined;
+    return {
+      depths,
+      expanded,
+      setExpanded(path, open) {
+        setExpanded((previous) => {
+          const next = new Set(previous);
+          if (open) next.add(path);
+          else next.delete(path);
+          return next;
+        });
+        // What a closing folder hides cannot stay selected.
+        const selection = store().windows.find((entry) => entry.id === win.id)?.selectedItems ?? [];
+        if (!open && selection.some((selected) => selected.startsWith(`${path}/`))) store().selectItems(win.id, selection.filter((selected) => !selected.startsWith(`${path}/`)));
+      }
+    };
+  }, [showsTree, depths, expanded, win.id]);
 
   // A window that lost access must not keep showing what it had selected.
   useEffect(() => {
@@ -100,19 +141,19 @@ export function FileWindowView({ window: win, rootName, isAdmin }: { window: Fil
   useEffect(() => {
     const onOpenItem = (event: Event) => {
       const detail = (event as CustomEvent<{ windowId: string; path: string }>).detail;
-      const item = detail.windowId === win.id ? allItems.find((entry) => entry.path === detail.path) : undefined;
+      const item = detail.windowId === win.id ? items.find((entry) => entry.path === detail.path) : undefined;
       if (item) store().openPreview(win.rootSlug, item);
     };
     globalThis.addEventListener(OPEN_ITEM_EVENT, onOpenItem);
     return () => globalThis.removeEventListener(OPEN_ITEM_EVENT, onOpenItem);
-  }, [allItems, win.id, win.rootSlug]);
+  }, [items, win.id, win.rootSlug]);
 
   // Keyboard shortcuts act on what the window lists, which is more than what is rendered.
   const hasError = Boolean(error);
   useEffect(() => {
-    fileViews.set(win.id, { items: hasError ? [] : items, reveal: (index) => scroller && revealIndex(scroller, layout, index) });
+    fileViews.set(win.id, { items: hasError ? [] : items, reveal: (index) => scroller && revealIndex(scroller, layout, index), tree: hasError ? undefined : tree });
     return () => void fileViews.delete(win.id);
-  }, [win.id, items, hasError, scroller, layout]);
+  }, [win.id, items, hasError, scroller, layout, tree]);
 
   const navigate = (logicalPath: string) => store().updateWindow(win.id, { logicalPath, selectedItems: [] });
 
@@ -254,7 +295,7 @@ export function FileWindowView({ window: win, rootName, isAdmin }: { window: Fil
                   description={search ? `找不到名稱包含「${search.trim()}」的項目。` : readonly ? "這個位置是唯讀的。" : "把檔案拖進來，或使用工具列上傳。"}
                 />
               ) : null}
-              {items.length > 0 ? <FileList window={win} items={items} scroller={scroller} layout={layout} onSelect={selectItem} onOpen={openItem} onContextItem={onContextItem} onDropInto={readonly ? undefined : (event, folder) => dropInto(event, folder.path)} /> : null}
+              {items.length > 0 ? <FileList window={win} items={items} tree={tree} scroller={scroller} layout={layout} onSelect={selectItem} onOpen={openItem} onContextItem={onContextItem} onDropInto={readonly ? undefined : (event, folder) => dropInto(event, folder.path)} /> : null}
               {marquee.style ? <div className="pointer-events-none absolute border border-accent bg-accent/15" style={marquee.style} /> : null}
             </div>
           </KagoContextMenu>

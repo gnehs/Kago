@@ -124,13 +124,14 @@ export function useFileActions(window: FileWindow) {
         if (!name || (name === item.name && !needsNormalizing(item.path))) return;
         await api("/api/fs/rename", { method: "POST", body: JSON.stringify({ rootSlug: window.rootSlug, path: item.path, name }) });
         clearSelection();
-        await refresh();
+        // The item may sit in a folder opened in place rather than in the window's own.
+        await refreshRoot();
       }, "重新命名失敗"),
     trash: (paths: string[]) =>
       run(async () => {
         await createTask(queryClient, { type: "delete_to_trash", sources: refs(paths) });
         clearSelection();
-        await refresh();
+        await refreshRoot();
         toast(`已將 ${paths.length} 個項目移到垃圾桶`);
       }),
     compress: (paths: string[]) =>

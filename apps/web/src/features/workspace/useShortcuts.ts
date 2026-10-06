@@ -79,6 +79,20 @@ export function useShortcuts({ enabled, onOpenPalette }: { enabled: boolean; onO
       } else if (event.key === "Backspace" && active.logicalPath !== "/") {
         event.preventDefault();
         store.updateWindow(active.id, { logicalPath: parentPath(active.logicalPath), selectedItems: [] });
+      } else if (view?.tree && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
+        // In a tree, right opens the selected folder and left closes it, or steps out to the folder it is in.
+        const item = items.find((entry) => entry.path === active.selectedItems.at(-1));
+        if (!item) return;
+        event.preventDefault();
+        const open = event.key === "ArrowRight";
+        if (item.kind === "folder" && view.tree.expanded.has(item.path) !== open) {
+          view.tree.setExpanded(item.path, open);
+        } else if (!open) {
+          const parent = items.findIndex((entry) => entry.path === parentPath(item.path));
+          if (parent === -1) return;
+          store.selectItems(active.id, [items[parent]!.path]);
+          view.reveal(parent);
+        }
       } else if (["ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight"].includes(event.key)) {
         if (items.length === 0) return;
         event.preventDefault();

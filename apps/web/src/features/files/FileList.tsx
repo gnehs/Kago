@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ArrowDown, ArrowUp } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronRight } from "lucide-react";
 import { previewUrl, thumbnailUrl } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { FinderTagDots } from "@/features/tags/FinderTags";
@@ -9,12 +9,14 @@ import { useClipboardStore } from "@/stores/clipboard";
 import { useWorkspaceStore } from "@/stores/workspace";
 import type { FileItem, FileWindow } from "@/types/kago";
 import { FileIcon } from "./FileIcon";
-import { GRID_CELL_HEIGHT, LIST_HEADER_HEIGHT, useVisibleRange, type FileLayout } from "./fileLayout";
+import { GRID_CELL_HEIGHT, LIST_HEADER_HEIGHT, useVisibleRange, type FileLayout, type FileTree } from "./fileLayout";
 import { KAGO_DRAG_TYPE } from "./useFileActions";
 
 type FileListProps = {
   window: FileWindow;
   items: FileItem[];
+  /** Folders opened in place, in the list view. */
+  tree?: FileTree;
   /** The scroll container the list sits in, and where each item is laid out inside it. */
   scroller: HTMLElement | null;
   layout: FileLayout;
@@ -91,7 +93,7 @@ export function FileList(props: FileListProps) {
 }
 
 function ListView(props: ViewProps) {
-  const { window, items, layout, selectedPaths } = props;
+  const { window, items, tree, layout, selectedPaths } = props;
   const range = useVisibleRange(props.scroller, layout, items.length);
   return (
     <div className="@container min-w-0" role="listbox" aria-multiselectable>
@@ -104,9 +106,30 @@ function ListView(props: ViewProps) {
       <div style={{ height: range.height + layout.bottom, paddingTop: range.offset }}>
         {items.slice(range.start, range.end).map((item, offset) => {
           const selected = selectedPaths.has(item.path);
+          const open = tree?.expanded.has(item.path) ?? false;
           return (
             <div key={item.path} role="option" className={cn("mx-1 flex h-(--kago-row-h) items-center gap-2 rounded-sm px-2", selectedClass(window, selected), stateClass(props, item))} {...itemProps(props, item, range.start + offset)}>
-              <span className="flex min-w-0 flex-1 items-center gap-2">
+              <span className="flex min-w-0 flex-1 items-center gap-2" style={{ paddingLeft: (tree?.depths[range.start + offset] ?? 0) * TREE_INDENT }}>
+                {tree ? (
+                  item.kind === "folder" ? (
+                    <button
+                      className={cn("-mx-1 flex size-4 shrink-0 items-center justify-center rounded-sm outline-none", selected && window.focused ? "text-inherit" : "text-muted hover:text-ink")}
+                      aria-label={open ? "收合資料夾" : "展開資料夾"}
+                      aria-expanded={open}
+                      tabIndex={-1}
+                      onClick={(event) => {
+                        // The arrow only opens the folder in place; it neither selects the row nor enters the folder.
+                        event.stopPropagation();
+                        tree.setExpanded(item.path, !open);
+                      }}
+                      onDoubleClick={(event) => event.stopPropagation()}
+                    >
+                      <ChevronRight className={cn("size-3.5 transition-transform", open && "rotate-90")} />
+                    </button>
+                  ) : (
+                    <span className="-mx-1 size-4 shrink-0" />
+                  )
+                ) : null}
                 <FileIcon item={item} className={cn(selected && window.focused && item.kind === "file" && "text-inherit")} />
                 <span className="truncate">{item.name}</span>
                 <FinderTagDots tags={item.finderTags} />
@@ -121,6 +144,9 @@ function ListView(props: ViewProps) {
     </div>
   );
 }
+
+/** How far each level of an opened folder is set in from the one above. */
+const TREE_INDENT = 16;
 
 export const sortColumns: Array<{ sortBy: FileWindow["sortBy"]; label: string }> = [
   { sortBy: "name", label: "名稱" },

@@ -114,6 +114,19 @@ export function revealIndex(scroller: HTMLElement, layout: FileLayout, index: nu
 }
 
 /** What a file window currently lists, for code outside it that used to read the rows from the DOM. */
-export type FileView = { items: FileItem[]; reveal: (index: number) => void };
+export type FileView = {
+  items: FileItem[];
+  reveal: (index: number) => void;
+  /** Set while the list shows folders that open in place. */
+  tree?: FileTree;
+};
+
+/** Folders opened in place in the list view: their contents follow them, one level further in. */
+export type FileTree = {
+  /** How deep each listed item sits below the window's folder, by index. */
+  depths: number[];
+  expanded: ReadonlySet<string>;
+  setExpanded: (path: string, open: boolean) => void;
+};
 
 export const fileViews = new Map<string, FileView>();
