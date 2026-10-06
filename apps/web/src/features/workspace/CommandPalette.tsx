@@ -1,14 +1,15 @@
 import { useMemo, useState } from "react";
 import { Dialog } from "@base-ui/react/dialog";
-import { Folder, HardDrive, Search } from "lucide-react";
+import { Clock, Folder, HardDrive, Search } from "lucide-react";
 import { baseName, normalizeLogicalPath } from "@/lib/paths";
 import { cn } from "@/lib/utils";
+import { useRecentStore, type RecentFolder } from "@/stores/recent";
 import { useWorkspaceStore } from "@/stores/workspace";
 import type { Root } from "@/types/kago";
 
-type Target = { rootSlug: string; logicalPath: string; label: string };
+type Target = { rootSlug: string; logicalPath: string; label: string; recent?: boolean };
 
-function suggestions(query: string, roots: Root[], activeRootSlug: string | undefined): Target[] {
+function suggestions(query: string, roots: Root[], activeRootSlug: string | undefined, recent: RecentFolder[]): Target[] {
   const trimmed = query.trim();
   const results = new Map<string, Target>();
   const push = (root: Root, rawPath: string) => {
@@ -28,6 +29,13 @@ function suggestions(query: string, roots: Root[], activeRootSlug: string | unde
   for (const root of roots) {
     if (!lower || root.name.toLowerCase().includes(lower) || root.slug.includes(lower)) push(root, "/");
   }
+  // Recently visited folders fill in below the roots, filtered by the same query.
+  for (const folder of recent) {
+    const key = `${folder.rootSlug}:${folder.path}`;
+    const label = baseName(folder.path);
+    if (results.has(key) || !roots.some((root) => root.slug === folder.rootSlug)) continue;
+    if (!lower || label.toLowerCase().includes(lower)) results.set(key, { rootSlug: folder.rootSlug, logicalPath: folder.path, label, recent: true });
+  }
   return [...results.values()];
 }
 
@@ -35,7 +43,8 @@ export function CommandPalette({ roots, onClose }: { roots: Root[]; onClose: () 
   const [query, setQuery] = useState("");
   const [index, setIndex] = useState(0);
   const activeRootSlug = useWorkspaceStore((state) => state.windows.find((window) => window.id === state.activeWindowId)?.rootSlug);
-  const items = useMemo(() => suggestions(query, roots, activeRootSlug), [query, roots, activeRootSlug]);
+  const recent = useRecentStore((state) => state.folders);
+  const items = useMemo(() => suggestions(query, roots, activeRootSlug, recent), [query, roots, activeRootSlug, recent]);
 
   function open(target: Target | undefined) {
     if (!target) return;
@@ -80,7 +89,7 @@ export function CommandPalette({ roots, onClose }: { roots: Root[]; onClose: () 
                   onMouseMove={() => setIndex(itemIndex)}
                   onClick={() => open(item)}
                 >
-                  {item.logicalPath === "/" ? <HardDrive /> : <Folder />}
+                  {item.logicalPath === "/" ? <HardDrive /> : item.recent ? <Clock /> : <Folder />}
                   <span className="min-w-0 flex-1 truncate">{item.label}</span>
                   <span className={cn("truncate text-xs", itemIndex === index ? "opacity-80" : "text-faint")}>{item.rootSlug}:{item.logicalPath}</span>
                 </button>

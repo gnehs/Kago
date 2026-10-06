@@ -1,15 +1,14 @@
 import type { ReactNode } from "react";
 import { isInteractiveTarget, usePointerDrag } from "@/lib/usePointerDrag";
 import { cn } from "@/lib/utils";
-import { clampWindowPosition, getCanvasSize, MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, useWorkspaceStore } from "@/stores/workspace";
-import type { FileWindow } from "@/types/kago";
+import { clampWindowPosition, getCanvasSize, MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, useWorkspaceStore, type WindowFrame } from "@/stores/workspace";
 
 type ResizeEdge = "e" | "s" | "se";
 
 /** Window chrome: title bar, traffic-light controls, drag-to-move and edge resize. */
-export function KagoWindow({ window, icon, titleExtra, className, children, ...props }: Omit<React.ComponentProps<"section">, "title"> & { window: FileWindow; icon?: ReactNode; titleExtra?: ReactNode }) {
+export function KagoWindow({ window, icon, titleExtra, className, children, ...props }: Omit<React.ComponentProps<"section">, "title"> & { window: WindowFrame; icon?: ReactNode; titleExtra?: ReactNode }) {
   const store = useWorkspaceStore.getState;
-  const update = (patch: Partial<FileWindow>) => store().updateWindow(window.id, patch);
+  const update = (patch: Partial<WindowFrame>) => store().updateWindow(window.id, patch);
 
   const moveHandlers = usePointerDrag(
     (event) => (window.maximized || isInteractiveTarget(event.target) ? null : { x: window.x, y: window.y }),
@@ -72,7 +71,7 @@ function TrafficLight({ label, tone, hoverTone, focused, onClick }: { label: str
   );
 }
 
-function ResizeHandle({ window, edge, className }: { window: FileWindow; edge: ResizeEdge; className: string }) {
+function ResizeHandle({ window, edge, className }: { window: WindowFrame; edge: ResizeEdge; className: string }) {
   const handlers = usePointerDrag(
     () => ({ width: window.width, height: window.height }),
     (origin, dx, dy) => {

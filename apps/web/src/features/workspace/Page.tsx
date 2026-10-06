@@ -1,13 +1,13 @@
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
-/** Full-area page shown in place of the canvas for tasks, shares, trash and admin screens. */
+/** Scrollable content area of an app window (tasks, shares, trash, settings sections). */
 export function Page({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
   return (
-    <div className="min-w-0 flex-1 overflow-y-auto bg-surface">
-      <div className="mx-auto flex max-w-3xl flex-col gap-5 px-6 py-8">
+    <div className="@container min-h-0 min-w-0 flex-1 overflow-y-auto">
+      <div className="mx-auto flex max-w-3xl flex-col gap-4 p-5">
         <header>
-          <h1 className="m-0 text-lg font-semibold">{title}</h1>
+          <h1 className="m-0 text-base font-semibold">{title}</h1>
           {description ? <p className="m-0 mt-1 text-muted">{description}</p> : null}
         </header>
         {children}

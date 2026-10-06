@@ -1,17 +1,18 @@
-export type WorkspacePage = "tasks" | "shares" | "trash" | "users" | "groups" | "permissions" | "audit" | "settings";
+import type { AppKind, SettingsSection } from "@/stores/workspace";
 
-export const pagePaths: Record<WorkspacePage, string> = {
-  tasks: "/_kago/tasks",
-  shares: "/_kago/shares",
-  trash: "/_kago/trash",
-  users: "/_kago/admin/users",
-  groups: "/_kago/admin/groups",
-  permissions: "/_kago/admin/permissions",
-  audit: "/_kago/audit",
-  settings: "/_kago/settings"
+/**
+ * Reserved URLs from the product spec. Nothing is a page any more: visiting one opens the
+ * matching app window on the desktop, so they keep working as deep links.
+ */
+const appRoutes: Record<string, { app: AppKind; section?: SettingsSection; adminOnly?: boolean }> = {
+  "/_kago/tasks": { app: "tasks" },
+  "/_kago/shares": { app: "shares" },
+  "/_kago/trash": { app: "trash" },
+  "/_kago/settings": { app: "settings", section: "general" },
+  "/_kago/admin/users": { app: "settings", section: "users", adminOnly: true },
+  "/_kago/admin/groups": { app: "settings", section: "groups", adminOnly: true },
+  "/_kago/admin/permissions": { app: "settings", section: "permissions", adminOnly: true },
+  "/_kago/audit": { app: "settings", section: "audit", adminOnly: true }
 };
 
-export function pageFromPath(pathname: string): WorkspacePage | null {
-  const match = (Object.entries(pagePaths) as Array<[WorkspacePage, string]>).find(([, path]) => path === pathname);
-  return match?.[0] ?? null;
-}
+export const appRouteFromPath = (pathname: string) => appRoutes[pathname] ?? null;

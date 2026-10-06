@@ -61,6 +61,9 @@ export function useWorkspaceSync() {
     const flush = () => {
       window.clearTimeout(timer);
       timer = undefined;
+      // Never persist a store that has not been restored yet (e.g. after a dev hot reload
+      // swaps in a fresh store); that would overwrite the saved workspace with an empty one.
+      if (!useWorkspaceStore.getState().hydrated) return;
       void save
         .current(useWorkspaceStore.getState().snapshot())
         .then((saved) => {
@@ -84,7 +87,7 @@ export function useWorkspaceSync() {
     });
 
     const flushOnHide = () => {
-      if (timer === undefined) return;
+      if (timer === undefined || !useWorkspaceStore.getState().hydrated) return;
       window.clearTimeout(timer);
       timer = undefined;
       void api("/api/workspace", { method: "PUT", body: JSON.stringify(useWorkspaceStore.getState().snapshot()), keepalive: true }).catch(() => undefined);

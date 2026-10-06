@@ -3,8 +3,30 @@ import type { FileWindow, Root, WorkspaceState } from "../types/kago";
 import { baseName } from "../lib/paths";
 import { toast } from "./toast";
 
+/** Geometry and stacking shared by every window on the canvas. */
+export type WindowFrame = Pick<FileWindow, "id" | "title" | "x" | "y" | "width" | "height" | "zIndex" | "minimized" | "maximized" | "focused" | "createdAt">;
+
+export type AppKind = "settings" | "tasks" | "shares" | "trash";
+export type SettingsSection = "general" | "users" | "groups" | "permissions" | "audit";
+
+/**
+ * Built-in tools that open as windows next to file windows. They share the window
+ * manager but are not part of the persisted workspace, which only restores file windows.
+ */
+export type AppWindow = WindowFrame & { app: AppKind; section: SettingsSection };
+
+const appMeta: Record<AppKind, { title: string; width: number; height: number }> = {
+  settings: { title: "設定", width: 880, height: 620 },
+  tasks: { title: "任務", width: 560, height: 520 },
+  shares: { title: "分享", width: 760, height: 580 },
+  trash: { title: "垃圾桶", width: 620, height: 480 }
+};
+
 type WorkspaceStore = WorkspaceState & {
   hydrated: boolean;
+  appWindows: AppWindow[];
+  openApp: (app: AppKind, section?: SettingsSection) => void;
+  setAppSection: (id: string, section: SettingsSection) => void;
   hydrate: (workspace: WorkspaceState) => void;
   /** Pulls windows back inside the canvas after it shrinks. */
   refitWindows: () => void;
@@ -36,7 +58,7 @@ const ts = () => Date.now();
  * Window geometry is relative to the workspace canvas, not the viewport.
  * The canvas reports its size here so the store can clamp without reading the DOM.
  */
-let canvas = { width: Math.max(480, (globalThis.innerWidth ?? 1280) - 232), height: Math.max(360, globalThis.innerHeight ?? 800) };
+let canvas = { width: Math.max(480, globalThis.innerWidth ?? 1280), height: Math.max(360, (globalThis.innerHeight ?? 800) - 40) };
 
 export const getCanvasSize = () => canvas;
 
@@ -58,14 +80,14 @@ export function clampWindowSize(width: number, height: number) {
   };
 }
 
-function initialGeometry(index: number) {
-  const size = clampWindowSize(Math.min(920, canvas.width - 64), Math.min(620, canvas.height - 64));
+function initialGeometry(index: number, width = 920, height = 620) {
+  const size = clampWindowSize(Math.min(width, canvas.width - 64), Math.min(height, canvas.height - 64));
   const offset = (index % 6) * 28;
   return { ...size, ...clampWindowPosition((canvas.width - size.width) / 2 + offset, Math.max(16, (canvas.height - size.height) / 2 - 16) + offset, size.width) };
 }
 
 /** Restored windows are pulled fully into view; only dragging may push one partly off-canvas. */
-function fitGeometry(window: FileWindow): FileWindow {
+function fitGeometry<T extends WindowFrame>(window: T): T {
   const size = clampWindowSize(window.width, window.height);
   return {
     ...window,
@@ -75,13 +97,32 @@ function fitGeometry(window: FileWindow): FileWindow {
   };
 }
 
-/** Renumbers z-indexes from the base so they never drift past the file-window layer. */
-function restack(windows: FileWindow[]): FileWindow[] {
-  const order = [...windows].sort((a, b) => a.zIndex - b.zIndex || a.createdAt - b.createdAt).map((window) => window.id);
-  return windows.map((window) => ({ ...window, zIndex: Math.min(fileWindowZLimit, fileWindowZBase + order.indexOf(window.id)) }));
-}
+type Stack = { windows: FileWindow[]; appWindows: AppWindow[] };
 
-const topZ = (windows: FileWindow[]) => Math.max(fileWindowZBase - 1, ...windows.map((window) => window.zIndex));
+const frames = (stack: Stack): WindowFrame[] => [...stack.windows, ...stack.appWindows];
+
+const topZ = (stack: Stack) => Math.max(fileWindowZBase - 1, ...frames(stack).map((window) => window.zIndex));
+
+/**
+ * Renumbers z-indexes from the base across file and app windows, optionally raising one
+ * to the front, so they never drift past the window layer. Also syncs the focused flag.
+ */
+function restack(stack: Stack, frontId?: string | null, focusId: string | null | undefined = frontId): Stack {
+  const order = frames(stack)
+    .sort((a, b) => Number(a.id === frontId) - Number(b.id === frontId) || a.zIndex - b.zIndex || a.createdAt - b.createdAt)
+    .map((window) => window.id);
+  const apply = <T extends WindowFrame>(window: T): T => {
+    const zIndex = Math.min(fileWindowZLimit, fileWindowZBase + order.indexOf(window.id));
+    const focused = focusId === undefined ? window.focused : window.id === focusId;
+    return zIndex === window.zIndex && focused === window.focused ? window : { ...window, zIndex, focused };
+  };
+  // Keep array identity when nothing moved so autosave does not see a phantom change.
+  const keep = <T extends WindowFrame>(list: T[]): T[] => {
+    const next = list.map(apply);
+    return next.some((window, index) => window !== list[index]) ? next : list;
+  };
+  return { windows: keep(stack.windows), appWindows: keep(stack.appWindows) };
+}
 
 const titleFromPath = (logicalPath: string, fallback: string) => (logicalPath === "/" ? fallback : baseName(logicalPath) || fallback);
 
@@ -92,14 +133,24 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   sidebar: { collapsed: false },
   inspector: { open: false, width: 300 },
   shelf: { collapsed: false },
-  hydrate: (workspace) => set({ ...workspace, windows: restack(workspace.windows.map(fitGeometry)), hydrated: true }),
+  appWindows: [],
+  hydrate: (workspace) =>
+    set((state) => {
+      // A remote update only describes file windows; an app window keeps focus, and stays in front, if it had it.
+      const appFocused = state.appWindows.some((window) => window.id === state.activeWindowId);
+      const activeWindowId = appFocused ? state.activeWindowId : workspace.activeWindowId;
+      return { ...workspace, activeWindowId, ...restack({ windows: workspace.windows.map(fitGeometry), appWindows: state.appWindows }, appFocused ? activeWindowId : undefined, activeWindowId), hydrated: true };
+    }),
   refitWindows: () =>
     set((state) => {
-      const windows = state.windows.map((window) => {
+      const refit = <T extends WindowFrame>(window: T): T => {
         const next = fitGeometry(window);
         return next.x === window.x && next.y === window.y && next.width === window.width && next.height === window.height ? window : next;
-      });
-      return windows.some((window, index) => window !== state.windows[index]) ? { windows } : state;
+      };
+      const windows = state.windows.map(refit);
+      const appWindows = state.appWindows.map(refit);
+      const changed = windows.some((window, index) => window !== state.windows[index]) || appWindows.some((window, index) => window !== state.appWindows[index]);
+      return changed ? { windows, appWindows } : state;
     }),
   openRoot: (root) => {
     const existing = get().windows.find((window) => window.rootSlug === root.slug);
@@ -116,13 +167,12 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       return;
     }
     set((state) => {
-      const windows = restack(state.windows);
       const id = `win_${crypto.randomUUID()}`;
       const window: FileWindow = {
         id,
         ...partial,
-        ...initialGeometry(windows.length),
-        zIndex: topZ(windows) + 1,
+        ...initialGeometry(frames(state).length),
+        zIndex: topZ(state) + 1,
         minimized: false,
         maximized: false,
         focused: true,
@@ -133,23 +183,36 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         createdAt: ts(),
         updatedAt: ts()
       };
-      return { windows: [...windows.map((item) => ({ ...item, focused: false })), window], activeWindowId: id };
+      return { ...restack({ windows: [...state.windows, window], appWindows: state.appWindows }, id), activeWindowId: id };
     });
   },
+  openApp: (app, section) =>
+    set((state) => {
+      const existing = state.appWindows.find((window) => window.app === app);
+      const id = existing?.id ?? `app_${app}`;
+      const meta = appMeta[app];
+      const appWindows = existing
+        ? state.appWindows.map((window) => (window.id === id ? { ...window, minimized: false, section: section ?? window.section } : window))
+        : [
+            ...state.appWindows,
+            { id, app, section: section ?? "general", title: meta.title, ...initialGeometry(frames(state).length, meta.width, meta.height), zIndex: topZ(state) + 1, minimized: false, maximized: false, focused: true, createdAt: ts() }
+          ];
+      return { ...restack({ windows: state.windows, appWindows }, id), activeWindowId: id };
+    }),
+  setAppSection: (id, section) => set((state) => ({ appWindows: state.appWindows.map((window) => (window.id === id ? { ...window, section } : window)) })),
   closeWindow: (id) =>
     set((state) => {
-      const windows = state.windows.filter((window) => window.id !== id);
-      if (state.activeWindowId !== id) return { windows };
-      const next = [...windows].filter((window) => !window.minimized).sort((a, b) => b.zIndex - a.zIndex)[0];
-      return { windows: windows.map((window) => ({ ...window, focused: window.id === next?.id })), activeWindowId: next?.id ?? null };
+      const stack = { windows: state.windows.filter((window) => window.id !== id), appWindows: state.appWindows.filter((window) => window.id !== id) };
+      if (state.activeWindowId !== id) return stack;
+      const next = frames(stack).filter((window) => !window.minimized).sort((a, b) => b.zIndex - a.zIndex)[0];
+      return { ...restack(stack, next?.id ?? null), activeWindowId: next?.id ?? null };
     }),
   focusWindow: (id) =>
     set((state) => {
-      const current = state.windows.find((window) => window.id === id);
+      const current = frames(state).find((window) => window.id === id);
       if (!current) return state;
-      if (state.activeWindowId === id && current.zIndex === topZ(state.windows)) return state;
-      const windows = restack(state.windows.map((window) => (window.id === id ? { ...window, zIndex: fileWindowZLimit + 1 } : window)));
-      return { activeWindowId: id, windows: windows.map((window) => ({ ...window, focused: window.id === id })) };
+      if (state.activeWindowId === id && current.focused && current.zIndex === topZ(state)) return state;
+      return { ...restack(state, id), activeWindowId: id };
     }),
   updateWindow: (id, patch) =>
     set((state) => ({
@@ -157,7 +220,11 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         window.id === id
           ? { ...window, ...patch, title: patch.logicalPath ? titleFromPath(patch.logicalPath, window.rootSlug) : patch.title ?? window.title, updatedAt: ts() }
           : window
-      )
+      ),
+      // App windows only take frame changes (move, resize, minimize, maximize).
+      appWindows: state.appWindows.some((window) => window.id === id)
+        ? state.appWindows.map((window) => (window.id === id ? { ...window, ...(patch as Partial<WindowFrame>) } : window))
+        : state.appWindows
     })),
   updateSidebar: (patch) => set((state) => ({ sidebar: { ...state.sidebar, ...patch } })),
   updateInspector: (patch) => set((state) => ({ inspector: { ...state.inspector, ...patch } })),
@@ -166,6 +233,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     set((state) => ({ windows: state.windows.map((window) => (window.id === id ? { ...window, selectedItems: items } : window)) })),
   snapshot: () => {
     const { activeWindowId, windows, sidebar, inspector, shelf } = get();
-    return { activeWindowId, windows, sidebar, inspector, shelf };
+    // Only file windows are persisted, so an active app window is saved as "none".
+    return { activeWindowId: windows.some((window) => window.id === activeWindowId) ? activeWindowId : null, windows, sidebar, inspector, shelf };
   }
 }));

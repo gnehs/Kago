@@ -29,6 +29,11 @@ export function useShortcuts({ enabled, onOpenPalette }: { enabled: boolean; onO
       if (isEditableTarget(event.target)) return;
 
       const store = useWorkspaceStore.getState();
+      if (mod && key === "w" && store.appWindows.some((window) => window.id === store.activeWindowId)) {
+        event.preventDefault();
+        store.closeWindow(store.activeWindowId!);
+        return;
+      }
       const active = store.windows.find((window) => window.id === store.activeWindowId && !window.minimized);
       if (!active) return;
       const rows = () => Array.from(document.querySelectorAll<HTMLElement>(`[data-window="${active.id}"] [data-file-path]`));

@@ -1,58 +1,52 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useLocation } from "react-router";
+import { useLocation, useNavigate } from "react-router";
 import { useRoots } from "@/api/hooks";
 import { KagoLoading } from "@/components/kago/empty-state";
-import { AuditPage } from "@/features/admin/AuditPage";
-import { GroupsPage } from "@/features/admin/GroupsPage";
-import { SettingsPage } from "@/features/admin/SettingsPage";
-import { UsersPage } from "@/features/admin/UsersPage";
 import { FileWindowView } from "@/features/files/FileWindow";
 import { Inspector } from "@/features/files/Inspector";
-import { PermissionsPage } from "@/features/permissions/PermissionsPage";
-import { SharesPage } from "@/features/shares/SharesPage";
 import { Shelf } from "@/features/shelves/Shelf";
-import { TaskCenter } from "@/features/tasks/TaskCenter";
-import { TasksPage } from "@/features/tasks/TasksPage";
-import { TrashPage } from "@/features/trash/TrashPage";
-import { MinimizedDock } from "@/features/windows/MinimizedDock";
+import { AppWindowView } from "@/features/windows/AppWindow";
 import { setCanvasSize, useWorkspaceStore } from "@/stores/workspace";
 import type { Actor, Root } from "@/types/kago";
 import { CommandPalette } from "./CommandPalette";
-import { RootPicker } from "./RootPicker";
-import { pageFromPath, type WorkspacePage } from "./routes";
-import { Sidebar } from "./Sidebar";
+import { DesktopIcons } from "./DesktopIcons";
+import { appRouteFromPath } from "./routes";
+import { TopBar } from "./TopBar";
 import { useRealtime } from "./useRealtime";
 import { useShortcuts } from "./useShortcuts";
 import { useWorkspaceSync } from "./useWorkspaceSync";
-
-const adminPages: WorkspacePage[] = ["users", "groups", "permissions", "audit"];
 
 export function Workspace({ user }: { user: Actor }) {
   const roots = useRoots();
   const sync = useWorkspaceSync();
   const location = useLocation();
+  const navigate = useNavigate();
   const [paletteOpen, setPaletteOpen] = useState(false);
   const openPalette = useCallback(() => setPaletteOpen(true), []);
   const inspectorOpen = useWorkspaceStore((state) => Boolean(state.inspector.open));
   const isAdmin = user.role === "ADMIN";
-  const requestedPage = pageFromPath(location.pathname);
-  const page = requestedPage && (isAdmin || !adminPages.includes(requestedPage)) ? requestedPage : null;
   const rootList = roots.data ?? [];
 
   useRealtime(user.id, sync.onRemoteChange);
-  useShortcuts({ enabled: !page && !paletteOpen, onOpenPalette: openPalette });
+  useShortcuts({ enabled: !paletteOpen, onOpenPalette: openPalette });
+
+  // Reserved /_kago/* URLs open the matching app window, then hand the URL back to the desktop.
+  useEffect(() => {
+    if (location.pathname === "/") return;
+    const route = appRouteFromPath(location.pathname);
+    if (route && (isAdmin || !route.adminOnly)) useWorkspaceStore.getState().openApp(route.app, route.section);
+    navigate("/", { replace: true });
+  }, [location.pathname, isAdmin, navigate]);
 
   return (
-    <div className="flex h-full bg-canvas text-ink">
-      <Sidebar user={user} roots={rootList} page={page} onOpenPalette={openPalette} />
-      <main className="flex min-w-0 flex-1">
+    <div className="flex h-full flex-col bg-canvas text-ink">
+      <TopBar user={user} onOpenPalette={openPalette} />
+      <main className="flex min-h-0 min-w-0 flex-1">
         {sync.isLoading || roots.isLoading ? (
           <div className="flex-1"><KagoLoading /></div>
-        ) : page ? (
-          <WorkspacePageView page={page} roots={rootList} user={user} />
         ) : (
           <>
-            <Canvas roots={rootList} isAdmin={isAdmin} />
+            <Canvas roots={rootList} user={user} />
             {inspectorOpen ? <Inspector isAdmin={isAdmin} /> : null}
           </>
         )}
@@ -62,30 +56,10 @@ export function Workspace({ user }: { user: Actor }) {
   );
 }
 
-function WorkspacePageView({ page, roots, user }: { page: WorkspacePage; roots: Root[]; user: Actor }) {
-  switch (page) {
-    case "tasks":
-      return <TasksPage />;
-    case "shares":
-      return <SharesPage roots={roots} />;
-    case "trash":
-      return <TrashPage />;
-    case "users":
-      return <UsersPage currentUserId={user.id} />;
-    case "groups":
-      return <GroupsPage />;
-    case "permissions":
-      return <PermissionsPage roots={roots} />;
-    case "audit":
-      return <AuditPage />;
-    case "settings":
-      return <SettingsPage roots={roots} isAdmin={user.role === "ADMIN"} />;
-  }
-}
-
-/** The desktop: file windows plus the workspace-level shelf and task centre. */
-function Canvas({ roots, isAdmin }: { roots: Root[]; isAdmin: boolean }) {
+/** The desktop: shortcuts underneath, file and app windows on top, and the workspace-level shelf. */
+function Canvas({ roots, user }: { roots: Root[]; user: Actor }) {
   const windows = useWorkspaceStore((state) => state.windows);
+  const appWindows = useWorkspaceStore((state) => state.appWindows);
   const element = useRef<HTMLDivElement>(null);
   // Bumped on resize so canvas-relative children (the shelf) re-clamp.
   const [, setResizeTick] = useState(0);
@@ -106,13 +80,14 @@ function Canvas({ roots, isAdmin }: { roots: Root[]; isAdmin: boolean }) {
 
   return (
     <div ref={element} className="relative isolate min-w-0 flex-1 overflow-hidden">
-      {windows.length === 0 ? <RootPicker roots={roots} isAdmin={isAdmin} /> : null}
+      <DesktopIcons roots={roots} isAdmin={user.role === "ADMIN"} />
       {windows.map((window) => (
         <FileWindowView key={window.id} window={window} rootName={roots.find((root) => root.slug === window.rootSlug)?.name ?? window.rootSlug} />
       ))}
-      <MinimizedDock />
+      {appWindows.map((window) => (
+        <AppWindowView key={window.id} window={window} roots={roots} user={user} />
+      ))}
       <Shelf />
-      <TaskCenter />
     </div>
   );
 }

@@ -1,5 +1,4 @@
 import type { ReactNode } from "react";
-import { useNavigate } from "react-router";
 import { X } from "lucide-react";
 import { previewUrl } from "@/api/client";
 import { useFileMeta, usePathPermissions, useRoots, useShares } from "@/api/hooks";
@@ -11,7 +10,6 @@ import { RuleList } from "@/features/permissions/RuleList";
 import { ShareForm } from "@/features/shares/ShareForm";
 import { parseShareMode, shareModeLabel } from "@/features/shares/shareUtils";
 import { TagEditor } from "@/features/tags/TagEditor";
-import { pagePaths } from "@/features/workspace/routes";
 import { formatDate, formatSize, kindLabel } from "@/lib/format";
 import { usePointerDrag } from "@/lib/usePointerDrag";
 import { useWorkspaceStore } from "@/stores/workspace";
@@ -22,7 +20,6 @@ const MAX_WIDTH = 440;
 
 /** Docked panel describing the active window's selection, or its folder when nothing is selected. */
 export function Inspector({ isAdmin }: { isAdmin: boolean }) {
-  const navigate = useNavigate();
   const activeWindow = useWorkspaceStore((state) => state.windows.find((window) => window.id === state.activeWindowId));
   const width = useWorkspaceStore((state) => Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, state.inspector.width ?? 300)));
   const store = useWorkspaceStore.getState;
@@ -93,13 +90,13 @@ export function Inspector({ isAdmin }: { isAdmin: boolean }) {
               </ul>
             ) : null}
             <ShareForm key={`${rootSlug}:${path}`} target={{ rootSlug, path }} compact />
-            {pathShares.length > 0 ? <Button variant="ghost" className="mt-2 w-full" onClick={() => navigate(pagePaths.shares)}>管理所有分享</Button> : null}
+            {pathShares.length > 0 ? <Button variant="ghost" className="mt-2 w-full" onClick={() => store().openApp("shares")}>管理所有分享</Button> : null}
           </Section>
 
           {isAdmin ? (
             <Section title="權限規則">
               {permissions.data?.length ? <RuleList rules={permissions.data} /> : <span className="text-faint">這個路徑沒有套用任何規則</span>}
-              <Button variant="ghost" className="mt-2 w-full" onClick={() => navigate(pagePaths.permissions)}>管理權限</Button>
+              <Button variant="ghost" className="mt-2 w-full" onClick={() => store().openApp("settings", "permissions")}>管理權限</Button>
             </Section>
           ) : null}
         </div>
