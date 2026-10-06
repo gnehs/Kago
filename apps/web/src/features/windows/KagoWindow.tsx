@@ -1,3 +1,4 @@
+import { Maximize2, Minimize2, Minus, X, type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { isInteractiveTarget, usePointerDrag } from "@/lib/usePointerDrag";
 import { cn } from "@/lib/utils";
@@ -35,10 +36,17 @@ export function KagoWindow({ window, icon, titleExtra, className, children, ...p
         onDoubleClick={(event) => !isInteractiveTarget(event.target) && update({ maximized: !window.maximized })}
         {...moveHandlers}
       >
-        <div className="flex items-center gap-2">
-          <TrafficLight label="關閉視窗（⌥W）" tone="bg-danger" focused={window.focused} onClick={() => store().closeWindow(window.id)} />
-          <TrafficLight label="最小化" tone="bg-warning" focused={window.focused} onClick={() => update({ minimized: true })} />
-          <TrafficLight label={window.maximized ? "還原大小" : "最大化"} tone="bg-success" focused={window.focused} onClick={() => update({ maximized: !window.maximized })} />
+        {/* Hovering any light reveals all three glyphs, and wakes the colours of an unfocused window. */}
+        <div className="group/lights flex items-center gap-2">
+          <TrafficLight label="關閉視窗（⌥W）" tone="danger" icon={X} focused={window.focused} onClick={() => store().closeWindow(window.id)} />
+          <TrafficLight label="最小化" tone="warning" icon={Minus} focused={window.focused} onClick={() => update({ minimized: true })} />
+          <TrafficLight
+            label={window.maximized ? "還原大小" : "最大化"}
+            tone="success"
+            icon={window.maximized ? Minimize2 : Maximize2}
+            focused={window.focused}
+            onClick={() => update({ maximized: !window.maximized })}
+          />
         </div>
         <div className={cn("flex min-w-0 flex-1 items-center justify-center gap-1.5 font-medium", !window.focused && "text-muted")}>
           {icon}
@@ -59,15 +67,26 @@ export function KagoWindow({ window, icon, titleExtra, className, children, ...p
   );
 }
 
-function TrafficLight({ label, tone, focused, onClick }: { label: string; tone: string; focused: boolean; onClick: () => void }) {
+const LIGHT_TONES = {
+  danger: { on: "bg-danger", wake: "group-hover/lights:bg-danger" },
+  warning: { on: "bg-warning", wake: "group-hover/lights:bg-warning" },
+  success: { on: "bg-success", wake: "group-hover/lights:bg-success" }
+};
+
+function TrafficLight({ label, tone, icon: Icon, focused, onClick }: { label: string; tone: keyof typeof LIGHT_TONES; icon: LucideIcon; focused: boolean; onClick: () => void }) {
   return (
     <button
       type="button"
       aria-label={label}
       title={label}
-      className={cn("size-3 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-accent/50", focused ? tone : "bg-line-strong")}
+      className={cn(
+        "flex size-3 items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-accent/50",
+        focused ? LIGHT_TONES[tone].on : cn("bg-line-strong", LIGHT_TONES[tone].wake)
+      )}
       onClick={onClick}
-    />
+    >
+      <Icon aria-hidden className="size-2 text-black/60 opacity-0 group-hover/lights:opacity-100 group-has-focus-visible/lights:opacity-100" strokeWidth={3.5} />
+    </button>
   );
 }
 
