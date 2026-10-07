@@ -40,7 +40,7 @@ export function taskProgressLabel(task: FileTask) {
   return task.total_bytes > 0 ? `${formatSize(task.processed_bytes)} / ${formatSize(task.total_bytes)} · ${files}` : files;
 }
 
-/** The server reports task failures in English; the ones a user can act on get a proper message. */
+/** The server reports task failures in English; the ones a user can act on are worded for a task rather than a request. */
 const errorLabels: Record<string, string> = {
   "Target already exists": t("The destination already has an item with that name"),
   "Multiple sources resolve to the same target": t("Some of the selected items share a name"),
@@ -50,7 +50,7 @@ const errorLabels: Record<string, string> = {
   "Task failed": t("An unexpected error occurred")
 };
 
-export const taskErrorLabel = (message: string) => errorLabels[message] ?? message;
+export const taskErrorLabel = (message: string) => errorLabels[message] ?? t(message);
 
 const downloadMaxAgeSeconds = 24 * 60 * 60;
 

@@ -1,9 +1,10 @@
-// Checks the web interface's dictionaries against the English messages the code passes to t():
+// Checks the web interface's dictionaries against the English messages the code passes to t() and the server sends:
 // lists what each language has yet to translate and what it translates that is no longer used.
 import fs from "node:fs";
 import path from "node:path";
 
 const src = path.join(import.meta.dirname, "../apps/web/src");
+const serverSrc = path.join(import.meta.dirname, "../apps/server/src");
 const localesDir = path.join(src, "locales");
 const literal = String.raw`"((?:[^"\\]|\\.)*)"`;
 
@@ -12,6 +13,14 @@ for (const entry of fs.readdirSync(src, { recursive: true, withFileTypes: true }
   const file = path.join(entry.parentPath, entry.name);
   if (!entry.isFile() || !/\.tsx?$/.test(entry.name) || file.startsWith(localesDir)) continue;
   for (const match of fs.readFileSync(file, "utf8").matchAll(new RegExp(String.raw`\bt\(\s*${literal}`, "g"))) used.add(JSON.parse(`"${match[1]}"`));
+}
+
+// What the server says when a request or a task fails reaches the interface in English and is translated there.
+const serverMessages = [String.raw`new AppError\(\s*\d+,\s*${literal}`, String.raw`\b(?:reason|error): ${literal}`, String.raw`\breason \?\? ${literal}`, String.raw`\berrorMessage = ${literal}`, String.raw`error\.message : ${literal}`];
+for (const entry of fs.readdirSync(serverSrc, { recursive: true, withFileTypes: true })) {
+  if (!entry.isFile() || !entry.name.endsWith(".ts")) continue;
+  const text = fs.readFileSync(path.join(entry.parentPath, entry.name), "utf8");
+  for (const pattern of serverMessages) for (const match of text.matchAll(new RegExp(pattern, "g"))) used.add(JSON.parse(`"${match[1]}"`));
 }
 
 const placeholders = (text) => [...new Set(text.match(/\{\w+\}/g))].sort().join(" ");

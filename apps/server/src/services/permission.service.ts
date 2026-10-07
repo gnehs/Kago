@@ -117,7 +117,7 @@ export class PermissionService {
     ).filter((rule) => this.pathMatches(rule, logicalPath));
 
     for (const rule of rules) {
-      if ((JSON.parse(rule.deny_json) as string[]).includes(action)) return { allowed: false, reason: "Denied" };
+      if ((JSON.parse(rule.deny_json) as string[]).includes(action)) return { allowed: false, reason: "Denied by a permission rule" };
     }
 
     for (const rule of rules) {
@@ -146,7 +146,7 @@ export class PermissionService {
 
   private evaluateRules(rules: PermissionRule[], action: Action): { matched: boolean; allowed: boolean; reason?: string } {
     for (const rule of rules) {
-      if ((JSON.parse(rule.deny_json) as string[]).includes(action)) return { matched: true, allowed: false, reason: "Denied" };
+      if ((JSON.parse(rule.deny_json) as string[]).includes(action)) return { matched: true, allowed: false, reason: "Denied by a permission rule" };
     }
 
     for (const rule of rules) {

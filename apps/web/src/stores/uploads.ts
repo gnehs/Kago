@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { ApiError } from "@/api/client";
+import { ApiError, serverMessage } from "@/api/client";
 import { t } from "@/lib/i18n";
 
 export type Upload = {
@@ -62,7 +62,7 @@ export function uploadForm<T>(path: string, form: FormData, label: string): Prom
         body = undefined;
       }
       if (xhr.status < 200 || xhr.status >= 300) {
-        fail(new ApiError(body?.error ?? (xhr.statusText || "Request failed"), body?.code ?? "REQUEST_FAILED", xhr.status));
+        fail(new ApiError(serverMessage(body?.error ?? xhr.statusText), body?.code ?? "REQUEST_FAILED", xhr.status));
         return;
       }
       finish();

@@ -1,3 +1,5 @@
+import { t } from "../lib/i18n";
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -7,6 +9,9 @@ export class ApiError extends Error {
     super(message);
   }
 }
+
+/** The server words its errors in English; they are translated here like the rest of the interface. */
+export const serverMessage = (message: unknown) => (typeof message === "string" && message ? t(message) : t("Request failed"));
 
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(path, {
@@ -22,7 +27,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: response.statusText, code: "REQUEST_FAILED" }));
-    throw new ApiError(error.error ?? "Request failed", error.code ?? "REQUEST_FAILED", response.status);
+    throw new ApiError(serverMessage(error.error), error.code ?? "REQUEST_FAILED", response.status);
   }
 
   if (response.status === 204) return undefined as T;
