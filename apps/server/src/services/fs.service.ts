@@ -15,7 +15,7 @@ import { Thumbnailer, type ThumbnailSource } from "../lib/thumbnailer.js";
 import type { ZipEntry } from "../lib/zip-stream.js";
 import type { AuditService } from "./audit.service.js";
 import { renditionKind, type ImageService } from "./image.service.js";
-import type { PathService, SafePath } from "./path.service.js";
+import { sharesAreFixed, type PathService, type SafePath } from "./path.service.js";
 import type { PermissionService } from "./permission.service.js";
 import type { PreferenceService } from "./preference.service.js";
 import type { StorageService } from "./storage.service.js";
@@ -154,6 +154,8 @@ export class FsService {
 
   private async listRemote(actor: Actor, safe: SafePath) {
     if (!(await this.storage.stat(safe)).isDirectory()) throw new AppError(400, "Path is not a folder", "NOT_FOLDER");
+    // Where the folders listed are a server's shares, nothing can be added beside them or done to them.
+    const readonly = Boolean(safe.root.readonly) || this.storage.remote.isFixed(safe.root, path.posix.join(safe.logicalPath, "child"));
     const items = (await this.storage.remote.list(safe.root, safe.logicalPath))
       .filter((entry) => !entry.name.includes("\0"))
       .map((entry) => {
@@ -166,12 +168,12 @@ export class FsService {
           size: entry.size,
           mtime: entry.mtimeMs,
           type: entry.directory ? "folder" : lookup(entry.name) || "application/octet-stream",
-          readonly: Boolean(safe.root.readonly),
+          readonly,
           finderTags: []
         };
       })
       .filter((item) => item !== null);
-    return { rootSlug: safe.root.slug, path: safe.logicalPath, readonly: Boolean(safe.root.readonly), items };
+    return { rootSlug: safe.root.slug, path: safe.logicalPath, readonly, items };
   }
 
   async meta(actor: Actor, rootSlug: string, logicalPath: string) {
@@ -449,6 +451,7 @@ export class FsService {
     const target = await this.paths.resolveForCreate(rootSlug, targetLogical);
     if (this.storage.isRemote(source)) {
       if (source.logicalPath === "/") throw new AppError(400, "Invalid path", "INVALID_PATH");
+      if (this.storage.remote.isFixed(source.root, source.logicalPath)) throw sharesAreFixed();
       const parent = await this.paths.resolveExisting(rootSlug, path.posix.dirname(source.logicalPath));
       // Unlike on disk, a remote is not asked to tell a name from its own other spelling: a rename to the name it has is refused.
       await this.storage.assertNameAvailable(parent, this.storage.name(target), target.logicalPath === source.logicalPath ? undefined : this.storage.name(source));

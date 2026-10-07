@@ -8,6 +8,7 @@ import type { Env } from "../config/env.js";
 import { AppError } from "../lib/errors.js";
 import type { RootService } from "../services/root.service.js";
 import type { Root } from "../services/types.js";
+import { providerOf } from "./providers.js";
 import { remoteFailure, type RcloneClient, type RcloneItem, type RcloneStats } from "./rclone-client.js";
 
 /** Where a remote location keeps what was deleted from it; never listed, never reachable by path. */
@@ -43,11 +44,44 @@ export class RemoteStorage {
     return logicalPath.replace(/^\/+/, "");
   }
 
+  /**
+   * How many of a path's leading folders belong to the remote and not to Kago: the shares of a server
+   * that was added whole. They can be opened, but not made, renamed, moved or removed.
+   */
+  fixedDepth(root: Root): number {
+    const config = this.roots.remoteConfig(root);
+    return providerOf(config.type).shares && !config.base ? 1 : 0;
+  }
+
+  /** Whether the path is the location itself or one of the remote's own folders. */
+  isFixed(root: Root, logicalPath: string): boolean {
+    return segmentsOf(logicalPath).length <= this.fixedDepth(root);
+  }
+
+  /** Whether the path is, or lies in, a trash folder: one sits at the top of the location, or of each share. */
+  isTrash(root: Root, logicalPath: string): boolean {
+    return segmentsOf(logicalPath)[this.fixedDepth(root)] === REMOTE_TRASH;
+  }
+
+  /** The trash folder that takes what is deleted at `logicalPath`: the one of the same share. */
+  trashFolder(root: Root, logicalPath: string): string {
+    return `/${[...segmentsOf(logicalPath).slice(0, this.fixedDepth(root)), REMOTE_TRASH].join("/")}`;
+  }
+
+  /** Whether the path is something Kago put directly inside a trash folder. */
+  isTrashItem(root: Root, logicalPath: string): boolean {
+    const segments = segmentsOf(logicalPath);
+    const depth = this.fixedDepth(root);
+    return logicalPath.startsWith("/") && segments.length === depth + 2 && segments[depth] === REMOTE_TRASH && !segments.includes("..") && !segments.includes(".");
+  }
+
   async stat(root: Root, logicalPath: string): Promise<RemoteEntry | null> {
     const remote = this.rel(logicalPath);
     // The location itself is taken to be there; a remote that is down says so when it is listed.
     if (!remote) return { name: "", directory: true, size: 0, mtimeMs: 0 };
     try {
+      // A share is not an entry of anything that can be asked about; it is found among the others.
+      if (this.isFixed(root, logicalPath)) return (await this.list(root, path.posix.dirname(logicalPath))).find((entry) => entry.name === path.posix.basename(logicalPath)) ?? null;
       const item = await this.client.stat(this.fs(root), remote);
       return item ? entryOf(item) : null;
     } catch (error) {
@@ -62,7 +96,8 @@ export class RemoteStorage {
     const items = await this.client.list(this.fs(root), remote).catch((error: unknown) => {
       throw remoteFailure(error);
     });
-    return items.map(entryOf).filter((entry) => remote || entry.name !== REMOTE_TRASH);
+    const hidden = segmentsOf(logicalPath).length === this.fixedDepth(root);
+    return items.map(entryOf).filter((entry) => !hidden || entry.name !== REMOTE_TRASH);
   }
 
   open(root: Root, logicalPath: string, range?: { start: number; end: number }): Promise<Readable> {
@@ -137,7 +172,10 @@ export class RemoteStorage {
       .catch((error: unknown) => {
         throw remoteFailure(error);
       });
-    return result.list.map((item) => ({ ...entryOf(item), path: item.Path })).sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+    return result.list
+      .map((item) => ({ ...entryOf(item), path: item.Path }))
+      .filter((entry) => !this.isTrash(root, path.posix.join(logicalPath, entry.path)))
+      .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   }
 
   /**
@@ -199,6 +237,8 @@ export class RemoteStorage {
     return createHmac("sha256", this.env.sessionSecret).update(`internal-blob:${rootId}:${logicalPath}`).digest("hex");
   }
 }
+
+const segmentsOf = (logicalPath: string) => logicalPath.split("/").filter(Boolean);
 
 export const remoteName = (root: Pick<Root, "id">) => `kago_${root.id}`;
 

@@ -29,7 +29,8 @@ const fieldLabels: Record<string, string> = {
   "Use TLS": t("Use TLS"),
   "Share and folder": t("Share and folder"),
   Folder: t("Folder"),
-  Other: t("Other")
+  Other: t("Other"),
+  "Leave empty to show every share of the server.": t("Leave empty to show every share of the server.")
 };
 const label = (text: string) => fieldLabels[text] ?? text;
 
@@ -106,7 +107,7 @@ function remoteAddress(root?: RemoteRoot) {
 
 function RemoteForm({ providers, root, onSaved }: { providers: RemoteProvider[]; root: RemoteRoot | null; onSaved: () => Promise<void> }) {
   const [type, setType] = useState(root?.remote.type ?? providers[0]?.type ?? "");
-  const [name, setName] = useState("");
+  const [name, setName] = useState(root?.name ?? "");
   const [base, setBase] = useState(root?.remote.base ?? "");
   const [params, setParams] = useState<Record<string, string | boolean>>(() => ({ ...root?.remote.params, ...(root?.remote.params.key_file ? { key_file: true } : {}) }));
   const [readonly, setReadonly] = useState(false);
@@ -117,7 +118,7 @@ function RemoteForm({ providers, root, onSaved }: { providers: RemoteProvider[];
   const config = { type, base, params };
   const kept = (field: RemoteField) => field.kind === "secret" && Boolean(root?.remote.secrets.includes(field.key));
   const missing = provider.fields.some((field) => field.required && !params[field.key] && !kept(field)) || (provider.path.required && !base.trim());
-  const canSubmit = !missing && (root !== null || name.trim().length > 0) && !busy;
+  const canSubmit = !missing && name.trim().length > 0 && !busy;
   const set = (key: string, value: string | boolean) => setParams((current) => ({ ...current, [key]: value }));
 
   async function test() {
@@ -136,7 +137,7 @@ function RemoteForm({ providers, root, onSaved }: { providers: RemoteProvider[];
     if (!canSubmit) return;
     setBusy(true);
     const saved = await run(async () => {
-      if (root) await api(`/api/roots/${root.id}/remote`, { method: "PUT", body: JSON.stringify({ config }) });
+      if (root) await api(`/api/roots/${root.id}/remote`, { method: "PUT", body: JSON.stringify({ name: name.trim(), config }) });
       else await api("/api/roots/remote", { method: "POST", body: JSON.stringify({ name: name.trim(), readonly, config }) });
       return true;
     }, t("Couldn’t save the location"));
@@ -146,16 +147,15 @@ function RemoteForm({ providers, root, onSaved }: { providers: RemoteProvider[];
 
   return (
     <form className="grid grid-cols-2 gap-3" onSubmit={submit}>
+      {/* What kind of remote a location is stays what it was made as; everything else about it can be changed. */}
       {root ? null : (
-        <>
-          <Field label={t("Kind")}>
-            <Select value={type} onChange={(event) => { setType(event.target.value); setParams({}); setBase(""); }}>
-              {providers.map((item) => <option key={item.type} value={item.type}>{item.label}</option>)}
-            </Select>
-          </Field>
-          <Field label={t("Name")}><Input autoFocus value={name} onChange={(event) => setName(event.target.value)} /></Field>
-        </>
+        <Field label={t("Kind")}>
+          <Select value={type} onChange={(event) => { setType(event.target.value); setParams({}); setBase(""); }}>
+            {providers.map((item) => <option key={item.type} value={item.type}>{item.label}</option>)}
+          </Select>
+        </Field>
       )}
+      <Field label={t("Name")} className={root ? "col-span-2" : undefined}><Input autoFocus value={name} onChange={(event) => setName(event.target.value)} /></Field>
       {provider.fields.map((field) =>
         field.kind === "boolean" ? (
           <Checkbox key={field.key} className="col-span-2" label={label(field.label)} checked={Boolean(params[field.key])} onChange={(event) => set(field.key, event.target.checked)} />
@@ -178,7 +178,7 @@ function RemoteForm({ providers, root, onSaved }: { providers: RemoteProvider[];
           </Field>
         )
       )}
-      <Field label={label(provider.path.label)} className="col-span-2"><Input value={base} placeholder={provider.path.placeholder} onChange={(event) => setBase(event.target.value)} /></Field>
+      <Field label={label(provider.path.label)} hint={provider.path.hint ? label(provider.path.hint) : undefined} className="col-span-2"><Input value={base} placeholder={provider.path.placeholder} onChange={(event) => setBase(event.target.value)} /></Field>
       {type === "sftp" && params.key_file ? <SshKeyNote className="col-span-2" /> : null}
       {root ? null : <Checkbox className="col-span-2" label={t("Read-only")} checked={readonly} onChange={(event) => setReadonly(event.target.checked)} />}
       <div className="col-span-2 flex justify-end gap-2">

@@ -45,7 +45,7 @@ export const remoteRootSchema = z.object({
   config: remoteConfigSchema
 });
 
-export const remoteRootPatchSchema = z.object({ config: remoteConfigSchema });
+export const remoteRootPatchSchema = z.object({ name: z.string().trim().min(1).max(120).optional(), config: remoteConfigSchema });
 
 export class RootService {
   constructor(
@@ -111,7 +111,7 @@ export class RootService {
     if (root.provider === "local") throw new AppError(400, "This location is a local folder", "ROOT_NOT_REMOTE");
     const config = normalizeRemoteConfig(input.config, this.remoteConfig(root));
     if (config.type !== root.provider) throw new AppError(400, "The kind of a location cannot be changed", "ROOT_PROVIDER_FIXED");
-    this.db.prepare("UPDATE roots SET config = ?, updated_at = ? WHERE id = ?").run(this.secrets.seal(JSON.stringify(config)), now(), rootId);
+    this.db.prepare("UPDATE roots SET name = ?, config = ?, updated_at = ? WHERE id = ?").run(input.name ?? root.name, this.secrets.seal(JSON.stringify(config)), now(), rootId);
     return this.getById(rootId);
   }
 

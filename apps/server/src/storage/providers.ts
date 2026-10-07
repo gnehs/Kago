@@ -16,7 +16,12 @@ export type Provider = {
   label: string;
   fields: Field[];
   /** What the path inside the remote means, and whether a location cannot do without one. */
-  path: { label: string; placeholder: string; required: boolean };
+  path: { label: string; placeholder: string; required: boolean; hint?: string };
+  /**
+   * The remote's top level is a list of shares rather than a folder. A location with no path shows them all;
+   * they are the server's to make and remove, not Kago's.
+   */
+  shares?: boolean;
 };
 
 /**
@@ -34,7 +39,8 @@ export const providers: Provider[] = [
       { key: "pass", label: "Password", kind: "secret" },
       { key: "domain", label: "Domain", placeholder: "WORKGROUP" }
     ],
-    path: { label: "Share and folder", placeholder: "share/folder", required: true }
+    path: { label: "Share and folder", placeholder: "share/folder", required: false, hint: "Leave empty to show every share of the server." },
+    shares: true
   },
   {
     type: "sftp",

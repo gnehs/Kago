@@ -2,6 +2,7 @@
 //
 //   KAGO_TEST_REMOTE='{"type":"smb","base":"share","params":{"host":"nas","user":"kago","pass":"..."}}' pnpm test:remote
 //
+// KAGO_TEST_SERVER takes the same without `base`, for the test of a whole SMB server added as one location.
 // The folder `base` names is filled with test files and left clean. With KAGO_TEST_RSYNC='user@host:/path'
 // (a machine that already trusts the key printed by GET /api/storage/ssh-key) the rsync side of sync is run too.
 import assert from "node:assert/strict";
@@ -77,8 +78,19 @@ test("a remote location behaves like a local one", { skip: remote ? false : "KAG
     const roots = await api.get("/api/roots");
     assert.deepEqual(roots.json.map((root) => root.provider).sort(), ["local", remote.type, remote.type].sort());
     assert.ok(roots.json.every((root) => !("config" in root) && !("base_path" in root)));
-    // The connection can be saved again without typing its secrets, and still works.
-    assert.equal((await api.put(`/api/roots/${rootId}/remote`, { config: { ...remote, base: `${remote.base}/${sandbox}`, params: { ...remote.params, ...(secret ? { [secret.key]: "" } : {}) } } })).status, 200);
+    // The connection can be saved again without typing its secrets, and under another name.
+    const here = { ...remote, base: `${remote.base}/${sandbox}` };
+    const renamed = await api.put(`/api/roots/${rootId}/remote`, { name: "NAS", config: { ...here, params: { ...here.params, ...(secret ? { [secret.key]: "" } : {}) } } });
+    assert.equal(renamed.status, 200, renamed.text);
+    assert.equal(renamed.json.name, "NAS");
+    assert.equal(renamed.json.slug, slug, "the address of a location outlives its name");
+    assert.equal((await api.get(`/api/fs/list?rootSlug=${slug}&path=/`)).status, 200);
+    // A change counts from the moment it is saved, even for a remote that was already in use.
+    if (secret) {
+      assert.equal((await api.put(`/api/roots/${rootId}/remote`, { config: { ...here, params: { ...here.params, [secret.key]: "definitely-wrong" } } })).status, 200);
+      assert.equal((await api.get(`/api/fs/list?rootSlug=${slug}&path=/`)).status, 502);
+      assert.equal((await api.put(`/api/roots/${rootId}/remote`, { config: here })).status, 200);
+    }
 
     // Folders and files.
     assert.deepEqual((await api.get(`/api/fs/list?rootSlug=${slug}&path=/`)).json.items, []);
@@ -285,6 +297,92 @@ test("a remote location behaves like a local one", { skip: remote ? false : "KAG
     const cleanup = await api.post("/api/tasks", { type: "delete_to_trash", sources: [{ rootSlug: outer.json.slug, path: `/${sandbox}` }] });
     assert.equal((await waitTask(api, cleanup.json.id)).status, "done");
     await api.delete("/api/trash");
+  } finally {
+    await app.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("a whole server is one location with its shares at the top", { skip: process.env.KAGO_TEST_SERVER ? false : "KAGO_TEST_SERVER is not set" }, async () => {
+  // KAGO_TEST_SERVER is a configuration with no `base`, for a server with at least two writable shares.
+  const server = JSON.parse(process.env.KAGO_TEST_SERVER);
+  const dir = await mkdtemp(path.join(tmpdir(), "kago-server."));
+  const dataDir = path.join(dir, "data");
+  const appDataDir = path.join(dir, "app-data");
+  await mkdir(path.join(dataDir, "local"), { recursive: true });
+  await mkdir(appDataDir, { recursive: true });
+  await writeFile(path.join(dataDir, "local", "note.txt"), "note");
+  const app = await buildApp({ port, dataDir, appDataDir, sessionSecret: "remote-test-session-secret", nodeEnv: "test" });
+  await app.listen({ host: "127.0.0.1", port });
+  const api = client(`http://127.0.0.1:${port}`);
+
+  try {
+    assert.equal((await api.post("/api/auth/setup", { email: "admin@example.test", password: "fake-admin-password-123", displayName: "Admin" })).status, 200);
+    const created = await api.post("/api/roots/remote", { name: "Server", config: { ...server, base: "" } });
+    assert.equal(created.status, 200, created.text);
+    const slug = created.json.slug;
+    const q = (p) => `rootSlug=${slug}&path=${encodeURIComponent(p)}`;
+    const task = async (body) => {
+      const made = await api.post("/api/tasks", body);
+      assert.equal(made.status, 200, made.text);
+      return waitTask(api, made.json.id);
+    };
+
+    // The shares are listed, and are not Kago's to add to, rename or remove.
+    const top = await api.get(`/api/fs/list?${q("/")}`);
+    assert.equal(top.status, 200, top.text);
+    assert.equal(top.json.readonly, true);
+    const [one, two] = top.json.items.map((item) => item.name);
+    assert.ok(one && two, "the server needs two shares");
+    assert.ok(top.json.items.every((item) => item.kind === "folder" && item.readonly));
+    assert.equal((await api.get(`/api/fs/meta?${q(`/${one}`)}`)).json.kind, "folder");
+    assert.equal((await api.post("/api/fs/mkdir", { rootSlug: slug, path: "/", name: "newshare" })).json.code, "REMOTE_SHARES_FIXED");
+    assert.equal((await api.upload(slug, "/", "loose.txt", "x")).json.code, "REMOTE_SHARES_FIXED");
+    assert.equal((await api.post("/api/fs/rename", { rootSlug: slug, path: `/${one}`, name: "other" })).json.code, "REMOTE_SHARES_FIXED");
+    assert.equal((await api.post("/api/tasks", { type: "delete_to_trash", sources: [{ rootSlug: slug, path: `/${one}` }] })).json.code, "REMOTE_SHARES_FIXED");
+    assert.equal((await api.post("/api/tasks", { type: "copy", sources: [{ rootSlug: "local", path: "/note.txt" }], destination: { rootSlug: slug, path: "/" } })).json.code, "REMOTE_SHARES_FIXED");
+    assert.equal((await api.post("/api/tasks", { type: "move", sources: [{ rootSlug: slug, path: `/${one}` }], destination: { rootSlug: "local", path: "/" } })).json.code, "REMOTE_SHARES_FIXED");
+    assert.equal((await api.post("/api/sync-jobs", { name: "all", source: { kind: "location", rootSlug: "local", path: "/" }, destination: { kind: "location", rootSlug: slug, path: "/" } })).json.code, "REMOTE_SHARES_FIXED");
+    assert.deepEqual((await api.get(`/api/fs/list?${q("/")}`)).json.items.map((item) => item.name), [one, two], "the share is still there");
+
+    // Inside a share everything works as in any location.
+    const box = `kago-test-${Date.now()}`;
+    const inside = await api.get(`/api/fs/list?${q(`/${one}`)}`);
+    assert.equal(inside.json.readonly, false);
+    assert.equal((await api.post("/api/fs/mkdir", { rootSlug: slug, path: `/${one}`, name: box })).status, 200);
+    assert.equal((await api.post("/api/fs/mkdir", { rootSlug: slug, path: `/${two}`, name: box })).status, 200);
+    assert.equal((await api.upload(slug, `/${one}/${box}`, "a.txt", "alpha")).status, 200);
+    assert.equal((await api.get(`/api/fs/preview?${q(`/${one}/${box}/a.txt`)}`)).text, "alpha");
+    assert.equal((await task({ type: "copy", sources: [{ rootSlug: "local", path: "/note.txt" }], destination: { rootSlug: slug, path: `/${one}/${box}` } })).status, "done");
+
+    // From one share to another, which the server cannot do by renaming.
+    assert.equal((await task({ type: "copy", sources: [{ rootSlug: slug, path: `/${one}/${box}/a.txt` }], destination: { rootSlug: slug, path: `/${two}/${box}` } })).status, "done");
+    assert.equal((await task({ type: "move", sources: [{ rootSlug: slug, path: `/${one}/${box}/note.txt` }], destination: { rootSlug: slug, path: `/${two}/${box}` } })).status, "done");
+    assert.deepEqual((await api.get(`/api/fs/list?${q(`/${two}/${box}`)}`)).json.items.map((item) => item.name).sort(), ["a.txt", "note.txt"]);
+    assert.equal((await api.get(`/api/fs/meta?${q(`/${one}/${box}/note.txt`)}`)).status, 404);
+
+    // Each share keeps its own trash, hidden in it.
+    assert.equal((await task({ type: "delete_to_trash", sources: [{ rootSlug: slug, path: `/${one}/${box}/a.txt` }, { rootSlug: slug, path: `/${two}/${box}/a.txt` }] })).status, "done");
+    assert.ok(!(await api.get(`/api/fs/list?${q(`/${one}`)}`)).json.items.some((item) => item.name === ".kago-trash"));
+    assert.equal((await api.get(`/api/fs/list?${q(`/${one}/.kago-trash`)}`)).status, 404);
+    const trash = (await api.get("/api/trash")).json;
+    assert.equal(trash.length, 2);
+    const restore = await api.post(`/api/trash/${trash.find((item) => item.original_path === `/${one}/${box}/a.txt`).id}/restore`);
+    assert.equal((await waitTask(api, restore.json.id)).status, "done");
+    assert.equal((await api.get(`/api/fs/preview?${q(`/${one}/${box}/a.txt`)}`)).text, "alpha");
+
+    // A sync into a folder of a share, and an archive of the whole server that leaves the trash out.
+    const job = await api.post("/api/sync-jobs", { name: "in", source: { kind: "location", rootSlug: "local", path: "/" }, destination: { kind: "location", rootSlug: slug, path: `/${two}/${box}` }, options: { mode: "mirror" } });
+    assert.equal(job.status, 200, job.text);
+    assert.equal((await waitTask(api, (await api.post(`/api/sync-jobs/${job.json.id}/run`)).json.id)).status, "done");
+    assert.deepEqual((await api.get(`/api/fs/list?${q(`/${two}/${box}`)}`)).json.items.map((item) => item.name), ["note.txt"]);
+    const archive = new AdmZip((await api.get(`/api/fs/download-zip?${q(`/${two}`)}`)).bytes);
+    assert.ok(archive.getEntries().every((entry) => !entry.entryName.includes(".kago-trash")));
+    assert.ok(archive.getEntry(`${two}/${box}/note.txt`));
+
+    for (const share of [one, two]) assert.equal((await task({ type: "delete_to_trash", sources: [{ rootSlug: slug, path: `/${share}/${box}` }] })).status, "done");
+    assert.equal((await api.delete("/api/trash")).json.deleted, 3);
+    assert.equal((await api.delete(`/api/roots/${created.json.id}`)).status, 200);
   } finally {
     await app.close();
     await rm(dir, { recursive: true, force: true });

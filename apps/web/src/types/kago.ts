@@ -18,7 +18,7 @@ export type Root = {
 };
 
 export type RemoteField = { key: string; label: string; kind?: "text" | "number" | "secret" | "boolean" | "select"; required?: boolean; placeholder?: string; options?: Array<{ value: string; label: string }> };
-export type RemoteProvider = { type: string; label: string; fields: RemoteField[]; path: { label: string; placeholder: string; required: boolean } };
+export type RemoteProvider = { type: string; label: string; fields: RemoteField[]; path: { label: string; placeholder: string; required: boolean; hint?: string } };
 /** A remote location's settings as an administrator sees them: secrets are only named, never sent. */
 export type RemoteRoot = Root & { remote: { type: string; base: string; params: Record<string, string>; secrets: string[] } };
 export type StorageInfo = { available: boolean; providers: RemoteProvider[]; roots: RemoteRoot[] };

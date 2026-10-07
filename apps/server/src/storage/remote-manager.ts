@@ -72,5 +72,7 @@ export class RemoteManager {
       else delete parameters.key_file;
     }
     await this.client.call("config/create", { name, type: config.type, parameters, opt: { obscure: true, nonInteractive: true } });
+    // rclone goes on using a remote it has already opened, with the settings it had; forgetting those makes the new ones count now.
+    await this.client.call("fscache/clear");
   }
 }

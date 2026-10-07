@@ -4,7 +4,7 @@ import type { RootService } from "./root.service.js";
 import type { Root } from "./types.js";
 import { AppError } from "../lib/errors.js";
 import { nfc, sameName } from "../lib/filename.js";
-import { isRemote, REMOTE_TRASH, type RemoteEntry, type RemoteStorage } from "../storage/remote-storage.js";
+import { isRemote, type RemoteEntry, type RemoteStorage } from "../storage/remote-storage.js";
 
 export type SafePath = {
   root: Root;
@@ -56,7 +56,8 @@ export class PathService {
       const parent = await this.resolveRemote(root, path.posix.dirname(requested));
       if (!parent.entry?.directory) throw new AppError(404, "Path not found", "PATH_NOT_FOUND");
       const logical = path.posix.join(parent.logicalPath, nfc(path.posix.basename(requested)));
-      if (logical === `/${REMOTE_TRASH}`) throw new AppError(400, "Invalid path", "INVALID_PATH");
+      if (this.remote.isTrash(root, logical)) throw new AppError(400, "Invalid path", "INVALID_PATH");
+      if (this.remote.isFixed(root, logical)) throw sharesAreFixed();
       return remotePath(root, logical);
     }
     const parentLogical = await this.resolveSegments(root, path.posix.dirname(requested));
@@ -76,7 +77,7 @@ export class PathService {
    * byte for byte falls back to the one entry of its folder with the same NFC form.
    */
   private async resolveRemote(root: Root, logicalPath: string): Promise<SafePath> {
-    if (logicalPath.split("/")[1] === REMOTE_TRASH) throw new AppError(404, "Path not found", "PATH_NOT_FOUND");
+    if (this.remote.isTrash(root, logicalPath)) throw new AppError(404, "Path not found", "PATH_NOT_FOUND");
     const entry = await this.remote.stat(root, logicalPath);
     if (entry) return remotePath(root, logicalPath, entry);
     const parent = await this.resolveRemote(root, path.posix.dirname(logicalPath));
@@ -136,6 +137,9 @@ export class PathService {
     return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
   }
 }
+
+/** Refuses what would make, rename, move or remove one of a server's shares. */
+export const sharesAreFixed = () => new AppError(403, "The shares of a server can’t be changed from here", "REMOTE_SHARES_FIXED");
 
 function remotePath(root: Root, logicalPath: string, entry?: RemoteEntry): SafePath {
   const safe = { root, logicalPath, entry } as SafePath;

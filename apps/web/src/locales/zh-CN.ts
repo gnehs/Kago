@@ -756,5 +756,7 @@ export const zhCN: Dictionary = {
   "Apply to subfolders": "应用到子文件夹",
   "Use as default": "设为默认",
   "Reset to inherited setting": "重置为继承的设置",
-  "Folders without a view of their own now open like this one": "没有自己设置的文件夹，现在会以这个样子打开"
+  "Folders without a view of their own now open like this one": "没有自己设置的文件夹，现在会以这个样子打开",
+  "Leave empty to show every share of the server.": "留空会显示这台服务器的所有共享。",
+  "The shares of a server can’t be changed from here": "服务器的共享无法在这里添加、重命名或移除"
 };

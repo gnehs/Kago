@@ -756,5 +756,7 @@ export const ja: Dictionary = {
   "Apply to subfolders": "サブフォルダにも適用",
   "Use as default": "デフォルトにする",
   "Reset to inherited setting": "継承された設定に戻す",
-  "Folders without a view of their own now open like this one": "独自の設定がないフォルダは、このフォルダと同じ表示で開くようになりました"
+  "Folders without a view of their own now open like this one": "独自の設定がないフォルダは、このフォルダと同じ表示で開くようになりました",
+  "Leave empty to show every share of the server.": "空欄にすると、サーバーのすべての共有を表示します。",
+  "The shares of a server can’t be changed from here": "サーバーの共有は、ここでは追加・名前の変更・削除ができません"
 };

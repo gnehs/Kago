@@ -19,7 +19,7 @@ import { isRemote, joinFs, REMOTE_TRASH, transferProgress } from "../storage/rem
 import type { EventPublisher } from "../ws/events.js";
 import type { AuditService } from "./audit.service.js";
 import type { FsService } from "./fs.service.js";
-import type { PathService, SafePath } from "./path.service.js";
+import { sharesAreFixed, type PathService, type SafePath } from "./path.service.js";
 import type { Action, PermissionService } from "./permission.service.js";
 import type { PreferenceService } from "./preference.service.js";
 import type { StorageService } from "./storage.service.js";
@@ -238,7 +238,7 @@ export class TaskService {
       const root = await this.paths.resolveRootById(item.original_root_id, "/").then((safe) => safe.root, () => null);
       if (root && isRemote(root)) {
         // What a remote location threw away lies in its own hidden folder; anything else is not Kago's to remove.
-        const entry = isRemoteTrashPath(item.trash_path) ? await this.storage.remote.stat(root, item.trash_path) : null;
+        const entry = this.storage.remote.isTrashItem(root, item.trash_path) ? await this.storage.remote.stat(root, item.trash_path) : null;
         if (entry) await this.storage.remote.remove(root, item.trash_path, entry.directory);
       } else if (path.dirname(path.resolve(item.trash_path)) === trashDir) {
         // Trashed entries always sit directly inside the trash dir; never remove anything else.
@@ -499,6 +499,8 @@ export class TaskService {
       if (move) this.requireAny(actor, ["move", "delete"], source.root, source.logicalPath);
       else this.permissions.require(actor, "read", source.root, source.logicalPath);
       if (source.logicalPath === "/") throw new AppError(400, "Invalid path", "INVALID_PATH");
+      if (move) this.assertNotFixed(source);
+      this.assertNotFixed(dest, this.storage.name(source));
       assertNotIntoItself(source, dest);
       const directory = (await this.storage.stat(source)).isDirectory();
       const name = this.storage.name(source);
@@ -556,6 +558,12 @@ export class TaskService {
     }
   }
 
+  /** Refuses to touch one of a server's shares, or with `child` to put something beside them. */
+  private assertNotFixed(safe: SafePath, child?: string): void {
+    if (!isRemote(safe.root)) return;
+    if (this.storage.remote.isFixed(safe.root, child === undefined ? safe.logicalPath : path.posix.join(safe.logicalPath, child))) throw sharesAreFixed();
+  }
+
   /** A path as rclone is told it: the remote's name and a path in it, or the server's own disk. */
   private rcloneAddress(safe: SafePath): { fs: string; remote: string } {
     if (isRemote(safe.root)) return { fs: this.storage.remote.fs(safe.root), remote: this.storage.remote.rel(safe.logicalPath) };
@@ -579,8 +587,9 @@ export class TaskService {
       this.permissions.require(actor, "delete", safe.root, safe.logicalPath);
       if (isRemote(safe.root)) {
         if (safe.logicalPath === "/") throw new AppError(400, "Invalid path", "INVALID_PATH");
+        this.assertNotFixed(safe);
         // A remote keeps its own trash, so nothing has to be fetched to throw it away.
-        operations.push({ safe, trashPath: `/${REMOTE_TRASH}/${Date.now()}-${id("trash")}-${this.storage.name(safe)}`, bytes: 0 });
+        operations.push({ safe, trashPath: `${this.storage.remote.trashFolder(safe.root, safe.logicalPath)}/${Date.now()}-${id("trash")}-${this.storage.name(safe)}`, bytes: 0 });
         continue;
       }
       await assertNoSymlinksDeep(safe.absolutePath);
@@ -596,7 +605,7 @@ export class TaskService {
       await this.progress(task.id, safe.logicalPath);
       let streamed = false;
       if (isRemote(safe.root)) {
-        await this.storage.remote.mkdir(safe.root, `/${REMOTE_TRASH}`);
+        await this.storage.remote.mkdir(safe.root, path.posix.dirname(trashPath));
         await this.storage.remote.move(safe.root, safe.logicalPath, trashPath, (await this.storage.stat(safe)).isDirectory());
       } else streamed = await movePath(safe.absolutePath, trashPath, (processedBytes) => this.bumpProcessedBytes(task.id, processedBytes));
       this.db
@@ -637,7 +646,7 @@ export class TaskService {
       this.permissions.require(actor, "upload", safe.root, safe.logicalPath);
       if (isRemote(safe.root)) {
         const name = path.posix.basename(item.original_path);
-        const trashed = isRemoteTrashPath(item.trash_path) ? await this.storage.remote.stat(safe.root, item.trash_path) : null;
+        const trashed = this.storage.remote.isTrashItem(safe.root, item.trash_path) ? await this.storage.remote.stat(safe.root, item.trash_path) : null;
         if (!trashed) throw new AppError(404, "Trash item not found", "TRASH_ITEM_NOT_FOUND");
         await this.storage.assertNameAvailable(safe, name);
         await this.storage.remote.move(safe.root, item.trash_path, path.posix.join(safe.logicalPath, name), trashed.directory);
@@ -943,8 +952,9 @@ export class TaskService {
 
   private async extractEntryRemote(entry: AdmZip.IZipEntry, dest: SafePath): Promise<number> {
     const segments = this.safeZipEntrySegments(entry);
-    if (dest.logicalPath === "/" && segments[0] === REMOTE_TRASH) throw new AppError(400, "Unsafe zip entry", "UNSAFE_ZIP_ENTRY");
     const target = path.posix.join(dest.logicalPath, ...segments);
+    if (this.storage.remote.isTrash(dest.root, target)) throw new AppError(400, "Unsafe zip entry", "UNSAFE_ZIP_ENTRY");
+    if (this.storage.remote.isFixed(dest.root, target)) throw sharesAreFixed();
     if (entry.isDirectory) {
       await this.storage.remote.mkdir(dest.root, target);
       return 0;
@@ -1039,6 +1049,8 @@ export class TaskService {
       this.permissions.require(actor, "run_rsync", destination.root, destination.logicalPath);
       if (spec.options.mode === "mirror") this.permissions.require(actor, "delete", destination.root, destination.logicalPath);
     }
+    // What lands in the destination would be new shares if it were the top of a whole server.
+    if (destination) this.assertNotFixed(destination, "new");
     // rsync works on the server's own disk; a remote location is rclone's to reach.
     if (!source || !destination) assertLocalForRsync((source ?? destination)!.root);
     if (source && destination && source.root.id === destination.root.id) {
@@ -1073,7 +1085,7 @@ export class TaskService {
             createEmptySrcDirs: true,
             _config: { DryRun: spec.options.dryRun, ...(byAge ? { UpdateOlder: true, UseServerModTime: true } : {}) },
             // A remote location's trash is Kago's own business at either end.
-            _filter: { ExcludeRule: [`/${REMOTE_TRASH}/**`] }
+            _filter: { ExcludeRule: [`/${REMOTE_TRASH}/**`, `/*/${REMOTE_TRASH}/**`] }
           },
           (stats) => {
             if (stats.totalBytes > total) {
@@ -1155,6 +1167,8 @@ export class TaskService {
         const safe = await this.paths.resolveExisting(source.rootSlug, source.path);
         if (input.type === "move") this.requireAny(actor, ["move", "delete"], safe.root, safe.logicalPath);
         else this.permissions.require(actor, "read", safe.root, safe.logicalPath);
+        if (input.type === "move") this.assertNotFixed(safe);
+        this.assertNotFixed(dest, this.storage.name(safe));
         if (isRemote(safe.root) || isRemote(dest.root)) assertNotIntoItself(safe, dest);
         else await assertTargetOutsideSource(safe.absolutePath, path.join(dest.absolutePath, path.basename(safe.absolutePath)));
       }
@@ -1165,6 +1179,7 @@ export class TaskService {
       for (const source of input.sources) {
         const safe = await this.paths.resolveExisting(source.rootSlug, source.path);
         this.permissions.require(actor, "delete", safe.root, safe.logicalPath);
+        this.assertNotFixed(safe);
       }
       return;
     }
@@ -1517,12 +1532,6 @@ function syncSpecOf(task: FileTask): SyncSpec {
   const spec = (JSON.parse(task.destination ?? "{}") as { sync?: SyncSpec }).sync;
   if (!spec) throw new AppError(400, "Invalid sync task", "INVALID_SYNC_TASK");
   return { ...spec, source: syncEndpointSchema.parse(spec.source), destination: syncEndpointSchema.parse(spec.destination), options: syncOptionsSchema.parse(spec.options ?? {}) };
-}
-
-/** What a remote location deleted is kept directly inside its hidden folder, under a name Kago made up. */
-function isRemoteTrashPath(value: string): boolean {
-  const segments = value.split("/");
-  return segments.length === 3 && segments[0] === "" && segments[1] === REMOTE_TRASH && Boolean(segments[2]) && segments[2] !== "." && segments[2] !== "..";
 }
 
 /** `assertTargetOutsideSource` for locations that have no path on disk to compare. */

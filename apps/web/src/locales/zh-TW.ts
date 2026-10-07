@@ -756,5 +756,7 @@ export const zhTW: Dictionary = {
   "Apply to subfolders": "套用到子資料夾",
   "Use as default": "設為預設",
   "Reset to inherited setting": "重設為繼承的設定",
-  "Folders without a view of their own now open like this one": "沒有自己設定的資料夾，現在會以這個樣子開啟"
+  "Folders without a view of their own now open like this one": "沒有自己設定的資料夾，現在會以這個樣子開啟",
+  "Leave empty to show every share of the server.": "留空會顯示這台伺服器的所有分享。",
+  "The shares of a server can’t be changed from here": "伺服器的分享無法在這裡新增、改名或移除"
 };
