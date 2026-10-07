@@ -796,7 +796,7 @@ test("videos are probed and transcoded to HLS on demand", { skip: spawnSync("ffm
     await admin.delete(`/api/media/sessions/${besideSession.json.id}`);
 
     // For a screen that shows HDR it stays HDR: HEVC in fragmented MP4, where the server has an encoder for it.
-    const kept = await admin.post("/api/media/sessions", { ...hdrSource, subtitleIndex: 0, hdr: true });
+    const kept = await admin.post("/api/media/sessions", { ...hdrSource, subtitleIndex: 0, hdr: true, lift: true });
     assert.equal(kept.json.hdr, hdrInfo.json.hdrOutput);
     if (kept.json.hdr) {
       const keptBase = `/api/media/sessions/${kept.json.id}`;

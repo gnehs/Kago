@@ -7,7 +7,7 @@ import { KagoDropdownMenu, KagoMenuItem, KagoMenuSeparator } from "@/components/
 import { KagoWindow } from "@/features/windows/KagoWindow";
 import { isVideoType } from "@/lib/format";
 import { parentPath, triggerDownload } from "@/lib/paths";
-import { getSubtitlePref, getVideoQuality, setSubtitlePref, setVideoQuality, type VideoQualityPref } from "@/lib/prefs";
+import { getSubtitlePref, getVideoHdr, getVideoHdrLift, getVideoQuality, setSubtitlePref, setVideoHdr, setVideoHdrLift, setVideoQuality, type VideoQualityPref } from "@/lib/prefs";
 import { languageLabel, pickSubtitle, subtitleLabel } from "@/lib/subtitles";
 import { toast } from "@/stores/toast";
 import { useWorkspaceStore, type PreviewWindow } from "@/stores/workspace";
@@ -108,7 +108,10 @@ export function VideoPreview({
   // Another audio track can only be had by transcoding: a browser plays the first one of a file.
   const audioTracks = media?.transcode ? media.audio : [];
   const canDirect = !media || qualities.length === 0 || canDirectPlay(media);
-  const hdrScreen = useHdrScreen();
+  const screenHdr = useHdrScreen();
+  const [hdrWanted, setHdrWanted] = useState(getVideoHdr);
+  // Turned off by hand, HDR is handled as on a screen that cannot show it.
+  const hdrScreen = screenHdr && hdrWanted;
   const sourceHdr = media?.video?.hdr ?? null;
   // On a screen without HDR the server's tone mapping is used rather than whatever the browser makes of the file,
   // unless the original was asked for by hand in this window.
@@ -117,6 +120,9 @@ export function VideoPreview({
   const height = resolveHeight(qualities, picked, directOk);
   // Only a transcode has the choice; the original file is whatever it is, and the browser maps it to the screen.
   const hdr = height !== null && sourceHdr !== null && Boolean(media?.hdrOutput) && hdrScreen && canPlayHdrStream();
+  const [liftWanted, setLiftWanted] = useState(getVideoHdrLift);
+  // A browser shows HDR10 a stop darker than players that follow Apple's convention; the server makes up the difference.
+  const lift = hdr && sourceHdr === "pq" && liftWanted;
   const ready = !info.isPending;
   const reportAspect = useRef(onAspect);
   reportAspect.current = onAspect;
@@ -148,7 +154,7 @@ export function VideoPreview({
       void (async () => {
         const session = await api<{ id: string; playlistUrl: string }>("/api/media/sessions", {
           method: "POST",
-          body: JSON.stringify({ rootSlug, path, height, audioIndex, subtitleIndex: burned, subtitlePath: burnedFile, hdr })
+          body: JSON.stringify({ rootSlug, path, height, audioIndex, subtitleIndex: burned, subtitlePath: burnedFile, hdr, lift })
         });
         if (cancelled) return closeSession(session.id);
         sessionId = session.id;
@@ -208,7 +214,7 @@ export function VideoPreview({
       video.load();
       if (sessionId) closeSession(sessionId);
     };
-  }, [ready, rootSlug, path, height, audioIndex, burned, burnedFile, hdr, attempt]);
+  }, [ready, rootSlug, path, height, audioIndex, burned, burnedFile, hdr, lift, attempt]);
 
   useSubtitleRenderer(videoRef, textSubtitle, subtitleList?.fonts ?? [], aspect ?? probedAspect, () => {
     toast(t("Couldn’t load this subtitle"), "error");
@@ -301,12 +307,36 @@ export function VideoPreview({
             ))}
             <KagoMenuSeparator />
             <div className="px-2 py-1 text-xs text-muted">{t("Transcoding: {encoder}", { encoder: ENCODER_LABEL[media?.encoder ?? ""] ?? "CPU" })}</div>
-            {sourceHdr ? <div className="px-2 pb-1 text-xs text-muted">{hdrNote(height === null, hdr, hdrScreen, Boolean(media?.tonemap))}</div> : null}
+            {sourceHdr && screenHdr && media?.tonemap ? (
+              <CheckItem
+                checked={hdrWanted}
+                onClick={() => {
+                  recoveries.current = 0;
+                  setVideoHdr(!hdrWanted);
+                  setHdrWanted(!hdrWanted);
+                }}
+              >
+                {t("HDR output")}
+              </CheckItem>
+            ) : null}
+            {hdr && sourceHdr === "pq" ? (
+              <CheckItem
+                checked={liftWanted}
+                onClick={() => {
+                  recoveries.current = 0;
+                  setVideoHdrLift(!liftWanted);
+                  setLiftWanted(!liftWanted);
+                }}
+              >
+                {t("Brighten HDR")}
+              </CheckItem>
+            ) : null}
+            {sourceHdr ? <div className="px-2 pb-1 text-xs text-muted">{hdrNote(height === null, hdr, screenHdr, hdrWanted, Boolean(media?.tonemap))}</div> : null}
           </>
         }
       >
         {height === null ? t("Original") : `${height}p`}
-        {hdr || (height === null && sourceHdr && hdrScreen) ? " HDR" : ""}
+        {hdr || (height === null && sourceHdr && screenHdr) ? " HDR" : ""}
       </KagoDropdownMenu>
     ) : null;
 
@@ -360,10 +390,11 @@ function resolveHeight(qualities: number[], picked: VideoQualityPref | null, dir
 }
 
 /** What becomes of an HDR picture on its way to this screen. */
-function hdrNote(direct: boolean, hdr: boolean, hdrScreen: boolean, tonemap: boolean): string {
+function hdrNote(direct: boolean, hdr: boolean, hdrScreen: boolean, wanted: boolean, tonemap: boolean): string {
   if (direct) return hdrScreen ? t("HDR: playing the original file") : t("HDR: converted to SDR by the browser");
   if (hdr) return t("HDR: supported by this screen, playing in HDR");
   if (!tonemap) return t("HDR: the server can’t convert to SDR, so colors will look washed out");
+  if (hdrScreen && !wanted) return t("HDR: turned off, converted to SDR");
   return hdrScreen ? t("HDR: can’t be streamed in HDR, converted to SDR") : t("HDR: not supported by this screen, converted to SDR");
 }
 

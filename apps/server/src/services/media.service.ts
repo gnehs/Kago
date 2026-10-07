@@ -22,7 +22,9 @@ export const mediaSessionSchema = z.object({
   /** The file that subtitle is in, when it lies next to the video rather than inside it. */
   subtitlePath: z.string().min(1).nullable().default(null),
   /** Whether the player's screen and browser can show HDR; otherwise an HDR source is tone-mapped to SDR. */
-  hdr: z.boolean().default(false)
+  hdr: z.boolean().default(false),
+  /** Whether a PQ picture kept as HDR is brightened to sit where other players put it. */
+  lift: z.boolean().default(false)
 });
 
 export const mediaStreamSchema = z.object({
@@ -37,8 +39,11 @@ export type MediaInfo = {
   duration: number;
   /** ffprobe's format name list, e.g. `mov,mp4,m4a,3gp,3g2,mj2` or `matroska,webm`. */
   container: string;
-  /** `hdr` names the transfer curve of an HDR picture: PQ (HDR10, Dolby Vision with an HDR10 base) or HLG. */
-  video: { codec: string; profile: string; width: number; height: number; bitDepth: number; hdr: Hdr | null } | null;
+  /**
+   * `hdr` names the transfer curve of an HDR picture: PQ (HDR10, Dolby Vision with an HDR10 base) or HLG.
+   * `peak` is the brightest its mastering display went, in nits; 0 when the file does not say.
+   */
+  video: { codec: string; profile: string; width: number; height: number; bitDepth: number; hdr: Hdr | null; peak: number } | null;
   audio: Array<{ codec: string; channels: number; language: string; title: string }>;
   /** Subtitle streams inside the file, numbered among themselves. `text` ones are handed to the player; `picture` ones are drawn into the frames. */
   subtitles: Array<{ index: number; codec: string; language: string; title: string; default: boolean; forced: boolean; sdh: boolean; text: boolean; picture: boolean }>;
@@ -87,6 +92,7 @@ type Session = {
   subtitleFile: PictureSubtitleFile | null;
   /** HDR in, HDR out. Such a stream is HEVC in fragmented MP4, the one form of it browsers take over HLS. */
   hdr: boolean;
+  lift: boolean;
   segmentCount: number;
   proc: ChildProcess | null;
   /** Set once the GPU pipeline has failed on this file; the rest of the session encodes on the CPU. */
@@ -124,6 +130,14 @@ const TRANSFER: Record<Hdr, string> = { pq: "smpte2084", hlg: "arib-std-b67" };
  */
 const SUBTITLE_LEVEL: Record<Hdr, number> = { pq: 0.58, hlg: 0.75 };
 const INIT_SEGMENT = "init.mp4";
+/**
+ * Browsers show PQ with 203 nits as the white of the page; players that follow Apple's convention put 100 nits
+ * there, a stop brighter. A film graded dark then looks dull next to a page. Lifting by the ratio of the two
+ * makes up the difference.
+ */
+const LIFT_GAIN = 2.03;
+/** The mastering peak assumed for a picture that does not give one. */
+const DEFAULT_PEAK_NITS = 1000;
 /** The demuxer each kind of subtitle file is read with. It is named outright, so what is in the file cannot pick another. */
 const SUBTITLE_DEMUXER: Record<PictureSubtitleFormat, string> = { pgs: "sup", vobsub: "vobsub" };
 /** How far before the video a subtitle file starts being read, so a line already on screen at that point is there. */
@@ -251,7 +265,7 @@ export class MediaService {
     return pending;
   }
 
-  async createSession(actorId: string, absolutePath: string, stat: fs.Stats, options: { height: number; audioIndex: number; subtitleIndex: number | null; subtitleFile?: PictureSubtitleFile | null; hdr: boolean }) {
+  async createSession(actorId: string, absolutePath: string, stat: fs.Stats, options: { height: number; audioIndex: number; subtitleIndex: number | null; subtitleFile?: PictureSubtitleFile | null; hdr: boolean; lift?: boolean }) {
     const { height, audioIndex, subtitleIndex } = options;
     const subtitleFile = subtitleIndex === null ? null : (options.subtitleFile ?? null);
     const info = await this.info(absolutePath, stat);
@@ -263,6 +277,7 @@ export class MediaService {
     const own = [...this.sessions.values()].filter((session) => session.actorId === actorId).sort((a, b) => a.lastAccess - b.lastAccess);
     for (const stale of own.slice(0, Math.max(0, own.length - SESSIONS_PER_ACTOR + 1))) this.destroy(stale);
 
+    const hdr = options.hdr && this.hdrOutput && Boolean(info.video?.hdr);
     const id = createId("med");
     const dir = path.join(this.baseDir, id);
     await fsp.mkdir(dir, { recursive: true });
@@ -278,7 +293,9 @@ export class MediaService {
       audioIndex: Math.min(audioIndex, Math.max(0, info.audio.length - 1)),
       subtitleIndex,
       subtitleFile,
-      hdr: options.hdr && this.hdrOutput && Boolean(info.video?.hdr),
+      hdr,
+      // HLG is relative to the screen already and needs no such correction.
+      lift: hdr && Boolean(options.lift) && info.video?.hdr === "pq",
       segmentCount,
       proc: null,
       software: false,
@@ -408,7 +425,8 @@ export class MediaService {
     const picture = [
       `scale=w=${boxWidth}:h=${boxHeight}:force_original_aspect_ratio=decrease:force_divisible_by=2`,
       // Scaled first: tone mapping is the costly step, and a smaller picture makes it cheaper.
-      ...(sourceHdr && !session.hdr && this.tonemap ? [this.tonemap.filter(sourceHdr)] : [])
+      ...(sourceHdr && !session.hdr && this.tonemap ? [this.tonemap.filter(sourceHdr)] : []),
+      ...(session.lift ? [liftFilter(video?.peak || DEFAULT_PEAK_NITS)] : [])
     ].join(",");
     const upload = session.hdr ? accel.hdrFilter : accel.filter;
     let filters: string[];
@@ -618,13 +636,18 @@ export class MediaService {
     return null;
   }
 
-  /** A picture's transfer curve as its first frame carries it, for files whose container does not say. */
-  private async frameTransfer(absolutePath: string): Promise<string> {
+  /** A picture's transfer curve and mastering peak as its first frame carries them, for files whose container does not say. */
+  private async frameColour(absolutePath: string): Promise<{ transfer: string; peak: number }> {
     try {
-      const result = await execFileAsync(this.ffprobe, ["-v", "error", "-select_streams", "v:0", "-read_intervals", "%+#1", "-show_entries", "frame=color_transfer", "-of", "csv=p=0", absolutePath], { timeout: 20_000 });
-      return result.stdout.trim().replace(/,$/, "");
+      const result = await execFileAsync(
+        this.ffprobe,
+        ["-v", "error", "-select_streams", "v:0", "-read_intervals", "%+#1", "-show_entries", "frame=color_transfer:frame_side_data=max_luminance", "-print_format", "json", absolutePath],
+        { timeout: 20_000 }
+      );
+      const frame = (JSON.parse(result.stdout) as { frames?: Array<Record<string, any>> }).frames?.[0];
+      return { transfer: String(frame?.color_transfer ?? ""), peak: masteringPeak(frame?.side_data_list) };
     } catch {
-      return "";
+      return { transfer: "", peak: 0 };
     }
   }
 
@@ -658,14 +681,20 @@ export class MediaService {
       const pixFmt = String(videoStream.pix_fmt ?? "");
       const bitDepth = Number(videoStream.bits_per_raw_sample) || (/1[026](le|be)/.test(pixFmt) ? 10 : 8);
       const declared = String(videoStream.color_transfer ?? "");
-      const transfer = declared && declared !== "unknown" ? declared : bitDepth > 8 ? await this.frameTransfer(absolutePath) : "";
+      const known = declared !== "" && declared !== "unknown";
+      let peak = masteringPeak(videoStream.side_data_list);
+      // Only a picture that may be HDR is worth a second look.
+      const frame = bitDepth > 8 && (!known || (declared === TRANSFER.pq && peak === 0)) ? await this.frameColour(absolutePath) : null;
+      const transfer = known ? declared : (frame?.transfer ?? "");
+      peak ||= frame?.peak ?? 0;
       video = {
         codec: String(videoStream.codec_name ?? ""),
         profile: String(videoStream.profile ?? ""),
         width,
         height,
         bitDepth,
-        hdr: transfer === TRANSFER.pq ? "pq" : transfer === TRANSFER.hlg ? "hlg" : null
+        hdr: transfer === TRANSFER.pq ? "pq" : transfer === TRANSFER.hlg ? "hlg" : null,
+        peak
       };
       if (duration > 0 && width > 0 && height > 0) {
         // Rate a cropped or portrait picture by the 16:9 frame it fills, so 1920x804 still counts as 1080p.
@@ -757,6 +786,32 @@ function accelFor(encoder: Encoder, device = ""): Accel {
         hevc: (maxKbps) => ["-c:v", "libx265", ...gop, "-preset", "superfast", "-crf", "25", "-maxrate", `${maxKbps}k`, "-bufsize", `${maxKbps * 2}k`, "-pix_fmt", "yuv420p10le", "-x265-params", "log-level=error"]
       };
   }
+}
+
+/** The peak of the mastering display in ffprobe's side data, in nits. */
+function masteringPeak(sideData: unknown): number {
+  const mastering = (Array.isArray(sideData) ? sideData : []).find((item) => item?.max_luminance !== undefined);
+  const [value, scale] = String(mastering?.max_luminance ?? "").split("/").map(Number);
+  const nits = value! / (scale || 1);
+  return Number.isFinite(nits) && nits > 0 ? nits : 0;
+}
+
+/**
+ * Brightens a PQ picture in linear light: `LIFT_GAIN` times as bright in the shadows and midtones, easing off
+ * towards the mastering peak, which stays where it was so the stream's metadata still describes it. A gain on
+ * light is a gain on each of red, green and blue, so the three go through one lookup table.
+ */
+function liftFilter(peakNits: number): string {
+  const [m1, m2, c1, c2, c3] = [0.1593017578125, 78.84375, 0.8359375, 18.8515625, 18.6875];
+  const peak = peakNits / 10000;
+  const curve = [
+    // The table runs past the values ten bits can hold, where the curve has no meaning.
+    `st(0,pow(min(val/maxval,1),1/${m2}))`,
+    `st(1,pow(max(ld(0)-${c1},0)/(${c2}-${c3}*ld(0)),1/${m1}))`,
+    `st(2,pow(${LIFT_GAIN}*ld(1)/(1+${LIFT_GAIN - 1}*ld(1)/${peak}),${m1}))`,
+    `maxval*pow((${c1}+${c2}*ld(2))/(1+${c3}*ld(2)),${m2})`
+  ].join(";").replaceAll(",", "\\,");
+  return `scale=in_color_matrix=bt2020nc:in_range=tv,format=gbrp10le,lutrgb=r='${curve}':g='${curve}':b='${curve}',scale=out_color_matrix=bt2020nc:out_range=tv,format=yuv420p10le`;
 }
 
 /**

@@ -216,7 +216,7 @@ export type MediaInfo = {
   duration: number;
   container: string;
   /** `hdr` names the transfer curve of an HDR picture: PQ (HDR10) or HLG. */
-  video: { codec: string; profile: string; width: number; height: number; bitDepth: number; hdr: "pq" | "hlg" | null } | null;
+  video: { codec: string; profile: string; width: number; height: number; bitDepth: number; hdr: "pq" | "hlg" | null; peak: number } | null;
   audio: Array<{ codec: string; channels: number; language: string; title: string }>;
   /** Heights the file can be transcoded to, tallest first. */
   qualities: number[];

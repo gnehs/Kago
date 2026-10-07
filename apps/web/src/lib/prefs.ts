@@ -62,6 +62,44 @@ export function setVideoQuality(quality: VideoQualityPref) {
   }
 }
 
+const videoHdrKey = "kago.videoHdr";
+
+/** Whether an HDR video is shown as HDR on a screen that can. Browsers render HDR darker than some expect, so it can be turned off by hand. */
+export function getVideoHdr(): boolean {
+  try {
+    return localStorage.getItem(videoHdrKey) !== "off";
+  } catch {
+    return true;
+  }
+}
+
+export function setVideoHdr(on: boolean) {
+  try {
+    localStorage.setItem(videoHdrKey, on ? "on" : "off");
+  } catch {
+    // Storage may be unavailable; the choice then lasts for this window only.
+  }
+}
+
+const videoHdrLiftKey = "kago.videoHdrLift";
+
+/** Whether a transcoded HDR10 picture is brightened to where other players show it; a browser shows it a stop darker. */
+export function getVideoHdrLift(): boolean {
+  try {
+    return localStorage.getItem(videoHdrLiftKey) !== "off";
+  } catch {
+    return true;
+  }
+}
+
+export function setVideoHdrLift(on: boolean) {
+  try {
+    localStorage.setItem(videoHdrLiftKey, on ? "on" : "off");
+  } catch {
+    // Storage may be unavailable; the choice then lasts for this window only.
+  }
+}
+
 const subtitleKey = "kago.subtitles";
 
 /** The subtitle choice last made by hand: `off`, or the language tag of the track that was picked. */
