@@ -5,7 +5,7 @@ import cookie from "@fastify/cookie";
 import multipart from "@fastify/multipart";
 import fastifyStatic from "@fastify/static";
 import websocket from "@fastify/websocket";
-import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
+import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import { lookup } from "mime-types";
 import { z } from "zod";
 import type { Env } from "./config/env.js";
@@ -121,8 +121,8 @@ export async function buildApp(env: Env) {
       auth.requireActor(request);
     }
   }, (socket, request) => {
-    const actor = auth.requireActor(request);
-    events.add(socket, actor);
+    auth.requireActor(request);
+    events.add(socket, () => auth.actorForSession(request.cookies.kago_session));
     socket.send(JSON.stringify({ type: "connected" }));
   });
 
@@ -139,6 +139,7 @@ export async function buildApp(env: Env) {
   }
 
   app.addHook("onClose", async () => {
+    events.close();
     await workers.stop();
     sync.stop();
     clearInterval(pruning);
@@ -172,6 +173,14 @@ function contentDisposition(kind: "attachment" | "inline", rawFileName: string):
   const fileName = nfc(rawFileName);
   const fallback = fileName.replace(/[^\x20-\x7e]/g, "_").replaceAll('"', "");
   return `${kind}; filename="${fallback}"; filename*=UTF-8''${encodeURIComponent(fileName)}`;
+}
+
+/** Raw user files must never run scripts with the application's origin when opened directly. */
+function protectFilePreview(reply: FastifyReply, contentType: string, fileName: string): void {
+  // Fetch-based code and office viewers can still read attachments; direct navigation downloads active documents.
+  reply.header("Content-Disposition", contentDisposition(isBrowserViewable(contentType) ? "inline" : "attachment", fileName));
+  reply.header("X-Content-Type-Options", "nosniff");
+  reply.header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'none'; sandbox");
 }
 
 function resolveWebDist(env: Env): string {
@@ -492,6 +501,7 @@ function registerApi(app: FastifyInstance, services: Services) {
     const actor = requireActor(request);
     const query = fsQuerySchema.parse(request.query);
     const file = await services.fsService.preview(actor, query.rootSlug, query.path);
+    protectFilePreview(reply, file.contentType, file.name);
     return sendSource(request, reply, file.source, file.contentType);
   });
   app.put("/api/fs/content", async (request) => services.fsService.writeText(requireActor(request), writeTextSchema.parse(request.body)));
@@ -854,10 +864,7 @@ function registerApi(app: FastifyInstance, services: Services) {
     if (!stat.isFile()) throw new AppError(400, "Path is not a file", "NOT_FILE");
     const contentType = lookup(safe.logicalPath) || "application/octet-stream";
     if (!isBrowserViewable(contentType)) throw new AppError(415, "This kind of file cannot be viewed in the browser", "PREVIEW_UNSUPPORTED");
-    reply.header("Content-Disposition", contentDisposition("inline", services.storage.name(safe)));
-    reply.header("X-Content-Type-Options", "nosniff");
-    // Opened in a tab of its own, an SVG is a document: without this its scripts would run as Kago.
-    if (contentType === "image/svg+xml") reply.header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox");
+    protectFilePreview(reply, contentType, services.storage.name(safe));
     return sendSource(request, reply, services.storage.source(safe, stat), contentType);
   });
 

@@ -128,18 +128,15 @@ export class PermissionService {
   }
 
   private canUserOrGroups(userId: string, action: Action, root: Root, logicalPath: string): { allowed: boolean; reason?: string } {
-    const direct = this.evaluateRules(
-      this.rulesForPrincipals([{ type: "user", id: userId }], root.id).filter((rule) => this.pathMatches(rule, logicalPath)),
-      action
-    );
-    if (direct.matched) return direct.allowed ? { allowed: true } : { allowed: false, reason: direct.reason };
-
     const groupPrincipals = this.principalsFor(userId).filter((principal) => principal.type === "group");
-    const group = this.evaluateRules(
-      this.rulesForPrincipals(groupPrincipals, root.id).filter((rule) => this.pathMatches(rule, logicalPath)),
-      action
-    );
-    if (group.matched) return group.allowed ? { allowed: true } : { allowed: false, reason: group.reason };
+    const rules = [
+      ...this.rulesForPrincipals([{ type: "user", id: userId }], root.id),
+      ...this.rulesForPrincipals(groupPrincipals, root.id)
+    ].filter((rule) => this.pathMatches(rule, logicalPath));
+    // Deny is absolute across user and group rules; when there is no deny, a direct user allow
+    // remains ahead of a group allow because the rules are kept in that order.
+    const result = this.evaluateRules(rules, action);
+    if (result.matched) return result.allowed ? { allowed: true } : { allowed: false, reason: result.reason };
 
     return { allowed: false, reason: "No permission" };
   }
@@ -231,6 +228,58 @@ export class PermissionService {
     this.db.prepare("DELETE FROM permission_rules WHERE id = ?").run(ruleId);
   }
 
+  /** Rebase rules anchored at a moved path, keeping the move and related database updates atomic. */
+  rebasePathRules(
+    fromRootId: string,
+    fromPath: string,
+    toRootId: string,
+    toPath: string,
+    updateRelatedRows?: () => void
+  ): void {
+    const sourcePrefix = nfc(fromPath);
+    const targetPrefix = nfc(toPath);
+    let transactionStarted = false;
+
+    try {
+      this.db.exec("BEGIN IMMEDIATE");
+      transactionStarted = true;
+
+      const rules = rows<Pick<PermissionRule, "id" | "path_prefix">>(
+        this.db.prepare("SELECT id, path_prefix FROM permission_rules WHERE root_id = ?").all(fromRootId)
+      );
+      const update = this.db.prepare(
+        "UPDATE permission_rules SET root_id = ?, path_prefix = ?, updated_at = ? WHERE id = ?"
+      );
+      const updatedAt = now();
+
+      for (const rule of rules) {
+        const rulePrefix = nfc(rule.path_prefix);
+        if (!isPathWithin(rulePrefix, sourcePrefix)) continue;
+
+        // Keep the original destination rules as well. Permission evaluation checks all matching
+        // denies before allows, so a stale destination allow cannot replace a moved source deny.
+        const suffix = sourcePrefix === "/" ? rulePrefix : rulePrefix.slice(sourcePrefix.length);
+        const rebasedPath = suffix
+          ? targetPrefix === "/" ? suffix : `${targetPrefix}${suffix}`
+          : targetPrefix;
+        update.run(toRootId, rebasedPath, updatedAt, rule.id);
+      }
+
+      updateRelatedRows?.();
+      this.db.exec("COMMIT");
+      transactionStarted = false;
+    } catch (error) {
+      if (transactionStarted) {
+        try {
+          this.db.exec("ROLLBACK");
+        } catch {
+          // SQLite may already have rolled the transaction back after a storage error.
+        }
+      }
+      throw error;
+    }
+  }
+
   private principalsFor(userId: string): Array<{ type: "user" | "group"; id: string }> {
     const groups = rows<{ group_id: string }>(
       this.db.prepare("SELECT group_id FROM group_members WHERE user_id = ?").all(userId)
@@ -273,6 +322,12 @@ export class PermissionService {
     if (!rule.recursive) return false;
     return logicalPath.startsWith(prefix.endsWith("/") ? prefix : `${prefix}/`);
   }
+}
+
+function isPathWithin(candidate: string, prefix: string): boolean {
+  if (candidate === prefix) return true;
+  if (prefix === "/") return candidate.startsWith("/");
+  return candidate.startsWith(`${prefix}/`);
 }
 
 function isDescendantPath(rawCandidate: string, rawLogicalPath: string): boolean {

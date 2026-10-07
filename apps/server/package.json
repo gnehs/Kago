@@ -10,25 +10,28 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit",
     "test:smoke": "tsc -p tsconfig.json && cp src/db/schema.sql dist/db/schema.sql && node --test test/smoke.mjs",
+    "test:security": "tsc -p tsconfig.json && cp src/db/schema.sql dist/db/schema.sql && node --import tsx --test test/*-security.mjs",
     "test:remote": "tsc -p tsconfig.json && cp src/db/schema.sql dist/db/schema.sql && node --test test/remote.mjs",
     "start": "node dist/main.js"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",
-    "@fastify/multipart": "^9.0.3",
-    "@fastify/static": "^8.2.0",
+    "@fastify/multipart": "^10.1.2",
+    "@fastify/static": "^10.1.5",
     "@fastify/websocket": "^11.0.2",
-    "adm-zip": "^0.5.16",
+    "adm-zip": "^0.6.1",
     "exiftool-vendored": "^39.0.0",
-    "fastify": "^5.3.3",
+    "fastify": "^5.12.5",
     "mime-types": "^2.1.35",
     "mupdf": "^1.28.1",
-    "zod": "^3.25.56"
+    "zod": "^3.25.56",
+    "yauzl": "^3.4.0"
   },
   "devDependencies": {
     "@types/adm-zip": "^0.5.7",
     "@types/mime-types": "^2.1.4",
     "tsx": "^4.19.4",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "@types/yauzl": "^3.4.0"
   }
 }

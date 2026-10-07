@@ -1,10 +1,10 @@
-import { createReadStream, createWriteStream } from "node:fs";
+import { constants as fsConstants, createReadStream, createWriteStream } from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { execFile, spawn } from "node:child_process";
-import { Readable, Transform } from "node:stream";
+import { PassThrough, Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import AdmZip from "adm-zip";
+import yauzl from "yauzl";
 import { z } from "zod";
 import type { Db } from "../db/db.js";
 import { row, rows } from "../db/db.js";
@@ -12,6 +12,7 @@ import { AppError } from "../lib/errors.js";
 import { assertNameAvailable, nfc } from "../lib/filename.js";
 import { id, now } from "../lib/ids.js";
 import { logger } from "../lib/logger.js";
+import { isZipDirectory, isZipSymlink, openZipArchive } from "../lib/zip-archive.js";
 import { ensureSshKey, sshCommand } from "../lib/ssh-key.js";
 import { zipStream, type ZipEntry } from "../lib/zip-stream.js";
 import { RcloneJobStopped } from "../storage/rclone-client.js";
@@ -29,12 +30,12 @@ import type { Actor, FileTask, Root } from "./types.js";
 
 const maxExtractEntries = 10_000;
 const maxExtractBytes = 1024 * 1024 * 1024 * 2;
+const maxZipManifestEntries = 100_000;
+const maxZipManifestBytes = 8 * 1024 * 1024;
 const progressFlushIntervalMs = 500;
 const progressFlushBytes = 1024 * 1024 * 16;
 const cancelCheckIntervalMs = 300;
 const downloadMaxAgeMs = 24 * 60 * 60 * 1000;
-const symlinkFileType = 0o120000;
-const unixFileTypeMask = 0o170000;
 
 const fileRefSchema = z.object({
   rootSlug: z.string().min(1),
@@ -78,6 +79,11 @@ export const syncOptionsSchema = z.object({
 
 export type SyncEndpoint = z.infer<typeof syncEndpointSchema>;
 export type SyncSpec = { jobId?: string; name: string; source: SyncEndpoint; destination: SyncEndpoint; options: z.infer<typeof syncOptionsSchema> };
+
+type ZipPathRef = { rootSlug: string; path: string };
+type ZipSourcesResult = { sources: ZipPathRef[]; includedPaths: ZipPathRef[] };
+type PlannedZipEntry = { entry: ZipEntry; safe: SafePath; logicalPath: string; absolutePath?: string };
+type PlannedZipSource = { safe: SafePath; entries: PlannedZipEntry[] };
 
 /** Thrown inside a running task once its row is no longer `running`. */
 class TaskCancelledError extends Error {}
@@ -444,6 +450,7 @@ export class TaskService {
       if (move) this.requireAny(actor, ["move", "delete"], safeSource.root, safeSource.logicalPath);
       else this.permissions.require(actor, "read", safeSource.root, safeSource.logicalPath);
       await assertNoSymlinksDeep(safeSource.absolutePath);
+      if (!move) await this.requireReadableTree(actor, safeSource);
       const stats = await collectPathStats(safeSource.absolutePath);
       totalBytes += stats.bytes;
       const target = path.join(dest.absolutePath, path.basename(safeSource.absolutePath));
@@ -466,16 +473,27 @@ export class TaskService {
         await copyTree(safeSource.absolutePath, target, (processedBytes) => this.bumpProcessedBytes(task.id, processedBytes));
       }
       if (move) {
-        this.preferences.moved(safeSource.root.id, safeSource.logicalPath, dest.root.id, path.posix.join(dest.logicalPath, path.basename(target)));
-        this.audit.write({
-          actorType: "user",
-          actorId: actor.id,
-          action: "move",
-          rootId: safeSource.root.id,
-          path: safeSource.logicalPath,
-          target: { rootSlug: destination.rootSlug, path: path.posix.join(destination.path, path.basename(safeSource.logicalPath)) },
-          result: "success"
-        });
+        const movedTo = path.posix.join(dest.logicalPath, path.basename(target));
+        try {
+          // The rules written for a path go where it goes, or a move would leave its denies behind.
+          this.permissions.rebasePathRules(safeSource.root.id, safeSource.logicalPath, dest.root.id, movedTo, () => {
+            this.preferences.moved(safeSource.root.id, safeSource.logicalPath, dest.root.id, movedTo);
+            this.audit.write({
+              actorType: "user",
+              actorId: actor.id,
+              action: "move",
+              rootId: safeSource.root.id,
+              path: safeSource.logicalPath,
+              target: { rootSlug: destination.rootSlug, path: path.posix.join(destination.path, path.basename(safeSource.logicalPath)) },
+              result: "success"
+            });
+          });
+        } catch (error) {
+          await movePath(target, safeSource.absolutePath, () => undefined).catch((rollbackError: unknown) => {
+            logger.error("move could not be undone after its permission rules failed to follow it", { error: rollbackError instanceof Error ? rollbackError.message : String(rollbackError) });
+          });
+          throw error;
+        }
       } else {
         this.audit.write({
           actorType: "user",
@@ -505,6 +523,10 @@ export class TaskService {
       this.assertNotFixed(dest, this.storage.name(source));
       assertNotIntoItself(source, dest);
       const directory = (await this.storage.stat(source)).isDirectory();
+      if (!move) {
+        if (!isRemote(source.root)) await assertNoSymlinksDeep(source.absolutePath);
+        await this.requireReadableTree(actor, source);
+      }
       const name = this.storage.name(source);
       if (names.has(nfc(name))) throw new AppError(409, "Multiple sources resolve to the same target", "TARGET_COLLISION");
       names.add(nfc(name));
@@ -546,18 +568,43 @@ export class TaskService {
         }
         throw transferFailure(error);
       }
-      if (move) this.preferences.moved(source.root.id, source.logicalPath, dest.root.id, path.posix.join(dest.logicalPath, name));
-      this.audit.write({
+      const movedTo = path.posix.join(dest.logicalPath, name);
+      const record = () => this.audit.write({
         actorType: "user",
         actorId: actor.id,
         action: move ? "move" : "copy",
         rootId: source.root.id,
         path: source.logicalPath,
-        target: { rootSlug: dest.root.slug, path: path.posix.join(dest.logicalPath, name) },
+        target: { rootSlug: dest.root.slug, path: movedTo },
         result: "success"
       });
+      if (move) {
+        // The rules written for a path go where it goes, or a move would leave its denies behind.
+        this.permissions.rebasePathRules(source.root.id, source.logicalPath, dest.root.id, movedTo, () => {
+          this.preferences.moved(source.root.id, source.logicalPath, dest.root.id, movedTo);
+          record();
+        });
+      } else record();
       await this.bumpProcessed(task.id);
     }
+  }
+
+  /** A copy lands where the rules of its source no longer reach, so everything in it has to be readable, not only its top. */
+  private async requireReadableTree(actor: Actor, source: SafePath): Promise<void> {
+    if (actor.role === "ADMIN") return;
+    if (isRemote(source.root)) {
+      if (!(await this.storage.stat(source)).isDirectory()) return;
+      for (const entry of await this.storage.remote.walk(source.root, source.logicalPath)) {
+        this.permissions.require(actor, "read", source.root, path.posix.join(source.logicalPath, entry.path));
+      }
+      return;
+    }
+    const walk = async (absolutePath: string, logicalPath: string): Promise<void> => {
+      this.permissions.require(actor, "read", source.root, logicalPath);
+      if (!(await fsp.lstat(absolutePath)).isDirectory()) return;
+      for (const child of await fsp.readdir(absolutePath)) await walk(path.join(absolutePath, child), path.posix.join(logicalPath, child));
+    };
+    await walk(source.absolutePath, source.logicalPath);
   }
 
   /** Refuses to touch one of a server's shares, or with `child` to put something beside them. */
@@ -702,7 +749,7 @@ export class TaskService {
       action: "compress",
       rootId: dest.root.id,
       path: dest.logicalPath,
-      target: { taskId: task.id, sources: zipped },
+      target: { taskId: task.id, sources: zipped.sources },
       result: "success"
     });
   }
@@ -712,99 +759,146 @@ export class TaskService {
     const target = this.downloadPath(task.id);
     await fsp.mkdir(path.dirname(target), { recursive: true });
     const zipped = await this.zipSources(task, actor, "download", target);
+    try {
+      await fsp.writeFile(this.downloadManifestPath(task.id), JSON.stringify(zipped.includedPaths), { flag: "wx", mode: 0o600 });
+    } catch (error) {
+      await fsp.rm(target, { force: true });
+      throw error;
+    }
     this.audit.write({
       actorType: "user",
       actorId: actor.id,
       action: "download_zip",
-      target: { taskId: task.id, sources: zipped },
+      target: { taskId: task.id, sources: zipped.sources },
       result: "success"
     });
   }
 
   /** `target` is a file on the server's disk, or the path of the archive in a location. */
-  private async zipSources(task: FileTask, actor: Actor, sourceAction: Action, target: string | SafePath): Promise<Array<{ rootSlug: string; path: string }>> {
+  private async zipSources(task: FileTask, actor: Actor, sourceAction: Action, target: string | SafePath): Promise<ZipSourcesResult> {
     const sources = JSON.parse(task.sources_json) as Array<{ rootSlug: string; path: string }>;
-    const zip = new AdmZip();
-    const operations = [];
-    let totalBytes = 0;
     const resolved: SafePath[] = [];
     for (const source of sources) {
       const safe = await this.paths.resolveExisting(source.rootSlug, source.path);
       this.permissions.require(actor, sourceAction, safe.root, safe.logicalPath);
       resolved.push(safe);
     }
-    if ((typeof target !== "string" && isRemote(target.root)) || resolved.some((safe) => isRemote(safe.root))) return this.zipSourcesStreamed(task, resolved, target);
-    const targetPath = typeof target === "string" ? target : target.absolutePath;
-    for (const safe of resolved) {
-      await assertNoSymlinksDeep(safe.absolutePath);
-      const stats = await collectPathStats(safe.absolutePath);
-      totalBytes += stats.bytes;
-      operations.push({ safe, bytes: stats.bytes });
-    }
-    await this.updateTotals(task.id, operations.length, totalBytes);
-
-    for (const { safe, bytes } of operations) {
-      await this.progress(task.id, safe.logicalPath);
-      const stat = await fsp.stat(safe.absolutePath);
-      if (stat.isDirectory()) zip.addLocalFolder(safe.absolutePath, path.basename(safe.absolutePath));
-      else zip.addLocalFile(safe.absolutePath);
-      await this.bumpProcessedBytes(task.id, bytes);
-      await this.bumpProcessed(task.id);
-    }
-    zip.writeZip(targetPath);
-    return operations.map(({ safe }) => ({ rootSlug: safe.root.slug, path: safe.logicalPath }));
+    return this.zipSourcesStreamed(task, resolved, target, actor, sourceAction);
   }
 
-  /** An archive with a remote file in it, or bound for a remote, is written as it is read: nothing is gathered on the server first. */
-  private async zipSourcesStreamed(task: FileTask, sources: SafePath[], target: string | SafePath): Promise<Array<{ rootSlug: string; path: string }>> {
-    const operations: SafePath[] = [];
+  /** Every node is checked before it enters the archive; file data stays streamed from its source. */
+  private async zipSourcesStreamed(task: FileTask, sources: SafePath[], target: string | SafePath, actor: Actor, sourceAction: Action): Promise<ZipSourcesResult> {
+    const operations: PlannedZipSource[] = [];
+    const includedPaths: ZipPathRef[] = [];
+    const taken = new Set<string>();
+    let manifestBytes = 2;
     let totalBytes = 0;
-    for (const safe of sources) {
-      const directory = (await this.storage.stat(safe)).isDirectory();
-      if (isRemote(safe.root)) totalBytes += (await this.storage.remote.size(safe.root, safe.logicalPath, directory)).bytes;
-      else {
-        await assertNoSymlinksDeep(safe.absolutePath);
-        totalBytes += (await collectPathStats(safe.absolutePath)).bytes;
+    const addEntry = (safe: SafePath, logicalPath: string, name: string, directory: boolean, size: number, mtime: Date, absolutePath?: string) => {
+      const ref = { rootSlug: safe.root.slug, path: logicalPath };
+      const refBytes = Buffer.byteLength(JSON.stringify(ref)) + (includedPaths.length === 0 ? 0 : 1);
+      manifestBytes += refBytes;
+      if (includedPaths.length >= maxZipManifestEntries || manifestBytes > maxZipManifestBytes) {
+        throw new AppError(413, "Zip contains too many entries", "ZIP_ENTRY_LIMIT");
       }
-      operations.push(safe);
-    }
-    await this.updateTotals(task.id, operations.length, totalBytes);
-
-    const storage = this.storage;
-    const count = (bytes: number) => this.bumpProcessedBytes(task.id, bytes);
-    const step = async (safe: SafePath) => {
-      await this.progress(task.id, safe.logicalPath);
+      includedPaths.push(ref);
+      const entry: ZipEntry = { name, open: async () => Readable.from([]), directory, size, mtime };
+      if (!directory) totalBytes += size;
+      return { entry, safe, logicalPath, absolutePath } satisfies PlannedZipEntry;
     };
-    const done = () => this.bumpProcessed(task.id);
-    async function* local(absolutePath: string, name: string): AsyncGenerator<ZipEntry> {
-      const stat = await fsp.lstat(absolutePath);
-      yield { name, open: () => createReadStream(absolutePath), directory: stat.isDirectory(), size: stat.size, mtime: stat.mtime };
-      if (!stat.isDirectory()) return count(stat.size);
-      for (const child of (await fsp.readdir(absolutePath)).sort()) yield* local(path.join(absolutePath, child), `${name}/${nfc(child)}`);
-    }
-    async function* remote(safe: SafePath, name: string): AsyncGenerator<ZipEntry> {
-      const stat = await storage.stat(safe);
-      yield { name, open: () => storage.remote.open(safe.root, safe.logicalPath), directory: stat.isDirectory(), size: stat.size, mtime: stat.mtime };
-      if (!stat.isDirectory()) return count(stat.size);
-      for (const entry of await storage.remote.walk(safe.root, safe.logicalPath)) {
-        const logicalPath = path.posix.join(safe.logicalPath, entry.path);
-        yield { name: `${name}/${nfc(entry.path)}`, open: () => storage.remote.open(safe.root, logicalPath), directory: entry.directory, size: entry.size, mtime: new Date(entry.mtimeMs) };
-        count(entry.size);
+
+    for (const safe of sources) {
+      this.permissions.require(actor, sourceAction, safe.root, safe.logicalPath);
+      const base = nfc(this.storage.name(safe));
+      let name = base;
+      for (let copy = 2; taken.has(name); copy += 1) name = `${path.parse(base).name} ${copy}${path.parse(base).ext}`;
+      taken.add(name);
+
+      const entries: PlannedZipEntry[] = [];
+      if (isRemote(safe.root)) {
+        const rootEntry = await this.storage.stat(safe);
+        if (!rootEntry) throw new AppError(404, "Path not found", "PATH_NOT_FOUND");
+        if (this.permissions.can(actor, sourceAction, safe.root, safe.logicalPath).allowed) {
+          entries.push(addEntry(safe, safe.logicalPath, name, rootEntry.isDirectory(), rootEntry.isDirectory() ? 0 : rootEntry.size, rootEntry.mtime));
+          if (rootEntry.isDirectory()) {
+            const denied: string[] = [];
+            for (const child of await this.storage.remote.walk(safe.root, safe.logicalPath)) {
+              const segments = safeRelativeZipPath(child.path);
+              if (!segments || segments.length === 0) continue;
+              const logicalPath = path.posix.join(safe.logicalPath, ...segments);
+              if (denied.some((prefix) => logicalPath.startsWith(prefix))) continue;
+              if (!this.permissions.can(actor, sourceAction, safe.root, logicalPath).allowed) {
+                if (child.directory) denied.push(`${logicalPath}/`);
+                continue;
+              }
+              entries.push(addEntry(
+                safe,
+                logicalPath,
+                `${name}/${segments.map(nfc).join("/")}`,
+                child.directory,
+                child.directory ? 0 : child.size,
+                new Date(child.mtimeMs)
+              ));
+            }
+          }
+        }
+      } else {
+        const collectLocal = async (absolutePath: string, logicalPath: string, entryName: string): Promise<void> => {
+          const stat = await fsp.lstat(absolutePath);
+          if (stat.isSymbolicLink() || (!stat.isFile() && !stat.isDirectory())) return;
+          if (!this.permissions.can(actor, sourceAction, safe.root, logicalPath).allowed) return;
+          const directory = stat.isDirectory();
+          entries.push(addEntry(safe, logicalPath, entryName, directory, directory ? 0 : stat.size, stat.mtime, absolutePath));
+          if (!directory) return;
+          for (const child of (await fsp.readdir(absolutePath)).sort()) {
+            if (!isSafeLogicalSegment(child)) continue;
+            const normalized = nfc(child);
+            await collectLocal(path.join(absolutePath, child), path.posix.join(logicalPath, normalized), `${entryName}/${normalized}`);
+          }
+        };
+        await collectLocal(safe.absolutePath, safe.logicalPath, name);
       }
+      operations.push({ safe, entries });
     }
+
+    await this.updateTotals(task.id, operations.length, totalBytes);
+    const service = this;
     async function* entries(): AsyncGenerator<ZipEntry> {
-      const taken = new Set<string>();
-      for (const safe of operations) {
-        await step(safe);
-        const base = nfc(storage.name(safe));
-        let name = base;
-        for (let copy = 2; taken.has(name); copy += 1) name = `${path.parse(base).name} ${copy}${path.parse(base).ext}`;
-        taken.add(name);
-        if (isRemote(safe.root)) yield* remote(safe, name);
-        else yield* local(safe.absolutePath, name);
-        await done();
+      for (const operation of operations) {
+        await service.progress(task.id, operation.safe.logicalPath);
+        for (const planned of operation.entries) {
+          service.permissions.require(actor, sourceAction, planned.safe.root, planned.logicalPath);
+          yield {
+            ...planned.entry,
+            open: async () => {
+              service.permissions.require(actor, sourceAction, planned.safe.root, planned.logicalPath);
+              let source: Readable;
+              if (planned.absolutePath) {
+                const stat = await fsp.lstat(planned.absolutePath);
+                if (stat.isSymbolicLink() || !stat.isFile()) throw new AppError(403, "Symlink paths are not allowed", "SYMLINK_FORBIDDEN");
+                const handle = await fsp.open(planned.absolutePath, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0));
+                if (!(await handle.stat()).isFile()) {
+                  await handle.close();
+                  throw new AppError(403, "Symlink paths are not allowed", "SYMLINK_FORBIDDEN");
+                }
+                source = handle.createReadStream();
+              } else {
+                const stat = await service.storage.remote.stat(planned.safe.root, planned.logicalPath);
+                if (!stat || stat.directory) throw new AppError(404, "Path not found", "PATH_NOT_FOUND");
+                source = await service.storage.remote.open(planned.safe.root, planned.logicalPath);
+              }
+              return Readable.from((async function* () {
+                for await (const chunk of source) {
+                  await service.bumpProcessedBytes(task.id, Buffer.byteLength(chunk));
+                  yield chunk;
+                }
+              })());
+            }
+          };
+        }
+        await service.bumpProcessed(task.id);
       }
     }
+
     const archive = Readable.from(zipStream(entries()));
     if (typeof target !== "string" && isRemote(target.root)) await this.storage.remote.write(target.root, target.logicalPath, archive);
     else {
@@ -816,20 +910,36 @@ export class TaskService {
         throw error;
       }
     }
-    return operations.map((safe) => ({ rootSlug: safe.root.slug, path: safe.logicalPath }));
+    return { sources: sources.map((safe) => ({ rootSlug: safe.root.slug, path: safe.logicalPath })), includedPaths };
   }
 
-  /** The finished archive of a `download_zip` task, re-checking that the actor may still download every source. */
+  /** The finished archive of a `download_zip` task, re-checking every path that entered it. */
   async openDownload(actor: Actor, taskId: string): Promise<{ path: string; size: number; fileName: string }> {
     const task = this.getForActor(actor, taskId);
     if (task.type !== "download_zip" || task.status !== "done") {
       throw new AppError(409, "Task has no download", "TASK_DOWNLOAD_NOT_READY");
     }
-    const sources = JSON.parse(task.sources_json) as Array<{ rootSlug: string; path: string }>;
-    for (const source of sources) {
-      const safe = await this.paths.resolveForCreate(source.rootSlug, source.path);
+    const manifestPath = this.downloadManifestPath(task.id);
+    let includedPaths: ZipPathRef[];
+    try {
+      const manifest = await readFileBounded(manifestPath, maxZipManifestBytes);
+      const parsed = JSON.parse(manifest.toString("utf8")) as unknown;
+      if (!Array.isArray(parsed) || parsed.length > maxZipManifestEntries) throw new Error("Manifest is invalid");
+      includedPaths = parsed.map((ref) => {
+        if (!ref || typeof ref !== "object" || typeof (ref as ZipPathRef).rootSlug !== "string" || typeof (ref as ZipPathRef).path !== "string") {
+          throw new Error("Manifest is invalid");
+        }
+        return { rootSlug: (ref as ZipPathRef).rootSlug, path: (ref as ZipPathRef).path };
+      });
+    } catch (error) {
+      if (isMissingPathError(error)) throw new AppError(410, "Download has expired", "TASK_DOWNLOAD_EXPIRED");
+      throw new AppError(410, "Download has expired", "TASK_DOWNLOAD_EXPIRED");
+    }
+    for (const included of includedPaths) {
+      const safe = await this.paths.resolveExisting(included.rootSlug, included.path);
       this.permissions.require(actor, "download", safe.root, safe.logicalPath);
     }
+    const sources = JSON.parse(task.sources_json) as Array<{ rootSlug: string; path: string }>;
     const filePath = this.downloadPath(task.id);
     let size: number;
     try {
@@ -858,6 +968,10 @@ export class TaskService {
     return path.join(this.appDataDir, "temp", "downloads", `${taskId}.zip`);
   }
 
+  private downloadManifestPath(taskId: string): string {
+    return path.join(this.appDataDir, "temp", "downloads", `${taskId}.manifest.json`);
+  }
+
   private async runExtract(task: FileTask, actor: Actor): Promise<void> {
     const sources = JSON.parse(task.sources_json) as Array<{ rootSlug: string; path: string }>;
     const destination = JSON.parse(task.destination ?? "{}") as { rootSlug: string; path: string };
@@ -866,27 +980,52 @@ export class TaskService {
     this.permissions.require(actor, "extract", dest.root, dest.logicalPath);
     let totalFiles = 0;
     let totalBytes = 0;
-    const archives: Array<{ entries: AdmZip.IZipEntry[] }> = [];
+    let totalEntries = 0;
+    const archives: Array<{ path: string }> = [];
     for (const source of sources) {
       const safe = await this.paths.resolveExisting(source.rootSlug, source.path);
       this.permissions.require(actor, "read", safe.root, safe.logicalPath);
-      // The whole archive has to be at hand to be read: one in a remote location is fetched first.
-      const zip = new AdmZip(await this.storage.localFile(safe, await this.storage.stat(safe)));
-      const entries = zip.getEntries();
-      const stats = this.validateExtractEntries(entries);
+      // Remote archives are staged to disk by storage.localFile; yauzl reads the local archive by ranges.
+      const archivePath = await this.storage.localFile(safe, await this.storage.stat(safe));
+      const zip = await openZipArchive(archivePath);
+      let stats: { totalFiles: number; totalBytes: number; totalEntries: number };
+      try {
+        stats = await this.validateExtractEntries(zip);
+      } catch (error) {
+        throw mapZipArchiveError(error);
+      } finally {
+        if (zip.isOpen) zip.close();
+      }
+      totalEntries += stats.totalEntries;
+      if (totalEntries > maxExtractEntries) throw new AppError(413, "Zip contains too many entries", "ZIP_ENTRY_LIMIT");
       totalFiles += stats.totalFiles;
       totalBytes += stats.totalBytes;
-      archives.push({ entries });
+      archives.push({ path: archivePath });
     }
     await this.updateTotals(task.id, Math.max(totalFiles, 1), totalBytes);
 
     const storedNames = new StoredNames();
+    let remainingBytes = maxExtractBytes;
     for (const archive of archives) {
-      for (const entry of archive.entries) {
-        await this.progress(task.id, entry.entryName);
-        const processedBytes = isRemote(dest.root) ? await this.extractEntryRemote(entry, dest) : await this.extractEntry(entry, dest.absolutePath, storedNames);
-        await this.bumpProcessedBytes(task.id, processedBytes);
-        await this.bumpProcessed(task.id);
+      const zip = await openZipArchive(archive.path);
+      try {
+        let entryCount = 0;
+        for await (const entry of zip.eachEntry()) {
+          entryCount += 1;
+          if (entryCount > maxExtractEntries) throw new AppError(413, "Zip contains too many entries", "ZIP_ENTRY_LIMIT");
+          await this.progress(task.id, entry.fileName);
+          if (isZipSymlink(entry)) throw new AppError(400, "Symlink zip entries are not allowed", "ZIP_SYMLINK_FORBIDDEN");
+          const processedBytes = isRemote(dest.root)
+            ? await this.extractEntryRemote(entry, zip, dest, remainingBytes)
+            : await this.extractEntry(entry, zip, dest.absolutePath, storedNames, remainingBytes);
+          remainingBytes -= processedBytes;
+          await this.bumpProcessedBytes(task.id, processedBytes);
+          await this.bumpProcessed(task.id);
+        }
+      } catch (error) {
+        throw mapZipArchiveError(error);
+      } finally {
+        if (zip.isOpen) zip.close();
       }
     }
     this.audit.write({
@@ -900,27 +1039,31 @@ export class TaskService {
     });
   }
 
-  private validateExtractEntries(entries: AdmZip.IZipEntry[]): { totalFiles: number; totalBytes: number } {
-    if (entries.length > maxExtractEntries) {
-      throw new AppError(413, "Zip contains too many entries", "ZIP_ENTRY_LIMIT");
-    }
+  private async validateExtractEntries(zip: yauzl.ZipFile): Promise<{ totalFiles: number; totalBytes: number; totalEntries: number }> {
     let totalBytes = 0;
     let totalFiles = 0;
-    for (const entry of entries) {
+    let totalEntries = 0;
+    for await (const entry of zip.eachEntry()) {
+      totalEntries += 1;
+      if (totalEntries > maxExtractEntries) throw new AppError(413, "Zip contains too many entries", "ZIP_ENTRY_LIMIT");
       this.safeZipEntrySegments(entry);
       if (isZipSymlink(entry)) throw new AppError(400, "Symlink zip entries are not allowed", "ZIP_SYMLINK_FORBIDDEN");
-      if (!entry.isDirectory) {
+      if (!entry.canDecodeFileData()) throw new AppError(400, "Unsupported zip entry", "INVALID_ZIP_ENTRY");
+      if (!isZipDirectory(entry)) {
+        if (!Number.isSafeInteger(entry.uncompressedSize) || entry.uncompressedSize < 0) {
+          throw new AppError(400, "Invalid zip entry size", "INVALID_ZIP_ENTRY");
+        }
         totalFiles += 1;
-        totalBytes += entry.header.size;
+        totalBytes += entry.uncompressedSize;
         if (totalBytes > maxExtractBytes) throw new AppError(413, "Zip is too large to extract", "ZIP_SIZE_LIMIT");
       }
     }
-    return { totalFiles: Math.max(totalFiles, 1), totalBytes };
+    return { totalFiles: Math.max(totalFiles, 1), totalBytes, totalEntries };
   }
 
-  private async extractEntry(entry: AdmZip.IZipEntry, destinationPath: string, storedNames: StoredNames): Promise<number> {
+  private async extractEntry(entry: yauzl.Entry, zip: yauzl.ZipFile, destinationPath: string, storedNames: StoredNames, remainingBytes: number): Promise<number> {
     const segments = this.safeZipEntrySegments(entry);
-    const fileName = entry.isDirectory ? undefined : segments.pop()!;
+    const fileName = isZipDirectory(entry) ? undefined : segments.pop()!;
     // Folders merge into the one already there, spelled as it is stored; a file never lands beside its NFC/NFD twin.
     const resolved: string[] = [];
     let folder = destinationPath;
@@ -936,7 +1079,7 @@ export class TaskService {
       resolved.push(fileName);
     }
     const target = safeJoin(destinationPath, resolved);
-    if (entry.isDirectory) {
+    if (isZipDirectory(entry)) {
       await assertNoExistingSymlinkSegments(destinationPath, target);
       await fsp.mkdir(target, { recursive: true });
       await assertRealPathInside(destinationPath, target);
@@ -946,31 +1089,63 @@ export class TaskService {
     await assertNoExistingSymlinkSegments(destinationPath, parent);
     await fsp.mkdir(parent, { recursive: true });
     await assertRealPathInside(destinationPath, parent);
-    const data = entry.getData();
-    if (data.length > maxExtractBytes) throw new AppError(413, "Zip is too large to extract", "ZIP_SIZE_LIMIT");
-    await fsp.writeFile(target, data, { flag: "wx", mode: 0o666 });
-    return data.length;
+    const limit = Math.min(remainingBytes, entry.uncompressedSize);
+    if (entry.uncompressedSize > remainingBytes) throw new AppError(413, "Zip is too large to extract", "ZIP_SIZE_LIMIT");
+    let written = 0;
+    const bounded = new Transform({
+      transform(chunk: Buffer, _encoding, done) {
+        written += chunk.length;
+        if (written > limit) done(new AppError(413, "Zip is too large to extract", "ZIP_SIZE_LIMIT"));
+        else done(null, chunk);
+      }
+    });
+    try {
+      await pipeline(await zip.openReadStreamPromise(entry), bounded, createWriteStream(target, { flags: "wx", mode: 0o666 }));
+    } catch (error) {
+      await fsp.rm(target, { force: true });
+      throw error;
+    }
+    return written;
   }
 
-  private async extractEntryRemote(entry: AdmZip.IZipEntry, dest: SafePath): Promise<number> {
+  private async extractEntryRemote(entry: yauzl.Entry, zip: yauzl.ZipFile, dest: SafePath, remainingBytes: number): Promise<number> {
     const segments = this.safeZipEntrySegments(entry);
     const target = path.posix.join(dest.logicalPath, ...segments);
     if (this.storage.remote.isTrash(dest.root, target)) throw new AppError(400, "Unsafe zip entry", "UNSAFE_ZIP_ENTRY");
     if (this.storage.remote.isFixed(dest.root, target)) throw sharesAreFixed();
-    if (entry.isDirectory) {
+    if (isZipDirectory(entry)) {
       await this.storage.remote.mkdir(dest.root, target);
       return 0;
     }
     if (await this.storage.remote.stat(dest.root, target)) throw new AppError(409, "Target already exists", "TARGET_EXISTS");
-    const data = entry.getData();
-    if (data.length > maxExtractBytes) throw new AppError(413, "Zip is too large to extract", "ZIP_SIZE_LIMIT");
-    await this.storage.remote.write(dest.root, target, Readable.from([data]));
-    return data.length;
+    const limit = Math.min(remainingBytes, entry.uncompressedSize);
+    if (entry.uncompressedSize > remainingBytes) throw new AppError(413, "Zip is too large to extract", "ZIP_SIZE_LIMIT");
+    let written = 0;
+    const bounded = new Transform({
+      transform(chunk: Buffer, _encoding, done) {
+        written += chunk.length;
+        if (written > limit) done(new AppError(413, "Zip is too large to extract", "ZIP_SIZE_LIMIT"));
+        else done(null, chunk);
+      }
+    });
+    const input = await zip.openReadStreamPromise(entry);
+    const output = new PassThrough();
+    const extraction = pipeline(input, bounded, output);
+    try {
+      await this.storage.remote.write(dest.root, target, output);
+      await extraction;
+    } catch (error) {
+      input.destroy();
+      output.destroy();
+      await extraction.catch(() => undefined);
+      throw error;
+    }
+    return written;
   }
 
-  private safeZipEntrySegments(entry: AdmZip.IZipEntry): string[] {
+  private safeZipEntrySegments(entry: yauzl.Entry): string[] {
     // Archives made on macOS carry NFD names; extracted files are new, so they are written in NFC.
-    const name = nfc(entry.entryName.replaceAll("\\", "/"));
+    const name = nfc(entry.fileName.replaceAll("\\", "/"));
     if (!name || name.includes("\0") || name.startsWith("/") || /^[A-Za-z]:\//.test(name)) {
       throw new AppError(400, "Unsafe zip entry", "UNSAFE_ZIP_ENTRY");
     }
@@ -1664,9 +1839,11 @@ function taskFailureMessage(error: unknown): string {
   return error instanceof AppError ? error.message : "Task failed";
 }
 
-function isZipSymlink(entry: AdmZip.IZipEntry): boolean {
-  const unixMode = (entry.header.attr >>> 16) & unixFileTypeMask;
-  return unixMode === symlinkFileType;
+function mapZipArchiveError(error: unknown): unknown {
+  if (error instanceof Error && /^(?:absolute path:|invalid relative path:|invalid characters in fileName:)/.test(error.message)) {
+    return new AppError(400, "Unsafe zip entry", "UNSAFE_ZIP_ENTRY");
+  }
+  return error;
 }
 
 function safeJoin(rootPath: string, segments: string[]): string {
@@ -1676,6 +1853,34 @@ function safeJoin(rootPath: string, segments: string[]): string {
     throw new AppError(400, "Unsafe zip entry", "UNSAFE_ZIP_ENTRY");
   }
   return target;
+}
+
+function isSafeLogicalSegment(segment: string): boolean {
+  return Boolean(segment) && segment !== "." && segment !== ".." && !segment.includes("\0") && !segment.includes("/") && !segment.includes("\\");
+}
+
+async function readFileBounded(filePath: string, maxBytes: number): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  const stream = createReadStream(filePath);
+  try {
+    for await (const chunk of stream) {
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      size += buffer.length;
+      if (size > maxBytes) throw new Error("File exceeds its size limit");
+      chunks.push(buffer);
+    }
+  } finally {
+    stream.destroy();
+  }
+  return Buffer.concat(chunks, size);
+}
+
+function safeRelativeZipPath(value: string): string[] | null {
+  if (!value || value.includes("\0") || value.includes("\\") || value.startsWith("/") || /^[A-Za-z]:/.test(value)) return null;
+  const segments = value.split("/").filter(Boolean);
+  if (segments.length === 0 || segments.some((segment) => !isSafeLogicalSegment(segment))) return null;
+  return segments;
 }
 
 async function assertRealPathInside(rootPath: string, targetPath: string): Promise<void> {

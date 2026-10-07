@@ -180,18 +180,16 @@ export class AuthService {
     const token = request.cookies.kago_session;
     if (!token) return null;
     const ts = now();
-    const user = row<User>(
-      this.db
-        .prepare(
-          `SELECT users.* FROM sessions
-          JOIN users ON users.id = sessions.user_id
-          WHERE sessions.token_hash = ? AND sessions.expires_at > ?`
-        )
-        .get(sha256(token), ts)
-    );
-    if (!user || user.disabled) return null;
+    const actor = this.actorForSessionAt(token, ts);
+    if (!actor) return null;
     this.db.prepare("UPDATE sessions SET last_seen_at = ? WHERE token_hash = ?").run(ts, sha256(token));
-    return this.actorFromUser(user);
+    return actor;
+  }
+
+  /** Checks a session without changing last_seen_at, for long-lived connections that revalidate on events. */
+  actorForSession(token: string | undefined): Actor | null {
+    if (!token) return null;
+    return this.actorForSessionAt(token, now());
   }
 
   requireActor(request: FastifyRequest): Actor {
@@ -228,5 +226,19 @@ export class AuthService {
       role: user.role,
       disabled: Boolean(user.disabled)
     };
+  }
+
+  private actorForSessionAt(token: string, ts: number): Actor | null {
+    const user = row<User>(
+      this.db
+        .prepare(
+          `SELECT users.* FROM sessions
+          JOIN users ON users.id = sessions.user_id
+          WHERE sessions.token_hash = ? AND sessions.expires_at > ?`
+        )
+        .get(sha256(token), ts)
+    );
+    if (!user || user.disabled) return null;
+    return this.actorFromUser(user);
   }
 }

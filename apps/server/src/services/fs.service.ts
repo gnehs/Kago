@@ -452,6 +452,32 @@ export class FsService {
     this.permissions.require(actor, "rename", source.root, source.logicalPath);
     const targetLogical = path.posix.join(path.posix.dirname(source.logicalPath), name);
     const target = await this.paths.resolveForCreate(rootSlug, targetLogical);
+    const rebaseRenameState = () => this.permissions.rebasePathRules(
+      source.root.id,
+      source.logicalPath,
+      target.root.id,
+      target.logicalPath,
+      () => {
+        this.preferences.moved(source.root.id, source.logicalPath, target.root.id, target.logicalPath);
+        this.audit.write({
+          actorType: "user",
+          actorId: actor.id,
+          action: "rename",
+          rootId: source.root.id,
+          path: source.logicalPath,
+          target: { to: target.logicalPath },
+          result: "success"
+        });
+      }
+    );
+    const renameResult = async () => {
+      // A rename grant can be independent from read. Avoid reporting a failure after the rename
+      // has committed just because the moved path remains unreadable under its preserved ACL.
+      if (this.permissions.can(actor, "read", target.root, target.logicalPath).allowed) {
+        return this.meta(actor, rootSlug, target.logicalPath);
+      }
+      return { rootSlug, path: target.logicalPath, name: nfc(path.posix.basename(target.logicalPath)) };
+    };
     if (this.storage.isRemote(source)) {
       if (source.logicalPath === "/") throw new AppError(400, "Invalid path", "INVALID_PATH");
       if (this.storage.remote.isFixed(source.root, source.logicalPath)) throw sharesAreFixed();
@@ -459,10 +485,25 @@ export class FsService {
       // Unlike on disk, a remote is not asked to tell a name from its own other spelling: a rename to the name it has is refused.
       await this.storage.assertNameAvailable(parent, this.storage.name(target), target.logicalPath === source.logicalPath ? undefined : this.storage.name(source));
       if (target.logicalPath !== source.logicalPath && (await this.storage.remote.stat(target.root, target.logicalPath))) throw new AppError(409, "Target already exists", "TARGET_EXISTS");
-      await this.storage.remote.move(source.root, source.logicalPath, target.logicalPath, (await this.storage.stat(source)).isDirectory());
-      this.preferences.moved(source.root.id, source.logicalPath, target.root.id, target.logicalPath);
-      this.audit.write({ actorType: "user", actorId: actor.id, action: "rename", rootId: source.root.id, path: source.logicalPath, target: { to: target.logicalPath }, result: "success" });
-      return this.meta(actor, rootSlug, target.logicalPath);
+      const directory = (await this.storage.stat(source)).isDirectory();
+      const moved = target.logicalPath !== source.logicalPath;
+      if (moved) await this.storage.remote.move(source.root, source.logicalPath, target.logicalPath, directory);
+      try {
+        rebaseRenameState();
+      } catch (error) {
+        if (moved) {
+          try {
+            if (await this.storage.remote.stat(source.root, source.logicalPath)) {
+              throw new Error("The original remote path is occupied");
+            }
+            await this.storage.remote.move(source.root, target.logicalPath, source.logicalPath, directory);
+          } catch {
+            throw new AppError(500, "Permission update failed and the remote rename could not be rolled back", "RENAME_ROLLBACK_FAILED");
+          }
+        }
+        throw error;
+      }
+      return renameResult();
     }
     const sourceStat = await fsp.lstat(source.absolutePath);
     await assertNameAvailable(path.dirname(target.absolutePath), path.basename(target.absolutePath), path.basename(source.absolutePath));
@@ -472,17 +513,28 @@ export class FsService {
       throw new AppError(409, "Target already exists", "TARGET_EXISTS");
     }
     await fsp.rename(source.absolutePath, target.absolutePath);
-    this.preferences.moved(source.root.id, source.logicalPath, target.root.id, target.logicalPath);
-    this.audit.write({
-      actorType: "user",
-      actorId: actor.id,
-      action: "rename",
-      rootId: source.root.id,
-      path: source.logicalPath,
-      target: { to: target.logicalPath },
-      result: "success"
-    });
-    return this.meta(actor, rootSlug, target.logicalPath);
+    try {
+      rebaseRenameState();
+    } catch (error) {
+      try {
+        const movedEntry = await fsp.lstat(target.absolutePath);
+        if (movedEntry.dev !== sourceStat.dev || movedEntry.ino !== sourceStat.ino) {
+          throw new Error("The renamed path no longer refers to the source entry");
+        }
+        const sourceOccupant = await fsp.lstat(source.absolutePath).catch((sourceError: unknown) => {
+          if (isMissingFsEntry(sourceError)) return null;
+          throw sourceError;
+        });
+        if (sourceOccupant && (sourceOccupant.dev !== sourceStat.dev || sourceOccupant.ino !== sourceStat.ino)) {
+          throw new Error("The original path is occupied");
+        }
+        await fsp.rename(target.absolutePath, source.absolutePath);
+      } catch {
+        throw new AppError(500, "Permission update failed and the filesystem rename could not be rolled back", "RENAME_ROLLBACK_FAILED");
+      }
+      throw error;
+    }
+    return renameResult();
   }
 
   async upload(actor: Actor, rootSlug: string, parentPath: string, fileName: string, stream: NodeJS.ReadableStream) {
@@ -673,6 +725,10 @@ const folderIdentity = (dir: string) =>
     (stat) => `${stat.dev}:${stat.ino}`,
     () => null
   );
+
+function isMissingFsEntry(error: unknown): boolean {
+  return Boolean(error && typeof error === "object" && "code" in error && error.code === "ENOENT");
+}
 
 async function readTextExcerptFrom(stream: Readable): Promise<string | null> {
   const chunks: Buffer[] = [];

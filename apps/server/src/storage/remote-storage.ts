@@ -6,6 +6,8 @@ import type { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { Env } from "../config/env.js";
 import { AppError } from "../lib/errors.js";
+import { id } from "../lib/ids.js";
+import { logger } from "../lib/logger.js";
 import type { RootService } from "../services/root.service.js";
 import type { Root } from "../services/types.js";
 import { providerOf } from "./providers.js";
@@ -111,14 +113,77 @@ export class RemoteStorage {
     });
   }
 
-  /** Writes the stream as the file at `logicalPath`, replacing one that is there. A failed write leaves nothing behind. */
+  /** Writes to a sibling first, keeping an old file recoverable until the replacement has landed. */
   async write(root: Root, logicalPath: string, source: Readable): Promise<void> {
     const remote = this.rel(logicalPath);
+    const name = path.posix.basename(remote);
+    if (!remote || !name || name === "." || name === "..") throw new AppError(400, "Invalid path", "INVALID_PATH");
+
+    const fs = this.fs(root);
+    const directory = path.posix.dirname(remote) === "." ? "" : path.posix.dirname(remote);
+    const tempName = `.kago-write-${id("temp")}`;
+    const backupName = `.kago-write-${id("backup")}`;
+    const temp = path.posix.join(directory, tempName);
+    const backup = path.posix.join(directory, backupName);
+    const existing = await this.stat(root, logicalPath);
+    if (existing?.directory) throw new AppError(409, "A folder already exists at the target", "TARGET_EXISTS");
+
+    const remove = async (remotePath: string) => {
+      await this.client.call("operations/deletefile", { fs, remote: remotePath }).catch(() => undefined);
+    };
+    const copy = (from: string, to: string) =>
+      this.client.call("operations/copyfile", { srcFs: fs, srcRemote: from, dstFs: fs, dstRemote: to });
+    const move = (from: string, to: string) =>
+      this.client.call("operations/movefile", { srcFs: fs, srcRemote: from, dstFs: fs, dstRemote: to });
+
     try {
-      await this.client.upload(this.fs(root), path.posix.dirname(remote) === "." ? "" : path.posix.dirname(remote), path.posix.basename(remote), source);
+      await this.client.upload(fs, directory, tempName, source);
     } catch (error) {
-      await this.client.call("operations/deletefile", { fs: this.fs(root), remote }).catch(() => undefined);
+      await remove(temp);
       throw remoteFailure(error);
+    }
+
+    let hasBackup = false;
+    if (existing) {
+      try {
+        await copy(remote, backup);
+        const saved = await this.client.stat(fs, backup);
+        if (!saved || saved.IsDir || saved.Size !== existing.size) {
+          throw new AppError(502, "Could not keep a recovery copy of the remote file", "REMOTE_BACKUP_FAILED");
+        }
+        hasBackup = true;
+      } catch (error) {
+        await remove(temp);
+        await remove(backup);
+        throw remoteFailure(error);
+      }
+    }
+
+    try {
+      await move(temp, remote);
+    } catch (error) {
+      await remove(temp);
+      if (hasBackup) {
+        try {
+          // A failed move may have left a partial destination; the original is safe in `backup`.
+          await remove(remote);
+          await copy(backup, remote);
+          await remove(backup);
+        } catch (restoreError) {
+          // Keep the copy when a provider cannot restore the original at its old name.
+          logger.warn("remote write failed; a recovery copy remains in the remote location", {
+            error: restoreError instanceof Error ? restoreError.message : String(restoreError)
+          });
+          throw new AppError(502, "The write failed; the original file was kept in a recovery copy on the remote location", "REMOTE_WRITE_RECOVERY_REQUIRED");
+        }
+      }
+      throw remoteFailure(error);
+    }
+
+    if (hasBackup) {
+      await this.client.call("operations/deletefile", { fs, remote: backup }).catch((error: unknown) => {
+        logger.warn("remote write succeeded but its recovery copy could not be removed", error instanceof Error ? error.message : error);
+      });
     }
   }
 

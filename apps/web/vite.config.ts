@@ -36,6 +36,11 @@ function libassAssets(): Plugin {
 const pdfjsDir = path.dirname(createRequire(import.meta.url).resolve("pdfjs-dist/package.json"));
 const pdfjsFolders = ["cmaps", "standard_fonts", "wasm", "iccs"];
 const pdfjsTypes: Record<string, string> = { ".wasm": "application/wasm", ".js": "text/javascript" };
+const webRoot = path.resolve(__dirname);
+const slashPath = (value: string) => value.replaceAll(path.sep, "/");
+const privateServerPathPatterns = ["../server/data", "../server/app-data"].map(
+  (directory) => `${slashPath(path.resolve(webRoot, directory))}/**`
+);
 
 /**
  * pdf.js fetches character maps, fallback fonts and image decoders by name from a base URL,
@@ -77,7 +82,17 @@ export default defineConfig({
     include: ["@jellyfin/libass-wasm", "@base-ui/react/context-menu", "@base-ui/react/dialog", "@base-ui/react/menu", "@base-ui/react/popover", "@base-ui/react/tooltip"]
   },
   server: {
+    // Bind locally by default; --host or KAGO_VITE_HOST can opt into LAN access.
+    host: process.env.KAGO_VITE_HOST ?? "127.0.0.1",
     port: 5173,
+    fs: {
+      strict: true,
+      // Setting allow disables Vite's workspace-root auto-detection. Dependencies remain
+      // available through imports from this app, while sibling workspace files stay private.
+      allow: [webRoot],
+      // Keep Vite's built-in sensitive-file protections and also block server-owned data.
+      deny: [".env", ".env.*", "*.{crt,pem}", "**/.git/**", ...privateServerPathPatterns]
+    },
     proxy: {
       "/api": "http://localhost:8080",
       "^/s/": "http://localhost:8080",
@@ -86,5 +101,8 @@ export default defineConfig({
         ws: true
       }
     }
+  },
+  preview: {
+    host: process.env.KAGO_VITE_HOST ?? "127.0.0.1"
   }
 });

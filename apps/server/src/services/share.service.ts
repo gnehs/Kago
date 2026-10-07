@@ -47,6 +47,9 @@ export class ShareService {
     if (safe.root.readonly && input.mode === "upload_only") {
       throw new AppError(403, "Readonly roots cannot accept upload-only shares", "ROOT_READONLY");
     }
+    for (const action of shareAllowedActions(input.mode)) {
+      this.permissions.require(actor, action, safe.root, safe.logicalPath);
+    }
     const token = randomToken();
     const ts = now();
     const share = {
@@ -106,8 +109,12 @@ export class ShareService {
     return { ...this.publicShare(share), token };
   }
 
-  patch(actor: Actor, shareId: string, input: { disabled?: boolean }) {
+  async patch(actor: Actor, shareId: string, input: { disabled?: boolean }) {
     const existing = this.getForActor(actor, shareId);
+    if (input.disabled === false) {
+      const safe = await this.paths.resolveRootById(existing.root_id, existing.path);
+      this.requireCreatorPermissions(existing, safe);
+    }
     this.db
       .prepare("UPDATE share_links SET disabled = COALESCE(?, disabled), updated_at = ? WHERE id = ?")
       .run(input.disabled === undefined ? null : input.disabled ? 1 : 0, now(), shareId);
@@ -197,6 +204,7 @@ export class ShareService {
     if (!authenticated) return base;
 
     const safe = await this.paths.resolveRootById(share.root_id, share.path);
+    this.requireCreatorPermissions(share, safe);
     return {
       ...base,
       path: share.path,
@@ -238,6 +246,8 @@ export class ShareService {
     }
     const safe = await this.paths.resolveRootById(share.root_id, share.path);
     await this.assertModeMatchesTarget("download", safe);
+    this.requireCreatorPermissions(share, safe);
+    this.permissions.requireShareLink(share.id, "read", safe.root, safe.logicalPath);
     this.permissions.requireShareLink(share.id, "download", safe.root, safe.logicalPath);
     const updated = this.db
       .prepare(
@@ -267,6 +277,7 @@ export class ShareService {
     }
     const safe = await this.paths.resolveRootById(share.root_id, share.path);
     await this.assertModeMatchesTarget("view_only", safe);
+    this.requireCreatorPermissions(share, safe);
     this.permissions.requireShareLink(share.id, "read", safe.root, safe.logicalPath);
     return safe;
   }
@@ -278,6 +289,7 @@ export class ShareService {
     if (mode !== "upload_only") throw new AppError(403, "Upload is not allowed for this share", "SHARE_UPLOAD_FORBIDDEN");
     const safe = await this.paths.resolveRootById(share.root_id, share.path);
     await this.assertModeMatchesTarget("upload_only", safe);
+    this.requireCreatorPermissions(share, safe);
     this.permissions.requireShareLink(share.id, "upload", safe.root, safe.logicalPath);
     return { share, safe };
   }
@@ -293,6 +305,33 @@ export class ShareService {
 
   private accessTokenForShare(share: ResolvedShare): string {
     return sha256(`share-access:${share.id}:${share.password_hash ?? "none"}`);
+  }
+
+  private requireCreatorPermissions(share: ResolvedShare, safe: SafePath): void {
+    const creator = row<{
+      id: string;
+      email: string;
+      display_name: string;
+      role: Actor["role"];
+      disabled: number;
+    }>(
+      this.db
+        .prepare("SELECT id, email, display_name, role, disabled FROM users WHERE id = ?")
+        .get(share.created_by)
+    );
+    if (!creator) throw new AppError(403, "Share owner no longer has access", "SHARE_OWNER_ACCESS_REVOKED");
+
+    const actor: Actor = {
+      id: creator.id,
+      email: creator.email,
+      displayName: creator.display_name,
+      role: creator.role,
+      disabled: Boolean(creator.disabled)
+    };
+    const mode = (JSON.parse(share.permission_json) as { mode: "view_only" | "download" | "upload_only" }).mode;
+    for (const action of shareAllowedActions(mode)) {
+      this.permissions.require(actor, action, safe.root, safe.logicalPath);
+    }
   }
 
   private publicShare(share: ResolvedShare): PublicShareLink {

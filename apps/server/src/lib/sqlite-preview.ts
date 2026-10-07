@@ -1,90 +1,113 @@
+import { fork, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
-import { DatabaseSync } from "node:sqlite";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { AppError } from "./errors.js";
 
-const HEADER = "SQLite format 3\0";
-/** Counting rows walks the whole table on the server's only thread, so the largest databases go without a total. */
-const MAX_COUNTED_BYTES = 256 * 1024 * 1024;
-const MAX_CELL_CHARS = 2000;
+const MAX_CONCURRENT_SQLITE_PREVIEWS = 2;
+const SQLITE_PREVIEW_TIMEOUT_MS = 2500;
+const MAX_WORKER_OLD_SPACE_MB = 64;
 export const MAX_SQLITE_PAGE = 200;
 
 export type SqliteCell = string | number | null | { blob: number };
 export type SqliteTable = { name: string; type: "table" | "view"; columns: Array<{ name: string; type: string; pk: boolean; notNull: boolean }> };
+export type SqliteOverview = { tables: SqliteTable[] };
+export type SqlitePage = { columns: string[]; rows: SqliteCell[][]; offset: number; hasMore: boolean; total: number | null };
 
-/** The tables and views of a database file, with their columns. */
-export function sqliteOverview(file: string): { tables: SqliteTable[] } {
-  return withDatabase(file, (db) => ({ tables: listTables(db).map((table) => ({ ...table, columns: columnsOf(db, table.name) })) }));
+export type SqlitePreviewRequest =
+  | { kind: "overview"; file: string }
+  | { kind: "rows"; file: string; size: number; table: string; offset: number; limit: number };
+
+export type SqlitePreviewResponse =
+  | { ok: true; value: SqliteOverview | SqlitePage }
+  | { ok: false; statusCode: number; message: string; code: string };
+
+const workerJsPath = fileURLToPath(new URL("./sqlite-preview-worker.js", import.meta.url));
+const workerPath = fs.existsSync(workerJsPath) ? workerJsPath : workerJsPath.replace(/\.js$/, ".ts");
+const workers = new Set<ChildProcess>();
+
+// A child may still be evaluating a synchronous SQLite query when the server is shutting down.
+process.once("exit", () => {
+  for (const worker of workers) worker.kill("SIGKILL");
+});
+
+/** The tables and views of a database file. */
+export function sqliteOverview(file: string): Promise<SqliteOverview> {
+  return runInChild({ kind: "overview", file });
 }
 
-/** One page of a table in rowid order. `total` is null when the file is too large to count cheaply. */
-export function sqliteRows(file: string, size: number, table: string, offset: number, limit: number) {
-  return withDatabase(file, (db) => {
-    // The name is checked against the schema before it goes into a statement; identifiers cannot be bound.
-    if (!listTables(db).some((entry) => entry.name === table)) throw new AppError(404, "Table not found", "SQLITE_TABLE_NOT_FOUND");
-    const statement = db.prepare(`SELECT * FROM ${quote(table)} LIMIT ? OFFSET ?`);
-    statement.setReadBigInts(true);
-    // Arrays keep every column of a view that names two of them alike.
-    statement.setReturnArrays(true);
-    const page = statement.all(limit + 1, offset) as unknown as unknown[][];
-    const total = size <= MAX_COUNTED_BYTES ? Number((db.prepare(`SELECT COUNT(*) AS n FROM ${quote(table)}`).get() as { n: number }).n) : null;
-    return {
-      columns: statement.columns().map((column) => column.name),
-      rows: page.slice(0, limit).map((row) => row.map(cell)),
-      offset,
-      hasMore: page.length > limit,
-      total
-    };
+/** One page of a table or view. A view has no total because even counting its rows may run arbitrary work. */
+export function sqliteRows(file: string, size: number, table: string, offset: number, limit: number): Promise<SqlitePage> {
+  return runInChild({ kind: "rows", file, size, table, offset, limit });
+}
+
+function runInChild<T>(request: SqlitePreviewRequest): Promise<T> {
+  if (workers.size >= MAX_CONCURRENT_SQLITE_PREVIEWS) {
+    return Promise.reject(new AppError(503, "SQLite preview is busy; try again later", "SQLITE_PREVIEW_BUSY"));
+  }
+
+  let child: ChildProcess;
+  try {
+    child = fork(workerPath, [], {
+      execArgv: workerExecArgv(),
+      serialization: "advanced",
+      stdio: ["ignore", "ignore", "ignore", "ipc"]
+    });
+  } catch {
+    return Promise.reject(new AppError(422, "The database could not be read", "SQLITE_UNREADABLE"));
+  }
+
+  workers.add(child);
+  return new Promise<T>((resolve, reject) => {
+    let response: SqlitePreviewResponse | undefined;
+    let startError: Error | undefined;
+    let timedOut = false;
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGKILL");
+    }, SQLITE_PREVIEW_TIMEOUT_MS);
+
+    child.on("message", (message: SqlitePreviewResponse) => {
+      if (message && typeof message === "object" && "ok" in message) response = message;
+    });
+    child.once("error", (error) => {
+      startError = error;
+      child.kill("SIGKILL");
+    });
+    child.once("close", () => {
+      clearTimeout(timeout);
+      workers.delete(child);
+      if (timedOut) {
+        reject(new AppError(504, "SQLite preview timed out", "SQLITE_PREVIEW_TIMEOUT"));
+      } else if (response?.ok) {
+        resolve(response.value as T);
+      } else if (response && !response.ok) {
+        reject(new AppError(response.statusCode, response.message, response.code));
+      } else {
+        reject(startError ?? new AppError(422, "The database could not be read", "SQLITE_UNREADABLE"));
+      }
+    });
+
+    child.send(request, (error) => {
+      if (!error) return;
+      startError = error;
+      child.kill("SIGKILL");
+    });
   });
 }
 
-function withDatabase<T>(file: string, read: (db: DatabaseSync) => T): T {
-  const header = Buffer.alloc(HEADER.length);
-  const handle = fs.openSync(file, "r");
-  try {
-    fs.readSync(handle, header, 0, header.length, 0);
-  } finally {
-    fs.closeSync(handle);
+/** Keep the source TypeScript loader in development, while dropping parent-only flags such as --eval and --test. */
+function workerExecArgv(): string[] {
+  const args: string[] = [];
+  for (let index = 0; index < process.execArgv.length; index += 1) {
+    const arg = process.execArgv[index]!;
+    if (arg === "--require" || arg === "-r" || arg === "--import") {
+      const value = process.execArgv[index + 1];
+      if (value !== undefined) args.push(arg, value);
+      index += 1;
+    } else if (arg.startsWith("--require=") || arg.startsWith("--import=")) {
+      args.push(arg);
+    }
   }
-  if (header.toString("latin1") !== HEADER) throw new AppError(422, "Not a SQLite database", "NOT_SQLITE");
-
-  let db: DatabaseSync | undefined;
-  try {
-    // A database at rest is opened immutable so that looking at it leaves no -shm or journal beside the user's file.
-    // One with a write-ahead log is in use, and its latest rows are only visible through the log.
-    db = fs.existsSync(`${file}-wal`) ? new DatabaseSync(file, { readOnly: true }) : new DatabaseSync(`${pathToFileURL(file).href}?immutable=1`, { readOnly: true });
-    // The file is the user's, not ours: its views and triggers must not reach functions with side effects.
-    db.exec("PRAGMA trusted_schema = OFF; PRAGMA query_only = ON;");
-    return read(db);
-  } catch (error) {
-    if (error instanceof AppError) throw error;
-    throw new AppError(422, "The database could not be read", "SQLITE_UNREADABLE");
-  } finally {
-    db?.close();
-  }
+  args.push(`--max-old-space-size=${MAX_WORKER_OLD_SPACE_MB}`);
+  return args;
 }
-
-function listTables(db: DatabaseSync) {
-  return db.prepare("SELECT name, type FROM sqlite_schema WHERE type IN ('table', 'view') AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\' ORDER BY type, name").all() as Array<{ name: string; type: "table" | "view" }>;
-}
-
-function columnsOf(db: DatabaseSync, table: string): SqliteTable["columns"] {
-  try {
-    const columns = db.prepare('SELECT name, type, "notnull", pk FROM pragma_table_info(?)').all(table) as Array<{ name: string; type: string; notnull: number; pk: number }>;
-    return columns.map((column) => ({ name: column.name, type: column.type, pk: column.pk > 0, notNull: column.notnull > 0 }));
-  } catch {
-    // A virtual table whose module this build lacks still gets listed.
-    return [];
-  }
-}
-
-function cell(value: unknown): SqliteCell {
-  if (value === null || value === undefined) return null;
-  if (typeof value === "bigint") return Number.isSafeInteger(Number(value)) ? Number(value) : value.toString();
-  if (typeof value === "number") return value;
-  if (value instanceof Uint8Array) return { blob: value.byteLength };
-  const text = String(value);
-  return text.length > MAX_CELL_CHARS ? `${text.slice(0, MAX_CELL_CHARS)}…` : text;
-}
-
-const quote = (identifier: string) => `"${identifier.replaceAll('"', '""')}"`;
