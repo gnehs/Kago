@@ -31,9 +31,10 @@ type Timer = ReturnType<typeof setTimeout>;
 const FIT: View = { z: 1, x: 0, y: 0 };
 /** Space between one picture and the next while they slide past. */
 const GAP = 24;
-const SLIDE_MS = 300;
+/** A wheel that has been quiet this long has stopped: what comes next is another swipe, not the rest of this one. */
+const STREAM_GAP = 180;
+const SAMPLE_MS = 40;
 const EASE = "cubic-bezier(0.22, 1, 0.36, 1)";
-const SLIDE_TRANSITION = `transform ${SLIDE_MS}ms ${EASE}`;
 const ZOOM_TRANSITION = `transform 220ms ${EASE}`;
 /** How far past its limits a pinch may push the picture before it springs back. */
 const OVERSHOOT = { min: 0.5, max: 1.5 };
@@ -71,7 +72,29 @@ export function ImagePreviewWindow({ window }: { window: PreviewWindow }) {
   const [offset, setOffset] = useState({ path: item.path, x: 0 });
   const [animated, setAnimated] = useState(false);
   const [infoOpen, setInfoOpen] = useState(getImageInfoOpen);
-  const swipe = useRef({ x: 0, lockedUntil: 0, locked: false, last: 0, lastAt: 0 });
+  const [slideMs, setSlideMs] = useState(300);
+  const swipe = useRef({
+    x: 0,
+    /** What a swipe has moved before it is clear which way it is going. */
+    pendingX: 0,
+    pendingY: 0,
+    axis: null as "x" | "y" | null,
+    /** A swipe turns one page: once it has, the rest of it, momentum included, is ignored. */
+    locked: false,
+    lockedUntil: 0,
+    /** Whether what is arriving while locked has turned out to be another swipe. */
+    renewed: false,
+    rises: 0,
+    lastAt: 0,
+    /** Wheel events are too uneven to time one by one, so speed is taken over a few of them at a time. */
+    sampleX: 0,
+    sampleMs: 0,
+    /** Recent speed in pixels a millisecond, which the momentum of a swipe only ever falls below. */
+    pace: 0,
+    /** While locked: the fastest the swipe has been, and the slowest it has been since. */
+    peak: 0,
+    low: 0
+  });
   const timers = useRef<{ settle?: Timer; release?: Timer; commit?: Timer }>({});
   const pointers = useRef(new Map<number, Point>());
   const drag = useRef<{ mode: "pan" | "swipe"; start: Point; view: View } | null>(null);
@@ -149,12 +172,20 @@ export function ImagePreviewWindow({ window }: { window: PreviewWindow }) {
   function dragSwipe(x: number) {
     swipe.current.x = x;
     setAnimated(false);
-    setOffset({ path: item.path, x: (x < 0 ? next : previous) ? x : x * 0.2 });
+    // Against the end of the folder it stretches less the further it is pulled.
+    const stretch = box.w * 0.18;
+    setOffset({ path: item.path, x: (x < 0 ? next : previous) ? x : Math.sign(x) * stretch * (1 - Math.exp(-Math.abs(x) / (stretch * 4))) });
   }
 
-  function cancelSwipe() {
+  function endSwipe(lockFor = 0) {
     globalThis.clearTimeout(timers.current.release);
-    swipe.current.x = 0;
+    const state = swipe.current;
+    swipe.current = { ...state, x: 0, pendingX: 0, pendingY: 0, axis: lockFor ? state.axis : null, locked: lockFor > 0 || state.locked, lockedUntil: lockFor ? performance.now() + lockFor : state.lockedUntil, renewed: lockFor ? false : state.renewed, rises: 0, peak: state.pace, low: state.pace };
+  }
+
+  function cancelSwipe(lockFor = 0) {
+    endSwipe(lockFor);
+    setSlideMs(300);
     setAnimated(true);
     setOffset({ path: item.path, x: 0 });
   }
@@ -164,14 +195,16 @@ export function ImagePreviewWindow({ window }: { window: PreviewWindow }) {
     const forward = swipe.current.x < 0;
     const target = forward ? next : previous;
     if (!target) return cancelSwipe();
-    globalThis.clearTimeout(timers.current.release);
-    swipe.current = { ...swipe.current, x: 0, locked: true, lockedUntil: performance.now() + SLIDE_MS + 50 };
+    // The further there is left to go, the longer it takes, so a page that is nearly over does not crawl.
+    const duration = Math.round(clamp((span - Math.abs(swipe.current.x)) * 0.6, 200, 360));
+    endSwipe(duration + 60);
+    setSlideMs(duration);
     setAnimated(true);
     setOffset({ path: item.path, x: forward ? -span : span });
     timers.current.commit = globalThis.setTimeout(() => {
       timers.current.commit = undefined;
       store().setPreviewItem(window.id, target);
-    }, SLIDE_MS);
+    }, duration);
   }
 
   function releaseSwipe(threshold: number) {
@@ -182,7 +215,6 @@ export function ImagePreviewWindow({ window }: { window: PreviewWindow }) {
   function onWheel(event: WheelEvent) {
     // The browser would zoom the page on a pinch and go back in history on a swipe.
     event.preventDefault();
-    if (timers.current.commit !== undefined) return;
     const unit = event.deltaMode === 1 ? 16 : 1;
     const dx = event.deltaX * unit;
     const dy = event.deltaY * unit;
@@ -190,6 +222,7 @@ export function ImagePreviewWindow({ window }: { window: PreviewWindow }) {
 
     // A trackpad pinch arrives as a wheel with the control key held, which is also how a mouse wheel zooms.
     if (event.ctrlKey) {
+      if (timers.current.commit !== undefined) return;
       if (swipe.current.x !== 0) cancelSwipe();
       const step = clamp(-dy * 0.01, -0.5, 0.5);
       const beyond = (current.z <= 1 && step < 0) || (current.z >= maxZoom && step > 0);
@@ -208,36 +241,72 @@ export function ImagePreviewWindow({ window }: { window: PreviewWindow }) {
     }
 
     const state = swipe.current;
-    const now = performance.now();
-    const speed = Math.abs(dx);
-    if (state.locked) {
-      // What follows a swipe that turned the page is its momentum dying away; a new swipe pushes harder than that tail.
-      const fresh = now > state.lockedUntil && (now - state.lastAt > 80 || (speed > state.last * 1.6 && speed > 6));
-      state.last = speed;
-      state.lastAt = now;
-      if (!fresh) return;
-      state.locked = false;
-    }
-    state.last = speed;
+    // When the fingers moved, not when the page got round to hearing of it: a busy page hands events over late and in bunches.
+    const now = event.timeStamp;
+    const elapsed = now - state.lastAt;
     state.lastAt = now;
-    if (state.x === 0 && Math.abs(dx) <= Math.abs(dy)) return;
+    let sample: number | null = null;
+    if (elapsed > STREAM_GAP) {
+      state.axis = null;
+      state.pendingX = 0;
+      state.pendingY = 0;
+      state.renewed = true;
+      state.rises = 0;
+      state.sampleX = dx;
+      state.sampleMs = 0;
+      state.pace = 0;
+    } else {
+      state.sampleX += dx;
+      state.sampleMs += elapsed;
+      if (state.sampleMs >= SAMPLE_MS) {
+        sample = Math.abs(state.sampleX) / state.sampleMs;
+        state.sampleX = 0;
+        state.sampleMs = 0;
+      }
+    }
+    if (state.locked) {
+      if (sample !== null) {
+        // The swipe that turned the page may still be speeding up, and then its momentum only slows down.
+        // Another swipe is one that picks up again after that, and keeps picking up.
+        const rising = state.low < state.peak * 0.6 && sample > state.low * 1.8 && sample > 0.8;
+        state.rises = rising ? state.rises + 1 : 0;
+        if (state.rises >= 2) state.renewed = true;
+        if (!rising && sample > state.peak) state.peak = state.low = sample;
+        else if (!rising) state.low = Math.min(state.low, sample);
+      }
+      if (!state.renewed || performance.now() < state.lockedUntil) return;
+      state.locked = false;
+      state.axis = null;
+      state.pendingX = 0;
+      state.pendingY = 0;
+      state.pace = 0;
+    } else if (sample !== null) state.pace = sample;
 
-    const x = state.x - dx;
+    let moved = dx;
+    if (!state.axis) {
+      // A swipe is sideways or it is not, from its first few pixels on: one that started up or down never turns a page.
+      state.pendingX += dx;
+      state.pendingY += Math.abs(dy);
+      if (Math.abs(state.pendingX) < 6 && state.pendingY < 6) return;
+      state.axis = Math.abs(state.pendingX) > state.pendingY ? "x" : "y";
+      moved = state.pendingX;
+    }
+    if (state.axis === "y") return;
+
+    const x = state.x - moved;
     dragSwipe(x);
     globalThis.clearTimeout(timers.current.release);
     const target = x < 0 ? next : previous;
+    const onward = Math.sign(dx) === -Math.sign(x);
     if (!target) {
       // Nothing that way: give a little, then spring back without waiting for the momentum to run out.
-      if (Math.abs(x) > 240) {
-        state.locked = true;
-        state.lockedUntil = now + SLIDE_MS;
-        cancelSwipe();
-      } else timers.current.release = globalThis.setTimeout(cancelSwipe, 90);
-    } else if (Math.abs(x) > box.w / 2 || (Math.abs(x) > 48 && speed > 30 && Math.sign(dx) === -Math.sign(x))) {
+      if (Math.abs(x) > 320) cancelSwipe(300);
+      else timers.current.release = globalThis.setTimeout(() => cancelSwipe(), 100);
+    } else if (Math.abs(x) > box.w / 2 || (Math.abs(x) > 40 && onward && state.pace > 1.2)) {
       // Past halfway, or flicked: the page turns without waiting for the rest of the swipe.
       commitSwipe();
     } else {
-      timers.current.release = globalThis.setTimeout(() => releaseSwipe(Math.min(box.w / 4, 160)), 90);
+      timers.current.release = globalThis.setTimeout(() => releaseSwipe(Math.min(box.w / 4, 160)), 100);
     }
   }
 
@@ -410,7 +479,7 @@ export function ImagePreviewWindow({ window }: { window: PreviewWindow }) {
               name={entry.name}
               source={sourceOf(rootSlug, entry)}
               current={index === 0}
-              style={{ transform: `translate3d(${index * span + shift}px, 0, 0)`, transition: animated ? SLIDE_TRANSITION : undefined }}
+              style={{ transform: `translate3d(${index * span + shift}px, 0, 0)`, transition: animated ? `transform ${slideMs}ms ${EASE}` : undefined }}
               imageStyle={index === 0 ? { transform: `translate3d(${view.x}px, ${view.y}px, 0) scale(${view.z})`, transition: animated ? ZOOM_TRANSITION : undefined } : undefined}
               onSize={(size) => setSizes((known) => ({ ...known, [keyOf(entry)]: size }))}
               onDownload={download}
@@ -483,6 +552,7 @@ function Slide({
             alt={name}
             src={source}
             draggable={false}
+            decoding="async"
             className="relative max-h-full max-w-full object-contain"
             style={imageStyle}
             onLoad={(event) => {
