@@ -74,4 +74,16 @@ export function resetFolderView(rootSlug: string, path: string) {
   return send(`/api/folder-views?${new URLSearchParams({ rootSlug, path }).toString()}`, { method: "DELETE" });
 }
 
+/** Where the desktop background set at `version` is read from. */
+export const wallpaperUrl = (version: number) => `/api/wallpaper?v=${version}`;
+
+/**
+ * Makes a picture the desktop background, or with nothing goes back to the plain desktop. The server keeps a copy of
+ * its own, which takes it a moment to make; unlike the other changes this one is not shown ahead of its answer.
+ */
+export async function setWallpaper(picture: { rootSlug: string; path: string } | null) {
+  const remote = await api<AccountPreferences>("/api/wallpaper", picture ? { method: "POST", body: JSON.stringify(picture) } : { method: "DELETE" });
+  if (pending === 0) adopt(remote);
+}
+
 onPrefChange(saveSettings);

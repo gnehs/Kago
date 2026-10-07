@@ -51,7 +51,12 @@ export function useShortcuts({ enabled, onOpenPalette }: { enabled: boolean; onO
 
       if (closes) {
         event.preventDefault();
-        void requestCloseWindow(active.id);
+        // With several tabs open, closing takes them one at a time, as a browser does.
+        if ((active.tabs?.length ?? 0) > 1 && active.activeTabId) store.closeTab(active.id, active.activeTabId);
+        else void requestCloseWindow(active.id);
+      } else if (altKey === "KeyT") {
+        event.preventDefault();
+        store.openTab(active.id, active);
       } else if (opensNew) {
         event.preventDefault();
         store.openWindow({ rootSlug: active.rootSlug, logicalPath: active.logicalPath, title: active.title });
@@ -79,6 +84,9 @@ export function useShortcuts({ enabled, onOpenPalette }: { enabled: boolean; onO
       } else if (event.key === "Backspace" && active.logicalPath !== "/") {
         event.preventDefault();
         store.updateWindow(active.id, { logicalPath: parentPath(active.logicalPath), selectedItems: [] });
+      } else if (view?.columns && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
+        event.preventDefault();
+        view.columns[event.key === "ArrowLeft" ? "left" : "right"]();
       } else if (view?.tree && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
         // In a tree, right opens the selected folder and left closes it, or steps out to the folder it is in.
         const item = items.find((entry) => entry.path === active.selectedItems.at(-1));

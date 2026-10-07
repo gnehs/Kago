@@ -60,7 +60,7 @@ export function DesktopIcons({ roots, isAdmin }: { roots: Root[]; isAdmin: boole
 }
 
 /** Which of the eight location colours a location wears. It follows from the slug, so it stays the same everywhere and every time. */
-function locationTone(slug: string) {
+export function locationTone(slug: string) {
   let sum = 0;
   for (const character of slug) sum += character.codePointAt(0)!;
   return (sum % 8) + 1;
@@ -106,7 +106,8 @@ function DesktopIcon({ icon, label, tone, readonly, ...props }: React.ComponentP
           </span>
         ) : null}
       </span>
-      <span className="line-clamp-2 max-w-full text-center leading-tight break-words">{label}</span>
+      {/* Over a picture the name has to carry its own contrast. */}
+      <span className="line-clamp-2 max-w-full text-center leading-tight break-words group-data-[wallpaper]/canvas:text-white group-data-[wallpaper]/canvas:[text-shadow:0_1px_3px_rgb(0_0_0/0.85)]">{label}</span>
     </button>
   );
 }

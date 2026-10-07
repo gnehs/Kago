@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { FileItem, FileWindow, Root, WorkspaceState } from "../types/kago";
+import type { FileItem, FileTab, FileWindow, Root, WorkspaceState } from "../types/kago";
 import { ghostWindowOut } from "../lib/motion";
 import { baseName } from "../lib/paths";
 import { randomId } from "../lib/utils";
@@ -47,6 +47,11 @@ type WorkspaceStore = WorkspaceState & {
   refitWindows: () => void;
   openRoot: (root: Root) => void;
   openWindow: (partial: Pick<FileWindow, "rootSlug" | "logicalPath" | "title">) => void;
+  /** Opens a folder in a tab of its own, beside the ones the window already has, and shows it. */
+  openTab: (id: string, folder: Pick<FileTab, "rootSlug" | "logicalPath">) => void;
+  /** Closes a tab; the one beside it is shown in its place. The last tab of a window stays. */
+  closeTab: (id: string, tabId: string) => void;
+  activateTab: (id: string, tabId: string) => void;
   closeWindow: (id: string) => void;
   focusWindow: (id: string) => void;
   updateWindow: (id: string, patch: Partial<FileWindow>) => void;
@@ -58,6 +63,7 @@ type WorkspaceStore = WorkspaceState & {
 };
 
 export const MAX_WINDOWS = 12;
+export const MAX_TABS = 12;
 export const MIN_WINDOW_WIDTH = 360;
 export const MIN_WINDOW_HEIGHT = 280;
 /** How much of a window must stay reachable inside the canvas. */
@@ -150,7 +156,27 @@ function restack(stack: Stack, frontId?: string | null, focusId: string | null |
   return { windows: keep(stack.windows), appWindows: keep(stack.appWindows), previewWindows: keep(stack.previewWindows) };
 }
 
-const titleFromPath = (logicalPath: string, fallback: string) => (logicalPath === "/" ? fallback : baseName(logicalPath) || fallback);
+/** What each location is called. The store names windows after folders, and the top of a location goes by the location's name. */
+let rootNames = new Map<string, string>();
+
+export function setRootNames(roots: Root[]) {
+  rootNames = new Map(roots.map((root) => [root.slug, root.name]));
+}
+
+/** The name a folder goes by on a title bar or a tab. */
+export const folderTitle = (rootSlug: string, logicalPath: string) => (logicalPath === "/" ? "" : baseName(logicalPath)) || rootNames.get(rootSlug) || rootSlug;
+
+const newTab = (folder: Pick<FileTab, "rootSlug" | "logicalPath">): FileTab => ({ id: `tab_${randomId()}`, rootSlug: folder.rootSlug, logicalPath: folder.logicalPath });
+
+/** Every window has at least the tab it is showing; one saved before there were tabs is given it here. */
+function withTabs(window: FileWindow): FileWindow {
+  if (window.tabs?.length && window.tabs.some((tab) => tab.id === window.activeTabId)) return window;
+  const tab = newTab(window);
+  return { ...window, tabs: [tab], activeTabId: tab.id };
+}
+
+/** Turns a window to one of its tabs. Nothing stays selected: the selection belonged to the folder it leaves. */
+const showTab = (window: FileWindow, tab: FileTab): FileWindow => ({ ...window, activeTabId: tab.id, rootSlug: tab.rootSlug, logicalPath: tab.logicalPath, title: folderTitle(tab.rootSlug, tab.logicalPath), selectedItems: [], updatedAt: ts() });
 
 const closeGuards = new Map<string, () => Promise<boolean>>();
 
@@ -193,7 +219,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       // A remote update only describes file windows; an app or preview window keeps focus, and stays in front, if it had it.
       const appFocused = [...state.appWindows, ...state.previewWindows].some((window) => window.id === state.activeWindowId);
       const activeWindowId = appFocused ? state.activeWindowId : workspace.activeWindowId;
-      return { ...workspace, activeWindowId, ...restack({ windows: workspace.windows.map(fitGeometry), appWindows: state.appWindows, previewWindows: state.previewWindows }, appFocused ? activeWindowId : undefined, activeWindowId), hydrated: true };
+      return { ...workspace, activeWindowId, ...restack({ windows: workspace.windows.map((window) => withTabs(fitGeometry(window))), appWindows: state.appWindows, previewWindows: state.previewWindows }, appFocused ? activeWindowId : undefined, activeWindowId), hydrated: true };
     }),
   refitWindows: () =>
     set((state) => {
@@ -226,9 +252,12 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     }
     set((state) => {
       const id = `win_${randomId()}`;
+      const tab = newTab(partial);
       const window: FileWindow = {
         id,
         ...partial,
+        tabs: [tab],
+        activeTabId: tab.id,
         ...initialGeometry(frames(state).length),
         zIndex: topZ(state) + 1,
         minimized: false,
@@ -299,13 +328,49 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       if (state.activeWindowId === id && current.focused && current.zIndex === topZ(state)) return state;
       return { ...restack(state, id), activeWindowId: id };
     }),
+  openTab: (id, folder) =>
+    set((state) => ({
+      windows: state.windows.map((window) => {
+        if (window.id !== id) return window;
+        const tabs = window.tabs ?? [];
+        if (tabs.length >= MAX_TABS) {
+          toast(t("That’s the most tabs a window can have"), "error");
+          return window;
+        }
+        const tab = newTab(folder);
+        // A new tab opens next to the one it was opened from.
+        const at = tabs.findIndex((entry) => entry.id === window.activeTabId) + 1;
+        return showTab({ ...window, tabs: [...tabs.slice(0, at), tab, ...tabs.slice(at)] }, tab);
+      })
+    })),
+  closeTab: (id, tabId) =>
+    set((state) => ({
+      windows: state.windows.map((window) => {
+        const tabs = window.tabs ?? [];
+        const index = tabs.findIndex((tab) => tab.id === tabId);
+        if (window.id !== id || index === -1 || tabs.length < 2) return window;
+        const rest = tabs.filter((tab) => tab.id !== tabId);
+        return window.activeTabId === tabId ? showTab({ ...window, tabs: rest }, rest[Math.min(index, rest.length - 1)]!) : { ...window, tabs: rest, updatedAt: ts() };
+      })
+    })),
+  activateTab: (id, tabId) =>
+    set((state) => ({
+      windows: state.windows.map((window) => {
+        const tab = window.id === id && window.activeTabId !== tabId ? window.tabs?.find((entry) => entry.id === tabId) : undefined;
+        return tab ? showTab(window, tab) : window;
+      })
+    })),
   updateWindow: (id, patch) =>
     set((state) => ({
-      windows: state.windows.map((window) =>
-        window.id === id
-          ? { ...window, ...patch, title: patch.logicalPath ? titleFromPath(patch.logicalPath, window.rootSlug) : patch.title ?? window.title, updatedAt: ts() }
-          : window
-      ),
+      windows: state.windows.map((window) => {
+        if (window.id !== id) return window;
+        const next = { ...window, ...patch, updatedAt: ts() };
+        if (!patch.logicalPath && !patch.rootSlug) return next;
+        // Going somewhere else takes the tab along, and the window is named after where it now is.
+        next.title = folderTitle(next.rootSlug, next.logicalPath);
+        next.tabs = next.tabs?.map((tab) => (tab.id === next.activeTabId ? { ...tab, rootSlug: next.rootSlug, logicalPath: next.logicalPath } : tab));
+        return next;
+      }),
       // App and preview windows only take frame changes (move, resize, minimize, maximize).
       appWindows: state.appWindows.some((window) => window.id === id)
         ? state.appWindows.map((window) => (window.id === id ? { ...window, ...(patch as Partial<WindowFrame>) } : window))

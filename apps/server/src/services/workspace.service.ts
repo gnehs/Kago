@@ -22,6 +22,10 @@ const fileWindowSchema = z.object({
   selectedItems: z.array(z.string()).default([]),
   scrollTop: z.number().optional(),
   inspectorOpen: z.boolean().optional(),
+  sidebarOpen: z.boolean().optional(),
+  /** The folders a window holds open; the active one repeats the window's own location. */
+  tabs: z.array(z.object({ id: z.string().min(1).max(64), rootSlug: z.string().regex(/^[a-z0-9_-]+$/), logicalPath: z.string().min(1) })).max(12).optional(),
+  activeTabId: z.string().max(64).optional(),
   createdAt: z.number().optional(),
   updatedAt: z.number().optional()
 });
@@ -84,6 +88,7 @@ export class WorkspaceService {
       return {
         ...window,
         logicalPath: this.paths.normalizeLogicalPath(window.logicalPath),
+        tabs: window.tabs?.map((tab) => ({ ...tab, logicalPath: this.paths.normalizeLogicalPath(tab.logicalPath) })),
         selectedItems: window.selectedItems.map((item) => this.paths.normalizeLogicalPath(item))
       };
     });

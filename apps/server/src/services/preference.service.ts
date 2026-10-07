@@ -50,7 +50,8 @@ export const folderViewSchema = z.object({
 
 export const folderViewQuerySchema = folderViewSchema.pick({ rootSlug: true, path: true });
 
-type Settings = z.infer<typeof settingsSchema>;
+/** A request cannot name the desktop background: it is set by handing over a picture, and only its time is kept here. */
+type Settings = z.infer<typeof settingsSchema> & { wallpaper?: number | null };
 
 type FolderViewRow = {
   root_slug: string;
@@ -96,6 +97,11 @@ export class PreferenceService {
       recursive: view.recursive === 1
     }));
     return { settings: stored ? (JSON.parse(stored.settings_json) as Settings) : {}, folderViews };
+  }
+
+  /** Notes that the desktop background was set just now, or that there is none any more. */
+  setWallpaper(userId: string, present: boolean) {
+    return this.patchSettings(userId, { wallpaper: present ? Date.now() : null });
   }
 
   patchSettings(userId: string, patch: Settings) {

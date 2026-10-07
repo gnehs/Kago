@@ -10,7 +10,8 @@ import { BASE_VIEW } from "@/features/files/folderView";
 import { Card, Page, SettingRow } from "@/features/workspace/Page";
 import { localeNames, setLocale, t } from "@/lib/i18n";
 import { getLocalePref, getMotion, getTheme, getWindowControls, setMotion, setTheme, setWindowControls, type LocalePref, type MotionPref, type ThemePref, type WindowControlsPref } from "@/lib/prefs";
-import { saveSettings, useSettingsStore } from "@/stores/settings";
+import { run } from "@/lib/run";
+import { saveSettings, setWallpaper, useSettingsStore, wallpaperUrl } from "@/stores/settings";
 import { toast } from "@/stores/toast";
 import type { Actor, FolderView } from "@/types/kago";
 import { roleLabels } from "./UsersPage";
@@ -96,6 +97,12 @@ export function SettingsPage({ user }: { user: Actor }) {
               value={side}
               onChange={setWindowControls}
             />
+          </SettingRow>
+          <SettingRow label={t("Desktop background")} description={t("Right-click a picture in any folder and choose “Set as desktop background”. Kago keeps its own copy.")}>
+            <div className="flex items-center gap-2">
+              {settings.wallpaper ? <img alt="" src={wallpaperUrl(settings.wallpaper)} className="h-(--kago-control-h) w-12 rounded-sm object-cover ring-1 ring-line" /> : null}
+              <Button variant="outline" disabled={!settings.wallpaper} onClick={() => void run(() => setWallpaper(null))}>{settings.wallpaper ? t("Remove") : t("None set")}</Button>
+            </div>
           </SettingRow>
           <SettingRow label={t("Animations")} description={t("Windows, menus and dialogs come and go at once when this is off.")}>
             <Choice

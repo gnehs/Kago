@@ -1,6 +1,6 @@
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { api, downloadUrl } from "@/api/client";
-import { baseName, ensureZipName, joinLogicalPath, needsNormalizing, nfc, parentPath, triggerDownload } from "@/lib/paths";
+import { ensureZipName, joinLogicalPath, needsNormalizing, nfc, parentPath, triggerDownload } from "@/lib/paths";
 import { run } from "@/lib/run";
 import type { UploadTree } from "@/lib/uploadTree";
 import { useClipboardStore, type FileRef } from "@/stores/clipboard";
@@ -8,7 +8,7 @@ import { promptText } from "@/stores/dialogs";
 import { toast } from "@/stores/toast";
 import { hideTrashing } from "@/stores/trashing";
 import { isUploadCancelled, uploadForm, uploadLabel } from "@/stores/uploads";
-import { useWorkspaceStore } from "@/stores/workspace";
+import { folderTitle, useWorkspaceStore } from "@/stores/workspace";
 import type { FileItem, FileTask, FileWindow } from "@/types/kago";
 import { t } from "@/lib/i18n";
 
@@ -72,7 +72,7 @@ export function useFileActions(window: FileWindow) {
   const here = (path = window.logicalPath): FileRef => ({ rootSlug: window.rootSlug, path });
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["fs", "list", window.rootSlug, window.logicalPath] });
   /** An upload can land in folders other windows are showing, so every listing of the root is refetched. */
-  const refreshRoot = () => queryClient.invalidateQueries({ queryKey: ["fs", "list", window.rootSlug] });
+  const refreshRoot = (rootSlug = window.rootSlug) => queryClient.invalidateQueries({ queryKey: ["fs", "list", rootSlug] });
   const clearSelection = () => useWorkspaceStore.getState().selectItems(window.id, []);
 
   return {
@@ -85,7 +85,7 @@ export function useFileActions(window: FileWindow) {
         await refresh();
       }, t("Couldn’t create the folder")),
     /** Creates the tree's folders, then uploads its files folder by folder in batches the server accepts. */
-    upload: (source: UploadTree | Promise<UploadTree>, path = window.logicalPath) =>
+    upload: (source: UploadTree | Promise<UploadTree>, path = window.logicalPath, rootSlug = window.rootSlug) =>
       run(async () => {
         const tree = await source;
         if (tree.files.length === 0 && tree.dirs.length === 0) return;
@@ -93,7 +93,7 @@ export function useFileActions(window: FileWindow) {
         try {
           for (const dir of tree.dirs) {
             const full = target(dir);
-            await api("/api/fs/mkdir", { method: "POST", body: JSON.stringify({ rootSlug: window.rootSlug, path: parentPath(full), name: full.slice(full.lastIndexOf("/") + 1) }) });
+            await api("/api/fs/mkdir", { method: "POST", body: JSON.stringify({ rootSlug, path: parentPath(full), name: full.slice(full.lastIndexOf("/") + 1) }) });
           }
           const byDir = new Map<string, File[]>();
           for (const { file, dir } of tree.files) byDir.set(dir, [...(byDir.get(dir) ?? []), file]);
@@ -101,7 +101,7 @@ export function useFileActions(window: FileWindow) {
             for (let start = 0; start < files.length; start += uploadBatchSize) {
               const batch = files.slice(start, start + uploadBatchSize);
               const form = new FormData();
-              form.append("rootSlug", window.rootSlug);
+              form.append("rootSlug", rootSlug);
               form.append("path", target(dir));
               for (const file of batch) form.append("file", file, nfc(file.name));
               await uploadForm("/api/fs/upload", form, uploadLabel(batch));
@@ -109,14 +109,14 @@ export function useFileActions(window: FileWindow) {
           }
         } catch (error) {
           // Whatever made it across before the failure is already on disk.
-          await refreshRoot();
+          await refreshRoot(rootSlug);
           if (!isUploadCancelled(error)) throw error;
           toast(t("Upload cancelled"));
           return;
         }
-        await refreshRoot();
-        // A drop on a folder row lands inside that folder, out of sight; say so.
-        const folder = path === window.logicalPath ? "" : baseName(path);
+        await refreshRoot(rootSlug);
+        // A drop on a folder row, or on one in the sidebar, lands inside that folder, out of sight; say so.
+        const folder = path === window.logicalPath && rootSlug === window.rootSlug ? "" : folderTitle(rootSlug, path);
         if (tree.files.length > 0) toast(folder ? t("Uploaded {count} file to “{folder}” | Uploaded {count} files to “{folder}”", { count: tree.files.length, folder }) : t("Uploaded {count} file | Uploaded {count} files", { count: tree.files.length }));
         else toast(folder ? t("Created {count} folder in “{folder}” | Created {count} folders in “{folder}”", { count: tree.dirs.length, folder }) : t("Created {count} folder | Created {count} folders", { count: tree.dirs.length }));
       }, t("Upload failed")),
@@ -173,7 +173,7 @@ export function useFileActions(window: FileWindow) {
         await queryClient.invalidateQueries({ queryKey: ["shelves"] });
         toast(t("Added to Shelf ({count})", { count: paths.length }));
       }, t("Couldn’t add to Shelf")),
-    transfer: (type: "copy" | "move", sources: FileRef[], path?: string) => transferFiles(queryClient, type, sources, here(path)),
+    transfer: (type: "copy" | "move", sources: FileRef[], destination: FileRef = here()) => transferFiles(queryClient, type, sources, destination),
     copy: (paths: string[]) => setClipboard("copy", refs(paths)),
     cut: (paths: string[]) => setClipboard("cut", refs(paths)),
     paste: () => pasteClipboard(queryClient, here())

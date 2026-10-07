@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { useRoots } from "@/api/hooks";
 import { KagoLoading } from "@/components/kago/empty-state";
@@ -6,8 +6,8 @@ import { FileWindowView } from "@/features/files/FileWindow";
 import { Shelf } from "@/features/shelves/Shelf";
 import { PreviewWindowView } from "@/features/files/PreviewWindow";
 import { AppWindowView } from "@/features/windows/AppWindow";
-import { loadSettings, useSettingsStore } from "@/stores/settings";
-import { setCanvasSize, useWorkspaceStore } from "@/stores/workspace";
+import { loadSettings, useSettingsStore, wallpaperUrl } from "@/stores/settings";
+import { setCanvasSize, setRootNames, useWorkspaceStore } from "@/stores/workspace";
 import type { Actor, Root } from "@/types/kago";
 import { CommandPalette } from "./CommandPalette";
 import { DesktopIcons } from "./DesktopIcons";
@@ -65,7 +65,10 @@ function Canvas({ roots, user }: { roots: Root[]; user: Actor }) {
   const windows = useWorkspaceStore((state) => state.windows);
   const appWindows = useWorkspaceStore((state) => state.appWindows);
   const previewWindows = useWorkspaceStore((state) => state.previewWindows);
+  const wallpaper = useSettingsStore((state) => state.settings.wallpaper);
   const element = useRef<HTMLDivElement>(null);
+  // Windows and tabs are named by the store, which has to know what the locations are called before any is drawn.
+  useMemo(() => setRootNames(roots), [roots]);
   // Bumped on resize so canvas-relative children (the shelf) re-clamp.
   const [, setResizeTick] = useState(0);
 
@@ -84,10 +87,11 @@ function Canvas({ roots, user }: { roots: Root[]; user: Actor }) {
   }, []);
 
   return (
-    <div ref={element} className="relative isolate min-w-0 flex-1 overflow-hidden">
+    <div ref={element} data-wallpaper={wallpaper ? "" : undefined} className="group/canvas relative isolate min-w-0 flex-1 overflow-hidden">
+      {wallpaper ? <img key={wallpaper} alt="" aria-hidden draggable={false} src={wallpaperUrl(wallpaper)} className="pointer-events-none absolute inset-0 size-full object-cover select-none" /> : null}
       <DesktopIcons roots={roots} isAdmin={user.role === "ADMIN"} />
       {windows.map((window) => (
-        <FileWindowView key={window.id} window={window} isAdmin={user.role === "ADMIN"} rootName={roots.find((root) => root.slug === window.rootSlug)?.name ?? window.rootSlug} />
+        <FileWindowView key={window.id} window={window} isAdmin={user.role === "ADMIN"} roots={roots} />
       ))}
       {appWindows.map((window) => (
         <AppWindowView key={window.id} window={window} roots={roots} user={user} />

@@ -17,11 +17,12 @@ const MAX_JOBS = 3;
 const MAX_REMEMBERED_FAILURES = 2000;
 
 // AVIF has no place for transparency with the encoders at hand, so pictures are laid on white first.
-const FILTER = [
-  `[0:v:0]scale='min(${MAX_EDGE},iw)':'min(${MAX_EDGE},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2,format=rgba,split[picture][sheet]`,
-  "[sheet]drawbox=c=white:t=fill:replace=1[white]",
-  "[white][picture]overlay,format=yuv420p[out]"
-].join(";");
+const filter = (edge: number) =>
+  [
+    `[0:v:0]scale='min(${edge},iw)':'min(${edge},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2,format=rgba,split[picture][sheet]`,
+    "[sheet]drawbox=c=white:t=fill:replace=1[white]",
+    "[white][picture]overlay,format=yuv420p[out]"
+  ].join(";");
 
 const ENCODERS: Record<string, string[]> = {
   libsvtav1: ["-c:v", "libsvtav1", "-crf", "32", "-preset", "8"],
@@ -88,7 +89,7 @@ export class Thumbnailer {
         // which for 4K HEVC with keyframes ten seconds apart outlasts the timeout on a slow machine.
         const input = seek === null ? ["-i", picture] : [...(seek > 0 ? ["-skip_frame", "nokey"] : []), "-ss", seek.toFixed(2), "-i", picture, "-an", "-sn", "-dn"];
         try {
-          const { stderr } = await execFileAsync(this.ffmpeg, ["-v", "warning", "-nostdin", "-y", ...input, "-filter_complex", FILTER, "-map", "[out]", "-frames:v", "1", ...encoder, "-f", "avif", partial], { timeout: TIMEOUT_MS });
+          const { stderr } = await execFileAsync(this.ffmpeg, ["-v", "warning", "-nostdin", "-y", ...input, "-filter_complex", filter(MAX_EDGE), "-map", "[out]", "-frames:v", "1", ...encoder, "-f", "avif", partial], { timeout: TIMEOUT_MS });
           // With no frame after the seek, ffmpeg still succeeds and leaves a file that is only a header.
           if (stderr.includes("Output file is empty")) continue;
           await fsp.rename(partial, target);
@@ -103,6 +104,31 @@ export class Thumbnailer {
       return null;
     } finally {
       await Promise.all([fsp.rm(partial, { force: true }), fsp.rm(prepared, { force: true })]);
+      this.release();
+    }
+  }
+
+  /**
+   * Writes a picture to `target` as an AVIF no longer than `edge` on its longer side, replacing what was there.
+   * False when it cannot be done: no encoder, or a file ffmpeg does not read as a picture.
+   */
+  async convert(source: string, target: string, edge: number): Promise<boolean> {
+    const encoder = await (this.encoder ??= this.findEncoder());
+    if (!encoder) return false;
+    await this.acquire();
+    // Two conversions for one target may overlap; each writes a file of its own and the later rename wins.
+    const partial = `${target}.${process.hrtime.bigint()}.partial`;
+    try {
+      await fsp.mkdir(path.dirname(target), { recursive: true });
+      await execFileAsync(this.ffmpeg, ["-v", "warning", "-nostdin", "-y", "-i", source, "-filter_complex", filter(edge), "-map", "[out]", "-frames:v", "1", ...encoder, "-f", "avif", partial], { timeout: TIMEOUT_MS });
+      if ((await fsp.stat(partial)).size === 0) return false;
+      await fsp.rename(partial, target);
+      return true;
+    } catch (error) {
+      logger.warn(`could not convert ${source}`, (error as { stderr?: string; message: string }).stderr?.trim().split("\n").at(-1) || (error as Error).message);
+      return false;
+    } finally {
+      await fsp.rm(partial, { force: true });
       this.release();
     }
   }

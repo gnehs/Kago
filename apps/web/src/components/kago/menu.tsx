@@ -31,6 +31,7 @@ export function KagoDropdownMenu({
   menu,
   className,
   side,
+  align = "end",
   container,
   onOpenChange,
   children
@@ -39,6 +40,8 @@ export function KagoDropdownMenu({
   menu: ReactNode;
   className?: string;
   side?: "top" | "bottom";
+  /** Which edge of the button the popup lines up with. */
+  align?: "start" | "end";
   /** Where the popup is mounted. An element shown fullscreen has to hold its own menu. */
   container?: HTMLElement | null;
   onOpenChange?: (open: boolean) => void;
@@ -57,7 +60,7 @@ export function KagoDropdownMenu({
         {children}
       </Menu.Trigger>
       <Menu.Portal container={container ?? undefined}>
-        <Menu.Positioner side={side} sideOffset={4} align="end" className="z-[800] outline-none">
+        <Menu.Positioner side={side} sideOffset={4} align={align} className="z-[800] outline-none">
           <Menu.Popup className="kago-glass kago-pop min-w-44 rounded-lg p-1 outline-none">{menu}</Menu.Popup>
         </Menu.Positioner>
       </Menu.Portal>

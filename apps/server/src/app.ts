@@ -427,6 +427,27 @@ function registerApi(app: FastifyInstance, services: Services) {
   app.put("/api/folder-views", async (request) => services.preferences.setFolderView(requireActor(request).id, folderViewSchema.parse(request.body)));
   app.delete("/api/folder-views", async (request) => services.preferences.resetFolderView(requireActor(request).id, folderViewQuerySchema.parse(request.query)));
 
+  // One desktop background per person, kept as a picture of its own so the file it came from can move or go.
+  app.get("/api/wallpaper", async (request, reply) => {
+    const file = services.fsService.wallpaperPath(requireActor(request).id);
+    const stat = await fs.promises.stat(file).catch(() => null);
+    if (!stat) throw new AppError(404, "No desktop background is set", "NO_WALLPAPER");
+    // The address names the time it was set, so a new one is never answered from the browser's cache.
+    reply.header("Cache-Control", "private, max-age=31536000, immutable");
+    return sendFile(request, reply, file, stat, "image/avif");
+  });
+  app.post("/api/wallpaper", async (request) => {
+    const actor = requireActor(request);
+    const body = fsQuerySchema.parse(request.body);
+    await services.fsService.setWallpaper(actor, body.rootSlug, body.path);
+    return services.preferences.setWallpaper(actor.id, true);
+  });
+  app.delete("/api/wallpaper", async (request) => {
+    const actor = requireActor(request);
+    await services.fsService.clearWallpaper(actor);
+    return services.preferences.setWallpaper(actor.id, false);
+  });
+
   app.get("/api/fs/list", async (request) => {
     const actor = requireActor(request);
     const query = fsQuerySchema.parse(request.query);

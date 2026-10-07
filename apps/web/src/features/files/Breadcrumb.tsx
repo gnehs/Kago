@@ -1,13 +1,16 @@
 import { Fragment, useEffect, useState } from "react";
 import { ChevronRight } from "lucide-react";
+import { KagoDropdownMenu, KagoMenuItem } from "@/components/kago/menu";
 import { controlClass } from "@/components/ui/input";
 import { EDIT_ADDRESS_EVENT } from "@/features/workspace/useShortcuts";
 import { nfc, normalizeLogicalPath } from "@/lib/paths";
 import { cn } from "@/lib/utils";
 import { toast } from "@/stores/toast";
 import type { FileWindow } from "@/types/kago";
+import { FileIcon } from "./FileIcon";
 import { t } from "@/lib/i18n";
 
+const FOLDER = { kind: "folder", type: "", name: "" } as const;
 const MAX_VISIBLE_SEGMENTS = 3;
 
 /** Path bar: clickable crumbs by default, an editable address after clicking the blank area or ⌘L. */
@@ -54,6 +57,8 @@ export function Breadcrumb({ window, rootName, onNavigate }: { window: FileWindo
   const crumbs = [{ label: rootName, path: "/" }, ...segments.map((segment, index) => ({ label: nfc(segment), path: `/${segments.slice(0, index + 1).join("/")}` }))];
   const hidden = Math.max(0, crumbs.length - MAX_VISIBLE_SEGMENTS);
   const visible = hidden > 0 ? [crumbs[0]!, ...crumbs.slice(hidden + 1)] : crumbs;
+  /** The folders in between that there is no room to spell out, outermost first. */
+  const folded = crumbs.slice(1, hidden + 1);
 
   return (
     <nav
@@ -69,7 +74,18 @@ export function Breadcrumb({ window, rootName, onNavigate }: { window: FileWindo
             {index > 0 ? <ChevronRight className="size-3.5 text-faint" /> : null}
             {index === 1 && hidden > 0 ? (
               <>
-                <span className="px-1 text-faint">…</span>
+                <KagoDropdownMenu
+                  label={t("Show the folders in between")}
+                  align="start"
+                  className="h-auto w-auto rounded-sm px-1.5 py-0.5"
+                  menu={folded.map((crumb) => (
+                    <KagoMenuItem key={crumb.path} icon={<FileIcon item={FOLDER} />} onClick={() => onNavigate(crumb.path)}>
+                      <span className="max-w-64 truncate">{crumb.label}</span>
+                    </KagoMenuItem>
+                  ))}
+                >
+                  …
+                </KagoDropdownMenu>
                 <ChevronRight className="size-3.5 text-faint" />
               </>
             ) : null}

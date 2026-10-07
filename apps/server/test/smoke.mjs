@@ -47,7 +47,10 @@ test("minimum file-manager demo flow", async () => {
         minimized: false,
         maximized: false,
         focused: true,
-        selectedItems: []
+        selectedItems: [],
+        sidebarOpen: false,
+        tabs: [{ id: "tab_a", rootSlug: "photos", logicalPath: "/2026" }, { id: "tab_b", rootSlug: "photos", logicalPath: "//public" }],
+        activeTabId: "tab_a"
       }],
       sidebar: { collapsed: false },
       inspector: { open: false, width: 320 },
@@ -55,6 +58,11 @@ test("minimum file-manager demo flow", async () => {
     };
     assert.equal((await admin.put("/api/workspace", workspace)).statusCode, 200);
     assert.equal((await admin.get("/api/workspace")).json.windows[0].logicalPath, "/2026");
+    // A window's tabs and its sidebar come back with it, each tab's path tidied like the window's own.
+    const savedWindow = (await admin.get("/api/workspace")).json.windows[0];
+    assert.deepEqual(savedWindow.tabs.map((tab) => tab.logicalPath), ["/2026", "/public"]);
+    assert.equal(savedWindow.activeTabId, "tab_a");
+    assert.equal(savedWindow.sidebarOpen, false);
 
     // Settings follow the account, and a request changes only what it names.
     assert.deepEqual((await admin.get("/api/settings")).json, { settings: {}, folderViews: [] });
@@ -99,6 +107,14 @@ test("minimum file-manager demo flow", async () => {
     assert.match(String(thumbnail.headers["content-type"]), /text\/plain/);
     assert.equal(thumbnail.payload, "uploaded");
     assert.equal((await admin.get("/api/fs/thumbnail?rootSlug=photos&path=/public")).statusCode, 404);
+
+    // Only a picture can become the desktop background, and without one there is nothing to show or to take away.
+    assert.equal((await admin.get("/api/wallpaper")).statusCode, 404);
+    const notPicture = await admin.post("/api/wallpaper", { rootSlug: "photos", path: "/public/uploaded.txt" });
+    assert.equal(notPicture.statusCode, 422);
+    assert.equal(notPicture.json.code, "NOT_A_PICTURE");
+    assert.equal((await admin.delete("/api/wallpaper")).json.settings.wallpaper, null);
+    assert.equal((await admin.patch("/api/settings", { wallpaper: 1 })).statusCode, 400);
 
     // The editor saves a file's text back in place, and refuses to save over a copy that has changed since it was read.
     const uploadedFile = path.join(fixture.dataDir, "photos", "public", "uploaded.txt");

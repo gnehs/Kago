@@ -71,6 +71,8 @@ const BROWSER_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "im
 /** Documents that may carry a preview picture of their first page inside the file. */
 const EMBEDDED_PREVIEW_EXTENSIONS = new Set(["docx", "docm", "xlsx", "xlsm", "pptx", "pptm", "ppsx", "odt", "ods", "odp", "pages", "numbers", "key"]);
 const MAX_ORIGINAL_THUMBNAIL_BYTES = 8 * 1024 * 1024;
+/** A desktop background fills a screen, so it is kept up to the width of a 4K one. */
+const WALLPAPER_EDGE = 3840;
 const isVideoType = (type: string) => type.startsWith("video/") || type.startsWith("application/vnd.rn-realmedia");
 
 /** The editor holds a file whole in the browser, and saves it whole. */
@@ -100,7 +102,7 @@ export class FsService {
     private readonly permissions: PermissionService,
     private readonly audit: AuditService,
     private readonly storage: StorageService,
-    appDataDir: string,
+    private readonly appDataDir: string,
     private readonly preferences: PreferenceService,
     /** Absent in the task worker, which then draws no thumbnails for camera RAW. */
     private readonly images?: ImageService
@@ -577,6 +579,34 @@ export class FsService {
     // The type registry reads `.ts` as a video; what ffmpeg could not draw may still be text.
     const excerpt = remote ? await readTextExcerptFrom(await this.storage.remote.open(safe.root, safe.logicalPath, { start: 0, end: Math.min(stat.size, TEXT_EXCERPT_BYTES) - 1 })) : await readTextExcerpt(safe.absolutePath);
     return excerpt === null ? null : { contentType: "text/plain; charset=utf-8", data: Buffer.from(excerpt, "utf8") };
+  }
+
+  /**
+   * Keeps a picture as the desktop background of whoever asks: one AVIF each under `app-data/wallpapers`,
+   * so a new one takes the place of the last.
+   */
+  async setWallpaper(actor: Actor, rootSlug: string, logicalPath: string): Promise<void> {
+    const safe = await this.paths.resolveExisting(rootSlug, logicalPath);
+    this.permissions.require(actor, "read", safe.root, safe.logicalPath);
+    const stat = await this.storage.stat(safe);
+    const rendition = renditionKind(safe.logicalPath);
+    if (!stat.isFile() || !(rendition || String(lookup(safe.logicalPath)).startsWith("image/"))) throw new AppError(422, "Only a picture can be the desktop background", "NOT_A_PICTURE");
+    let picture: string | undefined;
+    if (rendition) {
+      const file = await this.storage.localFile(safe, stat);
+      picture = await this.images?.rendition(file, stat);
+    } else picture = this.storage.isRemote(safe) ? this.storage.mediaInput(safe) : safe.absolutePath;
+    if (!picture || !(await this.thumbnailer.convert(picture, this.wallpaperPath(actor.id), WALLPAPER_EDGE))) throw new AppError(422, "The picture could not be converted", "WALLPAPER_FAILED");
+    this.audit.write({ actorType: "user", actorId: actor.id, action: "set_wallpaper", rootId: safe.root.id, path: safe.logicalPath, result: "success" });
+  }
+
+  async clearWallpaper(actor: Actor): Promise<void> {
+    await fsp.rm(this.wallpaperPath(actor.id), { force: true });
+  }
+
+  /** Where a person's desktop background is kept. Ids are generated here, so they are safe as file names. */
+  wallpaperPath(userId: string): string {
+    return path.join(this.appDataDir, "wallpapers", `${userId}.avif`);
   }
 
   private auditThumbnail(actor: Actor, rootId: string, logicalPath: string): void {

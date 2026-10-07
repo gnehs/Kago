@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { ArrowDown, ArrowUp, ArrowUpDown, Check, ChevronLeft, ChevronRight, Columns3, Ellipsis, FolderPlus, Info, LayoutGrid, List, RotateCcw, Search, SlidersHorizontal, Square, Star, Upload, X } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Check, ChevronLeft, ChevronRight, Columns3, Ellipsis, FolderPlus, Info, LayoutGrid, List, PanelLeft, RotateCcw, Search, SlidersHorizontal, Square, Star, Upload, X } from "lucide-react";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { KagoDropdownMenu, KagoMenuItem, KagoMenuSeparator } from "@/components/kago/menu";
 import { baseName } from "@/lib/paths";
@@ -77,6 +77,7 @@ export function FileToolbar({ window, folderView, rootName, readonly, canGoBack,
 
   return (
     <div className="kago-toolbar @container flex h-10 shrink-0 items-center gap-1 border-b border-line-strong px-2">
+      <KagoIconButton label={t("Sidebar")} active={window.sidebarOpen !== false} onClick={() => store().updateWindow(window.id, { sidebarOpen: window.sidebarOpen === false })}><PanelLeft /></KagoIconButton>
       <div className="kago-segments mr-1">
         <KagoIconButton label={t("Back")} className="size-6" disabled={!canGoBack} onClick={() => onGo(-1)}><ChevronLeft /></KagoIconButton>
         <KagoIconButton label={t("Forward")} className="size-6" disabled={!canGoForward} onClick={() => onGo(1)}><ChevronRight /></KagoIconButton>

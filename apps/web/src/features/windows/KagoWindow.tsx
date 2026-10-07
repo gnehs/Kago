@@ -13,11 +13,12 @@ export function KagoWindow({
   window,
   icon,
   titleExtra,
+  titleBar,
   keepMounted,
   className,
   children,
   ...props
-}: Omit<React.ComponentProps<"section">, "title"> & { window: WindowFrame; icon?: ReactNode; titleExtra?: ReactNode; /** Hide rather than unmount while minimized, for content that holds unsaved work. */ keepMounted?: boolean }) {
+}: Omit<React.ComponentProps<"section">, "title"> & { window: WindowFrame; icon?: ReactNode; titleExtra?: ReactNode; /** Takes the place of the icon and title in the middle of the title bar, for a window that has more to show there than its name. */ titleBar?: ReactNode; /** Hide rather than unmount while minimized, for content that holds unsaved work. */ keepMounted?: boolean }) {
   const store = useWorkspaceStore.getState;
   const update = (patch: Partial<WindowFrame>) => store().updateWindow(window.id, patch);
 
@@ -71,12 +72,14 @@ export function KagoWindow({
           <WindowControl label={t("Minimize")} icon={Minus} onClick={() => minimizeWindows([window.id])} />
           <WindowControl label={window.maximized ? t("Restore size") : t("Maximize")} icon={window.maximized ? Minimize2 : Maximize2} onClick={() => update({ maximized: !window.maximized })} />
         </div>
-        <div className={cn("flex min-w-0 flex-1 items-center justify-center gap-1.5 font-medium", !window.focused && "text-muted")}>
-          {icon}
-          <span className="truncate">{window.title}</span>
-        </div>
+        {titleBar ?? (
+          <div className={cn("flex min-w-0 flex-1 items-center justify-center gap-1.5 font-medium", !window.focused && "text-muted")}>
+            {icon}
+            <span className="truncate">{window.title}</span>
+          </div>
+        )}
         {/* Balances the window controls so the title stays centred. */}
-        <div className="kago-window-extra">{titleExtra}</div>
+        <div className="kago-window-extra items-center gap-1.5">{titleExtra}</div>
       </header>
       {children}
       {window.maximized ? null : (

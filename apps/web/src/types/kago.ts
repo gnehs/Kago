@@ -74,9 +74,17 @@ export type FileWindow = {
   selectedItems: string[];
   scrollTop?: number;
   inspectorOpen?: boolean;
+  /** Whether the tree of locations is shown down the left side. Shown unless closed. */
+  sidebarOpen?: boolean;
+  /** Every folder the window holds open. The one named by `activeTabId` is the one the fields above describe. */
+  tabs?: FileTab[];
+  activeTabId?: string;
   createdAt: number;
   updatedAt: number;
 };
+
+/** A folder kept open in a window alongside the one it is showing. */
+export type FileTab = { id: string; rootSlug: string; logicalPath: string };
 
 /** How a folder is shown. It belongs to the folder, not to the window showing it. */
 export type FolderView = {
@@ -109,6 +117,8 @@ export type AccountSettings = {
   /** Whether a folder of pictures and videos opens as icons before anyone has said how to show it. On unless turned off. */
   smartView?: boolean;
   defaultView?: Partial<FolderView>;
+  /** When the desktop background was last set, which names the picture to ask for. Absent without one. */
+  wallpaper?: number | null;
 };
 
 export type AccountPreferences = { settings: AccountSettings; folderViews: FolderViewEntry[] };

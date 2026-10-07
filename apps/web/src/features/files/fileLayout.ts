@@ -33,7 +33,6 @@ export type IconSize = keyof typeof GRID_SIZES;
 const GRID_GAP = 4;
 const GRID_PADDING = 8;
 const ROW_INSET = 4;
-const COLUMNS_MAX_WIDTH = 288;
 /** Rows kept rendered above and below the viewport so fast scrolling does not show gaps. */
 const OVERSCAN_ROWS = 6;
 
@@ -59,11 +58,8 @@ export function useFileLayout(scroller: HTMLElement | null, viewMode: FolderView
       const columns = Math.max(1, Math.floor((inner + GRID_GAP) / (minWidth + GRID_GAP)));
       return { columns, top: GRID_PADDING, left: GRID_PADDING, cellWidth: (inner - (columns - 1) * GRID_GAP) / columns, cellHeight, gap: GRID_GAP, bottom: GRID_PADDING, stickyTop: 0, viewportHeight };
     }
-    if (viewMode === "columns") {
-      // The name column takes half the width up to a limit, minus its right border.
-      const column = Math.min(width / 2, COLUMNS_MAX_WIDTH) - 1;
-      return { columns: 1, top: ROW_INSET, left: ROW_INSET, cellWidth: Math.max(0, column - ROW_INSET * 2), cellHeight: rowHeight, gap: 0, bottom: ROW_INSET, stickyTop: 0, viewportHeight };
-    }
+    // Each column of the column view scrolls by itself, and is measured as a list without a header.
+    if (viewMode === "columns") return { columns: 1, top: ROW_INSET, left: ROW_INSET, cellWidth: Math.max(0, width - ROW_INSET * 2), cellHeight: rowHeight, gap: 0, bottom: ROW_INSET, stickyTop: 0, viewportHeight };
     return { columns: 1, top: LIST_HEADER_HEIGHT, left: ROW_INSET, cellWidth: Math.max(0, width - ROW_INSET * 2), cellHeight: rowHeight, gap: 0, bottom: 8, stickyTop: LIST_HEADER_HEIGHT, viewportHeight };
   }, [size, viewMode, iconSize, rowHeight]);
 }
@@ -125,6 +121,8 @@ export type FileView = {
   reveal: (index: number) => void;
   /** Set while the list shows folders that open in place. */
   tree?: FileTree;
+  /** Set in the column view: steps out to the column before, or into the one after. `items` are those of the column the selection is in. */
+  columns?: { left: () => void; right: () => void };
 };
 
 /** Folders opened in place in the list view: their contents follow them, one level further in. */
