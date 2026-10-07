@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Monitor, Moon, PanelLeft, PanelRight, Sun } from "lucide-react";
 import { api, ApiError } from "@/api/client";
+import { KagoAvatar } from "@/components/kago/avatar";
 import { KagoBadge } from "@/components/kago/badge";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/input";
@@ -111,9 +112,7 @@ function AccountSettings({ user }: { user: Actor }) {
   return (
     <Card title={t("Account")}>
       <div className="flex items-center gap-3">
-        <span aria-hidden className="kago-badge flex size-9 shrink-0 items-center justify-center rounded-full font-semibold text-accent">
-          {(user.displayName || user.email).slice(0, 1).toUpperCase()}
-        </span>
+        <KagoAvatar name={user.displayName || user.email} className="size-9 text-sm" />
         <div className="flex min-w-0 flex-1 flex-col">
           <span className="truncate font-medium">{user.displayName}</span>
           <span className="truncate text-xs text-muted">{user.email}</span>

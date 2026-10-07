@@ -27,7 +27,7 @@ export function Page({ title, description, actions, children }: { title?: string
 /** A titled group of settings or a form. `action` sits at the right of the title. */
 export function Card({ title, description, action, className, children }: { title?: string; description?: string; action?: ReactNode; className?: string; children: ReactNode }) {
   return (
-    <section className={cn("rounded-lg border border-line", className)}>
+    <section className={cn("kago-card rounded-lg border border-line", className)}>
       {title ? (
         <header className="flex min-h-11 items-center gap-3 rounded-t-[inherit] border-b border-line bg-elevated/60 py-1.5 pr-2 pl-4">
           <div className="min-w-0 flex-1">
@@ -57,7 +57,7 @@ export function SettingRow({ label, description, children }: { label: string; de
 
 /** Bordered list whose rows are separated by hairlines. */
 export function RowList({ children }: { children: ReactNode }) {
-  return <ul className="m-0 flex list-none flex-col divide-y divide-line rounded-lg border border-line p-0">{children}</ul>;
+  return <ul className="m-0 flex list-none flex-col divide-y divide-line kago-card rounded-lg border border-line p-0">{children}</ul>;
 }
 
 export function Row({ icon, title, subtitle, children }: { icon?: ReactNode; title: ReactNode; subtitle?: ReactNode; children?: ReactNode }) {

@@ -63,6 +63,7 @@
   --kago-toolbar: var(--kago-grain), linear-gradient(#e7e9ed, #dddfe4);
   --kago-chrome-edge: inset 0 1px 0 rgb(255 255 255 / 0.9);
   --kago-badge-edge: inset 0 0.5px 0 rgb(255 255 255 / 0.75);
+  --kago-card-shadow: 0 1px 2px rgb(15 23 42 / 0.06);
   --kago-chrome-inactive: linear-gradient(#f7f8fa, #f3f4f6);
   --kago-toolbar-inactive: linear-gradient(#f3f4f6, #eff0f3);
   --kago-raised: linear-gradient(#ffffff, #f9fafb 45%, #eef0f3);
@@ -146,6 +147,7 @@
   --kago-toolbar: var(--kago-grain), linear-gradient(#2e3136, #26292d);
   --kago-chrome-edge: inset 0 1px 0 rgb(255 255 255 / 0.12);
   --kago-badge-edge: inset 0 0.5px 0 rgb(255 255 255 / 0.1);
+  --kago-card-shadow: 0 1px 2px rgb(0 0 0 / 0.3);
   --kago-chrome-inactive: linear-gradient(#2f3237, #2c2f34);
   --kago-toolbar-inactive: linear-gradient(#2c2f34, #292c30);
   --kago-raised: linear-gradient(#4b5058, #3d4148 45%, #33373c);
@@ -469,6 +471,12 @@
     background: var(--kago-glass);
     box-shadow: var(--kago-shadow-popup), var(--kago-glass-edge);
     backdrop-filter: blur(24px) saturate(1.8);
+  }
+
+  /* A group of settings or a list on a page: a sheet laid on the surface, just thick enough to cast a shadow. */
+  .kago-card {
+    background: var(--kago-surface);
+    box-shadow: var(--kago-card-shadow);
   }
 
   /*

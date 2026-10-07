@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Plus, UserRound, X } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import { api } from "@/api/client";
 import { useUsers } from "@/api/hooks";
+import { KagoAvatar } from "@/components/kago/avatar";
 import { KagoBadge } from "@/components/kago/badge";
 import { KagoLoading } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
@@ -88,7 +89,7 @@ export function UsersPage({ currentUserId }: { currentUserId: string }) {
       {users.data?.length ? (
         <RowList>
           {users.data.map((user) => (
-            <Row key={user.id} icon={<UserRound />} title={user.display_name} subtitle={user.email}>
+            <Row key={user.id} icon={<KagoAvatar name={user.display_name || user.email} />} title={user.display_name} subtitle={user.email}>
               <KagoBadge tone={user.role === "ADMIN" ? "accent" : "neutral"}>{roleLabels[user.role]}</KagoBadge>
               {user.disabled ? <KagoBadge tone="danger">{t("Disabled")}</KagoBadge> : null}
               {user.id === currentUserId ? null : <Button onClick={() => void resetPassword(user)}>{t("Reset password")}</Button>}

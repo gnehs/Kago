@@ -12,7 +12,7 @@ export function TasksPage() {
       {tasks.isLoading ? <KagoLoading /> : null}
       {tasks.data?.length === 0 ? <KagoEmptyState icon={<ListChecks />} title={t("No tasks right now")} /> : null}
       {tasks.data?.length ? (
-        <div className="flex flex-col divide-y divide-line rounded-lg border border-line px-4">
+        <div className="flex flex-col divide-y divide-line kago-card rounded-lg border border-line px-4">
           {tasks.data.map((task) => <TaskRow key={task.id} task={task} />)}
         </div>
       ) : null}

@@ -31,7 +31,7 @@ export function AuditPage() {
       {audit.isLoading ? <KagoLoading /> : null}
       {audit.data?.length === 0 ? <KagoEmptyState icon={<ScrollText />} title={t("No audit entries yet")} /> : null}
       {audit.data?.length ? (
-        <div className="overflow-x-auto rounded-lg border border-line">
+        <div className="kago-card overflow-x-auto rounded-lg border border-line">
           <table className="w-full border-collapse">
             <thead>
               <tr className="bg-elevated text-left text-xs text-muted">
