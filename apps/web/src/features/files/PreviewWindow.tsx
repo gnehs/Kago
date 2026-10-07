@@ -1,14 +1,14 @@
-import { Download, FileQuestion, ImageOff } from "lucide-react";
-import { useState } from "react";
-import { downloadUrl, imageUrl, previewUrl } from "@/api/client";
-import { KagoEmptyState, KagoSpinner } from "@/components/kago/empty-state";
+import { Download, FileQuestion } from "lucide-react";
+import { downloadUrl, previewUrl } from "@/api/client";
+import { KagoEmptyState } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { Button } from "@/components/ui/button";
 import { KagoWindow } from "@/features/windows/KagoWindow";
-import { formatSize, hasTextName, isAudioType, isConvertedImage, isImageType, isSqliteFile, isTextFile, isVideoType, kindLabel, MAX_TEXT_BYTES, officeKind } from "@/lib/format";
+import { formatSize, hasTextName, isAudioType, isSqliteFile, isTextFile, isVideoType, kindLabel, MAX_TEXT_BYTES, officeKind } from "@/lib/format";
 import { triggerDownload } from "@/lib/paths";
 import type { PreviewWindow } from "@/stores/workspace";
 import { FileIcon } from "./FileIcon";
+import { ImagePreviewWindow, isViewableImage } from "./ImagePreview";
 import { OfficePreviewWindow } from "./OfficePreview";
 import { PdfPreviewWindow } from "./PdfPreview";
 import { SqlitePreviewWindow } from "./SqlitePreview";
@@ -28,6 +28,7 @@ export function PreviewWindowView({ window }: { window: PreviewWindow }) {
   if (item.type === "application/pdf") return <PdfPreviewWindow window={window} />;
   const office = officeKind(item);
   if (office) return <OfficePreviewWindow window={window} kind={office} />;
+  if (isViewableImage(item)) return <ImagePreviewWindow window={window} />;
   const source = previewUrl(rootSlug, item.path);
   const download = () => triggerDownload(downloadUrl(rootSlug, item.path));
   return (
@@ -41,12 +42,7 @@ export function PreviewWindowView({ window }: { window: PreviewWindow }) {
       }
     >
       <div className="flex min-h-0 flex-1 items-center justify-center bg-elevated">
-        {isImageType(item.type) ? (
-          <img alt={item.name} src={source} draggable={false} className="max-h-full max-w-full object-contain" />
-        ) : isConvertedImage(item) ? (
-          // Keyed by the file as it is now: one replaced on disk is converted and shown again.
-          <ConvertedImage key={`${item.path}:${item.mtime}`} name={item.name} source={`${imageUrl(rootSlug, item.path)}&v=${Math.round(item.mtime)}`} onDownload={download} />
-        ) : isAudioType(item.type) ? (
+        {isAudioType(item.type) ? (
           <audio src={source} controls />
         ) : (
           <KagoEmptyState
@@ -59,23 +55,5 @@ export function PreviewWindowView({ window }: { window: PreviewWindow }) {
         )}
       </div>
     </KagoWindow>
-  );
-}
-
-/** A picture the server converts on request: HEIF and camera RAW take a moment the first time they are opened. */
-function ConvertedImage({ name, source, onDownload }: { name: string; source: string; onDownload: () => void }) {
-  const [state, setState] = useState<"loading" | "loaded" | "failed">("loading");
-  if (state === "failed") {
-    return (
-      <KagoEmptyState icon={<ImageOff />} title="無法顯示這張影像" description="伺服器無法轉換這個檔案，請下載後用其他程式開啟。">
-        <Button onClick={onDownload}>下載</Button>
-      </KagoEmptyState>
-    );
-  }
-  return (
-    <>
-      {state === "loading" ? <KagoSpinner className="absolute size-5" /> : null}
-      <img alt={name} src={source} draggable={false} className={state === "loaded" ? "max-h-full max-w-full object-contain" : "size-0 opacity-0"} onLoad={() => setState("loaded")} onError={() => setState("failed")} />
-    </>
   );
 }

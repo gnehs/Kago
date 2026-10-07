@@ -85,6 +85,25 @@ export function setVideoVolume(volume: number, muted: boolean) {
   }
 }
 
+const imageInfoKey = "kago.imageInfo";
+
+/** Whether picture windows open with their shooting data beside the picture. */
+export function getImageInfoOpen() {
+  try {
+    return localStorage.getItem(imageInfoKey) === "open";
+  } catch {
+    return false;
+  }
+}
+
+export function setImageInfoOpen(open: boolean) {
+  try {
+    localStorage.setItem(imageInfoKey, open ? "open" : "closed");
+  } catch {
+    // Private browsing: the choice just lasts for this window.
+  }
+}
+
 export function applyPrefs() {
   const theme = getTheme();
   const resolved = theme === "system" ? (media?.matches ? "dark" : "light") : theme;

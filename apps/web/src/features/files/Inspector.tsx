@@ -137,7 +137,7 @@ const PROGRAM: Record<string, string> = { Manual: "手動", "Program AE": "程�
 const trimLength = (value: string) => value.replace(/\.0+(?= ?mm)/, "");
 
 /** What the camera recorded about a picture, in the order a photographer asks for it. */
-function PhotoDetails({ photo }: { photo: ImageMetadata }) {
+export function PhotoDetails({ photo }: { photo: ImageMetadata }) {
   const exposure = [photo.exposureTime ? `${photo.exposureTime} 秒` : "", photo.aperture ? `f/${photo.aperture}` : "", photo.iso ? `ISO ${photo.iso}` : ""].filter(Boolean).join(" · ");
   const focal = photo.focalLength ? trimLength(photo.focalLength) + (photo.focalLength35 && trimLength(photo.focalLength35) !== trimLength(photo.focalLength) ? `（等效 ${trimLength(photo.focalLength35)}）` : "") : "";
   const compensation = photo.exposureCompensation ? `${photo.exposureCompensation > 0 ? "+" : ""}${Math.round(photo.exposureCompensation * 100) / 100} EV` : "";
@@ -174,7 +174,7 @@ function PhotoDetails({ photo }: { photo: ImageMetadata }) {
   );
 }
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+export function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="border-t border-line p-4">
       <h3 className="m-0 mb-2.5 font-semibold">{title}</h3>
@@ -195,7 +195,7 @@ function TagGroup({ label, hint, children }: { label: string; hint: string; chil
   );
 }
 
-function Detail({ label, children }: { label: string; children: ReactNode }) {
+export function Detail({ label, children }: { label: string; children: ReactNode }) {
   return (
     <>
       <dt className="text-muted">{label}</dt>
