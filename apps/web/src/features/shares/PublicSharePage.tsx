@@ -14,6 +14,8 @@ type PublicShareInfo = {
   mode: "view_only" | "download" | "upload_only";
   path?: string;
   rootSlug?: string;
+  /** Whether the browser can show the file itself; one it cannot would be downloaded instead of viewed. */
+  previewable?: boolean;
   requiresPassword: boolean;
   authenticated: boolean;
 };
@@ -94,7 +96,8 @@ export function PublicSharePage({ token }: { token: string }) {
         {share && !needsPassword ? (
           <>
             {share.mode === "download" ? <a className={primaryLink} href={`/s/${token}/download`}><Download /> 下載</a> : null}
-            {share.mode === "view_only" ? <a className={primaryLink} href={`/s/${token}/preview`} target="_blank" rel="noreferrer"><FileText /> 檢視</a> : null}
+            {share.mode === "view_only" && share.previewable ? <a className={primaryLink} href={`/s/${token}/preview`} target="_blank" rel="noreferrer"><FileText /> 檢視</a> : null}
+            {share.mode === "view_only" && !share.previewable ? <p className="m-0 text-center text-muted">這種檔案無法在瀏覽器中檢視。</p> : null}
             {share.mode === "upload_only" ? (
               <label className={primaryLink} aria-disabled={busy}>
                 <Upload /> {busy ? "上傳中…" : "選擇檔案上傳"}

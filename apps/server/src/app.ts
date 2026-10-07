@@ -12,6 +12,7 @@ import { openDb } from "./db/db.js";
 import { AppError, publicError } from "./lib/errors.js";
 import { nfc } from "./lib/filename.js";
 import { sendFile } from "./lib/send-file.js";
+import { isBrowserViewable } from "./lib/viewable.js";
 import { AuditService } from "./services/audit.service.js";
 import { AuthService, changePasswordSchema, createUserSchema, loginSchema, patchUserSchema, resetPasswordSchema, setupAdminSchema } from "./services/auth.service.js";
 import { FsService, finderTagsSchema, fsQuerySchema, maxUploadFiles, mkdirSchema, renameSchema, sqliteRowsSchema, writeTextSchema } from "./services/fs.service.js";
@@ -642,8 +643,13 @@ function registerApi(app: FastifyInstance, services: Services) {
     const safe = await services.shares.publicPreview(params.token, shareAccessCookie(request, params.token));
     const stat = await fs.promises.stat(safe.absolutePath);
     if (!stat.isFile()) throw new AppError(400, "Path is not a file", "NOT_FILE");
+    const contentType = lookup(safe.absolutePath) || "application/octet-stream";
+    if (!isBrowserViewable(contentType)) throw new AppError(415, "This kind of file cannot be viewed in the browser", "PREVIEW_UNSUPPORTED");
     reply.header("Content-Disposition", contentDisposition("inline", path.basename(safe.absolutePath)));
-    return sendFile(request, reply, safe.absolutePath, stat, lookup(safe.absolutePath) || "application/octet-stream");
+    reply.header("X-Content-Type-Options", "nosniff");
+    // Opened in a tab of its own, an SVG is a document: without this its scripts would run as Kago.
+    if (contentType === "image/svg+xml") reply.header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox");
+    return sendFile(request, reply, safe.absolutePath, stat, contentType);
   });
 
   app.post("/s/:token/upload", async (request) => {

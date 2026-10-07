@@ -238,7 +238,26 @@ test("minimum file-manager demo flow", async () => {
     assert.equal(sharedDownload.statusCode, 200);
     assert.equal(sharedDownload.payload, "public");
 
-    const uploadShare = await admin.post("/api/shares", {
+// A view-only link shows what a browser can display and refuses the rest, which a browser would save instead.
+    const viewShare = await admin.post("/api/shares", { rootSlug: "photos", path: "/public/readme.txt", mode: "view_only" });
+    assert.equal((await app.inject({ method: "GET", url: `/s/${viewShare.json.token}`, headers: { accept: "application/json" } })).json().previewable, true);
+    const sharedView = await app.inject({ method: "GET", url: `/s/${viewShare.json.token}/preview` });
+    assert.equal(sharedView.statusCode, 200);
+    assert.equal(sharedView.payload, "public");
+    assert.equal(sharedView.headers["x-content-type-options"], "nosniff");
+    await writeFile(path.join(fixture.dataDir, "photos", "public", "bundle.zip"), "zip");
+    await writeFile(path.join(fixture.dataDir, "photos", "public", "drawing.svg"), "<svg xmlns='http://www.w3.org/2000/svg'/>");
+    const zipShare = await admin.post("/api/shares", { rootSlug: "photos", path: "/public/bundle.zip", mode: "view_only" });
+    assert.equal((await app.inject({ method: "GET", url: `/s/${zipShare.json.token}`, headers: { accept: "application/json" } })).json().previewable, false);
+    const refusedView = await app.inject({ method: "GET", url: `/s/${zipShare.json.token}/preview` });
+    assert.equal(refusedView.statusCode, 415);
+    assert.equal(refusedView.json().code, "PREVIEW_UNSUPPORTED");
+    const svgShare = await admin.post("/api/shares", { rootSlug: "photos", path: "/public/drawing.svg", mode: "view_only" });
+    assert.match((await app.inject({ method: "GET", url: `/s/${svgShare.json.token}/preview` })).headers["content-security-policy"], /sandbox/);
+    await rm(path.join(fixture.dataDir, "photos", "public", "bundle.zip"));
+    await rm(path.join(fixture.dataDir, "photos", "public", "drawing.svg"));
+
+        const uploadShare = await admin.post("/api/shares", {
       rootSlug: "photos",
       path: "/public",
       mode: "upload_only"

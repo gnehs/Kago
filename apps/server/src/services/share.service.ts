@@ -1,10 +1,12 @@
 import { z } from "zod";
 import fsp from "node:fs/promises";
+import { lookup } from "mime-types";
 import type { Db } from "../db/db.js";
 import { row, rows } from "../db/db.js";
 import { hashPassword, randomToken, sha256, verifyPassword } from "../lib/crypto.js";
 import { AppError } from "../lib/errors.js";
 import { id, now } from "../lib/ids.js";
+import { isBrowserViewable } from "../lib/viewable.js";
 import type { AuditService } from "./audit.service.js";
 import type { PathService } from "./path.service.js";
 import type { PermissionService } from "./permission.service.js";
@@ -197,7 +199,9 @@ export class ShareService {
     return {
       ...base,
       path: share.path,
-      rootSlug: safe.root.slug
+      rootSlug: safe.root.slug,
+      // Told up front, so the page offers to show only what the preview will agree to send.
+      previewable: isBrowserViewable(lookup(safe.absolutePath) || "")
     };
   }
 
