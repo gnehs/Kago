@@ -8,18 +8,19 @@ import { run } from "@/lib/run";
 import { cn } from "@/lib/utils";
 import type { FileMeta, FinderTag } from "@/types/kago";
 import { finderTagColorClass } from "./FinderTags";
+import { t } from "@/lib/i18n";
 
 type Color = NonNullable<FinderTag["color"]>;
 
 // In Finder's own order, with the names it gives its colour tags.
 const colors: Array<{ color: Color; name: string }> = [
-  { color: "red", name: "紅色" },
-  { color: "orange", name: "橙色" },
-  { color: "yellow", name: "黃色" },
-  { color: "green", name: "綠色" },
-  { color: "blue", name: "藍色" },
-  { color: "purple", name: "紫色" },
-  { color: "gray", name: "灰色" }
+  { color: "red", name: t("Red") },
+  { color: "orange", name: t("Orange") },
+  { color: "yellow", name: t("Yellow") },
+  { color: "green", name: t("Green") },
+  { color: "blue", name: t("Blue") },
+  { color: "purple", name: t("Purple") },
+  { color: "gray", name: t("Gray") }
 ];
 
 /** Finder tags of one file or folder, stored on the file itself so Finder shows the same ones. */
@@ -44,7 +45,7 @@ export function FinderTagEditor({ rootSlug, path, tags, readonly }: { rootSlug: 
     // Adding a name that is already there changes its colour in place.
     const tag = { name: newName, color };
     const next = tags.some((item) => item.name === newName) ? tags.map((item) => (item.name === newName ? tag : item)) : [...tags, tag];
-    if (await save(next, "無法加上 Finder 標籤")) {
+    if (await save(next, t("Couldn’t add the Finder tag"))) {
       setName("");
       setColor(null);
     }
@@ -59,7 +60,7 @@ export function FinderTagEditor({ rootSlug, path, tags, readonly }: { rootSlug: 
               <span className={cn("size-2 rounded-full", tag.color ? finderTagColorClass[tag.color] : "border border-line-strong")} />
               {tag.name}
               {readonly ? null : (
-                <button aria-label={`移除 Finder 標籤 ${tag.name}`} className="rounded-full p-0.5 text-muted hover:text-ink" onClick={() => void save(tags.filter((item) => item.name !== tag.name), "無法移除 Finder 標籤")}>
+                <button aria-label={t("Remove Finder tag {name}", { name: tag.name })} className="rounded-full p-0.5 text-muted hover:text-ink" onClick={() => void save(tags.filter((item) => item.name !== tag.name), t("Couldn’t remove the Finder tag"))}>
                   <X className="size-3" />
                 </button>
               )}
@@ -69,7 +70,7 @@ export function FinderTagEditor({ rootSlug, path, tags, readonly }: { rootSlug: 
       ) : null}
       {readonly ? null : (
         <form className="flex flex-col gap-2" onSubmit={add}>
-          <div className="flex items-center gap-1.5" role="radiogroup" aria-label="標籤顏色">
+          <div className="flex items-center gap-1.5" role="radiogroup" aria-label={t("Tag color")}>
             {colors.map((item) => (
               <button
                 key={item.color}
@@ -84,8 +85,8 @@ export function FinderTagEditor({ rootSlug, path, tags, readonly }: { rootSlug: 
             ))}
           </div>
           <div className="flex gap-2">
-            <Input placeholder={color ? colors.find((item) => item.color === color)?.name : "新增 Finder 標籤"} value={name} onChange={(event) => setName(event.target.value)} />
-            <Button type="submit" disabled={!newName}>加入</Button>
+            <Input placeholder={color ? colors.find((item) => item.color === color)?.name : t("Add Finder tag")} value={name} onChange={(event) => setName(event.target.value)} />
+            <Button type="submit" disabled={!newName}>{t("Add")}</Button>
           </div>
         </form>
       )}

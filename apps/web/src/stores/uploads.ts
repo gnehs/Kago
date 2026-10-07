@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { ApiError } from "@/api/client";
+import { t } from "@/lib/i18n";
 
 export type Upload = {
   id: number;
@@ -67,8 +68,8 @@ export function uploadForm<T>(path: string, form: FormData, label: string): Prom
       finish();
       resolve(body as T);
     };
-    xhr.onerror = () => fail(new ApiError("網路連線中斷", "NETWORK_ERROR", 0));
-    xhr.onabort = () => fail(new ApiError("已取消上傳", UPLOAD_CANCELLED, 0));
+    xhr.onerror = () => fail(new ApiError(t("The network connection was lost"), "NETWORK_ERROR", 0));
+    xhr.onabort = () => fail(new ApiError(t("Upload cancelled"), UPLOAD_CANCELLED, 0));
 
     let total = 0;
     for (const value of form.values()) if (value instanceof File) total += value.size;
@@ -81,6 +82,6 @@ export function uploadForm<T>(path: string, form: FormData, label: string): Prom
   });
 }
 
-export const uploadLabel = (files: ArrayLike<File>) => (files.length === 1 ? files[0]!.name : `${files.length} 個檔案`);
+export const uploadLabel = (files: ArrayLike<File>) => (files.length === 1 ? files[0]!.name : t("{count} file | {count} files", { count: files.length }));
 
 export const isUploadCancelled = (error: unknown) => error instanceof ApiError && error.code === UPLOAD_CANCELLED;

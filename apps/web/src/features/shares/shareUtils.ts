@@ -1,9 +1,10 @@
+import { t } from "../../lib/i18n";
 export type ShareMode = "download" | "view_only" | "upload_only";
 
 export const shareModes: Array<{ value: ShareMode; label: string }> = [
-  { value: "download", label: "可下載" },
-  { value: "view_only", label: "僅檢視" },
-  { value: "upload_only", label: "僅上傳（收件箱）" }
+  { value: "download", label: t("Can download") },
+  { value: "view_only", label: t("View only") },
+  { value: "upload_only", label: t("Upload only (drop box)") }
 ];
 
 export function parseShareMode(permissionJson: string): ShareMode {

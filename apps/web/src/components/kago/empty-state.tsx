@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { t } from "@/lib/i18n";
 
 export function KagoEmptyState({ icon, title, description, className, children }: { icon?: ReactNode; title: string; description?: string; className?: string; children?: ReactNode }) {
   return (
@@ -14,7 +15,7 @@ export function KagoEmptyState({ icon, title, description, className, children }
 }
 
 export function KagoSpinner({ className }: { className?: string }) {
-  return <Loader2 className={cn("animate-spin text-muted", className)} aria-label="載入中" />;
+  return <Loader2 className={cn("animate-spin text-muted", className)} aria-label={t("Loading")} />;
 }
 
 export function KagoLoading() {

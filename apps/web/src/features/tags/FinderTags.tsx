@@ -1,5 +1,6 @@
 import { cn } from "@/lib/utils";
 import type { FinderTag } from "@/types/kago";
+import { t } from "@/lib/i18n";
 
 export const finderTagColorClass: Record<NonNullable<FinderTag["color"]>, string> = {
   gray: "bg-tag-gray",
@@ -20,7 +21,7 @@ export function FinderTagDots({ tags, className }: { tags?: FinderTag[]; classNa
   if (colored.length === 0) return null;
   const label = tags.map((tag) => tag.name).join("、");
   return (
-    <span className={cn("flex shrink-0 items-center", className)} role="img" aria-label={`標籤：${label}`} title={label}>
+    <span className={cn("flex shrink-0 items-center", className)} role="img" aria-label={t("Tags: {label}", { label })} title={label}>
       {colored.map((tag) => (
         <span key={tag.name} className={cn("-ml-1 size-2.5 rounded-full ring-1 ring-surface first:ml-0", finderTagColorClass[tag.color!])} />
       ))}

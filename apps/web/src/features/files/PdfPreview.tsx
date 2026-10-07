@@ -9,6 +9,7 @@ import { triggerDownload } from "@/lib/paths";
 import type { PreviewWindow } from "@/stores/workspace";
 import { FileIcon } from "./FileIcon";
 import type { PdfViewHandle, PdfViewState } from "./PdfView";
+import { t } from "@/lib/i18n";
 
 // pdf.js is only downloaded by someone who opens a PDF.
 const PdfView = lazy(() => import("./PdfView"));
@@ -28,14 +29,14 @@ export function PdfPreviewWindow({ window }: { window: PreviewWindow }) {
       window={window}
       icon={<FileIcon item={item} />}
       titleExtra={
-        <KagoIconButton label="下載" className="size-6" onClick={download}>
+        <KagoIconButton label={t("Download")} className="size-6" onClick={download}>
           <Download />
         </KagoIconButton>
       }
     >
       {unreadable ? (
-        <KagoEmptyState className="min-h-0 flex-1" icon={<FileWarning />} title="無法預覽這個檔案" description="檔案可能已損毀，或有密碼保護。">
-          <Button onClick={download}>下載</Button>
+        <KagoEmptyState className="min-h-0 flex-1" icon={<FileWarning />} title={t("Couldn’t preview this file")} description={t("The file may be damaged or password-protected.")}>
+          <Button onClick={download}>{t("Download")}</Button>
         </KagoEmptyState>
       ) : (
         <Suspense fallback={<KagoLoading />}>
@@ -46,16 +47,16 @@ export function PdfPreviewWindow({ window }: { window: PreviewWindow }) {
       {state.pages > 0 && !unreadable ? (
         <footer className="flex h-7 shrink-0 items-center gap-1 border-t border-line bg-elevated px-3 text-muted">
           <span className="mr-auto tabular-nums">
-            第 {state.page} / {state.pages} 頁
+            {t("Page {page} of {pages}", { page: state.page, pages: state.pages })}
           </span>
           <span className="px-1 tabular-nums">{Math.round(state.scale * 100)}%</span>
-          <KagoIconButton label="縮小" className="size-6" onClick={() => view.current?.zoomOut()}>
+          <KagoIconButton label={t("Zoom out")} className="size-6" onClick={() => view.current?.zoomOut()}>
             <ZoomOut />
           </KagoIconButton>
-          <KagoIconButton label="放大" className="size-6" onClick={() => view.current?.zoomIn()}>
+          <KagoIconButton label={t("Zoom in")} className="size-6" onClick={() => view.current?.zoomIn()}>
             <ZoomIn />
           </KagoIconButton>
-          <KagoIconButton label="符合視窗寬度" className="size-6" active={state.fitted} onClick={() => view.current?.fit()}>
+          <KagoIconButton label={t("Fit to width")} className="size-6" active={state.fitted} onClick={() => view.current?.fit()}>
             <MoveHorizontal />
           </KagoIconButton>
         </footer>

@@ -14,6 +14,7 @@ import { toast } from "@/stores/toast";
 import type { Root } from "@/types/kago";
 import { permissionActions, permissionPresets, type PermissionAction } from "./permissionUtils";
 import { RuleList } from "./RuleList";
+import { t } from "@/lib/i18n";
 
 type Decision = "allow" | "deny";
 
@@ -47,76 +48,76 @@ export function PermissionsPage({ roots }: { roots: Root[] }) {
       await api("/api/permissions", { method: "POST", body: JSON.stringify({ principalType, principalId, rootId, pathPrefix: normalizedPath, allow, deny, recursive }) });
       await Promise.all(["permissions", "roots", "fs"].map((key) => queryClient.invalidateQueries({ queryKey: [key] })));
       setCreating(false);
-      toast("已新增權限規則");
-    }, "新增規則失敗");
+      toast(t("Permission rule added"));
+    }, t("Couldn’t add the rule"));
   }
 
   if (roots.length === 0) {
     return (
-      <Page title="權限">
-        <KagoEmptyState icon={<KeyRound />} title="還沒有任何位置" description="/data 底下有資料夾後，才能設定權限。" />
+      <Page title={t("Permissions")}>
+        <KagoEmptyState icon={<KeyRound />} title={t("No locations yet")} description={t("Permissions can be set once there is a folder under /data.")} />
       </Page>
     );
   }
 
   return (
     <Page
-      title="權限"
-      description="沒有被明確允許的動作一律拒絕；同一路徑上「禁止」優先於「允許」。"
+      title={t("Permissions")}
+      description={t("Anything not explicitly allowed is denied; on the same path, Deny wins over Allow.")}
       actions={
         // The location is the scope of the whole page: the rules listed and the rule being added.
-        <Select aria-label="位置" className="w-40" value={rootId} onChange={(event) => setSelectedRootId(event.target.value)}>
+        <Select aria-label={t("Location")} className="w-40" value={rootId} onChange={(event) => setSelectedRootId(event.target.value)}>
           {roots.map((root) => <option key={root.id} value={root.id}>{root.name}</option>)}
         </Select>
       }
     >
       <Card
-        title={`「${rootName}」的規則`}
-        description={rules.data?.length ? `${rules.data.length} 條規則` : undefined}
-        action={creating ? null : <Button onClick={() => setCreating(true)}><Plus />新增規則</Button>}
+        title={t("Rules for “{rootName}”", { rootName })}
+        description={rules.data?.length ? t("{count} rule | {count} rules", { count: rules.data.length }) : undefined}
+        action={creating ? null : <Button onClick={() => setCreating(true)}><Plus />{t("Add rule")}</Button>}
       >
-        {rules.error ? <span className="text-danger">無法讀取權限規則</span> : null}
-        {rules.data?.length === 0 ? <span className="text-faint">這個位置還沒有任何規則，只有管理員可以存取。</span> : null}
+        {rules.error ? <span className="text-danger">{t("Couldn’t load the permission rules")}</span> : null}
+        {rules.data?.length === 0 ? <span className="text-faint">{t("This location has no rules yet; only administrators can reach it.")}</span> : null}
         {rules.data?.length ? <div className="-my-2.5"><RuleList rules={rules.data} /></div> : null}
       </Card>
 
       {creating ? (
-      <Card title={`在「${rootName}」新增規則`} action={<KagoIconButton label="取消新增" onClick={() => setCreating(false)}><X /></KagoIconButton>}>
+      <Card title={t("Add a rule to “{rootName}”", { rootName })} action={<KagoIconButton label={t("Cancel adding")} onClick={() => setCreating(false)}><X /></KagoIconButton>}>
         <form className="flex flex-col gap-4" onSubmit={save}>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="套用對象">
+            <Field label={t("Applies to")}>
               <Select value={principalType} onChange={(event) => { setPrincipalType(event.target.value as "user" | "group"); setPrincipalId(""); }}>
-                <option value="group">群組</option>
-                <option value="user">使用者</option>
+                <option value="group">{t("Group")}</option>
+                <option value="user">{t("User")}</option>
               </Select>
             </Field>
-            <Field label={principalType === "group" ? "群組" : "使用者"}>
+            <Field label={principalType === "group" ? t("Group") : t("User")}>
               <Select value={principalId} onChange={(event) => setPrincipalId(event.target.value)}>
-                <option value="">請選擇</option>
+                <option value="">{t("Choose…")}</option>
                 {principalType === "group"
                   ? groups.data?.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)
                   : users.data?.map((user) => <option key={user.id} value={user.id}>{user.email}</option>)}
               </Select>
             </Field>
-            <Field label="路徑" hint={normalizedPath ? undefined : "路徑格式無效"} className="col-span-2">
+            <Field label={t("Path")} hint={normalizedPath ? undefined : t("That path isn’t valid")} className="col-span-2">
               <Input value={pathPrefix} onChange={(event) => setPathPrefix(event.target.value)} placeholder="/public" />
             </Field>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-medium text-muted">快速套用</span>
+            <span className="text-xs font-medium text-muted">{t("Presets")}</span>
             {permissionPresets.map((preset) => (
               <Button key={preset.label} onClick={() => setDecisions(Object.fromEntries(preset.allow.map((key) => [key, "allow"])))}>{preset.label}</Button>
             ))}
-            <Button variant="ghost" onClick={() => setDecisions({})}>清除</Button>
+            <Button variant="ghost" onClick={() => setDecisions({})}>{t("Clear")}</Button>
           </div>
 
           <table className="w-full border-collapse">
             <thead>
               <tr className="text-left text-xs text-muted">
-                <th className="py-1 font-medium">動作</th>
-                <th className="w-16 py-1 text-center font-medium">允許</th>
-                <th className="w-16 py-1 text-center font-medium">禁止</th>
+                <th className="py-1 font-medium">{t("Action")}</th>
+                <th className="w-16 py-1 text-center font-medium">{t("Allow")}</th>
+                <th className="w-16 py-1 text-center font-medium">{t("Deny")}</th>
               </tr>
             </thead>
             <tbody>
@@ -128,7 +129,7 @@ export function PermissionsPage({ roots }: { roots: Root[] }) {
                       <input
                         type="checkbox"
                         className="kago-checkbox"
-                        aria-label={`${decision === "allow" ? "允許" : "禁止"}${action.label}`}
+                        aria-label={decision === "allow" ? t("Allow: {action}", { action: action.label }) : t("Deny: {action}", { action: action.label })}
                         checked={decisions[action.key] === decision}
                         onChange={() => toggle(action.key, decision)}
                       />
@@ -140,8 +141,8 @@ export function PermissionsPage({ roots }: { roots: Root[] }) {
           </table>
 
           <div className="flex items-center justify-between">
-            <Checkbox label="包含所有子資料夾" checked={recursive} onChange={(event) => setRecursive(event.target.checked)} />
-            <Button type="submit" variant="default" disabled={!canSave}>新增規則</Button>
+            <Checkbox label={t("Include all subfolders")} checked={recursive} onChange={(event) => setRecursive(event.target.checked)} />
+            <Button type="submit" variant="default" disabled={!canSave}>{t("Add rule")}</Button>
           </div>
         </form>
       </Card>

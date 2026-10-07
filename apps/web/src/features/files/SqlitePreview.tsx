@@ -12,9 +12,18 @@ import { cn } from "@/lib/utils";
 import type { PreviewWindow } from "@/stores/workspace";
 import type { SqliteCell, SqliteTable } from "@/types/kago";
 import { FileIcon } from "./FileIcon";
+import { locale, t } from "@/lib/i18n";
 
 const PAGE_SIZE = 100;
-const count = new Intl.NumberFormat("zh-TW");
+const count = new Intl.NumberFormat(locale);
+
+/** Which rows are on screen, and out of how many when the table could be counted. */
+function rangeLabel(page: { offset: number; rows: unknown[]; total: number | null }) {
+  const total = page.total === null ? null : count.format(page.total);
+  if (page.rows.length === 0) return total === null ? "" : t("{total} rows", { total });
+  const range = { from: count.format(page.offset + 1), to: count.format(page.offset + page.rows.length) };
+  return total === null ? t("Rows {from}–{to}", range) : t("Rows {from}–{to} of {total}", { ...range, total });
+}
 
 /** A SQLite database, read on the server: its tables on the left, the rows of one of them on the right. */
 export function SqlitePreviewWindow({ window }: { window: PreviewWindow }) {
@@ -31,7 +40,7 @@ export function SqlitePreviewWindow({ window }: { window: PreviewWindow }) {
       window={window}
       icon={<FileIcon item={item} />}
       titleExtra={
-        <KagoIconButton label="下載" className="size-6" onClick={download}>
+        <KagoIconButton label={t("Download")} className="size-6" onClick={download}>
           <Download />
         </KagoIconButton>
       }
@@ -39,14 +48,14 @@ export function SqlitePreviewWindow({ window }: { window: PreviewWindow }) {
       {overview.isPending ? (
         <KagoLoading />
       ) : overview.error ? (
-        <KagoEmptyState className="min-h-0 flex-1" icon={<Database />} title="無法開啟資料庫" description={errorMessage(overview.error, "請稍後再試。")}>
-          <Button onClick={download}>下載</Button>
+        <KagoEmptyState className="min-h-0 flex-1" icon={<Database />} title={t("Couldn’t open the database")} description={errorMessage(overview.error, t("Please try again later."))}>
+          <Button onClick={download}>{t("Download")}</Button>
         </KagoEmptyState>
       ) : !table ? (
-        <KagoEmptyState className="min-h-0 flex-1" icon={<Database />} title="這個資料庫沒有資料表" />
+        <KagoEmptyState className="min-h-0 flex-1" icon={<Database />} title={t("This database has no tables")} />
       ) : (
         <div className="flex min-h-0 flex-1">
-          <nav aria-label="資料表" className="flex w-44 shrink-0 flex-col gap-px overflow-y-auto border-r border-line bg-elevated p-1.5">
+          <nav aria-label={t("Tables")} className="flex w-44 shrink-0 flex-col gap-px overflow-y-auto border-r border-line bg-elevated p-1.5">
             {tables.map((entry) => (
               <button
                 key={entry.name}
@@ -79,7 +88,7 @@ function SqliteRows({ rootSlug, path, table, offset, onOffset }: { rootSlug: str
     <div className="flex min-w-0 flex-1 flex-col bg-surface">
       <div className="min-h-0 flex-1 overflow-auto">
         {query.error ? (
-          <KagoEmptyState className="h-full" icon={<Database />} title="無法讀取資料表" description={errorMessage(query.error, "請稍後再試。")} />
+          <KagoEmptyState className="h-full" icon={<Database />} title={t("Couldn’t read the table")} description={errorMessage(query.error, t("Please try again later."))} />
         ) : (
           <table className="border-separate border-spacing-0 whitespace-nowrap">
             <thead>
@@ -88,7 +97,7 @@ function SqliteRows({ rootSlug, path, table, offset, onOffset }: { rootSlug: str
                 {columns.map((name, index) => (
                   <th key={index} className="sticky top-0 z-10 h-(--kago-row-h) border-r border-b border-line bg-elevated px-2.5 text-left font-medium">
                     <span className="flex items-center gap-1.5">
-                      {described.get(name)?.pk ? <KeyRound aria-label="主鍵" className="size-3 text-muted" /> : null}
+                      {described.get(name)?.pk ? <KeyRound aria-label={t("Primary key")} className="size-3 text-muted" /> : null}
                       {name}
                       <span className="font-normal text-faint">{described.get(name)?.type}</span>
                     </span>
@@ -110,17 +119,16 @@ function SqliteRows({ rootSlug, path, table, offset, onOffset }: { rootSlug: str
             </tbody>
           </table>
         )}
-        {query.isPending ? <KagoLoading /> : page?.rows.length === 0 ? <KagoEmptyState title={offset > 0 ? "沒有更多資料列" : "這個資料表是空的"} /> : null}
+        {query.isPending ? <KagoLoading /> : page?.rows.length === 0 ? <KagoEmptyState title={offset > 0 ? t("No more rows") : t("This table is empty")} /> : null}
       </div>
       <footer className="flex h-7 shrink-0 items-center gap-1 border-t border-line bg-elevated px-3 text-muted">
         <span className="mr-auto tabular-nums">
-          {page && page.rows.length > 0 ? `第 ${count.format(page.offset + 1)}–${count.format(page.offset + page.rows.length)} 列` : ""}
-          {page && page.total !== null ? `${page.rows.length > 0 ? "，" : ""}共 ${count.format(page.total)} 列` : ""}
+          {page ? rangeLabel(page) : ""}
         </span>
-        <KagoIconButton label="上一頁" className="size-6" disabled={offset === 0} onClick={() => onOffset(Math.max(0, offset - PAGE_SIZE))}>
+        <KagoIconButton label={t("Back")} className="size-6" disabled={offset === 0} onClick={() => onOffset(Math.max(0, offset - PAGE_SIZE))}>
           <ChevronLeft />
         </KagoIconButton>
-        <KagoIconButton label="下一頁" className="size-6" disabled={!page?.hasMore} onClick={() => onOffset(offset + PAGE_SIZE)}>
+        <KagoIconButton label={t("Forward")} className="size-6" disabled={!page?.hasMore} onClick={() => onOffset(offset + PAGE_SIZE)}>
           <ChevronRight />
         </KagoIconButton>
       </footer>

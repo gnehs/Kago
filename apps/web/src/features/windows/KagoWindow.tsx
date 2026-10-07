@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { isInteractiveTarget, usePointerDrag } from "@/lib/usePointerDrag";
 import { cn } from "@/lib/utils";
 import { clampWindowPosition, fitAspectSize, getCanvasSize, MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, requestCloseWindow, TITLEBAR_HEIGHT, useWorkspaceStore, type WindowFrame } from "@/stores/workspace";
+import { t } from "@/lib/i18n";
 
 type ResizeEdge = "e" | "s" | "se";
 
@@ -48,9 +49,9 @@ export function KagoWindow({
         {...moveHandlers}
       >
         <div className="kago-window-controls">
-          <WindowControl label="關閉視窗（⌥W）" closes icon={X} onClick={() => void requestCloseWindow(window.id)} />
-          <WindowControl label="最小化" icon={Minus} onClick={() => update({ minimized: true })} />
-          <WindowControl label={window.maximized ? "還原大小" : "最大化"} icon={window.maximized ? Minimize2 : Maximize2} onClick={() => update({ maximized: !window.maximized })} />
+          <WindowControl label={t("Close window (⌥W)")} closes icon={X} onClick={() => void requestCloseWindow(window.id)} />
+          <WindowControl label={t("Minimize")} icon={Minus} onClick={() => update({ minimized: true })} />
+          <WindowControl label={window.maximized ? t("Restore size") : t("Maximize")} icon={window.maximized ? Minimize2 : Maximize2} onClick={() => update({ maximized: !window.maximized })} />
         </div>
         <div className={cn("flex min-w-0 flex-1 items-center justify-center gap-1.5 font-medium", !window.focused && "text-muted")}>
           {icon}

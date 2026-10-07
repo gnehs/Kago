@@ -9,6 +9,7 @@ import { toast } from "@/stores/toast";
 import { isUploadCancelled, uploadForm, uploadLabel } from "@/stores/uploads";
 import { useWorkspaceStore } from "@/stores/workspace";
 import type { FileItem, FileTask, FileWindow } from "@/types/kago";
+import { t } from "@/lib/i18n";
 
 export type { FileRef };
 
@@ -40,14 +41,14 @@ const isInFolder = (source: FileRef, folder: FileRef) => source.rootSlug === fol
 export function transferFiles(queryClient: QueryClient, type: "copy" | "move", sources: FileRef[], destination: FileRef) {
   return run(async () => {
     await createTask(queryClient, { type, sources, destination });
-    toast(type === "copy" ? "已建立複製任務" : "已建立搬移任務");
+    toast(type === "copy" ? t("Copy task created") : t("Move task created"));
   });
 }
 
 export function setClipboard(mode: "copy" | "cut", items: FileRef[]) {
   if (items.length === 0) return;
   useClipboardStore.setState({ clip: { mode, items } });
-  toast(`已${mode === "copy" ? "複製" : "剪下"} ${items.length} 個項目`);
+  toast(mode === "copy" ? t("Copied {count} item | Copied {count} items", { count: items.length }) : t("Cut {count} item | Cut {count} items", { count: items.length }));
 }
 
 export async function pasteClipboard(queryClient: QueryClient, destination: FileRef) {
@@ -77,11 +78,11 @@ export function useFileActions(window: FileWindow) {
     refresh,
     newFolder: () =>
       run(async () => {
-        const name = nfc((await promptText({ title: "新增資料夾", defaultValue: "未命名資料夾", confirmLabel: "建立" })) ?? "");
+        const name = nfc((await promptText({ title: t("New folder"), defaultValue: t("untitled folder"), confirmLabel: t("Create") })) ?? "");
         if (!name) return;
         await api("/api/fs/mkdir", { method: "POST", body: JSON.stringify({ rootSlug: window.rootSlug, path: window.logicalPath, name }) });
         await refresh();
-      }, "建立資料夾失敗"),
+      }, t("Couldn’t create the folder")),
     /** Creates the tree's folders, then uploads its files folder by folder in batches the server accepts. */
     upload: (source: UploadTree | Promise<UploadTree>, path = window.logicalPath) =>
       run(async () => {
@@ -109,42 +110,43 @@ export function useFileActions(window: FileWindow) {
           // Whatever made it across before the failure is already on disk.
           await refreshRoot();
           if (!isUploadCancelled(error)) throw error;
-          toast("已取消上傳");
+          toast(t("Upload cancelled"));
           return;
         }
         await refreshRoot();
         // A drop on a folder row lands inside that folder, out of sight; say so.
-        const where = path === window.logicalPath ? "" : `到「${baseName(path)}」`;
-        toast(tree.files.length > 0 ? `已上傳 ${tree.files.length} 個檔案${where}` : `已建立 ${tree.dirs.length} 個資料夾${where}`);
-      }, "上傳失敗"),
+        const folder = path === window.logicalPath ? "" : baseName(path);
+        if (tree.files.length > 0) toast(folder ? t("Uploaded {count} file to “{folder}” | Uploaded {count} files to “{folder}”", { count: tree.files.length, folder }) : t("Uploaded {count} file | Uploaded {count} files", { count: tree.files.length }));
+        else toast(folder ? t("Created {count} folder in “{folder}” | Created {count} folders in “{folder}”", { count: tree.dirs.length, folder }) : t("Created {count} folder | Created {count} folders", { count: tree.dirs.length }));
+      }, t("Upload failed")),
     rename: (item: FileItem) =>
       run(async () => {
-        const name = nfc((await promptText({ title: "重新命名", defaultValue: item.name, confirmLabel: "重新命名" })) ?? "");
+        const name = nfc((await promptText({ title: t("Rename"), defaultValue: item.name, confirmLabel: t("Rename") })) ?? "");
         // Confirming the unchanged name still goes through for an NFD file, which rewrites it as NFC.
         if (!name || (name === item.name && !needsNormalizing(item.path))) return;
         await api("/api/fs/rename", { method: "POST", body: JSON.stringify({ rootSlug: window.rootSlug, path: item.path, name }) });
         clearSelection();
         // The item may sit in a folder opened in place rather than in the window's own.
         await refreshRoot();
-      }, "重新命名失敗"),
+      }, t("Couldn’t rename")),
     trash: (paths: string[]) =>
       run(async () => {
         await createTask(queryClient, { type: "delete_to_trash", sources: refs(paths) });
         clearSelection();
         await refreshRoot();
-        toast(`已將 ${paths.length} 個項目移到垃圾桶`);
+        toast(t("Moved {count} item to Trash | Moved {count} items to Trash", { count: paths.length }));
       }),
     compress: (paths: string[]) =>
       run(async () => {
-        const name = await promptText({ title: "壓縮成 zip", defaultValue: `${window.title || "archive"}.zip`, confirmLabel: "壓縮" });
+        const name = await promptText({ title: t("Compress to zip"), defaultValue: `${window.title || "archive"}.zip`, confirmLabel: t("Compress") });
         if (!name) return;
         await createTask(queryClient, { type: "compress", sources: refs(paths), destination: here(joinLogicalPath(window.logicalPath, ensureZipName(name))) });
-        toast("已建立壓縮任務");
+        toast(t("Compress task created"));
       }),
     extract: (paths: string[]) =>
       run(async () => {
         await createTask(queryClient, { type: "extract", sources: refs(paths), destination: here() });
-        toast("已建立解壓縮任務");
+        toast(t("Extract task created"));
       }),
     /** A single file downloads directly; folders and multi-selections are zipped server-side first, outside the user's folders. */
     download: (items: FileItem[]) =>
@@ -157,7 +159,7 @@ export function useFileActions(window: FileWindow) {
         }
         const task = await createTask(queryClient, { type: "download_zip", sources: refs(items.map((item) => item.path)) });
         pendingDownloads.add(task.id);
-        toast("正在打包，完成後會自動下載");
+        toast(t("Zipping. The download starts when it’s ready"));
       }),
     addToShelf: (paths: string[]) =>
       run(async () => {
@@ -166,8 +168,8 @@ export function useFileActions(window: FileWindow) {
         if (!shelfId) return;
         await Promise.all(refs(paths).map((ref) => api(`/api/shelves/${shelfId}/items`, { method: "POST", body: JSON.stringify(ref) })));
         await queryClient.invalidateQueries({ queryKey: ["shelves"] });
-        toast(`已加入中轉區（${paths.length}）`);
-      }, "無法加入中轉區"),
+        toast(t("Added to Shelf ({count})", { count: paths.length }));
+      }, t("Couldn’t add to Shelf")),
     transfer: (type: "copy" | "move", sources: FileRef[], path?: string) => transferFiles(queryClient, type, sources, here(path)),
     copy: (paths: string[]) => setClipboard("copy", refs(paths)),
     cut: (paths: string[]) => setClipboard("cut", refs(paths)),

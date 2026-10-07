@@ -6,6 +6,7 @@ import { useWorkspaceStore } from "@/stores/workspace";
 import type { FileWindow } from "@/types/kago";
 import { Breadcrumb } from "./Breadcrumb";
 import { sortColumns, toggleSort } from "./FileList";
+import { t } from "@/lib/i18n";
 
 /** Nine squares, drawn to sit beside the one and the four that lucide has. */
 const Grid9 = () => (
@@ -16,9 +17,9 @@ const Grid9 = () => (
 
 /** The sizes of the icon view, in the order its button steps through them. The button shows the one in use. */
 const iconSizes = [
-  { size: "large", label: "大", icon: <Square /> },
-  { size: "medium", label: "中", icon: <LayoutGrid /> },
-  { size: "small", label: "小", icon: <Grid9 /> }
+  { size: "large", label: t("Large"), icon: <Square /> },
+  { size: "medium", label: t("Medium"), icon: <LayoutGrid /> },
+  { size: "small", label: t("Small"), icon: <Grid9 /> }
 ] as const;
 
 type FileToolbarProps = {
@@ -45,35 +46,35 @@ export function FileToolbar({ window, rootName, readonly, canGoBack, canGoForwar
   const sizeIndex = Math.max(0, iconSizes.findIndex(({ size }) => size === (window.iconSize ?? "medium")));
   const iconSize = iconSizes[sizeIndex]!;
   const viewModes = [
-    { mode: "list", label: "列表", icon: <List />, onClick: () => store().updateWindow(window.id, { viewMode: "list" }) },
+    { mode: "list", label: t("List"), icon: <List />, onClick: () => store().updateWindow(window.id, { viewMode: "list" }) },
     {
       mode: "grid",
-      label: window.viewMode === "grid" ? `圖示（${iconSize.label}）· 再按一下切換大小` : "圖示",
+      label: window.viewMode === "grid" ? t("Icons ({size}) · click again to change size", { size: iconSize.label }) : t("Icons"),
       icon: iconSize.icon,
       // Already in the icon view, the button steps to the next size instead.
       onClick: () => store().updateWindow(window.id, window.viewMode === "grid" ? { iconSize: iconSizes[(sizeIndex + 1) % iconSizes.length]!.size } : { viewMode: "grid" })
     },
-    { mode: "columns", label: "直欄", icon: <Columns3 />, onClick: () => store().updateWindow(window.id, { viewMode: "columns" }) }
+    { mode: "columns", label: t("Columns"), icon: <Columns3 />, onClick: () => store().updateWindow(window.id, { viewMode: "columns" }) }
   ] as const;
 
   return (
     <div className="kago-toolbar @container flex h-10 shrink-0 items-center gap-1 border-b border-line-strong px-2">
       <div className="kago-segments mr-1">
-        <KagoIconButton label="上一頁" className="size-6" disabled={!canGoBack} onClick={() => onGo(-1)}><ChevronLeft /></KagoIconButton>
-        <KagoIconButton label="下一頁" className="size-6" disabled={!canGoForward} onClick={() => onGo(1)}><ChevronRight /></KagoIconButton>
+        <KagoIconButton label={t("Back")} className="size-6" disabled={!canGoBack} onClick={() => onGo(-1)}><ChevronLeft /></KagoIconButton>
+        <KagoIconButton label={t("Forward")} className="size-6" disabled={!canGoForward} onClick={() => onGo(1)}><ChevronRight /></KagoIconButton>
       </div>
       <Breadcrumb window={window} rootName={rootName} onNavigate={onNavigate} />
 
       <label className="kago-well hidden h-7 w-40 items-center gap-1.5 rounded-full px-2.5 @2xl:flex">
         <Search className="size-3.5 text-faint" />
-        <input aria-label="篩選目前資料夾" placeholder="篩選" className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-faint" value={search} onChange={(event) => onSearch(event.target.value)} />
+        <input aria-label={t("Filter this folder")} placeholder={t("Filter")} className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-faint" value={search} onChange={(event) => onSearch(event.target.value)} />
         {search ? (
-          <button aria-label="清除篩選" className="text-faint hover:text-ink" onClick={() => onSearch("")}><X className="size-3.5" /></button>
+          <button aria-label={t("Clear filter")} className="text-faint hover:text-ink" onClick={() => onSearch("")}><X className="size-3.5" /></button>
         ) : null}
       </label>
 
       <Divider />
-      <div className="kago-segments" role="radiogroup" aria-label="檢視方式">
+      <div className="kago-segments" role="radiogroup" aria-label={t("View as")}>
         {viewModes.map(({ mode, label, icon, onClick }) => (
           <button
             key={mode}
@@ -92,7 +93,7 @@ export function FileToolbar({ window, rootName, readonly, canGoBack, canGoForwar
       {/* The list view sorts from its column headers; the other views have none. */}
       {window.viewMode === "list" ? null : (
         <KagoDropdownMenu
-          label="排序方式"
+          label={t("Sort by")}
           menu={sortColumns.map(({ sortBy, label }) => (
             <KagoMenuItem
               key={sortBy}
@@ -109,11 +110,11 @@ export function FileToolbar({ window, rootName, readonly, canGoBack, canGoForwar
       )}
 
       <Divider />
-      <KagoIconButton label="新增資料夾" disabled={readonly} onClick={onNewFolder}><FolderPlus /></KagoIconButton>
-      <KagoIconButton label="上傳檔案" disabled={readonly} onClick={onUpload}><Upload /></KagoIconButton>
+      <KagoIconButton label={t("New folder")} disabled={readonly} onClick={onNewFolder}><FolderPlus /></KagoIconButton>
+      <KagoIconButton label={t("Upload files")} disabled={readonly} onClick={onUpload}><Upload /></KagoIconButton>
       <Divider />
-      <KagoIconButton label="資訊（⌘I）" active={Boolean(window.inspectorOpen)} onClick={() => store().updateWindow(window.id, { inspectorOpen: !window.inspectorOpen })}><Info /></KagoIconButton>
-      {menu ? <KagoDropdownMenu label={window.selectedItems.length > 0 ? "選取項目的所有動作" : "資料夾動作"} menu={menu}><Ellipsis /></KagoDropdownMenu> : null}
+      <KagoIconButton label={t("Info (⌘I)")} active={Boolean(window.inspectorOpen)} onClick={() => store().updateWindow(window.id, { inspectorOpen: !window.inspectorOpen })}><Info /></KagoIconButton>
+      {menu ? <KagoDropdownMenu label={window.selectedItems.length > 0 ? t("All actions for the selection") : t("Folder actions")} menu={menu}><Ellipsis /></KagoDropdownMenu> : null}
     </div>
   );
 }

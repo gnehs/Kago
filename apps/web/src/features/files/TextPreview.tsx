@@ -15,6 +15,7 @@ import { guardWindowClose, useWorkspaceStore, type PreviewWindow } from "@/store
 import type { FileMeta } from "@/types/kago";
 import type { CodeEditorHandle } from "./CodeEditor";
 import { FileIcon } from "./FileIcon";
+import { t } from "@/lib/i18n";
 
 // CodeMirror is only downloaded by someone who opens a text file.
 const CodeEditor = lazy(() => import("./CodeEditor"));
@@ -26,7 +27,7 @@ async function loadText(rootSlug: string, path: string): Promise<LoadedText> {
   // The mtime is read before the bytes: a change in between is then caught on save rather than missed.
   const meta = await api<FileMeta>(`/api/fs/meta?${new URLSearchParams({ rootSlug, path }).toString()}`);
   const response = await fetch(previewUrl(rootSlug, path), { credentials: "include", cache: "no-store" });
-  if (!response.ok) throw new Error("無法讀取檔案");
+  if (!response.ok) throw new Error(t("Couldn’t read the file"));
   let bytes = new Uint8Array(await response.arrayBuffer());
   const bom = bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf;
   if (bom) bytes = bytes.subarray(3);
@@ -77,7 +78,7 @@ export function TextPreviewWindow({ window }: { window: PreviewWindow }) {
 
   useEffect(() => {
     if (!dirty) return;
-    const withdraw = guardWindowClose(window.id, () => confirmAction({ title: `要捨棄「${item.name}」的變更嗎？`, description: "尚未儲存的變更會遺失。", confirmLabel: "捨棄", destructive: true }));
+    const withdraw = guardWindowClose(window.id, () => confirmAction({ title: t("Discard the changes to “{name}”?", { name: item.name }), description: t("Unsaved changes will be lost."), confirmLabel: t("Discard"), destructive: true }));
     const warn = (event: BeforeUnloadEvent) => event.preventDefault();
     globalThis.addEventListener("beforeunload", warn);
     return () => {
@@ -98,7 +99,7 @@ export function TextPreviewWindow({ window }: { window: PreviewWindow }) {
         meta = await write(baseMtime.current);
       } catch (error) {
         if (!(error instanceof ApiError) || error.code !== "FILE_CHANGED") throw error;
-        const overwrite = await confirmAction({ title: "檔案在開啟後被修改過", description: "儲存會覆寫別處所做的變更。", confirmLabel: "覆寫", destructive: true });
+        const overwrite = await confirmAction({ title: t("The file changed after you opened it"), description: t("Saving overwrites the changes made elsewhere."), confirmLabel: t("Overwrite"), destructive: true });
         if (!overwrite) return;
         meta = await write();
       }
@@ -108,7 +109,7 @@ export function TextPreviewWindow({ window }: { window: PreviewWindow }) {
       void queryClient.invalidateQueries({ queryKey: ["fs", "list", rootSlug, parentPath(item.path)] });
       void queryClient.invalidateQueries({ queryKey: ["fs", "meta", rootSlug, item.path] });
     } catch (error) {
-      toast(errorMessage(error, "儲存失敗"), "error");
+      toast(errorMessage(error, t("Couldn’t save")), "error");
     } finally {
       setSaving(false);
     }
@@ -133,16 +134,16 @@ export function TextPreviewWindow({ window }: { window: PreviewWindow }) {
       titleExtra={
         <>
           {isMarkdown && loaded ? (
-            <KagoIconButton label={previewing ? "編輯" : "預覽"} className="size-6" onClick={togglePreview}>
+            <KagoIconButton label={previewing ? t("Edit") : t("Preview")} className="size-6" onClick={togglePreview}>
               {previewing ? <Pencil /> : <Eye />}
             </KagoIconButton>
           ) : null}
           {readOnly ? null : (
-            <KagoIconButton label="儲存（⌘S）" className={dirty ? "size-6 text-accent" : "size-6"} disabled={!dirty || saving} onClick={() => void save()}>
+            <KagoIconButton label={t("Save (⌘S)")} className={dirty ? "size-6 text-accent" : "size-6"} disabled={!dirty || saving} onClick={() => void save()}>
               <Save />
             </KagoIconButton>
           )}
-          <KagoIconButton label="下載" className="size-6" onClick={download}>
+          <KagoIconButton label={t("Download")} className="size-6" onClick={download}>
             <Download />
           </KagoIconButton>
         </>
@@ -152,9 +153,9 @@ export function TextPreviewWindow({ window }: { window: PreviewWindow }) {
         {file.isPending ? (
           <KagoLoading />
         ) : !loaded ? (
-          <KagoEmptyState className="h-full" icon={<FileWarning />} title="無法讀取檔案" description={errorMessage(file.error, "請稍後再試。")}>
-            <Button onClick={() => void file.refetch()}>重試</Button>
-            <Button onClick={download}>下載</Button>
+          <KagoEmptyState className="h-full" icon={<FileWarning />} title={t("Couldn’t read the file")} description={errorMessage(file.error, t("Please try again later."))}>
+            <Button onClick={() => void file.refetch()}>{t("Retry")}</Button>
+            <Button onClick={download}>{t("Download")}</Button>
           </KagoEmptyState>
         ) : (
           <Suspense fallback={<KagoLoading />}>
@@ -182,14 +183,14 @@ export function TextPreviewWindow({ window }: { window: PreviewWindow }) {
         <footer className="flex h-7 shrink-0 items-center gap-3 border-t border-line bg-elevated px-3 text-muted">
           <span>{language}</span>
           {previewing ? (
-            <span>預覽</span>
+            <span>{t("Preview")}</span>
           ) : (
             <span className="tabular-nums">
-              第 {cursor.line} 行，第 {cursor.column} 欄
+              {t("Ln {line}, Col {column}", { line: cursor.line, column: cursor.column })}
             </span>
           )}
           {loaded.crlf ? <span>CRLF</span> : null}
-          <span className="ml-auto">{loaded.lossy ? "不是 UTF-8 編碼，僅供檢視" : item.readonly ? "唯讀" : saving ? "儲存中…" : dirty ? "尚未儲存" : ""}</span>
+          <span className="ml-auto">{loaded.lossy ? t("Not UTF-8, view only") : item.readonly ? t("Read-only") : saving ? t("Saving…") : dirty ? t("Unsaved") : ""}</span>
         </footer>
       ) : null}
     </KagoWindow>

@@ -14,6 +14,7 @@ import { useWorkspaceStore, type PreviewWindow } from "@/stores/workspace";
 import type { FileItem } from "@/types/kago";
 import { FileIcon } from "./FileIcon";
 import { Detail, PhotoDetails, Section } from "./Inspector";
+import { t } from "@/lib/i18n";
 
 /** Pictures with a viewer: what the browser decodes, and what the server converts for it. */
 export const isViewableImage = (item: FileItem) => item.kind === "file" && (isImageType(item.type) || isConvertedImage(item));
@@ -384,10 +385,10 @@ export function ImagePreviewWindow({ window }: { window: PreviewWindow }) {
       icon={<FileIcon item={item} />}
       titleExtra={
         <>
-          <KagoIconButton label="拍攝資訊（⌘I）" className="size-6" active={infoOpen} onClick={toggleInfo}>
+          <KagoIconButton label={t("Photo info (⌘I)")} className="size-6" active={infoOpen} onClick={toggleInfo}>
             <Info />
           </KagoIconButton>
-          <KagoIconButton label="下載" className="size-6" onClick={download}>
+          <KagoIconButton label={t("Download")} className="size-6" onClick={download}>
             <Download />
           </KagoIconButton>
         </>
@@ -421,26 +422,26 @@ export function ImagePreviewWindow({ window }: { window: PreviewWindow }) {
       <footer className="flex h-7 shrink-0 items-center gap-1 border-t border-line bg-elevated px-3 text-muted">
         {pictures.length > 1 && position >= 0 ? (
           <>
-            <KagoIconButton label="上一張（←）" className="-ml-1.5 size-6" disabled={!previous} onClick={() => show(previous)}>
+            <KagoIconButton label={t("Previous (←)")} className="-ml-1.5 size-6" disabled={!previous} onClick={() => show(previous)}>
               <ChevronLeft />
             </KagoIconButton>
             <span className="tabular-nums">
               {position + 1} / {pictures.length}
             </span>
-            <KagoIconButton label="下一張（→）" className="size-6" disabled={!next} onClick={() => show(next)}>
+            <KagoIconButton label={t("Next (→)")} className="size-6" disabled={!next} onClick={() => show(next)}>
               <ChevronRight />
             </KagoIconButton>
           </>
         ) : null}
         <span className="mr-auto" />
         {fit > 0 ? <span className="px-1 tabular-nums">{Math.round(fit * view.z * 100)}%</span> : null}
-        <KagoIconButton label="縮小（−）" className="size-6" disabled={!zoomed} onClick={() => zoomStep(1 / STEP)}>
+        <KagoIconButton label={t("Zoom out (−)")} className="size-6" disabled={!zoomed} onClick={() => zoomStep(1 / STEP)}>
           <ZoomOut />
         </KagoIconButton>
-        <KagoIconButton label="放大（+）" className="size-6" disabled={fit === 0 || view.z >= maxZoom} onClick={() => zoomStep(STEP)}>
+        <KagoIconButton label={t("Zoom in (+)")} className="size-6" disabled={fit === 0 || view.z >= maxZoom} onClick={() => zoomStep(STEP)}>
           <ZoomIn />
         </KagoIconButton>
-        <KagoIconButton label="符合視窗（0）" className="-mr-1.5 size-6" active={!zoomed} onClick={resetZoom}>
+        <KagoIconButton label={t("Fit to window (0)")} className="-mr-1.5 size-6" active={!zoomed} onClick={resetZoom}>
           <Scan />
         </KagoIconButton>
       </footer>
@@ -471,8 +472,8 @@ function Slide({
     <div className="absolute inset-0 flex items-center justify-center" style={style} aria-hidden={!current}>
       {state === "failed" ? (
         current ? (
-          <KagoEmptyState icon={<ImageOff />} title="無法顯示這張影像" description="檔案可能已損毀，或伺服器無法轉換，請下載後用其他程式開啟。">
-            <Button onClick={onDownload}>下載</Button>
+          <KagoEmptyState icon={<ImageOff />} title={t("Couldn’t show this image")} description={t("The file may be damaged, or the server couldn’t convert it. Download it and open it in another app.")}>
+            <Button onClick={onDownload}>{t("Download")}</Button>
           </KagoEmptyState>
         ) : null
       ) : (
@@ -503,15 +504,15 @@ function ImageInfo({ rootSlug, item, natural }: { rootSlug: string; item: FileIt
   const photo = useImageMetadata(rootSlug, item.path);
   const hasPhoto = Boolean(photo.data && Object.keys(photo.data).length > 0);
   return (
-    <aside className="w-64 max-w-[60%] shrink-0 overflow-y-auto border-l border-line bg-surface [&>section:first-child]:border-t-0" aria-label="拍攝資訊">
-      <Section title="一般">
+    <aside className="w-64 max-w-[60%] shrink-0 overflow-y-auto border-l border-line bg-surface [&>section:first-child]:border-t-0" aria-label={t("Photo info")}>
+      <Section title={t("General")}>
         <dl className="m-0 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5">
-          <Detail label="名稱">{item.name}</Detail>
-          <Detail label="種類">{kindLabel(item)}</Detail>
-          <Detail label="大小">{formatSize(item.size)}</Detail>
-          <Detail label="修改時間">{formatDate(item.mtime)}</Detail>
+          <Detail label={t("Name")}>{item.name}</Detail>
+          <Detail label={t("Kind")}>{kindLabel(item)}</Detail>
+          <Detail label={t("Size")}>{formatSize(item.size)}</Detail>
+          <Detail label={t("Modified")}>{formatDate(item.mtime)}</Detail>
           {/* The camera's own figures are listed below when it left any. */}
-          {natural && !photo.data?.width ? <Detail label="尺寸">{natural.w} × {natural.h}</Detail> : null}
+          {natural && !photo.data?.width ? <Detail label={t("Dimensions")}>{natural.w} × {natural.h}</Detail> : null}
         </dl>
       </Section>
       {photo.isLoading ? (
@@ -519,8 +520,8 @@ function ImageInfo({ rootSlug, item, natural }: { rootSlug: string; item: FileIt
       ) : hasPhoto ? (
         <PhotoDetails photo={photo.data!} />
       ) : (
-        <Section title="拍攝資訊">
-          <span className="text-faint">這張影像沒有拍攝資訊</span>
+        <Section title={t("Photo info")}>
+          <span className="text-faint">{t("This image has no photo info")}</span>
         </Section>
       )}
     </aside>

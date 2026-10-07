@@ -16,6 +16,7 @@ import { usePointerDrag } from "@/lib/usePointerDrag";
 import { useWorkspaceStore } from "@/stores/workspace";
 import type { FileWindow, ImageMetadata } from "@/types/kago";
 import { FileThumbnail } from "./FileThumbnail";
+import { t } from "@/lib/i18n";
 
 const MIN_WIDTH = 260;
 const MAX_WIDTH = 440;
@@ -47,17 +48,17 @@ export function Inspector({ window: activeWindow, isAdmin }: { window: FileWindo
   );
 
   return (
-    <aside className="relative flex max-w-[60%] shrink-0 flex-col border-l border-line bg-surface" style={{ width }} aria-label="資訊">
+    <aside className="relative flex max-w-[60%] shrink-0 flex-col border-l border-line bg-surface" style={{ width }} aria-label={t("Info")}>
       <div className="absolute inset-y-0 -left-1 z-10 w-2 cursor-ew-resize touch-none" {...resizeHandlers} />
       <header className="flex h-9 shrink-0 items-center gap-2 border-b border-line pr-2 pl-4">
-        <strong className="flex-1 font-semibold">資訊</strong>
-        <KagoIconButton label="關閉資訊面板" onClick={() => store().updateWindow(activeWindow.id, { inspectorOpen: false })}><X /></KagoIconButton>
+        <strong className="flex-1 font-semibold">{t("Info")}</strong>
+        <KagoIconButton label={t("Close info panel")} onClick={() => store().updateWindow(activeWindow.id, { inspectorOpen: false })}><X /></KagoIconButton>
       </header>
 
       {meta.isLoading ? (
         <KagoLoading />
       ) : meta.error || !meta.data ? (
-        <p className="m-0 p-4 text-muted">無法讀取這個項目的資訊。</p>
+        <p className="m-0 p-4 text-muted">{t("Couldn’t load this item’s info.")}</p>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto">
           <div className="flex flex-col items-center gap-2 p-4 text-center">
@@ -67,38 +68,38 @@ export function Inspector({ window: activeWindow, isAdmin }: { window: FileWindo
               {kindLabel(meta.data)}
               {meta.data.kind === "file" ? ` · ${formatSize(meta.data.size)}` : ""}
             </span>
-            {selectedCount > 1 ? <KagoBadge>已選取 {selectedCount} 項，顯示最後一項</KagoBadge> : null}
+            {selectedCount > 1 ? <KagoBadge>{t("{count} selected, showing the last one", { count: selectedCount })}</KagoBadge> : null}
           </div>
 
-          <Section title="一般">
+          <Section title={t("General")}>
             <dl className="m-0 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5">
-              <Detail label="修改時間">{formatDate(meta.data.mtime)}</Detail>
-              <Detail label="位置"><span title={`${rootSlug}:${path}`}>{displayPath(root?.name ?? rootSlug, path)}</span></Detail>
-              {readonly ? <Detail label="存取">唯讀</Detail> : null}
+              <Detail label={t("Modified")}>{formatDate(meta.data.mtime)}</Detail>
+              <Detail label={t("Location")}><span title={`${rootSlug}:${path}`}>{displayPath(root?.name ?? rootSlug, path)}</span></Detail>
+              {readonly ? <Detail label={t("Access")}>{t("Read-only")}</Detail> : null}
             </dl>
           </Section>
 
           {photo && Object.keys(photo).length > 0 ? <PhotoDetails photo={photo} /> : null}
 
           {/* Two kinds of tag, one place: where each is kept is what tells them apart. */}
-          <Section title="標籤">
+          <Section title={t("Tags")}>
             {readonly && !meta.data.finderTags?.length ? null : (
-              <TagGroup label="Finder" hint="存在檔案上，Finder 也看得到">
+              <TagGroup label="Finder" hint={t("Stored on the file, visible in Finder too")}>
                 <FinderTagEditor rootSlug={rootSlug} path={path} tags={meta.data.finderTags ?? []} readonly={readonly} />
               </TagGroup>
             )}
-            <TagGroup label="Kago" hint="只存在 Kago 裡">
+            <TagGroup label="Kago" hint={t("Kept in Kago only")}>
               <TagEditor rootSlug={rootSlug} path={path} />
             </TagGroup>
           </Section>
 
-          <Section title="分享連結">
+          <Section title={t("Share links")}>
             {pathShares.length > 0 ? (
               <ul className="m-0 mb-3 flex list-none flex-col gap-1.5 p-0">
                 {pathShares.map((share) => (
                   <li key={share.id} className="flex items-center gap-2">
-                    <span className="min-w-0 flex-1 truncate">{shareModeLabel(parseShareMode(share.permission_json))} · 已下載 {share.download_count} 次</span>
-                    <KagoBadge tone={share.disabled ? "neutral" : "success"}>{share.disabled ? "已停用" : "啟用中"}</KagoBadge>
+                    <span className="min-w-0 flex-1 truncate">{shareModeLabel(parseShareMode(share.permission_json))} · {t("{count} download | {count} downloads", { count: share.download_count })}</span>
+                    <KagoBadge tone={share.disabled ? "neutral" : "success"}>{share.disabled ? t("Disabled") : t("Active")}</KagoBadge>
                   </li>
                 ))}
               </ul>
@@ -106,21 +107,21 @@ export function Inspector({ window: activeWindow, isAdmin }: { window: FileWindo
             {sharingKey === shareKey ? (
               <>
                 <ShareForm key={shareKey} target={{ rootSlug, path }} compact />
-                <Button variant="ghost" className="mt-2 w-full" onClick={() => setSharingKey(null)}>收合</Button>
+                <Button variant="ghost" className="mt-2 w-full" onClick={() => setSharingKey(null)}>{t("Collapse")}</Button>
               </>
             ) : (
               <>
-                {pathShares.length === 0 ? <p className="m-0 mb-2 text-faint">還沒有分享出去</p> : null}
-                <Button className="w-full" onClick={() => setSharingKey(shareKey)}><Link2 />建立分享連結</Button>
+                {pathShares.length === 0 ? <p className="m-0 mb-2 text-faint">{t("Not shared yet")}</p> : null}
+                <Button className="w-full" onClick={() => setSharingKey(shareKey)}><Link2 />{t("Create share link")}</Button>
               </>
             )}
-            {pathShares.length > 0 ? <Button variant="ghost" className="mt-2 w-full" onClick={() => store().openApp("shares")}>管理所有分享</Button> : null}
+            {pathShares.length > 0 ? <Button variant="ghost" className="mt-2 w-full" onClick={() => store().openApp("shares")}>{t("Manage all shares")}</Button> : null}
           </Section>
 
           {isAdmin ? (
-            <Section title="權限規則">
-              {permissions.data?.length ? <RuleList rules={permissions.data} /> : <span className="text-faint">這個路徑沒有套用任何規則</span>}
-              <Button variant="ghost" className="mt-2 w-full" onClick={() => store().openApp("settings", "permissions")}>管理權限</Button>
+            <Section title={t("Permission rules")}>
+              {permissions.data?.length ? <RuleList rules={permissions.data} /> : <span className="text-faint">{t("No rules apply to this path")}</span>}
+              <Button variant="ghost" className="mt-2 w-full" onClick={() => store().openApp("settings", "permissions")}>{t("Manage permissions")}</Button>
             </Section>
           ) : null}
         </div>
@@ -129,44 +130,44 @@ export function Inspector({ window: activeWindow, isAdmin }: { window: FileWindo
   );
 }
 
-// exiftool names these in English; the ones cameras actually write are few enough to say in Chinese.
-const WHITE_BALANCE: Record<string, string> = { Auto: "自動", Manual: "手動", Daylight: "日光", Cloudy: "陰天", Shade: "陰影", Tungsten: "鎢絲燈", Fluorescent: "螢光燈", Flash: "閃光燈" };
-const METERING: Record<string, string> = { "Multi-segment": "多區評價", "Center-weighted average": "中央重點", Spot: "點測光", Average: "平均", Partial: "局部" };
-const PROGRAM: Record<string, string> = { Manual: "手動", "Program AE": "程式自動", "Aperture-priority AE": "光圈先決", "Shutter speed priority AE": "快門先決", Portrait: "人像", Landscape: "風景" };
+// exiftool names these in English; the ones cameras actually write are few enough to translate.
+const WHITE_BALANCE: Record<string, string> = { Auto: t("Auto"), Manual: t("Manual"), Daylight: t("Daylight"), Cloudy: t("Cloudy"), Shade: t("Shade"), Tungsten: t("Tungsten"), Fluorescent: t("Fluorescent"), Flash: t("Flash") };
+const METERING: Record<string, string> = { "Multi-segment": t("Multi-segment"), "Center-weighted average": t("Center-weighted"), Spot: t("Spot"), Average: t("Average"), Partial: t("Partial") };
+const PROGRAM: Record<string, string> = { Manual: t("Manual"), "Program AE": t("Program"), "Aperture-priority AE": t("Aperture priority"), "Shutter speed priority AE": t("Shutter priority"), Portrait: t("Portrait"), Landscape: t("Landscape") };
 
 const trimLength = (value: string) => value.replace(/\.0+(?= ?mm)/, "");
 
 /** What the camera recorded about a picture, in the order a photographer asks for it. */
 export function PhotoDetails({ photo }: { photo: ImageMetadata }) {
-  const exposure = [photo.exposureTime ? `${photo.exposureTime} 秒` : "", photo.aperture ? `f/${photo.aperture}` : "", photo.iso ? `ISO ${photo.iso}` : ""].filter(Boolean).join(" · ");
-  const focal = photo.focalLength ? trimLength(photo.focalLength) + (photo.focalLength35 && trimLength(photo.focalLength35) !== trimLength(photo.focalLength) ? `（等效 ${trimLength(photo.focalLength35)}）` : "") : "";
+  const exposure = [photo.exposureTime ? t("{seconds}s", { seconds: photo.exposureTime }) : "", photo.aperture ? `f/${photo.aperture}` : "", photo.iso ? `ISO ${photo.iso}` : ""].filter(Boolean).join(" · ");
+  const focal = photo.focalLength ? trimLength(photo.focalLength) + (photo.focalLength35 && trimLength(photo.focalLength35) !== trimLength(photo.focalLength) ? t(" ({length} equivalent)", { length: trimLength(photo.focalLength35) }) : "") : "";
   const compensation = photo.exposureCompensation ? `${photo.exposureCompensation > 0 ? "+" : ""}${Math.round(photo.exposureCompensation * 100) / 100} EV` : "";
-  const flash = photo.flash ? (/no flash|did not fire|^off/i.test(photo.flash) ? "未閃光" : /fired|^on/i.test(photo.flash) ? "有閃光" : photo.flash) : "";
+  const flash = photo.flash ? (/no flash|did not fire|^off/i.test(photo.flash) ? t("Did not fire") : /fired|^on/i.test(photo.flash) ? t("Fired") : photo.flash) : "";
   const program = photo.exposureProgram && photo.exposureProgram !== "Not Defined" ? PROGRAM[photo.exposureProgram] ?? photo.exposureProgram : "";
-  const pixels = photo.width && photo.height ? `${photo.width} × ${photo.height}（${((photo.width * photo.height) / 1e6).toFixed(1)} MP）` : "";
+  const pixels = photo.width && photo.height ? t("{width} × {height} ({megapixels} MP)", { width: photo.width, height: photo.height, megapixels: ((photo.width * photo.height) / 1e6).toFixed(1) }) : "";
   const gps = photo.gps;
   return (
-    <Section title="拍攝資訊">
+    <Section title={t("Photo info")}>
       <dl className="m-0 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5">
-        {photo.camera ? <Detail label="相機">{photo.camera}</Detail> : null}
-        {photo.lens ? <Detail label="鏡頭">{photo.lens}</Detail> : null}
-        {photo.takenAt ? <Detail label="拍攝時間">{photo.takenAt}{photo.timeZone ? <span className="text-faint"> {photo.timeZone}</span> : null}</Detail> : null}
-        {exposure ? <Detail label="曝光">{exposure}</Detail> : null}
-        {focal ? <Detail label="焦距">{focal}</Detail> : null}
-        {compensation ? <Detail label="曝光補償">{compensation}</Detail> : null}
-        {program ? <Detail label="拍攝模式">{program}</Detail> : null}
-        {photo.meteringMode ? <Detail label="測光">{METERING[photo.meteringMode] ?? photo.meteringMode}</Detail> : null}
-        {photo.whiteBalance ? <Detail label="白平衡">{WHITE_BALANCE[photo.whiteBalance] ?? photo.whiteBalance}</Detail> : null}
-        {flash ? <Detail label="閃光燈">{flash}</Detail> : null}
-        {pixels ? <Detail label="尺寸">{pixels}</Detail> : null}
-        {photo.colorSpace ? <Detail label="色彩空間">{photo.colorSpace}</Detail> : null}
-        {photo.software ? <Detail label="軟體">{photo.software}</Detail> : null}
+        {photo.camera ? <Detail label={t("Camera")}>{photo.camera}</Detail> : null}
+        {photo.lens ? <Detail label={t("Lens")}>{photo.lens}</Detail> : null}
+        {photo.takenAt ? <Detail label={t("Taken")}>{photo.takenAt}{photo.timeZone ? <span className="text-faint"> {photo.timeZone}</span> : null}</Detail> : null}
+        {exposure ? <Detail label={t("Exposure")}>{exposure}</Detail> : null}
+        {focal ? <Detail label={t("Focal length")}>{focal}</Detail> : null}
+        {compensation ? <Detail label={t("Exposure compensation")}>{compensation}</Detail> : null}
+        {program ? <Detail label={t("Exposure mode")}>{program}</Detail> : null}
+        {photo.meteringMode ? <Detail label={t("Metering")}>{METERING[photo.meteringMode] ?? photo.meteringMode}</Detail> : null}
+        {photo.whiteBalance ? <Detail label={t("White balance")}>{WHITE_BALANCE[photo.whiteBalance] ?? photo.whiteBalance}</Detail> : null}
+        {flash ? <Detail label={t("Flash")}>{flash}</Detail> : null}
+        {pixels ? <Detail label={t("Dimensions")}>{pixels}</Detail> : null}
+        {photo.colorSpace ? <Detail label={t("Color space")}>{photo.colorSpace}</Detail> : null}
+        {photo.software ? <Detail label={t("Software")}>{photo.software}</Detail> : null}
         {gps ? (
-          <Detail label="位置">
+          <Detail label={t("Location##GPS")}>
             <a className="text-accent underline underline-offset-2" href={`https://www.openstreetmap.org/?mlat=${gps.latitude}&mlon=${gps.longitude}#map=15/${gps.latitude}/${gps.longitude}`} target="_blank" rel="noreferrer">
               {gps.latitude.toFixed(5)}, {gps.longitude.toFixed(5)}
             </a>
-            {gps.altitude !== undefined ? <span className="text-faint"> · 海拔 {Math.round(gps.altitude)} m</span> : null}
+            {gps.altitude !== undefined ? <span className="text-faint"> · {t("{meters} m altitude", { meters: Math.round(gps.altitude) })}</span> : null}
           </Detail>
         ) : null}
       </dl>

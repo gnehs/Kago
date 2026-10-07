@@ -11,6 +11,7 @@ import { FileIcon } from "./FileIcon";
 import { FileThumbnail } from "./FileThumbnail";
 import { GRID_SIZES, LIST_HEADER_HEIGHT, useVisibleRange, type FileLayout, type FileTree } from "./fileLayout";
 import { KAGO_DRAG_TYPE } from "./useFileActions";
+import { t } from "@/lib/i18n";
 
 type FileListProps = {
   window: FileWindow;
@@ -98,10 +99,10 @@ function ListView(props: ViewProps) {
   return (
     <div className="@container min-w-0" role="listbox" aria-multiselectable>
       <div className="sticky top-0 z-[1] flex items-center gap-2 border-b border-line bg-surface px-3 text-xs text-muted" style={{ height: LIST_HEADER_HEIGHT }}>
-        <SortHeader window={window} sortBy="name" label="名稱" className="min-w-0 flex-1" />
-        <SortHeader window={window} sortBy="mtime" label="修改時間" className="hidden w-36 @md:flex" />
-        <SortHeader window={window} sortBy="size" label="大小" className="w-20 justify-end" />
-        <SortHeader window={window} sortBy="type" label="種類" className="hidden w-24 @xl:flex" />
+        <SortHeader window={window} sortBy="name" label={t("Name")} className="min-w-0 flex-1" />
+        <SortHeader window={window} sortBy="mtime" label={t("Modified")} className="hidden w-36 @md:flex" />
+        <SortHeader window={window} sortBy="size" label={t("Size")} className="w-20 justify-end" />
+        <SortHeader window={window} sortBy="type" label={t("Kind")} className="hidden w-24 @xl:flex" />
       </div>
       <div style={{ height: range.height + layout.bottom, paddingTop: range.offset }}>
         {items.slice(range.start, range.end).map((item, offset) => {
@@ -114,7 +115,7 @@ function ListView(props: ViewProps) {
                   item.kind === "folder" ? (
                     <button
                       className={cn("-mx-1 flex size-4 shrink-0 items-center justify-center rounded-sm outline-none", selected && window.focused ? "text-inherit" : "text-muted hover:text-ink")}
-                      aria-label={open ? "收合資料夾" : "展開資料夾"}
+                      aria-label={open ? t("Collapse folder") : t("Expand folder")}
                       aria-expanded={open}
                       tabIndex={-1}
                       onClick={(event) => {
@@ -149,10 +150,10 @@ function ListView(props: ViewProps) {
 const TREE_INDENT = 16;
 
 export const sortColumns: Array<{ sortBy: FileWindow["sortBy"]; label: string }> = [
-  { sortBy: "name", label: "名稱" },
-  { sortBy: "mtime", label: "修改時間" },
-  { sortBy: "size", label: "大小" },
-  { sortBy: "type", label: "種類" }
+  { sortBy: "name", label: t("Name") },
+  { sortBy: "mtime", label: t("Modified") },
+  { sortBy: "size", label: t("Size") },
+  { sortBy: "type", label: t("Kind") }
 ];
 
 /** Picks a sort column; picking the current one again flips its direction. Sizes and dates start largest or newest first. */
@@ -233,10 +234,10 @@ function ColumnsView(props: ViewProps) {
               {current.kind === "file" ? ` · ${formatSize(current.size)}` : ""}
             </span>
             <span className="text-muted">{formatDate(current.mtime)}</span>
-            <Button className="mt-1" onClick={() => onOpen(current)}>開啟</Button>
+            <Button className="mt-1" onClick={() => onOpen(current)}>{t("Open")}</Button>
           </>
         ) : (
-          <span className="pt-10 text-faint">選取項目以預覽</span>
+          <span className="pt-10 text-faint">{t("Select an item to preview it")}</span>
         )}
       </div>
     </div>

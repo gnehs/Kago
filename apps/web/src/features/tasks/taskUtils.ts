@@ -1,28 +1,29 @@
 import { formatSize } from "@/lib/format";
 import type { FileTask } from "@/types/kago";
+import { t } from "@/lib/i18n";
 
 const typeLabels: Record<string, string> = {
-  copy: "複製",
-  move: "搬移",
-  compress: "壓縮",
-  download_zip: "打包下載",
-  extract: "解壓縮",
-  delete_to_trash: "移到垃圾桶",
-  restore_trash: "從垃圾桶還原",
-  rsync_pull: "rsync 拉取",
-  rsync_push: "rsync 推送",
-  thumbnail: "產生縮圖"
+  copy: t("Copy"),
+  move: t("Move"),
+  compress: t("Compress"),
+  download_zip: t("Zip download"),
+  extract: t("Extract"),
+  delete_to_trash: t("Move to Trash"),
+  restore_trash: t("Restore from Trash"),
+  rsync_pull: t("rsync pull"),
+  rsync_push: t("rsync push"),
+  thumbnail: t("Thumbnails")
 };
 
 const statusMeta: Record<string, { label: string; tone: "neutral" | "accent" | "success" | "warning" | "danger" }> = {
-  queued: { label: "等待中", tone: "neutral" },
-  running: { label: "執行中", tone: "accent" },
-  pausing: { label: "暫停中", tone: "warning" },
-  paused: { label: "已暫停", tone: "warning" },
-  done: { label: "完成", tone: "success" },
-  failed: { label: "失敗", tone: "danger" },
-  cancelled: { label: "已取消", tone: "neutral" },
-  interrupted: { label: "已中斷", tone: "danger" }
+  queued: { label: t("Queued"), tone: "neutral" },
+  running: { label: t("Running"), tone: "accent" },
+  pausing: { label: t("Pausing"), tone: "warning" },
+  paused: { label: t("Paused"), tone: "warning" },
+  done: { label: t("Done"), tone: "success" },
+  failed: { label: t("Failed"), tone: "danger" },
+  cancelled: { label: t("Cancelled"), tone: "neutral" },
+  interrupted: { label: t("Interrupted"), tone: "danger" }
 };
 
 export const taskTypeLabel = (task: FileTask) => typeLabels[task.type] ?? task.type;
@@ -35,18 +36,18 @@ export const taskProgressValue = (task: FileTask) => (task.total_bytes > 0 ? tas
 export const taskProgressMax = (task: FileTask) => Math.max(task.total_bytes > 0 ? task.total_bytes : task.total_files, 1);
 
 export function taskProgressLabel(task: FileTask) {
-  const files = `${task.processed_files}/${Math.max(task.total_files, 1)} 項`;
+  const files = t("{done}/{total} items", { done: task.processed_files, total: Math.max(task.total_files, 1) });
   return task.total_bytes > 0 ? `${formatSize(task.processed_bytes)} / ${formatSize(task.total_bytes)} · ${files}` : files;
 }
 
 /** The server reports task failures in English; the ones a user can act on get a proper message. */
 const errorLabels: Record<string, string> = {
-  "Target already exists": "目的地已有同名項目",
-  "Multiple sources resolve to the same target": "選取的項目裡有同名項目",
-  "Cannot copy or move a folder into itself": "不能把資料夾放進它自己裡面",
-  "Path not found": "來源或目的地已經不存在",
-  "Symlink paths are not allowed": "不支援符號連結",
-  "Task failed": "發生未預期的錯誤"
+  "Target already exists": t("The destination already has an item with that name"),
+  "Multiple sources resolve to the same target": t("Some of the selected items share a name"),
+  "Cannot copy or move a folder into itself": t("A folder can’t be put inside itself"),
+  "Path not found": t("The source or destination no longer exists"),
+  "Symlink paths are not allowed": t("Symbolic links aren’t supported"),
+  "Task failed": t("An unexpected error occurred")
 };
 
 export const taskErrorLabel = (message: string) => errorLabels[message] ?? message;

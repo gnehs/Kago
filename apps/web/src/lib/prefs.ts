@@ -14,6 +14,23 @@ function read<T extends string>(key: string, allowed: readonly T[], fallback: T)
 
 export const getTheme = () => read<ThemePref>(themeKey, ["system", "light", "dark"], "system");
 
+/** The languages the interface is written in. */
+export type Locale = "en" | "zh-TW" | "zh-CN" | "ja";
+/** `system` follows the browser's own list of languages. */
+export type LocalePref = Locale | "system";
+
+const localeKey = "kago.locale";
+
+export const getLocalePref = () => read<LocalePref>(localeKey, ["system", "en", "zh-TW", "zh-CN", "ja"], "system");
+
+export function storeLocalePref(locale: LocalePref) {
+  try {
+    localStorage.setItem(localeKey, locale);
+  } catch {
+    // Private browsing: the browser's language stays in charge.
+  }
+}
+
 /** Which end of a title bar the window controls sit at. */
 export type WindowControlsPref = "left" | "right";
 

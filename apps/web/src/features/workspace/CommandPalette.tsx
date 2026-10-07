@@ -7,20 +7,21 @@ import { cn } from "@/lib/utils";
 import { useRecentStore, type RecentFolder } from "@/stores/recent";
 import { useWorkspaceStore, type AppKind, type SettingsSection } from "@/stores/workspace";
 import type { Root } from "@/types/kago";
+import { t } from "@/lib/i18n";
 
 type Target = { key: string; label: string; hint: string; icon: ReactNode; open: () => void };
 
 /** Everything that opens as an app window, so the palette reaches it even when the desktop is covered. */
 const apps: Array<{ app: AppKind; section?: SettingsSection; label: string; icon: ReactNode; adminOnly?: boolean }> = [
-  { app: "shares", label: "分享", icon: appIcons.shares },
-  { app: "trash", label: "垃圾桶", icon: appIcons.trash },
-  { app: "tasks", label: "任務", icon: appIcons.tasks },
-  { app: "settings", section: "general", label: "設定", icon: appIcons.settings },
-  { app: "settings", section: "locations", label: "位置", icon: <HardDrive />, adminOnly: true },
-  { app: "settings", section: "users", label: "使用者", icon: <UserRound />, adminOnly: true },
-  { app: "settings", section: "groups", label: "群組", icon: <UsersRound />, adminOnly: true },
-  { app: "settings", section: "permissions", label: "權限", icon: <KeyRound />, adminOnly: true },
-  { app: "settings", section: "audit", label: "稽核紀錄", icon: <ScrollText />, adminOnly: true }
+  { app: "shares", label: t("Shares"), icon: appIcons.shares },
+  { app: "trash", label: t("Trash"), icon: appIcons.trash },
+  { app: "tasks", label: t("Tasks"), icon: appIcons.tasks },
+  { app: "settings", section: "general", label: t("Settings"), icon: appIcons.settings },
+  { app: "settings", section: "locations", label: t("Locations"), icon: <HardDrive />, adminOnly: true },
+  { app: "settings", section: "users", label: t("Users"), icon: <UserRound />, adminOnly: true },
+  { app: "settings", section: "groups", label: t("Groups"), icon: <UsersRound />, adminOnly: true },
+  { app: "settings", section: "permissions", label: t("Permissions"), icon: <KeyRound />, adminOnly: true },
+  { app: "settings", section: "audit", label: t("Audit log"), icon: <ScrollText />, adminOnly: true }
 ];
 
 function suggestions(query: string, roots: Root[], activeRootSlug: string | undefined, recent: RecentFolder[], isAdmin: boolean): Target[] {
@@ -58,7 +59,7 @@ function suggestions(query: string, roots: Root[], activeRootSlug: string | unde
   for (const item of apps) {
     if ((item.adminOnly && !isAdmin) || (lower && !item.label.toLowerCase().includes(lower))) continue;
     const key = `app:${item.app}:${item.section ?? ""}`;
-    results.set(key, { key, label: item.label, hint: item.section && item.section !== "general" ? "設定" : "", icon: item.icon, open: () => useWorkspaceStore.getState().openApp(item.app, item.section) });
+    results.set(key, { key, label: item.label, hint: item.section && item.section !== "general" ? t("Settings") : "", icon: item.icon, open: () => useWorkspaceStore.getState().openApp(item.app, item.section) });
   }
   return [...results.values()];
 }
@@ -80,13 +81,13 @@ export function CommandPalette({ roots, isAdmin, onClose }: { roots: Root[]; isA
     <Dialog.Root open onOpenChange={(next) => !next && onClose()}>
       <Dialog.Portal>
         <Dialog.Backdrop className="fixed inset-0 z-[900] bg-overlay" />
-        <Dialog.Popup aria-label="快速開啟" className="fixed top-[18vh] left-1/2 z-[900] w-[min(520px,calc(100vw-32px))] -translate-x-1/2 kago-glass overflow-hidden rounded-lg outline-none">
+        <Dialog.Popup aria-label={t("Quick open")} className="fixed top-[18vh] left-1/2 z-[900] w-[min(520px,calc(100vw-32px))] -translate-x-1/2 kago-glass overflow-hidden rounded-lg outline-none">
           <label className="flex h-11 items-center gap-2 border-b border-line px-3">
             <Search className="text-muted" />
             <input
               autoFocus
               className="h-full min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-faint"
-              placeholder="輸入位置或功能名稱，或 photos:/2026 開啟指定路徑"
+              placeholder={t("Type a location or a feature, or photos:/2026 to open a path")}
               value={query}
               onChange={(event) => {
                 setQuery(event.target.value);
@@ -105,7 +106,7 @@ export function CommandPalette({ roots, isAdmin, onClose }: { roots: Root[]; isA
             />
           </label>
           <ul className="m-0 max-h-72 list-none overflow-y-auto p-1">
-            {items.length === 0 ? <li className="px-3 py-6 text-center text-muted">找不到可開啟的項目</li> : null}
+            {items.length === 0 ? <li className="px-3 py-6 text-center text-muted">{t("Nothing to open")}</li> : null}
             {items.map((item, itemIndex) => (
               <li key={item.key}>
                 <button

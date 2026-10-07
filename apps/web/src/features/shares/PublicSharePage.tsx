@@ -8,6 +8,7 @@ import { AuthCard, FormError } from "@/features/auth/AuthCard";
 import { errorMessage } from "@/lib/format";
 import { baseName, nfc } from "@/lib/paths";
 import { isUploadCancelled, uploadForm, uploadLabel } from "@/stores/uploads";
+import { t } from "@/lib/i18n";
 
 type PublicShareInfo = {
   id: string;
@@ -38,7 +39,7 @@ export function PublicSharePage({ token }: { token: string }) {
     try {
       setShare(await api<PublicShareInfo>(`/s/${token}`, { headers: { Accept: "application/json" } }));
     } catch (err) {
-      setError(errorMessage(err, "分享連結無法使用"));
+      setError(errorMessage(err, t("This share link isn’t available")));
     }
   }
 
@@ -51,7 +52,7 @@ export function PublicSharePage({ token }: { token: string }) {
       setPassword("");
       await loadShare();
     } catch (err) {
-      setError(errorMessage(err, "密碼驗證失敗"));
+      setError(errorMessage(err, t("Couldn’t verify the password")));
     } finally {
       setBusy(false);
     }
@@ -69,7 +70,7 @@ export function PublicSharePage({ token }: { token: string }) {
       await uploadForm(`/s/${token}/upload`, form, uploadLabel(files));
       setUploaded(true);
     } catch (err) {
-      if (!isUploadCancelled(err)) setError(errorMessage(err, "上傳失敗"));
+      if (!isUploadCancelled(err)) setError(errorMessage(err, t("Upload failed")));
     } finally {
       event.target.value = "";
       setBusy(false);
@@ -77,8 +78,8 @@ export function PublicSharePage({ token }: { token: string }) {
   }
 
   const needsPassword = Boolean(share?.requiresPassword && !share.authenticated);
-  const title = share?.path ? baseName(share.path) || share.rootSlug || "分享連結" : needsPassword ? "受保護的分享" : "分享連結";
-  const subtitle = share?.mode === "upload_only" ? "上傳檔案到這個位置" : "透過 Kago 分享";
+  const title = share?.path ? baseName(share.path) || share.rootSlug || t("Share link") : needsPassword ? t("Protected share") : t("Share link");
+  const subtitle = share?.mode === "upload_only" ? t("Upload files to this location") : t("Shared with Kago");
 
   return (
     <AuthCard title={title} subtitle={subtitle}>
@@ -87,24 +88,24 @@ export function PublicSharePage({ token }: { token: string }) {
         {!share && !error ? <KagoLoading /> : null}
         {needsPassword ? (
           <form className="flex flex-col gap-3" onSubmit={authenticate}>
-            <Field label="分享密碼">
+            <Field label={t("Share password")}>
               <Input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoFocus />
             </Field>
-            <Button type="submit" variant="default" size="lg" disabled={busy || !password}>解鎖</Button>
+            <Button type="submit" variant="default" size="lg" disabled={busy || !password}>{t("Unlock")}</Button>
           </form>
         ) : null}
         {share && !needsPassword ? (
           <>
-            {share.mode === "download" ? <a className={primaryLink} href={`/s/${token}/download`}><Download /> 下載</a> : null}
-            {share.mode === "view_only" && share.previewable ? <a className={primaryLink} href={`/s/${token}/preview`} target="_blank" rel="noreferrer"><FileText /> 檢視</a> : null}
-            {share.mode === "view_only" && !share.previewable ? <p className="m-0 text-center text-muted">這種檔案無法在瀏覽器中檢視。</p> : null}
+            {share.mode === "download" ? <a className={primaryLink} href={`/s/${token}/download`}><Download />{" "}{t("Download")}</a> : null}
+            {share.mode === "view_only" && share.previewable ? <a className={primaryLink} href={`/s/${token}/preview`} target="_blank" rel="noreferrer"><FileText />{" "}{t("View")}</a> : null}
+            {share.mode === "view_only" && !share.previewable ? <p className="m-0 text-center text-muted">{t("This kind of file can’t be viewed in the browser.")}</p> : null}
             {share.mode === "upload_only" ? (
               <label className={primaryLink} aria-disabled={busy}>
-                <Upload /> {busy ? "上傳中…" : "選擇檔案上傳"}
+                <Upload /> {busy ? t("Uploading…") : t("Choose files to upload")}
                 <input type="file" multiple hidden onChange={upload} disabled={busy} />
               </label>
             ) : null}
-            {uploaded ? <p className="m-0 flex items-center justify-center gap-1.5 text-success"><Check /> 已上傳</p> : null}
+            {uploaded ? <p className="m-0 flex items-center justify-center gap-1.5 text-success"><Check />{" "}{t("Uploaded")}</p> : null}
           </>
         ) : null}
       </div>

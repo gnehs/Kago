@@ -3,9 +3,10 @@ import { HighlightStyle, LanguageDescription, syntaxHighlighting } from "@codemi
 import { languages } from "@codemirror/language-data";
 import { Compartment, EditorState, type Text } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
-import { tags as t } from "@lezer/highlight";
+import { tags } from "@lezer/highlight";
 import { basicSetup } from "codemirror";
 import { useEffect, useImperativeHandle, useRef, type Ref } from "react";
+import { t } from "../../lib/i18n";
 
 /** The text as it will be written, and a way to say that it was: the editor counts changes from the last commit. */
 export type CodeEditorHandle = { snapshot: () => { text: string; commit: () => void }; focus: () => void };
@@ -56,42 +57,42 @@ const theme = EditorView.theme({
 });
 
 const highlight = HighlightStyle.define([
-  { tag: [t.keyword, t.modifier, t.operatorKeyword, t.definitionKeyword, t.bool, t.null, t.atom, t.self], color: "var(--kago-code-keyword)" },
-  { tag: [t.controlKeyword, t.moduleKeyword, t.processingInstruction], color: "var(--kago-code-control)" },
-  { tag: [t.string, t.special(t.string), t.character, t.regexp, t.escape, t.inserted], color: "var(--kago-code-string)" },
-  { tag: [t.number, t.unit, t.color], color: "var(--kago-code-number)" },
-  { tag: [t.comment, t.meta], color: "var(--kago-code-comment)" },
-  { tag: [t.function(t.variableName), t.function(t.propertyName), t.macroName, t.labelName], color: "var(--kago-code-function)" },
-  { tag: [t.typeName, t.className, t.namespace, t.annotation], color: "var(--kago-code-type)" },
-  { tag: [t.variableName, t.propertyName, t.definition(t.variableName)], color: "var(--kago-code-variable)" },
-  { tag: [t.tagName, t.heading], color: "var(--kago-code-tag)" },
-  { tag: t.attributeName, color: "var(--kago-code-attribute)" },
-  { tag: [t.link, t.url], color: "var(--kago-accent)", textDecoration: "underline" },
-  { tag: t.heading, fontWeight: "600" },
-  { tag: t.strong, fontWeight: "600" },
-  { tag: t.emphasis, fontStyle: "italic" },
-  { tag: t.strikethrough, textDecoration: "line-through" },
-  { tag: [t.deleted, t.invalid], color: "var(--kago-danger)" }
+  { tag: [tags.keyword, tags.modifier, tags.operatorKeyword, tags.definitionKeyword, tags.bool, tags.null, tags.atom, tags.self], color: "var(--kago-code-keyword)" },
+  { tag: [tags.controlKeyword, tags.moduleKeyword, tags.processingInstruction], color: "var(--kago-code-control)" },
+  { tag: [tags.string, tags.special(tags.string), tags.character, tags.regexp, tags.escape, tags.inserted], color: "var(--kago-code-string)" },
+  { tag: [tags.number, tags.unit, tags.color], color: "var(--kago-code-number)" },
+  { tag: [tags.comment, tags.meta], color: "var(--kago-code-comment)" },
+  { tag: [tags.function(tags.variableName), tags.function(tags.propertyName), tags.macroName, tags.labelName], color: "var(--kago-code-function)" },
+  { tag: [tags.typeName, tags.className, tags.namespace, tags.annotation], color: "var(--kago-code-type)" },
+  { tag: [tags.variableName, tags.propertyName, tags.definition(tags.variableName)], color: "var(--kago-code-variable)" },
+  { tag: [tags.tagName, tags.heading], color: "var(--kago-code-tag)" },
+  { tag: tags.attributeName, color: "var(--kago-code-attribute)" },
+  { tag: [tags.link, tags.url], color: "var(--kago-accent)", textDecoration: "underline" },
+  { tag: tags.heading, fontWeight: "600" },
+  { tag: tags.strong, fontWeight: "600" },
+  { tag: tags.emphasis, fontStyle: "italic" },
+  { tag: tags.strikethrough, textDecoration: "line-through" },
+  { tag: [tags.deleted, tags.invalid], color: "var(--kago-danger)" }
 ]);
 
 // The find panel is the one piece of CodeMirror with words of its own.
 const phrases = EditorState.phrases.of({
-  Find: "尋找",
-  Replace: "取代",
-  next: "下一個",
-  previous: "上一個",
-  all: "全部",
-  "match case": "區分大小寫",
-  regexp: "正規表示式",
-  "by word": "全字相符",
-  replace: "取代",
-  "replace all": "全部取代",
-  close: "關閉",
-  "Go to line": "前往行",
-  go: "前往",
-  "Folded lines": "已摺疊的行",
-  "Fold line": "摺疊",
-  "Unfold line": "展開"
+  Find: t("Find"),
+  Replace: t("Replace"),
+  next: t("next"),
+  previous: t("previous"),
+  all: t("all"),
+  "match case": t("match case"),
+  regexp: t("regexp"),
+  "by word": t("by word"),
+  replace: t("Replace"),
+  "replace all": t("replace all"),
+  close: t("Close"),
+  "Go to line": t("Go to line"),
+  go: t("go"),
+  "Folded lines": t("Folded lines"),
+  "Fold line": t("Fold line"),
+  "Unfold line": t("Unfold line")
 });
 
 /** CodeMirror for one file. It is created once from `initial`; the parent remounts it to load other text. */
@@ -159,7 +160,7 @@ export default function CodeEditor({ ref, fileName, initial, lineSeparator, read
     // Each grammar is its own chunk, fetched only for a file that needs it.
     let disposed = false;
     const description = LanguageDescription.matchFilename(languages, fileName);
-    latest.current.onLanguage(description?.name ?? "純文字");
+    latest.current.onLanguage(description?.name ?? t("Plain text"));
     void description?.load().then(
       (support) => !disposed && editor.dispatch({ effects: language.reconfigure(support) }),
       () => undefined

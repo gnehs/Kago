@@ -1,4 +1,5 @@
 import type { FileItem } from "../types/kago";
+import { locale, t } from "./i18n";
 
 export function formatSize(size: number) {
   if (size < 1024) return `${size} B`;
@@ -10,9 +11,9 @@ export function formatSize(size: number) {
 /** Rounded so a countdown reads calmly: seconds under a minute, then minutes, then hours and minutes. */
 export function formatDuration(seconds: number) {
   const total = Math.max(1, Math.round(seconds));
-  if (total < 60) return `${total} 秒`;
-  if (total < 3600) return `${Math.floor(total / 60)} 分 ${total % 60} 秒`;
-  return `${Math.floor(total / 3600)} 小時 ${Math.floor((total % 3600) / 60)} 分`;
+  if (total < 60) return t("{seconds}s", { seconds: total });
+  if (total < 3600) return t("{minutes}m {seconds}s", { minutes: Math.floor(total / 60), seconds: total % 60 });
+  return t("{hours}h {minutes}m", { hours: Math.floor(total / 3600), minutes: Math.floor((total % 3600) / 60) });
 }
 
 /** A playhead position: 1:05, or 1:02:05 once `long` (the whole length reaches an hour). */
@@ -23,7 +24,7 @@ export function formatClock(seconds: number, long = seconds >= 3600) {
   return long ? `${Math.floor(total / 3600)}:${String(minutes).padStart(2, "0")}:${tail}` : `${Math.floor(total / 60)}:${tail}`;
 }
 
-const dateFormat = new Intl.DateTimeFormat("zh-TW", { year: "numeric", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+const dateFormat = new Intl.DateTimeFormat(locale, { year: "numeric", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
 
 /** File mtimes are milliseconds; database timestamps are unix seconds. */
 export const formatDate = (ms: number) => dateFormat.format(new Date(ms));
@@ -86,18 +87,18 @@ const OFFICE_KINDS: Record<string, OfficeKind> = { docx: "document", xlsx: "shee
 export const officeKind = (item: Pick<FileItem, "kind" | "name">): OfficeKind | null => (item.kind === "file" ? OFFICE_KINDS[extensionOf(item.name)] ?? null : null);
 
 export function kindLabel(item: Pick<FileItem, "kind" | "type" | "name">) {
-  if (item.kind === "folder") return "資料夾";
+  if (item.kind === "folder") return t("Folder");
   const type = item.type;
-  if (isRawName(item.name)) return "RAW 影像";
-  if (type.startsWith("image/") || isConvertedImage(item)) return "影像";
-  if (type.startsWith("video/") && !hasTextName(item.name)) return "影片";
-  if (type.startsWith("audio/")) return "音訊";
-  if (type === "application/pdf") return "PDF 文件";
-  if (type.includes("zip") || type.includes("compressed") || type.includes("tar")) return "壓縮檔";
-  if (type.startsWith("text/")) return "文字文件";
-  if (type === "application/vnd.sqlite3" || type === "application/x-sqlite3") return "SQLite 資料庫";
+  if (isRawName(item.name)) return t("RAW image");
+  if (type.startsWith("image/") || isConvertedImage(item)) return t("Image");
+  if (type.startsWith("video/") && !hasTextName(item.name)) return t("Video");
+  if (type.startsWith("audio/")) return t("Audio");
+  if (type === "application/pdf") return t("PDF document");
+  if (type.includes("zip") || type.includes("compressed") || type.includes("tar")) return t("Archive");
+  if (type.startsWith("text/")) return t("Text document");
+  if (type === "application/vnd.sqlite3" || type === "application/x-sqlite3") return t("SQLite database");
   const extension = item.name.includes(".") ? item.name.split(".").at(-1) : "";
-  return extension ? `${extension.toUpperCase()} 檔案` : "檔案";
+  return extension ? t("{extension} file", { extension: extension.toUpperCase() }) : t("File");
 }
 
 export function parseJsonArray(value: string): string[] {
@@ -109,4 +110,4 @@ export function parseJsonArray(value: string): string[] {
   }
 }
 
-export const errorMessage = (error: unknown, fallback = "操作失敗") => (error instanceof Error && error.message ? error.message : fallback);
+export const errorMessage = (error: unknown, fallback = t("Something went wrong")) => (error instanceof Error && error.message ? error.message : fallback);

@@ -13,9 +13,10 @@ import { run } from "@/lib/run";
 import { promptText } from "@/stores/dialogs";
 import { toast } from "@/stores/toast";
 import type { UserAccount } from "@/types/kago";
+import { t } from "@/lib/i18n";
 
 type Role = UserAccount["role"];
-export const roleLabels: Record<Role, string> = { ADMIN: "管理員", USER: "一般使用者", GUEST: "訪客" };
+export const roleLabels: Record<Role, string> = { ADMIN: t("Administrator"), USER: t("Standard user"), GUEST: t("Guest") };
 
 export function UsersPage({ currentUserId }: { currentUserId: string }) {
   const queryClient = useQueryClient();
@@ -39,7 +40,7 @@ export function UsersPage({ currentUserId }: { currentUserId: string }) {
       setRole("USER");
       setCreating(false);
       await refresh();
-    }, "新增使用者失敗");
+    }, t("Couldn’t add the user"));
   }
 
   async function setDisabled(user: UserAccount, disabled: boolean) {
@@ -50,36 +51,36 @@ export function UsersPage({ currentUserId }: { currentUserId: string }) {
   }
 
   async function resetPassword(user: UserAccount) {
-    const password = await promptText({ title: `重設 ${user.display_name} 的密碼`, description: "至少 8 個字元。這位使用者會從所有裝置登出，需要用新密碼重新登入。", placeholder: "新密碼", confirmLabel: "重設密碼" });
+    const password = await promptText({ title: t("Reset {name}’s password", { name: user.display_name }), description: t("At least 8 characters. This user is signed out everywhere and has to sign in again with the new password."), placeholder: t("New password"), confirmLabel: t("Reset password") });
     if (password === null) return;
     if (password.length < 8) {
-      toast("密碼至少要 8 個字元", "error");
+      toast(t("The password needs at least 8 characters"), "error");
       return;
     }
     await run(async () => {
       await api(`/api/users/${user.id}/password`, { method: "POST", body: JSON.stringify({ password }) });
-      toast(`已重設 ${user.display_name} 的密碼`);
-    }, "重設密碼失敗");
+      toast(t("{name}’s password was reset", { name: user.display_name }));
+    }, t("Couldn’t reset the password"));
   }
 
   return (
     <Page
-      title="使用者"
-      description="管理員可以存取所有位置；其他角色需要透過權限規則授權。"
-      actions={creating ? null : <Button variant="default" onClick={() => setCreating(true)}><Plus />新增使用者</Button>}
+      title={t("Users")}
+      description={t("Administrators can reach every location; other roles need permission rules.")}
+      actions={creating ? null : <Button variant="default" onClick={() => setCreating(true)}><Plus />{t("Add user")}</Button>}
     >
       {creating ? (
-      <Card title="新增使用者" action={<KagoIconButton label="取消新增" onClick={() => setCreating(false)}><X /></KagoIconButton>}>
+      <Card title={t("Add user")} action={<KagoIconButton label={t("Cancel adding")} onClick={() => setCreating(false)}><X /></KagoIconButton>}>
         <form className="grid grid-cols-2 gap-3" onSubmit={create}>
           <Field label="Email"><Input autoFocus type="email" autoComplete="off" value={email} onChange={(event) => setEmail(event.target.value)} /></Field>
-          <Field label="顯示名稱"><Input autoComplete="off" value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></Field>
-          <Field label="初始密碼" hint="至少 8 個字元"><Input type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} /></Field>
-          <Field label="角色">
+          <Field label={t("Display name")}><Input autoComplete="off" value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></Field>
+          <Field label={t("Initial password")} hint={t("At least 8 characters")}><Input type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} /></Field>
+          <Field label={t("Role")}>
             <Select value={role} onChange={(event) => setRole(event.target.value as Role)}>
               {(Object.keys(roleLabels) as Role[]).map((value) => <option key={value} value={value}>{roleLabels[value]}</option>)}
             </Select>
           </Field>
-          <div className="col-span-2 flex justify-end"><Button type="submit" variant="default" disabled={!canCreate}>新增使用者</Button></div>
+          <div className="col-span-2 flex justify-end"><Button type="submit" variant="default" disabled={!canCreate}>{t("Add user")}</Button></div>
         </form>
       </Card>
       ) : null}
@@ -89,9 +90,9 @@ export function UsersPage({ currentUserId }: { currentUserId: string }) {
           {users.data.map((user) => (
             <Row key={user.id} icon={<UserRound />} title={user.display_name} subtitle={user.email}>
               <KagoBadge tone={user.role === "ADMIN" ? "accent" : "neutral"}>{roleLabels[user.role]}</KagoBadge>
-              {user.disabled ? <KagoBadge tone="danger">已停用</KagoBadge> : null}
-              {user.id === currentUserId ? null : <Button onClick={() => void resetPassword(user)}>重設密碼</Button>}
-              {user.id === currentUserId ? null : <Button onClick={() => void setDisabled(user, !user.disabled)}>{user.disabled ? "啟用" : "停用"}</Button>}
+              {user.disabled ? <KagoBadge tone="danger">{t("Disabled")}</KagoBadge> : null}
+              {user.id === currentUserId ? null : <Button onClick={() => void resetPassword(user)}>{t("Reset password")}</Button>}
+              {user.id === currentUserId ? null : <Button onClick={() => void setDisabled(user, !user.disabled)}>{user.disabled ? t("Enable") : t("Disable")}</Button>}
             </Row>
           ))}
         </RowList>

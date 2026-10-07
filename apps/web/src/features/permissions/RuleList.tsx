@@ -8,6 +8,7 @@ import { parseJsonArray } from "@/lib/format";
 import { run } from "@/lib/run";
 import type { PermissionRule } from "@/types/kago";
 import { permissionLabel } from "./permissionUtils";
+import { t } from "@/lib/i18n";
 
 export function RuleList({ rules }: { rules: PermissionRule[] }) {
   const queryClient = useQueryClient();
@@ -17,7 +18,7 @@ export function RuleList({ rules }: { rules: PermissionRule[] }) {
   function principalName(rule: PermissionRule) {
     if (rule.principal_type === "user") return users.data?.find((user) => user.id === rule.principal_id)?.email ?? rule.principal_id;
     if (rule.principal_type === "group") return groups.data?.find((group) => group.id === rule.principal_id)?.name ?? rule.principal_id;
-    return "分享連結";
+    return t("Share link");
   }
 
   async function remove(ruleId: string) {
@@ -34,13 +35,13 @@ export function RuleList({ rules }: { rules: PermissionRule[] }) {
           {rule.principal_type === "group" ? <UsersRound className="mt-0.5 text-muted" /> : <UserRound className="mt-0.5 text-muted" />}
           <div className="flex min-w-0 flex-1 flex-col gap-1">
             <span className="truncate font-medium">{principalName(rule)}</span>
-            <span className="truncate text-xs text-muted">{rule.path_prefix}{rule.recursive ? "（含子資料夾）" : ""}</span>
+            <span className="truncate text-xs text-muted">{rule.path_prefix}{rule.recursive ? t(" (with subfolders)") : ""}</span>
             <div className="flex flex-wrap gap-1">
               {parseJsonArray(rule.allow_json).map((action) => <KagoBadge key={`allow-${action}`} tone="success">{permissionLabel(action)}</KagoBadge>)}
-              {parseJsonArray(rule.deny_json).map((action) => <KagoBadge key={`deny-${action}`} tone="danger">禁止{permissionLabel(action)}</KagoBadge>)}
+              {parseJsonArray(rule.deny_json).map((action) => <KagoBadge key={`deny-${action}`} tone="danger">{t("Deny: {action}", { action: permissionLabel(action) })}</KagoBadge>)}
             </div>
           </div>
-          <KagoIconButton label="刪除規則" onClick={() => void remove(rule.id)}><Trash2 /></KagoIconButton>
+          <KagoIconButton label={t("Delete rule")} onClick={() => void remove(rule.id)}><Trash2 /></KagoIconButton>
         </li>
       ))}
     </ul>

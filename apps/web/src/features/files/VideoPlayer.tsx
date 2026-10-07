@@ -7,6 +7,7 @@ import { formatClock } from "@/lib/format";
 import { getVideoVolume, setVideoVolume } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 import { startCompositePip } from "./compositePip";
+import { t } from "@/lib/i18n";
 
 const IDLE_MS = 2500;
 const SEEK_STEP = 5;
@@ -337,9 +338,9 @@ export function VideoPlayer({
         onError={onError}
       />
 
-      {(notice ?? (loading ? "載入中…" : null)) ? (
+      {(notice ?? (loading ? t("Loading…") : null)) ? (
         <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-center">
-          <span className="kago-player-glass rounded-full px-3 py-1 text-xs">{notice ?? "載入中…"}</span>
+          <span className="kago-player-glass rounded-full px-3 py-1 text-xs">{notice ?? t("Loading…")}</span>
         </div>
       ) : playing ? null : (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
@@ -357,7 +358,7 @@ export function VideoPlayer({
         onFocus={wake}
       >
         <Slider
-          label="播放進度"
+          label={t("Playback position")}
           value={time}
           max={duration}
           loaded={buffered}
@@ -368,23 +369,23 @@ export function VideoPlayer({
         />
         <div className="flex items-center gap-1">
           {previous !== undefined ? (
-            <PlayerButton label={previous ? `上一部：${previous.label}（⇧P）` : "沒有上一部"} disabled={!previous} onClick={() => previous?.go()}>
+            <PlayerButton label={previous ? t("Previous: {label} (⇧P)", { label: previous.label }) : t("No previous video")} disabled={!previous} onClick={() => previous?.go()}>
               <SkipBack className="fill-current" />
             </PlayerButton>
           ) : null}
-          <PlayerButton label={playing ? "暫停（空白鍵）" : "播放（空白鍵）"} className="kago-player-key mx-1 size-8 rounded-full" onClick={togglePlay}>
+          <PlayerButton label={playing ? t("Pause (Space)") : t("Play (Space)")} className="kago-player-key mx-1 size-8 rounded-full" onClick={togglePlay}>
             {playing ? <Pause className="fill-current" /> : <Play className="fill-current" />}
           </PlayerButton>
           {next !== undefined ? (
-            <PlayerButton label={next ? `下一部：${next.label}（⇧N）` : "沒有下一部"} disabled={!next} onClick={() => next?.go()}>
+            <PlayerButton label={next ? t("Next: {label} (⇧N)", { label: next.label }) : t("No next video")} disabled={!next} onClick={() => next?.go()}>
               <SkipForward className="fill-current" />
             </PlayerButton>
           ) : null}
-          <PlayerButton label={silent ? "取消靜音（M）" : "靜音（M）"} onClick={() => changeSound(sound.volume || 1, !silent)}>
+          <PlayerButton label={silent ? t("Unmute (M)") : t("Mute (M)")} onClick={() => changeSound(sound.volume || 1, !silent)}>
             <VolumeIcon />
           </PlayerButton>
           <Slider
-            label="音量"
+            label={t("Volume")}
             className="hidden w-16 @sm:block"
             value={silent ? 0 : sound.volume}
             max={1}
@@ -397,12 +398,12 @@ export function VideoPlayer({
           <div className="flex-1" />
           {renderSettings?.({ container: fullscreen || floating ? container : null, onOpenChange: setMenuOpen })}
           {documentPip || document.pictureInPictureEnabled ? (
-            <PlayerButton label={pip || floating ? "結束子母畫面" : "子母畫面"} className={floating ? undefined : "hidden @sm:inline-flex"} onClick={togglePip}>
+            <PlayerButton label={pip || floating ? t("Exit picture in picture") : t("Picture in picture")} className={floating ? undefined : "hidden @sm:inline-flex"} onClick={togglePip}>
               <PictureInPicture2 />
             </PlayerButton>
           ) : null}
           {floating ? null : (
-            <PlayerButton label={fullscreen ? "結束全螢幕（F）" : "全螢幕（F）"} onClick={toggleFullscreen}>
+            <PlayerButton label={fullscreen ? t("Exit full screen (F)") : t("Full screen (F)")} onClick={toggleFullscreen}>
               {fullscreen ? <Minimize /> : <Maximize />}
             </PlayerButton>
           )}
@@ -416,8 +417,8 @@ export function VideoPlayer({
       {floating ? (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 bg-black text-white/80">
           <PictureInPicture2 />
-          <span>正在子母畫面中播放</span>
-          <Button onClick={() => floating.close()}>回到這裡播放</Button>
+          <span>{t("Playing in picture in picture")}</span>
+          <Button onClick={() => floating.close()}>{t("Play here again")}</Button>
         </div>
       ) : null}
       <div ref={home} className="contents" />

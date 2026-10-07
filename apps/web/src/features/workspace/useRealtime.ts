@@ -6,6 +6,7 @@ import { taskErrorLabel, taskTypeLabel } from "@/features/tasks/taskUtils";
 import { triggerDownload } from "@/lib/paths";
 import { toast } from "@/stores/toast";
 import type { FileTask } from "@/types/kago";
+import { t } from "@/lib/i18n";
 
 /** Task types whose completion is worth announcing; the rest finish quietly. */
 const announcedTypes = ["copy", "move", "compress", "extract", "restore_trash", "rsync_pull", "rsync_push"];
@@ -28,14 +29,14 @@ export function useRealtime(userId: string, onRemoteWorkspaceChange: () => void)
     /** Tasks run on the server, so their outcome has to be announced or it goes unnoticed. */
     function announceTask(type: string, taskId: string, error?: string) {
       const task = queryClient.getQueryData<FileTask[]>(["tasks"])?.find((item) => item.id === taskId);
-      const label = task ? taskTypeLabel(task) : "任務";
+      const label = task ? taskTypeLabel(task) : t("Task");
       if (type === "task.failed") {
         pendingDownloads.delete(taskId);
-        toast(`${label}失敗：${taskErrorLabel(error ?? "Task failed")}`, "error");
+        toast(t("{task} failed: {reason}", { task: label, reason: taskErrorLabel(error ?? "Task failed") }), "error");
       } else if (pendingDownloads.delete(taskId)) {
         triggerDownload(taskDownloadUrl(taskId));
       } else if (task && announcedTypes.includes(task.type)) {
-        toast(`${label}完成`);
+        toast(t("{task} finished", { task: label }));
       }
     }
 

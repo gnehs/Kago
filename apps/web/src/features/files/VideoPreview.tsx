@@ -15,10 +15,11 @@ import type { FileItem, MediaInfo, SubtitleTrack } from "@/types/kago";
 import { FileIcon } from "./FileIcon";
 import { useSubtitleRenderer } from "./useSubtitleRenderer";
 import { PLAYER_CONTROL_CLASS, VideoPlayer } from "./VideoPlayer";
+import { t } from "@/lib/i18n";
 
 const BITRATE_HINT: Record<number, string> = { 2160: "16 Mbps", 1440: "10 Mbps", 1080: "6 Mbps", 720: "3 Mbps", 480: "1.5 Mbps", 360: "0.8 Mbps" };
 const ENCODER_LABEL: Record<string, string> = { nvenc: "NVIDIA GPU", vaapi: "Intel / AMD GPU", "vaapi-cqp": "Intel / AMD GPU", videotoolbox: "Apple GPU", software: "CPU" };
-const SUBTITLE_FORMAT_LABEL: Record<SubtitleTrack["format"], string> = { ass: "ASS", srt: "SRT", pgs: "PGS", vobsub: "VobSub", dvb: "DVB", picture: "圖形字幕" };
+const SUBTITLE_FORMAT_LABEL: Record<SubtitleTrack["format"], string> = { ass: "ASS", srt: "SRT", pgs: "PGS", vobsub: "VobSub", dvb: "DVB", picture: "" };
 const MAX_RECOVERIES = 2;
 // Numbered episodes sort as numbers, the way the file list shows them.
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
@@ -36,7 +37,7 @@ export function VideoPreviewWindow({ window }: { window: PreviewWindow }) {
     <KagoWindow
       window={window}
       icon={<FileIcon item={item} />}
-      titleExtra={<KagoIconButton label="下載" className="size-6" onClick={() => triggerDownload(downloadUrl(rootSlug, item.path))}><Download /></KagoIconButton>}
+      titleExtra={<KagoIconButton label={t("Download")} className="size-6" onClick={() => triggerDownload(downloadUrl(rootSlug, item.path))}><Download /></KagoIconButton>}
     >
       <VideoPreview
         rootSlug={rootSlug}
@@ -99,6 +100,7 @@ export function VideoPreview({
 
   // A picture subtitle is not drawn here: the server lays it over the frames it transcodes.
   const burned = subtitle?.stream ?? null;
+  const burnedFile = burned === null ? null : (subtitle?.file ?? null);
   const textSubtitle = burned === null ? subtitle : null;
 
   const media = info.data;
@@ -143,7 +145,7 @@ export function VideoPreview({
       void (async () => {
         const session = await api<{ id: string; playlistUrl: string }>("/api/media/sessions", {
           method: "POST",
-          body: JSON.stringify({ rootSlug, path, height, audioIndex, subtitleIndex: burned, hdr })
+          body: JSON.stringify({ rootSlug, path, height, audioIndex, subtitleIndex: burned, subtitlePath: burnedFile, hdr })
         });
         if (cancelled) return closeSession(session.id);
         sessionId = session.id;
@@ -203,10 +205,10 @@ export function VideoPreview({
       video.load();
       if (sessionId) closeSession(sessionId);
     };
-  }, [ready, rootSlug, path, height, audioIndex, burned, hdr, attempt]);
+  }, [ready, rootSlug, path, height, audioIndex, burned, burnedFile, hdr, attempt]);
 
   useSubtitleRenderer(videoRef, textSubtitle, subtitleList?.fonts ?? [], aspect ?? probedAspect, () => {
-    toast("無法載入這個字幕", "error");
+    toast(t("Couldn’t load this subtitle"), "error");
     setSubtitlePick("off");
   });
 
@@ -228,7 +230,7 @@ export function VideoPreview({
     <>
       {subtitles.length > 0 || audioTracks.length > 1 ? (
         <KagoDropdownMenu
-          label="字幕與音軌"
+          label={t("Subtitles and audio")}
           side="top"
           className={`size-7! ${PLAYER_CONTROL_CLASS}`}
           container={slot.container}
@@ -237,20 +239,20 @@ export function VideoPreview({
             <>
               {subtitles.length > 0 ? (
                 <>
-                  <MenuHeading>字幕</MenuHeading>
-                  <CheckItem checked={subtitle === null} onClick={() => pickTrack(null)}>關閉</CheckItem>
+                  <MenuHeading>{t("Subtitles")}</MenuHeading>
+                  <CheckItem checked={subtitle === null} onClick={() => pickTrack(null)}>{t("Off")}</CheckItem>
                   {subtitles.map((track) => (
-                    <CheckItem key={track.id} checked={subtitle?.id === track.id} hint={track.embedded ? `內嵌 ${SUBTITLE_FORMAT_LABEL[track.format]}` : SUBTITLE_FORMAT_LABEL[track.format]} onClick={() => pickTrack(track)}>
+                    <CheckItem key={track.id} checked={subtitle?.id === track.id} hint={track.embedded ? t("Embedded {format}", { format: SUBTITLE_FORMAT_LABEL[track.format] || t("image subtitles") }) : SUBTITLE_FORMAT_LABEL[track.format]} onClick={() => pickTrack(track)}>
                       {subtitleLabel(track)}
                     </CheckItem>
                   ))}
                 </>
               ) : null}
-              {subtitleList && subtitleList.unsupported > 0 ? <div className="px-2 py-1 text-xs text-muted">另有 {subtitleList.unsupported} 個字幕無法顯示</div> : null}
+              {subtitleList && subtitleList.unsupported > 0 ? <div className="px-2 py-1 text-xs text-muted">{t("{count} more subtitle can’t be shown | {count} more subtitles can’t be shown",{ count: subtitleList.unsupported })}</div> : null}
               {audioTracks.length > 1 ? (
                 <>
                   {subtitles.length > 0 ? <KagoMenuSeparator /> : null}
-                  <MenuHeading>音軌</MenuHeading>
+                  <MenuHeading>{t("Audio tracks")}</MenuHeading>
                   {audioTracks.map((track, index) => (
                     <CheckItem
                       key={index}
@@ -261,7 +263,7 @@ export function VideoPreview({
                         setAudioIndex(index);
                       }}
                     >
-                      {[languageLabel(track.language), track.title].filter(Boolean).join(" · ") || `音軌 ${index + 1}`}
+                      {[languageLabel(track.language), track.title].filter(Boolean).join(" · ") || t("Audio track {number}", { number: index + 1 })}
                     </CheckItem>
                   ))}
                 </>
@@ -279,7 +281,7 @@ export function VideoPreview({
   const qualityMenu = (slot: { container: HTMLElement | null; onOpenChange: (open: boolean) => void }) =>
     qualities.length > 0 ? (
       <KagoDropdownMenu
-        label="畫質"
+        label={t("Quality")}
         side="top"
         className={`h-7! w-auto! px-2 text-xs font-medium tabular-nums ${PLAYER_CONTROL_CLASS}`}
         container={slot.container}
@@ -287,7 +289,7 @@ export function VideoPreview({
         menu={
           <>
             {canDirect && !directFailed ? (
-              <CheckItem checked={height === null} hint="不轉檔" onClick={() => pick("direct")}>原始檔案</CheckItem>
+              <CheckItem checked={height === null} hint={t("No transcoding")} onClick={() => pick("direct")}>{t("Original file")}</CheckItem>
             ) : null}
             {qualities.map((quality) => (
               <CheckItem key={quality} checked={height === quality} hint={BITRATE_HINT[quality]} onClick={() => pick(quality)}>
@@ -295,12 +297,12 @@ export function VideoPreview({
               </CheckItem>
             ))}
             <KagoMenuSeparator />
-            <div className="px-2 py-1 text-xs text-muted">轉檔：{ENCODER_LABEL[media?.encoder ?? ""] ?? "CPU"}</div>
+            <div className="px-2 py-1 text-xs text-muted">{t("Transcoding: {encoder}", { encoder: ENCODER_LABEL[media?.encoder ?? ""] ?? "CPU" })}</div>
             {sourceHdr ? <div className="px-2 pb-1 text-xs text-muted">{hdrNote(height === null, hdr, hdrScreen, Boolean(media?.tonemap))}</div> : null}
           </>
         }
       >
-        {height === null ? "原始" : `${height}p`}
+        {height === null ? t("Original") : `${height}p`}
         {hdr || (height === null && sourceHdr && hdrScreen) ? " HDR" : ""}
       </KagoDropdownMenu>
     ) : null;
@@ -312,7 +314,7 @@ export function VideoPreview({
         previous={videos.length > 1 && position !== -1 ? neighbour(videos[position - 1]) : undefined}
         next={videos.length > 1 && position !== -1 ? neighbour(videos[position + 1]) : undefined}
         fallbackDuration={media?.duration}
-        notice={status === "preparing" ? "正在轉檔…" : status === "error" ? "無法播放這個影片" : null}
+        notice={status === "preparing" ? t("Transcoding…") : status === "error" ? t("Couldn’t play this video") : null}
         renderSettings={renderSettings}
         onAspect={onAspect}
         onLoadedData={() => setStatus("idle")}
@@ -322,7 +324,7 @@ export function VideoPreview({
         onError={() => {
           // Only the original file reports failures here; hls.js surfaces its own.
           if (height !== null || qualities.length === 0) return;
-          toast("瀏覽器無法直接播放這個檔案，已改用轉檔");
+          toast(t("The browser can’t play this file directly, so it is being transcoded"));
           setDirectFailed(true);
         }}
       />
@@ -356,10 +358,10 @@ function resolveHeight(qualities: number[], picked: VideoQualityPref | null, dir
 
 /** What becomes of an HDR picture on its way to this screen. */
 function hdrNote(direct: boolean, hdr: boolean, hdrScreen: boolean, tonemap: boolean): string {
-  if (direct) return hdrScreen ? "HDR：以原始檔案輸出" : "HDR：由瀏覽器轉為 SDR";
-  if (hdr) return "HDR：螢幕支援，以 HDR 輸出";
-  if (!tonemap) return "HDR：伺服器無法轉為 SDR，顏色會偏淡";
-  return hdrScreen ? "HDR：無法以 HDR 串流，已轉為 SDR" : "HDR：螢幕不支援，已轉為 SDR";
+  if (direct) return hdrScreen ? t("HDR: playing the original file") : t("HDR: converted to SDR by the browser");
+  if (hdr) return t("HDR: supported by this screen, playing in HDR");
+  if (!tonemap) return t("HDR: the server can’t convert to SDR, so colors will look washed out");
+  return hdrScreen ? t("HDR: can’t be streamed in HDR, converted to SDR") : t("HDR: not supported by this screen, converted to SDR");
 }
 
 const HDR_SCREEN = "(dynamic-range: high)";

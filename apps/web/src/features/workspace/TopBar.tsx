@@ -15,6 +15,7 @@ import { FileIcon } from "@/features/files/FileIcon";
 import { appIcons } from "@/features/windows/AppWindow";
 import { useWorkspaceStore, type WindowFrame } from "@/stores/workspace";
 import type { Actor } from "@/types/kago";
+import { t } from "@/lib/i18n";
 
 /** The workspace's only chrome: open windows on the left, status and account on the right. */
 export function TopBar({ user, onOpenPalette }: { user: Actor; onOpenPalette: () => void }) {
@@ -52,14 +53,14 @@ export function TopBar({ user, onOpenPalette }: { user: Actor; onOpenPalette: ()
     <header className="kago-chrome z-[1] flex h-10 shrink-0 items-center gap-1 border-b border-line px-2">
       <button
         className="flex h-7 shrink-0 items-center gap-2 rounded-md pr-2.5 pl-1.5 font-semibold outline-none kago-flat focus-visible:ring-2 focus-visible:ring-accent/50"
-        title={anyVisible ? "顯示桌面" : "還原所有視窗"}
+        title={anyVisible ? t("Show desktop") : t("Restore all windows")}
         onClick={toggleDesktop}
       >
         <BrandMark className="size-5" />
         Kago
       </button>
 
-      <nav aria-label="開啟的視窗" className="flex h-full min-w-0 flex-1 items-center gap-1 overflow-hidden px-1">
+      <nav aria-label={t("Open windows")} className="flex h-full min-w-0 flex-1 items-center gap-1 overflow-hidden px-1">
         {ordered.map((window) => (
           <button
             key={window.id}
@@ -83,12 +84,12 @@ export function TopBar({ user, onOpenPalette }: { user: Actor; onOpenPalette: ()
         onClick={onOpenPalette}
       >
         <Search className="size-3.5" />
-        <span className="hidden sm:inline">快速開啟</span>
+        <span className="hidden sm:inline">{t("Quick open")}</span>
         <kbd className="font-sans text-xs">⌘K</kbd>
       </button>
       <TaskStatus />
-      <KagoIconButton label="設定" active={settingsFocused} onClick={() => useWorkspaceStore.getState().openApp("settings")}><Settings /></KagoIconButton>
-      <KagoIconButton label={`登出 ${user.email}`} onClick={() => void logout()}><LogOut /></KagoIconButton>
+      <KagoIconButton label={t("Settings")} active={settingsFocused} onClick={() => useWorkspaceStore.getState().openApp("settings")}><Settings /></KagoIconButton>
+      <KagoIconButton label={t("Sign out {email}", { email: user.email })} onClick={() => void logout()}><LogOut /></KagoIconButton>
     </header>
   );
 }
@@ -102,7 +103,7 @@ function TaskStatus() {
   // Active tasks first, then the most recent finished ones.
   const visible = [...all.filter(isActiveTask), ...all.filter((task) => !isActiveTask(task))].slice(0, 5);
 
-  const label = activeCount > 0 ? `${activeCount} 個任務進行中` : "任務";
+  const label = activeCount > 0 ? t("{count} task in progress | {count} tasks in progress", { count: activeCount }) : t("Tasks");
 
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
@@ -120,7 +121,7 @@ function TaskStatus() {
         <Popover.Positioner sideOffset={6} align="end" className="z-[700]">
           <Popover.Popup className="kago-glass flex w-80 flex-col rounded-lg outline-none">
             {visible.length === 0 ? (
-              <p className="m-0 px-4 py-6 text-center text-muted">目前沒有任務</p>
+              <p className="m-0 px-4 py-6 text-center text-muted">{t("No tasks right now")}</p>
             ) : (
               <div className="flex max-h-96 flex-col divide-y divide-line overflow-y-auto px-3">
                 {visible.map((task) => <TaskRow key={task.id} task={task} />)}
@@ -134,7 +135,7 @@ function TaskStatus() {
                 useWorkspaceStore.getState().openApp("tasks");
               }}
             >
-              查看所有任務
+              {t("See all tasks")}
             </Button>
           </Popover.Popup>
         </Popover.Positioner>

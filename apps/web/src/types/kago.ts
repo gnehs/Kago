@@ -236,8 +236,10 @@ export type SubtitleTrack = {
   embedded: boolean;
   /** Anything but `ass` and `srt` is a picture subtitle (Blu-ray, DVD, broadcast). */
   format: "ass" | "srt" | "pgs" | "vobsub" | "dvb" | "picture";
-  /** A picture subtitle's number among the video's subtitle streams. The server draws it into the frames, so showing it means transcoding. */
+  /** A picture subtitle's number among the subtitle streams of the file it is in. The server draws it into the frames, so showing it means transcoding. */
   stream?: number;
+  /** The file a picture subtitle is in, when it lies next to the video rather than inside it. */
+  file?: string;
   /** A BCP 47 tag, or empty when neither the name nor the stream carries a language. */
   language: string;
   title: string;

@@ -2,11 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import { read, utils, type WorkBook } from "xlsx";
 import { KagoEmptyState } from "@/components/kago/empty-state";
 import { cn } from "@/lib/utils";
+import { locale, t } from "@/lib/i18n";
 
 // A sheet is drawn whole, so what is drawn is bounded; the file itself can hold far more.
 const MAX_ROWS = 1000;
 const MAX_COLUMNS = 100;
-const count = new Intl.NumberFormat("zh-TW");
+const count = new Intl.NumberFormat(locale);
 
 type Grid = { rows: string[][]; columns: number; clipped: boolean };
 
@@ -45,7 +46,7 @@ export default function SheetView({ data, onError }: { data: ArrayBuffer; onErro
     <div className="flex min-h-0 flex-1 flex-col bg-surface">
       <div className="min-h-0 flex-1 overflow-auto select-text">
         {grid.rows.length === 0 ? (
-          <KagoEmptyState className="h-full" title="這個工作表是空的" />
+          <KagoEmptyState className="h-full" title={t("This sheet is empty")} />
         ) : (
           <table className="border-separate border-spacing-0 whitespace-nowrap">
             <thead>
@@ -74,7 +75,7 @@ export default function SheetView({ data, onError }: { data: ArrayBuffer; onErro
         )}
       </div>
       <footer className="flex h-7 shrink-0 items-center gap-1 border-t border-line bg-elevated px-1.5 text-muted">
-        <div role="tablist" aria-label="工作表" className="flex min-w-0 flex-1 gap-px overflow-x-auto">
+        <div role="tablist" aria-label={t("Sheets")} className="flex min-w-0 flex-1 gap-px overflow-x-auto">
           {names.map((sheet, index) => (
             <button
               key={sheet}
@@ -88,7 +89,7 @@ export default function SheetView({ data, onError }: { data: ArrayBuffer; onErro
             </button>
           ))}
         </div>
-        {grid.clipped ? <span className="shrink-0 px-1.5">只顯示前 {count.format(MAX_ROWS)} 列、{MAX_COLUMNS} 欄</span> : null}
+        {grid.clipped ? <span className="shrink-0 px-1.5">{t("Showing only the first {rows} rows and {columns} columns", { rows: count.format(MAX_ROWS), columns: MAX_COLUMNS })}</span> : null}
       </footer>
     </div>
   );

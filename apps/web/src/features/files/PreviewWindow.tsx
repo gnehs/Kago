@@ -14,6 +14,7 @@ import { PdfPreviewWindow } from "./PdfPreview";
 import { SqlitePreviewWindow } from "./SqlitePreview";
 import { TextPreviewWindow } from "./TextPreview";
 import { VideoPreviewWindow } from "./VideoPreview";
+import { t } from "@/lib/i18n";
 
 /**
  * A file opened for viewing, in the same movable, resizable window chrome as a folder.
@@ -36,7 +37,7 @@ export function PreviewWindowView({ window }: { window: PreviewWindow }) {
       window={window}
       icon={<FileIcon item={item} />}
       titleExtra={
-        <KagoIconButton label="下載" className="size-6" onClick={download}>
+        <KagoIconButton label={t("Download")} className="size-6" onClick={download}>
           <Download />
         </KagoIconButton>
       }
@@ -47,10 +48,10 @@ export function PreviewWindowView({ window }: { window: PreviewWindow }) {
         ) : (
           <KagoEmptyState
             icon={<FileQuestion />}
-            title="無法預覽這種檔案"
-            description={hasTextName(item.name) || item.type.startsWith("text/") ? `超過 ${formatSize(MAX_TEXT_BYTES)} 的文字檔請下載後開啟。` : `${kindLabel(item)}沒有對應的檢視器，請下載後用其他程式開啟。`}
+            title={t("This kind of file can’t be previewed")}
+            description={hasTextName(item.name) || item.type.startsWith("text/") ? t("Text files over {size} have to be downloaded to open.", { size: formatSize(MAX_TEXT_BYTES) }) : t("There is no viewer for this kind of file ({kind}). Download it and open it in another app.", { kind: kindLabel(item) })}
           >
-            <Button onClick={download}>下載</Button>
+            <Button onClick={download}>{t("Download")}</Button>
           </KagoEmptyState>
         )}
       </div>

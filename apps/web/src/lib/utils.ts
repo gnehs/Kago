@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
+import { t } from "./i18n";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -30,7 +31,7 @@ export async function copyText(text: string): Promise<void> {
   textarea.select();
   try {
     if (!document.execCommand("copy")) {
-      throw new Error("複製失敗");
+      throw new Error(t("Couldn’t copy"));
     }
   } finally {
     textarea.remove();

@@ -24,6 +24,7 @@
 - **不限大小的上傳**：拖放檔案或整個資料夾即可上傳，直接串流寫入磁碟，並顯示進度、速度與剩餘時間。
 - **macOS Finder 標籤**：讀得到也改得了你在 Mac 上設定的彩色標籤。
 - **垃圾桶**：刪除的檔案先進垃圾桶，可以還原。
+- **多國語言**：介面有 English、繁體中文、简体中文、日本語，預設跟隨瀏覽器語言，也可以在「設定 → 一般」切換。
 - **快速開啟**：按 <kbd>⌘K</kbd> / <kbd>Ctrl K</kbd> 跳到任何位置或功能。
 - **深色模式**：跟隨系統，或自行切換。
 
@@ -227,6 +228,20 @@ pnpm test:smoke
 ```bash
 docker build -t kago:local .
 ```
+
+### 翻譯
+
+介面文字在程式碼裡一律以英文撰寫並包在 `t()` 裡（`apps/web/src/lib/i18n.ts`），各語言的字典放在 `apps/web/src/locales/`，以英文原文為鍵：
+
+```tsx
+t("Download")
+t("{count} file | {count} files", { count })   // 單數 | 複數，由 count 決定
+t("Location##GPS")                             // ## 後面是給譯者看的語境，不會顯示
+```
+
+- **新增文字**：直接用英文寫 `t("…")`，再到各字典補上翻譯；還沒翻的語言會先顯示英文。
+- **新增語言**：在 `locales/` 加一份字典，並在 `lib/prefs.ts` 的 `Locale` 與 `lib/i18n.ts` 的 `localeNames`、`dictionaries` 登記。
+- `pnpm i18n` 會列出每個語言缺少、多餘，或 `{參數}` 對不上的翻譯。
 
 ## 授權
 

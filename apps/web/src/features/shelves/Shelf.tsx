@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 import { promptText } from "@/stores/dialogs";
 import { toast } from "@/stores/toast";
 import { getCanvasSize, useWorkspaceStore } from "@/stores/workspace";
+import { t } from "@/lib/i18n";
 
 const MARGIN = 12;
 
@@ -84,21 +85,21 @@ export function Shelf() {
     await run(async () => {
       await Promise.all(items.map((item) => api(`/api/shelves/${shelfId}/items`, { method: "POST", body: JSON.stringify(item) })));
       await queryClient.invalidateQueries({ queryKey: ["shelves"] });
-    }, "無法加入中轉區");
+    }, t("Couldn’t add to Shelf"));
   }
 
   async function send(type: "copy" | "move" | "compress") {
     if (!active) return;
     let path = active.logicalPath;
     if (type === "compress") {
-      const name = await promptText({ title: "將中轉區壓縮成 zip", defaultValue: "shelf.zip", confirmLabel: "壓縮" });
+      const name = await promptText({ title: t("Compress the Shelf to zip"), defaultValue: "shelf.zip", confirmLabel: t("Compress") });
       if (!name) return;
       path = joinLogicalPath(active.logicalPath, ensureZipName(name));
     }
     await run(async () => {
       await api(`/api/shelves/${shelfId}/tasks`, { method: "POST", body: JSON.stringify({ type, destination: { rootSlug: active.rootSlug, path } }) });
       await queryClient.invalidateQueries({ queryKey: ["tasks"] });
-      toast("已建立任務");
+      toast(t("Task created"));
     });
   }
 
@@ -112,7 +113,7 @@ export function Shelf() {
   return (
     <aside
       ref={element}
-      aria-label="中轉區"
+      aria-label={t("Shelf")}
       className={cn("absolute z-[600] kago-glass flex w-66 flex-col rounded-lg", dropActive && "ring-2 ring-accent")}
       style={style}
       onDragOver={(event) => {
@@ -124,17 +125,17 @@ export function Shelf() {
     >
       <header className="flex h-10 shrink-0 touch-none items-center gap-2 pr-1.5 pl-3 select-none" {...dragHandlers}>
         <Inbox className="text-muted" />
-        <strong className="flex-1 font-medium">中轉區</strong>
+        <strong className="flex-1 font-medium">{t("Shelf")}</strong>
         {itemCount > 0 ? <KagoBadge tone="accent">{itemCount}</KagoBadge> : null}
-        <KagoIconButton label={collapsed ? "展開中轉區" : "收合中轉區"} onClick={() => store().updateShelf({ collapsed: !collapsed })}>
+        <KagoIconButton label={collapsed ? t("Expand Shelf") : t("Collapse Shelf")} onClick={() => store().updateShelf({ collapsed: !collapsed })}>
           {collapsed ? <ChevronUp /> : <ChevronDown />}
         </KagoIconButton>
       </header>
 
       {collapsed && itemCount > 0 ? null : itemCount === 0 ? (
         <p className="m-2 mt-0 rounded-md border border-dashed border-line-strong px-3 py-5 text-center text-muted">
-          把檔案拖到這裡暫放
-          <span className="mt-0.5 block text-xs text-faint">只記錄位置，不會複製檔案</span>
+          {t("Drag files here to hold them")}
+          <span className="mt-0.5 block text-xs text-faint">{t("Only their location is kept; nothing is copied")}</span>
         </p>
       ) : (
         <>
@@ -152,7 +153,7 @@ export function Shelf() {
                   <span className="truncate">{item.name}</span>
                   <span className="truncate text-xs text-faint">{item.root_slug}:{item.path}</span>
                 </span>
-                <button aria-label={`從中轉區移除 ${item.name}`} className="rounded-sm p-1 text-muted opacity-0 group-hover:opacity-100 kago-flat hover:text-ink focus-visible:opacity-100" onClick={() => void remove(item.id)}>
+                <button aria-label={t("Remove {name} from Shelf", { name: item.name })} className="rounded-sm p-1 text-muted opacity-0 group-hover:opacity-100 kago-flat hover:text-ink focus-visible:opacity-100" onClick={() => void remove(item.id)}>
                   <X className="size-3.5" />
                 </button>
               </li>
@@ -160,12 +161,12 @@ export function Shelf() {
           </ul>
           <footer className="flex flex-col gap-1.5 border-t border-line p-2">
             <span className="truncate text-xs text-muted">
-              {active ? (activeList.data?.readonly ? "目前視窗是唯讀的" : `送到「${active.title}」`) : "先選一個檔案視窗作為目的地"}
+              {active ? (activeList.data?.readonly ? t("The current window is read-only") : t("Send to “{title}”", { title: active.title })) : t("Pick a file window as the destination first")}
             </span>
             <div className="grid grid-cols-3 gap-1.5">
-              <Button variant="default" disabled={!canSend} onClick={() => void send("copy")}>複製</Button>
-              <Button disabled={!canSend} onClick={() => void send("move")}>搬移</Button>
-              <Button disabled={!canSend} onClick={() => void send("compress")}>壓縮</Button>
+              <Button variant="default" disabled={!canSend} onClick={() => void send("copy")}>{t("Copy")}</Button>
+              <Button disabled={!canSend} onClick={() => void send("move")}>{t("Move")}</Button>
+              <Button disabled={!canSend} onClick={() => void send("compress")}>{t("Compress")}</Button>
             </div>
           </footer>
         </>

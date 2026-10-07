@@ -3,6 +3,7 @@ import notoKr from "@expo-google-fonts/noto-sans-kr/400Regular/NotoSansKR_400Reg
 import notoSc from "@expo-google-fonts/noto-sans-sc/400Regular/NotoSansSC_400Regular.ttf?url";
 import notoTc from "@expo-google-fonts/noto-sans-tc/400Regular/NotoSansTC_400Regular.ttf?url";
 import type { SubtitleTrack } from "@/types/kago";
+import { locale, t } from "@/lib/i18n";
 
 /** The regional cuts of Noto Sans. libass draws with font files of its own, so one has to be handed to it. */
 export type CjkFont = "tc" | "sc" | "jp" | "kr";
@@ -124,16 +125,16 @@ export function srtToAss(srt: string, aspect: number, fontFamily: string): strin
   ].join("\n");
 }
 
-const languageNames = new Intl.DisplayNames(["zh-TW"], { type: "language", fallback: "none" });
+const languageNames = new Intl.DisplayNames([locale], { type: "language", fallback: "none" });
 
 export const languageLabel = (tag: string) => (tag ? (languageNames.of(tag) ?? tag) : "");
 
 export function subtitleLabel(track: SubtitleTrack): string {
   const language = languageLabel(track.language);
-  const flags = [track.sdh ? "聽障" : "", track.forced ? "強制" : ""].filter(Boolean).join("、");
+  const flags = [track.sdh ? t("SDH") : "", track.forced ? t("Forced") : ""].filter(Boolean).join(t(", "));
   // Streams are often titled with nothing but their language.
-  const label = [language, track.title === language ? "" : track.title].filter(Boolean).join(" · ") || "字幕";
-  return flags ? `${label}（${flags}）` : label;
+  const label = [language, track.title === language ? "" : track.title].filter(Boolean).join(" · ") || t("Subtitles");
+  return flags ? t("{label} ({flags})", { label, flags }) : label;
 }
 
 function sameLanguage(a: string, b: string): boolean {

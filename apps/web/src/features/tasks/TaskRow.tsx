@@ -6,6 +6,7 @@ import { triggerDownload } from "@/lib/paths";
 import { run } from "@/lib/run";
 import type { FileTask } from "@/types/kago";
 import { canCancelTask, canRetryTask, compressDownloadTarget, hasTaskDownload, isActiveTask, taskErrorLabel, taskProgressLabel, taskProgressMax, taskProgressValue, taskStatus, taskTypeLabel } from "./taskUtils";
+import { t } from "@/lib/i18n";
 
 export function TaskRow({ task }: { task: FileTask }) {
   const queryClient = useQueryClient();
@@ -30,11 +31,11 @@ export function TaskRow({ task }: { task: FileTask }) {
       <span className="truncate text-xs text-muted">{task.error_message ? taskErrorLabel(task.error_message) : taskProgressLabel(task)}</span>
       {downloadHref || canCancelTask(task) || canRetryTask(task) ? (
         <div className="flex gap-1.5">
-          {downloadHref ? <Button onClick={() => triggerDownload(downloadHref)}>下載</Button> : null}
-          {task.status === "queued" ? <Button onClick={() => void act("pause")}>暫停</Button> : null}
-          {task.status === "paused" ? <Button onClick={() => void act("resume")}>繼續</Button> : null}
-          {canCancelTask(task) ? <Button onClick={() => void act("cancel")}>取消</Button> : null}
-          {canRetryTask(task) ? <Button onClick={() => void act("retry")}>重試</Button> : null}
+          {downloadHref ? <Button onClick={() => triggerDownload(downloadHref)}>{t("Download")}</Button> : null}
+          {task.status === "queued" ? <Button onClick={() => void act("pause")}>{t("Pause")}</Button> : null}
+          {task.status === "paused" ? <Button onClick={() => void act("resume")}>{t("Resume")}</Button> : null}
+          {canCancelTask(task) ? <Button onClick={() => void act("cancel")}>{t("Cancel")}</Button> : null}
+          {canRetryTask(task) ? <Button onClick={() => void act("retry")}>{t("Retry")}</Button> : null}
         </div>
       ) : null}
     </div>

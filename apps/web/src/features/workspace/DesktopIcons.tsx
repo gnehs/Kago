@@ -4,6 +4,7 @@ import { KagoAppIcon } from "@/components/kago/app-icon";
 import { KagoContextMenu, KagoMenuItem } from "@/components/kago/menu";
 import { useWorkspaceStore } from "@/stores/workspace";
 import type { Root } from "@/types/kago";
+import { t } from "@/lib/i18n";
 
 /**
  * Desktop shortcuts: the places you go to. They sit underneath every window and double as
@@ -21,8 +22,8 @@ export function DesktopIcons({ roots, isAdmin }: { roots: Root[]; isAdmin: boole
           key={root.id}
           menu={
             <>
-              <KagoMenuItem icon={<FolderOpen />} onClick={() => store().openRoot(root)}>開啟</KagoMenuItem>
-              <KagoMenuItem icon={<ExternalLink />} onClick={() => openNew(root)}>在新視窗開啟</KagoMenuItem>
+              <KagoMenuItem icon={<FolderOpen />} onClick={() => store().openRoot(root)}>{t("Open")}</KagoMenuItem>
+              <KagoMenuItem icon={<ExternalLink />} onClick={() => openNew(root)}>{t("Open in new window")}</KagoMenuItem>
             </>
           }
         >
@@ -37,10 +38,10 @@ export function DesktopIcons({ roots, isAdmin }: { roots: Root[]; isAdmin: boole
         </KagoContextMenu>
       ))}
       {roots.length > 0 ? <span aria-hidden className="mx-auto my-1.5 h-px w-10 bg-line-strong" /> : null}
-      <DesktopIcon icon={GLYPHS.shares} tone="var(--kago-app-share)" label="分享" onClick={() => store().openApp("shares")} />
-      <DesktopIcon icon={GLYPHS.trash} tone="var(--kago-app-trash)" label="垃圾桶" onClick={() => store().openApp("trash")} />
+      <DesktopIcon icon={GLYPHS.shares} tone="var(--kago-app-share)" label={t("Shares")} onClick={() => store().openApp("shares")} />
+      <DesktopIcon icon={GLYPHS.trash} tone="var(--kago-app-trash)" label={t("Trash")} onClick={() => store().openApp("trash")} />
       {roots.length === 0 ? (
-        <p className="m-0 w-20 px-1 pt-2 text-center text-xs text-muted">{isAdmin ? "/data 底下還沒有資料夾" : "尚無可用的位置，請聯絡管理員"}</p>
+        <p className="m-0 w-20 px-1 pt-2 text-center text-xs text-muted">{isAdmin ? t("No folders under /data yet") : t("No locations available. Contact an administrator")}</p>
       ) : null}
     </div>
   );
@@ -81,7 +82,7 @@ function DesktopIcon({ icon, label, tone, readonly, ...props }: React.ComponentP
   return (
     <button
       type="button"
-      title={readonly ? `${label}（唯讀）` : undefined}
+      title={readonly ? t("{label} (read-only)", { label }) : undefined}
       className="group flex w-20 flex-col items-center gap-1.5 rounded-lg px-1 py-2 outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-accent/50"
       {...props}
     >
@@ -89,7 +90,7 @@ function DesktopIcon({ icon, label, tone, readonly, ...props }: React.ComponentP
         {icon}
         {readonly ? (
           <span className="kago-raised absolute -right-1 -bottom-1 flex size-4 items-center justify-center rounded-full text-muted">
-            <Lock aria-label="唯讀" className="size-2.5" />
+            <Lock aria-label={t("Read-only")} className="size-2.5" />
           </span>
         ) : null}
       </span>

@@ -3,13 +3,14 @@ import { useTasks } from "@/api/hooks";
 import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
 import { Page } from "@/features/workspace/Page";
 import { TaskRow } from "./TaskRow";
+import { t } from "@/lib/i18n";
 
 export function TasksPage() {
   const tasks = useTasks();
   return (
-    <Page description="複製、搬移、壓縮等工作都在伺服器背景執行，關掉瀏覽器也會繼續。">
+    <Page description={t("Copying, moving, compressing and the like run on the server in the background, and carry on after you close the browser.")}>
       {tasks.isLoading ? <KagoLoading /> : null}
-      {tasks.data?.length === 0 ? <KagoEmptyState icon={<ListChecks />} title="目前沒有任務" /> : null}
+      {tasks.data?.length === 0 ? <KagoEmptyState icon={<ListChecks />} title={t("No tasks right now")} /> : null}
       {tasks.data?.length ? (
         <div className="flex flex-col divide-y divide-line rounded-lg border border-line px-4">
           {tasks.data.map((task) => <TaskRow key={task.id} task={task} />)}

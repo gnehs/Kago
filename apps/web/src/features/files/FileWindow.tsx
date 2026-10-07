@@ -25,6 +25,7 @@ import { readDraggedFiles, useFileActions, type FileRef } from "./useFileActions
 import { useMarqueeSelection } from "./useMarqueeSelection";
 import { videoPageUrl } from "./VideoPage";
 import { classifyFileWindowError, WindowErrorState } from "./WindowErrorState";
+import { t } from "@/lib/i18n";
 
 // A shared collator sorts a folder of tens of thousands of names far faster than localeCompare does.
 /** The icon of a window showing a folder. */
@@ -100,8 +101,8 @@ export function FileWindowView({ window: win, rootName, isAdmin }: { window: Fil
   const summary = useMemo(() => {
     const files = allItems.filter((item) => item.kind === "file");
     const folders = allItems.length - files.length;
-    if (allItems.length === 0) return "0 個項目";
-    const counts = [folders > 0 ? `${folders} 個資料夾` : null, files.length > 0 ? `${files.length} 個檔案` : null].filter(Boolean).join("、");
+    if (allItems.length === 0) return t("{count} item | {count} items", { count: 0 });
+    const counts = [folders > 0 ? t("{count} folder | {count} folders", { count: folders }) : null, files.length > 0 ? t("{count} file | {count} files", { count: files.length }) : null].filter(Boolean).join(t(", "));
     return files.length > 0 ? `${counts} · ${formatSize(files.reduce((total, item) => total + item.size, 0))}` : counts;
   }, [allItems]);
   const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
@@ -221,35 +222,35 @@ export function FileWindowView({ window: win, rootName, isAdmin }: { window: Fil
   function renderMenu(targets: FileItem[]) {
     const paths = targets.map((item) => item.path);
     const single = targets.length === 1 ? targets[0]! : null;
-    const countSuffix = targets.length > 1 ? ` ${targets.length} 個項目` : "";
+    const count = targets.length;
     return targets.length > 0 ? (
       <>
-        {single ? <KagoMenuItem icon={<FolderOpen />} onClick={() => openItem(single)}>開啟</KagoMenuItem> : null}
-        {single?.kind === "folder" ? <KagoMenuItem icon={<ExternalLink />} onClick={() => openItem(single, true)}>在新視窗開啟</KagoMenuItem> : null}
+        {single ? <KagoMenuItem icon={<FolderOpen />} onClick={() => openItem(single)}>{t("Open")}</KagoMenuItem> : null}
+        {single?.kind === "folder" ? <KagoMenuItem icon={<ExternalLink />} onClick={() => openItem(single, true)}>{t("Open in new window")}</KagoMenuItem> : null}
         {single?.kind === "file" && isVideoType(single.type) ? (
-          <KagoMenuItem icon={<SquareArrowOutUpRight />} onClick={() => globalThis.open(videoPageUrl(win.rootSlug, single.path), "_blank", "noopener")}>在新分頁中播放</KagoMenuItem>
+          <KagoMenuItem icon={<SquareArrowOutUpRight />} onClick={() => globalThis.open(videoPageUrl(win.rootSlug, single.path), "_blank", "noopener")}>{t("Play in new tab")}</KagoMenuItem>
         ) : null}
-        <KagoMenuItem icon={<Download />} onClick={() => void actions.download(targets)}>下載{countSuffix}</KagoMenuItem>
-        <KagoMenuItem icon={<Inbox />} onClick={() => void actions.addToShelf(paths)}>加入中轉區</KagoMenuItem>
-        <KagoMenuItem icon={<Info />} onClick={() => store().updateWindow(win.id, { inspectorOpen: true })}>資訊、標籤與分享</KagoMenuItem>
+        <KagoMenuItem icon={<Download />} onClick={() => void actions.download(targets)}>{count > 1 ? t("Download {count} item | Download {count} items", { count }) : t("Download")}</KagoMenuItem>
+        <KagoMenuItem icon={<Inbox />} onClick={() => void actions.addToShelf(paths)}>{t("Add to Shelf")}</KagoMenuItem>
+        <KagoMenuItem icon={<Info />} onClick={() => store().updateWindow(win.id, { inspectorOpen: true })}>{t("Info, tags and sharing")}</KagoMenuItem>
         <KagoMenuSeparator />
-        <KagoMenuItem icon={<Copy />} onClick={() => actions.copy(paths)}>複製</KagoMenuItem>
-        <KagoMenuItem icon={<Scissors />} disabled={readonly || targets.some((item) => item.readonly)} onClick={() => actions.cut(paths)}>剪下</KagoMenuItem>
-        {single ? <KagoMenuItem icon={<Pencil />} disabled={readonly || single.readonly} onClick={() => void actions.rename(single)}>重新命名</KagoMenuItem> : null}
-        <KagoMenuItem icon={<Archive />} disabled={readonly} onClick={() => void actions.compress(paths)}>壓縮{countSuffix}</KagoMenuItem>
-        {targets.every(isArchive) ? <KagoMenuItem icon={<ArchiveRestore />} disabled={readonly} onClick={() => void actions.extract(paths)}>解壓縮到這裡</KagoMenuItem> : null}
+        <KagoMenuItem icon={<Copy />} onClick={() => actions.copy(paths)}>{t("Copy")}</KagoMenuItem>
+        <KagoMenuItem icon={<Scissors />} disabled={readonly || targets.some((item) => item.readonly)} onClick={() => actions.cut(paths)}>{t("Cut")}</KagoMenuItem>
+        {single ? <KagoMenuItem icon={<Pencil />} disabled={readonly || single.readonly} onClick={() => void actions.rename(single)}>{t("Rename")}</KagoMenuItem> : null}
+        <KagoMenuItem icon={<Archive />} disabled={readonly} onClick={() => void actions.compress(paths)}>{count > 1 ? t("Compress {count} item | Compress {count} items", { count }) : t("Compress")}</KagoMenuItem>
+        {targets.every(isArchive) ? <KagoMenuItem icon={<ArchiveRestore />} disabled={readonly} onClick={() => void actions.extract(paths)}>{t("Extract here")}</KagoMenuItem> : null}
         <KagoMenuSeparator />
-        <KagoMenuItem icon={<Trash2 />} destructive disabled={readonly || targets.some((item) => item.readonly)} onClick={() => void actions.trash(paths)}>移到垃圾桶</KagoMenuItem>
+        <KagoMenuItem icon={<Trash2 />} destructive disabled={readonly || targets.some((item) => item.readonly)} onClick={() => void actions.trash(paths)}>{t("Move to Trash")}</KagoMenuItem>
       </>
     ) : (
       <>
-        <KagoMenuItem icon={<FolderPlus />} disabled={readonly} onClick={() => void actions.newFolder()}>新增資料夾</KagoMenuItem>
-        <KagoMenuItem icon={<Upload />} disabled={readonly} onClick={() => uploadInput.current?.click()}>上傳檔案</KagoMenuItem>
-        <KagoMenuItem icon={<FolderUp />} disabled={readonly} onClick={() => folderInput.current?.click()}>上傳資料夾</KagoMenuItem>
-        <KagoMenuItem icon={<ClipboardPaste />} disabled={readonly || !clip} onClick={() => void actions.paste()}>{clip ? `貼上 ${clip.items.length} 個項目` : "貼上"}</KagoMenuItem>
+        <KagoMenuItem icon={<FolderPlus />} disabled={readonly} onClick={() => void actions.newFolder()}>{t("New folder")}</KagoMenuItem>
+        <KagoMenuItem icon={<Upload />} disabled={readonly} onClick={() => uploadInput.current?.click()}>{t("Upload files")}</KagoMenuItem>
+        <KagoMenuItem icon={<FolderUp />} disabled={readonly} onClick={() => folderInput.current?.click()}>{t("Upload folder")}</KagoMenuItem>
+        <KagoMenuItem icon={<ClipboardPaste />} disabled={readonly || !clip} onClick={() => void actions.paste()}>{clip ? t("Paste {count} item | Paste {count} items", { count: clip.items.length }) : t("Paste")}</KagoMenuItem>
         <KagoMenuSeparator />
-        <KagoMenuItem icon={<ExternalLink />} onClick={() => store().openWindow({ rootSlug: win.rootSlug, logicalPath: win.logicalPath, title: win.title })}>在新視窗開啟此資料夾（⌥N）</KagoMenuItem>
-        <KagoMenuItem icon={<RefreshCw />} onClick={() => void actions.refresh()}>重新整理</KagoMenuItem>
+        <KagoMenuItem icon={<ExternalLink />} onClick={() => store().openWindow({ rootSlug: win.rootSlug, logicalPath: win.logicalPath, title: win.title })}>{t("Open this folder in a new window (⌥N)")}</KagoMenuItem>
+        <KagoMenuItem icon={<RefreshCw />} onClick={() => void actions.refresh()}>{t("Refresh")}</KagoMenuItem>
       </>
     );
   }
@@ -258,7 +259,7 @@ export function FileWindowView({ window: win, rootName, isAdmin }: { window: Fil
     <KagoWindow
       window={win}
       icon={<FileIcon item={FOLDER} />}
-      titleExtra={readonly ? <KagoBadge>唯讀</KagoBadge> : null}
+      titleExtra={readonly ? <KagoBadge>{t("Read-only")}</KagoBadge> : null}
       onDragOver={(event) => {
         event.preventDefault();
         setDropActive(true);
@@ -294,8 +295,8 @@ export function FileWindowView({ window: win, rootName, isAdmin }: { window: Fil
                 <KagoEmptyState
                   className="h-full"
                   icon={<Folder />}
-                  title={search ? "沒有符合的項目" : "這個資料夾是空的"}
-                  description={search ? `找不到名稱包含「${search.trim()}」的項目。` : readonly ? "這個位置是唯讀的。" : "把檔案拖進來，或使用工具列上傳。"}
+                  title={search ? t("No matching items") : t("This folder is empty")}
+                  description={search ? t("Nothing here has “{query}” in its name.", { query: search.trim() }) : readonly ? t("This location is read-only.") : t("Drag files in, or upload from the toolbar.")}
                 />
               ) : null}
               {items.length > 0 ? <FileList window={win} items={items} tree={tree} scroller={scroller} layout={layout} onSelect={selectItem} onOpen={openItem} onContextItem={onContextItem} onDropInto={readonly ? undefined : (event, folder) => dropInto(event, folder.path)} /> : null}
@@ -310,16 +311,16 @@ export function FileWindowView({ window: win, rootName, isAdmin }: { window: Fil
         {selectedItems.length > 0 ? (
           <>
             <span className="min-w-0 flex-1 truncate text-ink">
-              已選取 {selectedItems.length} 項
+              {t("{count} selected", { count: selectedItems.length })}
               {selectedItems.every((item) => item.kind === "file") ? ` · ${formatSize(selectedItems.reduce((total, item) => total + item.size, 0))}` : ""}
             </span>
-            <KagoIconButton label="下載" className="size-6" onClick={() => void actions.download(selectedItems)}><Download /></KagoIconButton>
-            <KagoIconButton label="加入中轉區" className="size-6" onClick={() => void actions.addToShelf(selectedPaths)}><Inbox /></KagoIconButton>
-            <KagoIconButton label="壓縮" className="size-6" disabled={readonly} onClick={() => void actions.compress(selectedPaths)}><Archive /></KagoIconButton>
-            <KagoIconButton label="移到垃圾桶" className="size-6" disabled={readonly} onClick={() => void actions.trash(selectedPaths)}><Trash2 /></KagoIconButton>
+            <KagoIconButton label={t("Download")} className="size-6" onClick={() => void actions.download(selectedItems)}><Download /></KagoIconButton>
+            <KagoIconButton label={t("Add to Shelf")} className="size-6" onClick={() => void actions.addToShelf(selectedPaths)}><Inbox /></KagoIconButton>
+            <KagoIconButton label={t("Compress")} className="size-6" disabled={readonly} onClick={() => void actions.compress(selectedPaths)}><Archive /></KagoIconButton>
+            <KagoIconButton label={t("Move to Trash")} className="size-6" disabled={readonly} onClick={() => void actions.trash(selectedPaths)}><Trash2 /></KagoIconButton>
           </>
         ) : (
-          <span className="truncate">{error ? "無法讀取" : search ? `符合 ${items.length} / ${allItems.length} 個項目` : summary}</span>
+          <span className="truncate">{error ? t("Couldn’t load") : search ? t("{count} of {total} items match", { count: items.length, total: allItems.length }) : summary}</span>
         )}
       </footer>
 
@@ -329,7 +330,7 @@ export function FileWindowView({ window: win, rootName, isAdmin }: { window: Fil
           <div className="absolute inset-0 z-20" onClick={() => setDropChoice(null)} />
           <div className={cn("absolute z-30 kago-glass flex w-44 flex-col gap-1 rounded-lg p-1.5")} style={{ left: Math.max(8, dropChoice.x), top: Math.max(44, dropChoice.y) }}>
             <span className="truncate px-1.5 py-0.5 text-xs text-muted">
-              {dropChoice.sources.length} 個項目{dropChoice.destination === win.logicalPath ? "" : ` → ${baseName(dropChoice.destination)}`}
+              {t("{count} item | {count} items", { count: dropChoice.sources.length })}{dropChoice.destination === win.logicalPath ? "" : ` → ${baseName(dropChoice.destination)}`}
             </span>
             {(["copy", "move"] as const).map((type) => (
               <Button
@@ -341,10 +342,10 @@ export function FileWindowView({ window: win, rootName, isAdmin }: { window: Fil
                   setDropChoice(null);
                 }}
               >
-                {type === "copy" ? "複製到這裡" : "搬移到這裡"}
+                {type === "copy" ? t("Copy here") : t("Move here")}
               </Button>
             ))}
-            <Button variant="ghost" onClick={() => setDropChoice(null)}>取消</Button>
+            <Button variant="ghost" onClick={() => setDropChoice(null)}>{t("Cancel")}</Button>
           </div>
         </>
       ) : null}

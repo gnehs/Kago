@@ -10,6 +10,7 @@ import { formatSize, type OfficeKind } from "@/lib/format";
 import { triggerDownload } from "@/lib/paths";
 import type { PreviewWindow } from "@/stores/workspace";
 import { FileIcon } from "./FileIcon";
+import { t } from "@/lib/i18n";
 
 // Each format's parser is its own download, made by whoever opens a file of that kind.
 const views = {
@@ -31,7 +32,7 @@ export function OfficePreviewWindow({ window, kind }: { window: PreviewWindow; k
     queryKey: ["fs", "bytes", rootSlug, item.path, item.mtime],
     queryFn: async () => {
       const response = await fetch(previewUrl(rootSlug, item.path), { credentials: "include" });
-      if (!response.ok) throw new Error("無法讀取檔案");
+      if (!response.ok) throw new Error(t("Couldn’t read the file"));
       return response.arrayBuffer();
     },
     enabled: !tooLarge,
@@ -47,7 +48,7 @@ export function OfficePreviewWindow({ window, kind }: { window: PreviewWindow; k
       window={window}
       icon={<FileIcon item={item} />}
       titleExtra={
-        <KagoIconButton label="下載" className="size-6" onClick={download}>
+        <KagoIconButton label={t("Download")} className="size-6" onClick={download}>
           <Download />
         </KagoIconButton>
       }
@@ -56,10 +57,10 @@ export function OfficePreviewWindow({ window, kind }: { window: PreviewWindow; k
         <KagoEmptyState
           className="min-h-0 flex-1"
           icon={<FileWarning />}
-          title="無法預覽這個檔案"
-          description={tooLarge ? `超過 ${formatSize(MAX_OFFICE_BYTES)} 的檔案請下載後開啟。` : file.error ? "讀取檔案時發生錯誤。" : "檔案可能已損毀、有密碼保護，或是不支援的格式。"}
+          title={t("Couldn’t preview this file")}
+          description={tooLarge ? t("Files over {size} have to be downloaded to open.", { size: formatSize(MAX_OFFICE_BYTES) }) : file.error ? t("Something went wrong reading the file.") : t("The file may be damaged, password-protected, or in an unsupported format.")}
         >
-          <Button onClick={download}>下載</Button>
+          <Button onClick={download}>{t("Download")}</Button>
         </KagoEmptyState>
       ) : !file.data ? (
         <KagoLoading />

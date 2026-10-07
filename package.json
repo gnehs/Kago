@@ -11,6 +11,7 @@
     "lint": "pnpm -r lint",
     "test:smoke": "pnpm --filter @kago/server test:smoke",
     "notices": "node scripts/third-party-notices.mjs",
+    "i18n": "node scripts/i18n.mjs",
     "start": "pnpm --filter @kago/server start"
   },
   "devDependencies": {

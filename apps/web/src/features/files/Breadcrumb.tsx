@@ -6,6 +6,7 @@ import { nfc, normalizeLogicalPath } from "@/lib/paths";
 import { cn } from "@/lib/utils";
 import { toast } from "@/stores/toast";
 import type { FileWindow } from "@/types/kago";
+import { t } from "@/lib/i18n";
 
 const MAX_VISIBLE_SEGMENTS = 3;
 
@@ -24,7 +25,7 @@ export function Breadcrumb({ window, rootName, onNavigate }: { window: FileWindo
   function commit(value: string) {
     setDraft(null);
     const next = normalizeLogicalPath(value, window.rootSlug);
-    if (!next) toast("路徑格式無效", "error");
+    if (!next) toast(t("That path isn’t valid"), "error");
     else if (next !== window.logicalPath) onNavigate(next);
   }
 
@@ -32,7 +33,7 @@ export function Breadcrumb({ window, rootName, onNavigate }: { window: FileWindo
     return (
       <input
         autoFocus
-        aria-label="目前路徑"
+        aria-label={t("Current path")}
         className={cn(controlClass, "flex-1")}
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
@@ -56,9 +57,9 @@ export function Breadcrumb({ window, rootName, onNavigate }: { window: FileWindo
 
   return (
     <nav
-      aria-label="路徑"
+      aria-label={t("Path")}
       className="flex h-(--kago-control-h) min-w-0 flex-1 items-center rounded-md px-1 hover:bg-hover"
-      title="點擊空白處可輸入路徑"
+      title={t("Click the empty space to type a path")}
       onClick={(event) => event.target === event.currentTarget && setDraft(window.logicalPath)}
     >
       {visible.map((crumb, index) => {

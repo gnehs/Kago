@@ -9,6 +9,7 @@ import { run } from "@/lib/run";
 import { cn, copyText } from "@/lib/utils";
 import type { Root } from "@/types/kago";
 import { shareModes, type ShareMode } from "./shareUtils";
+import { t } from "@/lib/i18n";
 
 /**
  * Creates a public share link. With `target` the location is fixed (inspector);
@@ -49,7 +50,7 @@ export function ShareForm({ target, roots = [], compact }: { target?: { rootSlug
       setCopied(false);
       setPassword("");
       await queryClient.invalidateQueries({ queryKey: ["shares"] });
-    }, "建立分享失敗");
+    }, t("Couldn’t create the share"));
   }
 
   async function copy() {
@@ -61,37 +62,37 @@ export function ShareForm({ target, roots = [], compact }: { target?: { rootSlug
     <form className={cn("grid gap-3", compact ? "grid-cols-2" : "grid-cols-2 md:grid-cols-3")} onSubmit={submit}>
       {target ? null : (
         <>
-          <Field label="位置">
+          <Field label={t("Location")}>
             <Select value={location.rootSlug} onChange={(event) => setRootSlug(event.target.value)}>
               {roots.map((root) => <option key={root.id} value={root.slug}>{root.name}</option>)}
             </Select>
           </Field>
-          <Field label="路徑" className={compact ? "" : "md:col-span-2"}>
+          <Field label={t("Path")} className={compact ? "" : "md:col-span-2"}>
             <Input value={path} onChange={(event) => setPath(event.target.value)} placeholder="/public/file.jpg" />
           </Field>
         </>
       )}
-      <Field label="權限" className={compact ? "col-span-2" : ""}>
+      <Field label={t("Permission")} className={compact ? "col-span-2" : ""}>
         <Select value={mode} onChange={(event) => setMode(event.target.value as ShareMode)}>
           {shareModes.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
         </Select>
       </Field>
-      <Field label="有效天數">
-        <Input type="number" min="1" value={expiresDays} onChange={(event) => setExpiresDays(event.target.value)} placeholder="不限" />
+      <Field label={t("Days valid")}>
+        <Input type="number" min="1" value={expiresDays} onChange={(event) => setExpiresDays(event.target.value)} placeholder={t("Unlimited")} />
       </Field>
-      <Field label="下載次數上限">
-        <Input type="number" min="1" value={maxDownloads} onChange={(event) => setMaxDownloads(event.target.value)} placeholder="不限" />
+      <Field label={t("Download limit")}>
+        <Input type="number" min="1" value={maxDownloads} onChange={(event) => setMaxDownloads(event.target.value)} placeholder={t("Unlimited")} />
       </Field>
-      <Field label="密碼（選填）" hint={passwordInvalid ? "至少 8 個字元" : undefined} className="col-span-2">
+      <Field label={t("Password (optional)")} hint={passwordInvalid ? t("At least 8 characters") : undefined} className="col-span-2">
         <Input type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} />
       </Field>
       <div className={cn("flex items-end", compact ? "col-span-2" : "")}>
-        <Button type="submit" variant="default" className="w-full" disabled={!canSubmit}>建立分享連結</Button>
+        <Button type="submit" variant="default" className="w-full" disabled={!canSubmit}>{t("Create share link")}</Button>
       </div>
       {shareUrl ? (
         <div className="col-span-full flex gap-2">
-          <Input readOnly value={shareUrl} aria-label="分享連結" onFocus={(event) => event.target.select()} />
-          <Button onClick={() => void copy()}>{copied ? <Check /> : <Copy />}{copied ? "已複製" : "複製"}</Button>
+          <Input readOnly value={shareUrl} aria-label={t("Share link")} onFocus={(event) => event.target.select()} />
+          <Button onClick={() => void copy()}>{copied ? <Check /> : <Copy />}{copied ? t("Copied") : t("Copy")}</Button>
         </div>
       ) : null}
     </form>

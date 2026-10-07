@@ -5,11 +5,12 @@ import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
 import { Page } from "@/features/workspace/Page";
 import { formatUnixDate } from "@/lib/format";
 import type { AuditLog } from "@/types/kago";
+import { t } from "@/lib/i18n";
 
 const results: Record<AuditLog["result"], { label: string; tone: "success" | "danger" | "warning" }> = {
-  success: { label: "成功", tone: "success" },
-  failure: { label: "失敗", tone: "danger" },
-  denied: { label: "拒絕", tone: "warning" }
+  success: { label: t("Success"), tone: "success" },
+  failure: { label: t("Failed"), tone: "danger" },
+  denied: { label: t("Denied"), tone: "warning" }
 };
 
 function target(log: AuditLog) {
@@ -26,19 +27,19 @@ function target(log: AuditLog) {
 export function AuditPage() {
   const audit = useAudit();
   return (
-    <Page title="稽核紀錄" description="登入、檔案操作、分享與權限變更，包含失敗與被拒絕的嘗試。">
+    <Page title={t("Audit log")} description={t("Sign-ins, file operations, shares and permission changes, including attempts that failed or were denied.")}>
       {audit.isLoading ? <KagoLoading /> : null}
-      {audit.data?.length === 0 ? <KagoEmptyState icon={<ScrollText />} title="目前沒有稽核紀錄" /> : null}
+      {audit.data?.length === 0 ? <KagoEmptyState icon={<ScrollText />} title={t("No audit entries yet")} /> : null}
       {audit.data?.length ? (
         <div className="overflow-x-auto rounded-lg border border-line">
           <table className="w-full border-collapse">
             <thead>
               <tr className="bg-elevated text-left text-xs text-muted">
-                <th className="px-3 py-2 font-medium">時間</th>
-                <th className="px-3 py-2 font-medium">動作</th>
-                <th className="px-3 py-2 font-medium">對象</th>
-                <th className="px-3 py-2 font-medium">來源</th>
-                <th className="px-3 py-2 font-medium">結果</th>
+                <th className="px-3 py-2 font-medium">{t("Time")}</th>
+                <th className="px-3 py-2 font-medium">{t("Action")}</th>
+                <th className="px-3 py-2 font-medium">{t("Target")}</th>
+                <th className="px-3 py-2 font-medium">{t("Source")}</th>
+                <th className="px-3 py-2 font-medium">{t("Result")}</th>
               </tr>
             </thead>
             <tbody>
@@ -47,7 +48,7 @@ export function AuditPage() {
                   <td className="px-3 py-2 whitespace-nowrap text-muted tabular-nums">{formatUnixDate(log.created_at)}</td>
                   <td className="px-3 py-2 font-medium">{log.action}</td>
                   <td className="max-w-64 truncate px-3 py-2 text-muted" title={target(log)}>{target(log)}</td>
-                  <td className="px-3 py-2 text-muted">{log.actor_type === "user" ? "使用者" : log.actor_type === "share_link" ? "分享連結" : "系統"}</td>
+                  <td className="px-3 py-2 text-muted">{log.actor_type === "user" ? t("User") : log.actor_type === "share_link" ? t("Share link") : t("System")}</td>
                   <td className="px-3 py-2"><KagoBadge tone={results[log.result].tone}>{results[log.result].label}</KagoBadge></td>
                 </tr>
               ))}

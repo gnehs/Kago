@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Page, Row, RowList } from "@/features/workspace/Page";
 import { run } from "@/lib/run";
 import type { Root } from "@/types/kago";
+import { t } from "@/lib/i18n";
 
 export function LocationsPage({ roots }: { roots: Root[] }) {
   const queryClient = useQueryClient();
@@ -19,18 +20,18 @@ export function LocationsPage({ roots }: { roots: Root[] }) {
   }
 
   return (
-    <Page title="位置" description="掛載在 /data 底下的每個資料夾都會自動成為一個位置，出現在桌面上。">
+    <Page title={t("Locations")} description={t("Every folder mounted under /data becomes a location and appears on the desktop.")}>
       {roots.length > 0 ? (
         <RowList>
           {roots.map((root) => (
             <Row key={root.id} icon={<HardDrive />} title={root.name} subtitle={root.slug}>
-              {root.readonly ? <KagoBadge>唯讀</KagoBadge> : null}
-              <Button onClick={() => void setRootReadonly(root, !root.readonly)}>{root.readonly ? "允許寫入" : "設為唯讀"}</Button>
+              {root.readonly ? <KagoBadge>{t("Read-only")}</KagoBadge> : null}
+              <Button onClick={() => void setRootReadonly(root, !root.readonly)}>{root.readonly ? t("Allow writing") : t("Make read-only")}</Button>
             </Row>
           ))}
         </RowList>
       ) : (
-        <KagoEmptyState icon={<HardDrive />} title="還沒有任何位置" description="在 /data 底下建立或掛載資料夾後，就會出現在這裡。" />
+        <KagoEmptyState icon={<HardDrive />} title={t("No locations yet")} description={t("Create or mount a folder under /data and it will show up here.")} />
       )}
     </Page>
   );

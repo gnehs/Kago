@@ -3,6 +3,7 @@ import type { FileItem, FileWindow, Root, WorkspaceState } from "../types/kago";
 import { baseName } from "../lib/paths";
 import { randomId } from "../lib/utils";
 import { toast } from "./toast";
+import { t } from "../lib/i18n";
 
 /** Geometry and stacking shared by every window on the canvas. */
 export type WindowFrame = Pick<FileWindow, "id" | "title" | "x" | "y" | "width" | "height" | "zIndex" | "minimized" | "maximized" | "focused" | "createdAt"> & {
@@ -23,10 +24,10 @@ export type AppWindow = WindowFrame & { app: AppKind; section: SettingsSection }
 export type PreviewWindow = WindowFrame & { preview: { rootSlug: string; item: FileItem } };
 
 const appMeta: Record<AppKind, { title: string; width: number; height: number }> = {
-  settings: { title: "設定", width: 880, height: 620 },
-  tasks: { title: "任務", width: 560, height: 520 },
-  shares: { title: "分享", width: 760, height: 580 },
-  trash: { title: "垃圾桶", width: 620, height: 480 }
+  settings: { title: t("Settings"), width: 880, height: 620 },
+  tasks: { title: t("Tasks"), width: 560, height: 520 },
+  shares: { title: t("Shares"), width: 760, height: 580 },
+  trash: { title: t("Trash"), width: 620, height: 480 }
 };
 
 type WorkspaceStore = WorkspaceState & {
@@ -208,7 +209,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   },
   openWindow: (partial) => {
     if (get().windows.length >= MAX_WINDOWS) {
-      toast("已達視窗數量上限", "error");
+      toast(t("That’s the most windows you can have open"), "error");
       return;
     }
     set((state) => {

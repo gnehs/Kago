@@ -10,6 +10,7 @@ import { Field, Input, Select } from "@/components/ui/input";
 import { Card, Page } from "@/features/workspace/Page";
 import { run } from "@/lib/run";
 import type { Group, UserAccount } from "@/types/kago";
+import { t } from "@/lib/i18n";
 
 export function GroupsPage() {
   const queryClient = useQueryClient();
@@ -27,27 +28,27 @@ export function GroupsPage() {
       setName("");
       setCreating(false);
       await refresh();
-    }, "新增群組失敗");
+    }, t("Couldn’t add the group"));
   }
 
   return (
     <Page
-      title="群組"
-      description="把使用者編成群組，再用權限規則一次授權給整個群組。"
-      actions={creating || !groups.data?.length ? null : <Button variant="default" onClick={() => setCreating(true)}><Plus />新增群組</Button>}
+      title={t("Groups")}
+      description={t("Put users into groups, then grant access to a whole group with one permission rule.")}
+      actions={creating || !groups.data?.length ? null : <Button variant="default" onClick={() => setCreating(true)}><Plus />{t("Add group")}</Button>}
     >
       {creating ? (
-      <Card title="新增群組" action={<KagoIconButton label="取消新增" onClick={() => setCreating(false)}><X /></KagoIconButton>}>
+      <Card title={t("Add group")} action={<KagoIconButton label={t("Cancel adding")} onClick={() => setCreating(false)}><X /></KagoIconButton>}>
         <form className="flex items-end gap-3" onSubmit={createGroup}>
-          <Field label="群組名稱" className="flex-1"><Input autoFocus value={name} onChange={(event) => setName(event.target.value)} /></Field>
-          <Button type="submit" variant="default" disabled={!name.trim()}>新增群組</Button>
+          <Field label={t("Group name")} className="flex-1"><Input autoFocus value={name} onChange={(event) => setName(event.target.value)} /></Field>
+          <Button type="submit" variant="default" disabled={!name.trim()}>{t("Add group")}</Button>
         </form>
       </Card>
       ) : null}
       {groups.isLoading ? <KagoLoading /> : null}
       {groups.data?.length === 0 && !creating ? (
-        <KagoEmptyState icon={<UsersRound />} title="還沒有群組" description="群組讓你一次把權限授給好幾個人。">
-          <Button variant="default" onClick={() => setCreating(true)}><Plus />新增群組</Button>
+        <KagoEmptyState icon={<UsersRound />} title={t("No groups yet")} description={t("Groups let you grant access to several people at once.")}>
+          <Button variant="default" onClick={() => setCreating(true)}><Plus />{t("Add group")}</Button>
         </KagoEmptyState>
       ) : null}
       {groups.data?.map((group) => <GroupCard key={group.id} group={group} users={users.data ?? []} onChange={refresh} />)}
@@ -67,37 +68,37 @@ function GroupCard({ group, users, onChange }: { group: Group; users: UserAccoun
       await api(`/api/groups/${group.id}/members`, { method: "POST", body: JSON.stringify({ userId }) });
       setUserId("");
       await onChange();
-    }, "加入群組失敗");
+    }, t("Couldn’t add to the group"));
   }
 
   async function remove(memberId: string) {
     await run(async () => {
       await api(`/api/groups/${group.id}/members/${memberId}`, { method: "DELETE" });
       await onChange();
-    }, "移除成員失敗");
+    }, t("Couldn’t remove the member"));
   }
 
   return (
-    <Card title={group.name} description={`${group.members.length} 位成員`}>
+    <Card title={group.name} description={t("{count} member | {count} members", { count: group.members.length })}>
       {group.members.length > 0 ? (
         <ul className="m-0 mb-3 flex list-none flex-col divide-y divide-line rounded-md border border-line p-0">
           {group.members.map((member) => (
             <li key={member.id} className="flex h-9 items-center gap-2 pr-1 pl-3">
               <span className="truncate">{member.display_name}</span>
               <span className="min-w-0 flex-1 truncate text-xs text-muted">{member.email}</span>
-              <KagoIconButton label={`將 ${member.display_name} 移出 ${group.name}`} onClick={() => void remove(member.id)}><X /></KagoIconButton>
+              <KagoIconButton label={t("Remove {member} from {group}", { member: member.display_name, group: group.name })} onClick={() => void remove(member.id)}><X /></KagoIconButton>
             </li>
           ))}
         </ul>
       ) : (
-        <p className="m-0 mb-3 text-faint">這個群組還沒有成員。</p>
+        <p className="m-0 mb-3 text-faint">{t("This group has no members yet.")}</p>
       )}
       <form className="flex gap-2" onSubmit={add}>
-        <Select aria-label={`要加入 ${group.name} 的使用者`} value={userId} onChange={(event) => setUserId(event.target.value)} disabled={candidates.length === 0}>
-          <option value="">{candidates.length === 0 ? "所有使用者都已加入" : "選擇要加入的使用者"}</option>
+        <Select aria-label={t("User to add to {group}", { group: group.name })} value={userId} onChange={(event) => setUserId(event.target.value)} disabled={candidates.length === 0}>
+          <option value="">{candidates.length === 0 ? t("Every user is already a member") : t("Choose a user to add")}</option>
           {candidates.map((user) => <option key={user.id} value={user.id}>{user.display_name}（{user.email}）</option>)}
         </Select>
-        <Button type="submit" disabled={!userId}>加入</Button>
+        <Button type="submit" disabled={!userId}>{t("Add")}</Button>
       </form>
     </Card>
   );

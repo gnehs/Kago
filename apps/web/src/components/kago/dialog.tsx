@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { settleDialog, useDialogStore } from "@/stores/dialogs";
+import { t } from "@/lib/i18n";
 
 export function KagoDialog({ open, onClose, title, className, children }: { open: boolean; onClose: () => void; title: ReactNode; className?: string; children: ReactNode }) {
   return (
@@ -45,9 +46,9 @@ export function KagoDialogHost() {
           <Input autoFocus value={value} placeholder={request.input.placeholder} onChange={(event) => setValue(event.target.value)} onFocus={(event) => event.target.select()} />
         ) : null}
         <div className="flex justify-end gap-2 pt-1">
-          <Button onClick={() => settleDialog(null)}>取消</Button>
+          <Button onClick={() => settleDialog(null)}>{t("Cancel")}</Button>
           <Button type="submit" variant={request.destructive ? "destructive" : "default"} disabled={!canSubmit} autoFocus={!request.input}>
-            {request.confirmLabel ?? "確定"}
+            {request.confirmLabel ?? t("OK")}
           </Button>
         </div>
       </form>

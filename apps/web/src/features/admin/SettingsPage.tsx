@@ -3,22 +3,23 @@ import { Monitor, Moon, PanelLeft, PanelRight, Sun } from "lucide-react";
 import { api, ApiError } from "@/api/client";
 import { KagoBadge } from "@/components/kago/badge";
 import { Button } from "@/components/ui/button";
-import { Field, Input } from "@/components/ui/input";
+import { Field, Input, Select } from "@/components/ui/input";
 import { Card, Page, SettingRow } from "@/features/workspace/Page";
-import { getTheme, getWindowControls, setTheme, setWindowControls, type ThemePref, type WindowControlsPref } from "@/lib/prefs";
+import { localeNames, setLocale, t } from "@/lib/i18n";
+import { getLocalePref, getTheme, getWindowControls, setTheme, setWindowControls, type LocalePref, type ThemePref, type WindowControlsPref } from "@/lib/prefs";
 import { toast } from "@/stores/toast";
 import type { Actor } from "@/types/kago";
 import { roleLabels } from "./UsersPage";
 
 const themes: Array<{ value: ThemePref; label: string; icon: React.ReactNode }> = [
-  { value: "system", label: "跟隨系統", icon: <Monitor /> },
-  { value: "light", label: "淺色", icon: <Sun /> },
-  { value: "dark", label: "深色", icon: <Moon /> }
+  { value: "system", label: t("Match system"), icon: <Monitor /> },
+  { value: "light", label: t("Light"), icon: <Sun /> },
+  { value: "dark", label: t("Dark"), icon: <Moon /> }
 ];
 
 const sides: Array<{ value: WindowControlsPref; label: string; icon: React.ReactNode }> = [
-  { value: "left", label: "左邊", icon: <PanelLeft /> },
-  { value: "right", label: "右邊", icon: <PanelRight /> }
+  { value: "left", label: t("Left"), icon: <PanelLeft /> },
+  { value: "right", label: t("Right"), icon: <PanelRight /> }
 ];
 
 /** One of a few, as a row of joined buttons. */
@@ -47,12 +48,18 @@ export function SettingsPage({ user }: { user: Actor }) {
   const [side, setSide] = useState(getWindowControls);
 
   return (
-    <Page title="一般" description="這個瀏覽器的外觀，以及你自己的帳號。">
-      <Card title="外觀">
+    <Page title={t("General")} description={t("How Kago looks in this browser, and your own account.")}>
+      <Card title={t("Appearance")}>
         <div className="flex flex-col gap-4">
-          <SettingRow label="主題" description="只套用在這個瀏覽器。">
+          <SettingRow label={t("Language")} description={t("Applies to this browser only. Changing it reloads the page.")}>
+            <Select aria-label={t("Language")} className="w-40" value={getLocalePref()} onChange={(event) => setLocale(event.target.value as LocalePref)}>
+              <option value="system">{t("Match system")}</option>
+              {Object.entries(localeNames).map(([value, name]) => <option key={value} value={value} lang={value}>{name}</option>)}
+            </Select>
+          </SettingRow>
+          <SettingRow label={t("Theme")} description={t("Applies to this browser only.")}>
             <Choice
-              label="主題"
+              label={t("Theme")}
               options={themes}
               value={theme}
               onChange={(value) => {
@@ -61,9 +68,9 @@ export function SettingsPage({ user }: { user: Actor }) {
               }}
             />
           </SettingRow>
-          <SettingRow label="視窗控制鈕" description="關閉、最小化與最大化放在標題列的哪一邊。">
+          <SettingRow label={t("Window controls")} description={t("Which end of the title bar holds close, minimize and maximize.")}>
             <Choice
-              label="視窗控制鈕的位置"
+              label={t("Window controls position")}
               options={sides}
               value={side}
               onChange={(value) => {
@@ -95,14 +102,14 @@ function AccountSettings({ user }: { user: Actor }) {
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
-      toast("密碼已更新，其他裝置已登出");
+      toast(t("Password updated. Other devices have been signed out"));
     } catch (error) {
-      toast(error instanceof ApiError && error.code === "INVALID_CURRENT_PASSWORD" ? "目前密碼不正確" : "變更密碼失敗", "error");
+      toast(error instanceof ApiError && error.code === "INVALID_CURRENT_PASSWORD" ? t("The current password is incorrect") : t("Couldn’t change the password"), "error");
     }
   }
 
   return (
-    <Card title="帳號">
+    <Card title={t("Account")}>
       <div className="flex items-center gap-3">
         <span aria-hidden className="flex size-9 shrink-0 items-center justify-center rounded-full bg-accent-soft font-semibold text-accent">
           {(user.displayName || user.email).slice(0, 1).toUpperCase()}
@@ -114,19 +121,19 @@ function AccountSettings({ user }: { user: Actor }) {
         <KagoBadge tone={user.role === "ADMIN" ? "accent" : "neutral"}>{roleLabels[user.role]}</KagoBadge>
       </div>
       <form className="mt-4 grid grid-cols-2 gap-3 border-t border-line pt-4" onSubmit={submit}>
-        <h3 className="col-span-2 m-0 font-medium">變更密碼</h3>
-        <Field label="目前密碼" className="col-span-2 @md:col-span-1">
+        <h3 className="col-span-2 m-0 font-medium">{t("Change password")}</h3>
+        <Field label={t("Current password")} className="col-span-2 @md:col-span-1">
           <Input type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} />
         </Field>
-        <Field label="新密碼" hint={tooShort ? "至少 8 個字元" : undefined} className="col-start-1">
+        <Field label={t("New password")} hint={tooShort ? t("At least 8 characters") : undefined} className="col-start-1">
           <Input type="password" autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} />
         </Field>
-        <Field label="再輸入一次新密碼" hint={mismatch ? "兩次輸入的密碼不一樣" : undefined}>
+        <Field label={t("Confirm new password")} hint={mismatch ? t("The passwords don’t match") : undefined}>
           <Input type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} />
         </Field>
         <div className="col-span-2 flex items-center justify-between gap-3">
-          <span className="text-xs text-muted">變更後，其他裝置會被登出。</span>
-          <Button type="submit" variant="default" disabled={!canSubmit}>變更密碼</Button>
+          <span className="text-xs text-muted">{t("Other devices are signed out after the change.")}</span>
+          <Button type="submit" variant="default" disabled={!canSubmit}>{t("Change password")}</Button>
         </div>
       </form>
     </Card>
