@@ -1,11 +1,15 @@
 import type { ReactNode } from "react";
-import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, Columns3, Ellipsis, FolderPlus, Info, LayoutGrid, List, Search, Square, Upload, X } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Check, ChevronLeft, ChevronRight, Columns3, Ellipsis, FolderPlus, Info, LayoutGrid, List, RotateCcw, Search, SlidersHorizontal, Square, Star, Upload, X } from "lucide-react";
 import { KagoIconButton } from "@/components/kago/icon-button";
-import { KagoDropdownMenu, KagoMenuItem } from "@/components/kago/menu";
+import { KagoDropdownMenu, KagoMenuItem, KagoMenuSeparator } from "@/components/kago/menu";
+import { baseName } from "@/lib/paths";
+import { resetFolderView, saveSettings, setFolderView } from "@/stores/settings";
+import { toast } from "@/stores/toast";
 import { useWorkspaceStore } from "@/stores/workspace";
-import type { FileWindow } from "@/types/kago";
+import type { FolderView, FolderWindow } from "@/types/kago";
 import { Breadcrumb } from "./Breadcrumb";
 import { sortColumns, toggleSort } from "./FileList";
+import type { ResolvedView } from "./folderView";
 import { t } from "@/lib/i18n";
 
 /** Nine squares, drawn to sit beside the one and the four that lucide has. */
@@ -23,7 +27,9 @@ const iconSizes = [
 ] as const;
 
 type FileToolbarProps = {
-  window: FileWindow;
+  window: FolderWindow;
+  /** Where the view of the folder comes from, and what is set for the folder itself. */
+  folderView: ResolvedView;
   rootName: string;
   readonly: boolean;
   canGoBack: boolean;
@@ -41,20 +47,32 @@ type FileToolbarProps = {
 /** Sets one group of controls apart from the next. */
 const Divider = () => <span aria-hidden className="mx-1 h-4 w-px shrink-0 bg-line-strong/70" />;
 
-export function FileToolbar({ window, rootName, readonly, canGoBack, canGoForward, search, onSearch, onGo, onNavigate, onNewFolder, onUpload, menu }: FileToolbarProps) {
+export function FileToolbar({ window, folderView, rootName, readonly, canGoBack, canGoForward, search, onSearch, onGo, onNavigate, onNewFolder, onUpload, menu }: FileToolbarProps) {
   const store = useWorkspaceStore.getState;
-  const sizeIndex = Math.max(0, iconSizes.findIndex(({ size }) => size === (window.iconSize ?? "medium")));
+  const sizeIndex = Math.max(0, iconSizes.findIndex(({ size }) => size === window.iconSize));
   const iconSize = iconSizes[sizeIndex]!;
+  // Picking a view says how this folder is to be shown, here and in every window that comes to it.
+  const setView = (view: Partial<FolderView>) => void setFolderView(window.rootSlug, window.logicalPath, view);
+  const { own } = folderView;
+  const view: FolderView = { viewMode: window.viewMode, iconSize: window.iconSize, sortBy: window.sortBy, sortDirection: window.sortDirection };
+  const viewOrigin =
+    folderView.source === "folder"
+      ? t("Set for this folder")
+      : folderView.source === "parent"
+        ? t("Follows “{folder}”", { folder: baseName(folderView.parent ?? "/") || rootName })
+        : folderView.source === "auto"
+          ? t("Chosen for what this folder holds")
+          : t("Follows the default view");
   const viewModes = [
-    { mode: "list", label: t("List"), icon: <List />, onClick: () => store().updateWindow(window.id, { viewMode: "list" }) },
+    { mode: "list", label: t("List"), icon: <List />, onClick: () => setView({ viewMode: "list" }) },
     {
       mode: "grid",
       label: window.viewMode === "grid" ? t("Icons ({size}) · click again to change size", { size: iconSize.label }) : t("Icons"),
       icon: iconSize.icon,
       // Already in the icon view, the button steps to the next size instead.
-      onClick: () => store().updateWindow(window.id, window.viewMode === "grid" ? { iconSize: iconSizes[(sizeIndex + 1) % iconSizes.length]!.size } : { viewMode: "grid" })
+      onClick: () => setView(window.viewMode === "grid" ? { iconSize: iconSizes[(sizeIndex + 1) % iconSizes.length]!.size } : { viewMode: "grid" })
     },
-    { mode: "columns", label: t("Columns"), icon: <Columns3 />, onClick: () => store().updateWindow(window.id, { viewMode: "columns" }) }
+    { mode: "columns", label: t("Columns"), icon: <Columns3 />, onClick: () => setView({ viewMode: "columns" }) }
   ] as const;
 
   return (
@@ -108,6 +126,37 @@ export function FileToolbar({ window, rootName, readonly, canGoBack, canGoForwar
           <ArrowUpDown />
         </KagoDropdownMenu>
       )}
+      <KagoDropdownMenu
+        label={t("View options")}
+        menu={
+          <>
+            <div className="px-2 py-1 text-xs text-muted">{viewOrigin}</div>
+            <KagoMenuSeparator />
+            {/* Passing the view down passes all of it, as it looks now, not just the parts set by hand. */}
+            <KagoMenuItem
+              closeOnClick={false}
+              icon={own?.recursive ? <Check /> : <span className="size-4" />}
+              onClick={() => void setFolderView(window.rootSlug, window.logicalPath, own?.recursive ? { recursive: false } : { ...view, recursive: true })}
+            >
+              {t("Apply to subfolders")}
+            </KagoMenuItem>
+            <KagoMenuItem
+              icon={<Star />}
+              onClick={() => {
+                void saveSettings({ defaultView: view });
+                toast(t("Folders without a view of their own now open like this one"));
+              }}
+            >
+              {t("Use as default")}
+            </KagoMenuItem>
+            <KagoMenuItem icon={<RotateCcw />} disabled={!own || !(own.viewMode || own.iconSize || own.sortBy || own.recursive)} onClick={() => void resetFolderView(window.rootSlug, window.logicalPath)}>
+              {t("Reset to inherited setting")}
+            </KagoMenuItem>
+          </>
+        }
+      >
+        <SlidersHorizontal />
+      </KagoDropdownMenu>
 
       <Divider />
       <KagoIconButton label={t("New folder")} disabled={readonly} onClick={onNewFolder}><FolderPlus /></KagoIconButton>

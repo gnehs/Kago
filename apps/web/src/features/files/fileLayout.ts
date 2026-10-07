@@ -1,5 +1,5 @@
 import { useLayoutEffect, useMemo, useState } from "react";
-import type { FileItem, FileWindow } from "@/types/kago";
+import type { FileItem, FolderView } from "@/types/kago";
 
 /**
  * Where every item of a file list sits inside its scroll container.
@@ -38,7 +38,7 @@ const COLUMNS_MAX_WIDTH = 288;
 const OVERSCAN_ROWS = 6;
 
 /** Measures the scroll container and lays the items of the current view mode out in it. */
-export function useFileLayout(scroller: HTMLElement | null, viewMode: FileWindow["viewMode"], iconSize: IconSize = "medium"): FileLayout {
+export function useFileLayout(scroller: HTMLElement | null, viewMode: FolderView["viewMode"], iconSize: IconSize): FileLayout {
   const [size, setSize] = useState({ width: 0, height: 0 });
   const rowHeight = useMemo(() => (scroller ? parseFloat(getComputedStyle(scroller).getPropertyValue("--kago-row-h")) : 0) || 32, [scroller]);
 

@@ -47,9 +47,6 @@ test("minimum file-manager demo flow", async () => {
         minimized: false,
         maximized: false,
         focused: true,
-        viewMode: "list",
-        sortBy: "name",
-        sortDirection: "asc",
         selectedItems: []
       }],
       sidebar: { collapsed: false },
@@ -58,6 +55,36 @@ test("minimum file-manager demo flow", async () => {
     };
     assert.equal((await admin.put("/api/workspace", workspace)).statusCode, 200);
     assert.equal((await admin.get("/api/workspace")).json.windows[0].logicalPath, "/2026");
+
+    // Settings follow the account, and a request changes only what it names.
+    assert.deepEqual((await admin.get("/api/settings")).json, { settings: {}, folderViews: [] });
+    assert.equal((await admin.patch("/api/settings", { motion: "off", defaultView: { viewMode: "grid" } })).statusCode, 200);
+    const settings = await admin.patch("/api/settings", { locale: "ja", defaultView: { sortBy: "mtime", sortDirection: "desc" } });
+    assert.deepEqual(settings.json.settings, { motion: "off", locale: "ja", defaultView: { viewMode: "grid", sortBy: "mtime", sortDirection: "desc" } });
+    assert.equal((await admin.patch("/api/settings", { theme: "sepia" })).statusCode, 400);
+
+    // A folder's view is kept part by part, and goes with the folder when Kago renames or moves it.
+    await mkdir(path.join(fixture.dataDir, "photos", "views", "inner"), { recursive: true });
+    await mkdir(path.join(fixture.dataDir, "photos", "views-kept"), { recursive: true });
+    const folderView = (pathName, view) => admin.put("/api/folder-views", { rootSlug: "photos", path: pathName, view });
+    assert.equal((await folderView("/views", { viewMode: "grid", recursive: true })).statusCode, 200);
+    assert.equal((await folderView("/views", { sortBy: "size", sortDirection: "desc" })).statusCode, 200);
+    assert.equal((await folderView("/views/inner", { autoMode: "grid" })).statusCode, 200);
+    assert.equal((await folderView("/views-kept", { viewMode: "columns" })).statusCode, 200);
+    assert.equal((await folderView("/views", { viewMode: "gallery" })).statusCode, 400);
+    assert.equal((await folderView("/../etc", { viewMode: "grid" })).statusCode, 400);
+    assert.equal((await admin.post("/api/fs/rename", { rootSlug: "photos", path: "/views", name: "views-renamed" })).statusCode, 200);
+    const moveViews = await admin.post("/api/tasks", { type: "move", sources: [{ rootSlug: "photos", path: "/views-renamed" }], destination: { rootSlug: "photos", path: "/views-kept" } });
+    assert.equal((await waitTask(admin, moveViews.json.id)).status, "done");
+    const byPath = (list) => Object.fromEntries(list.map(({ rootSlug, path: pathName, ...view }) => [pathName, view]));
+    assert.deepEqual(byPath((await admin.get("/api/settings")).json.folderViews), {
+      "/views-kept": { viewMode: "columns", recursive: false },
+      "/views-kept/views-renamed": { viewMode: "grid", sortBy: "size", sortDirection: "desc", recursive: true },
+      "/views-kept/views-renamed/inner": { autoMode: "grid", recursive: false }
+    });
+    const afterReset = await admin.delete(`/api/folder-views?rootSlug=photos&path=${encodeURIComponent("/views-kept/views-renamed")}`);
+    assert.deepEqual(Object.keys(byPath(afterReset.json.folderViews)).sort(), ["/views-kept", "/views-kept/views-renamed/inner"]);
+    await rm(path.join(fixture.dataDir, "photos", "views-kept"), { recursive: true });
 
     assert.equal((await admin.post("/api/fs/mkdir", { rootSlug: "photos", path: "/public", name: "new-folder" })).statusCode, 200);
     const upload = await admin.multipart("/api/fs/upload", {

@@ -5,8 +5,9 @@ import { FinderTagDots } from "@/features/tags/FinderTags";
 import { formatDate, formatSize, kindLabel } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useClipboardStore } from "@/stores/clipboard";
+import { setFolderView } from "@/stores/settings";
 import { useWorkspaceStore } from "@/stores/workspace";
-import type { FileItem, FileWindow } from "@/types/kago";
+import type { FileItem, FolderView, FolderWindow } from "@/types/kago";
 import { setDragDownload, setDragPreview } from "./dragOut";
 import { FileIcon } from "./FileIcon";
 import { FileThumbnail } from "./FileThumbnail";
@@ -15,7 +16,7 @@ import { KAGO_DRAG_TYPE } from "./useFileActions";
 import { t } from "@/lib/i18n";
 
 type FileListProps = {
-  window: FileWindow;
+  window: FolderWindow;
   items: FileItem[];
   /** Folders opened in place, in the list view. */
   tree?: FileTree;
@@ -80,7 +81,7 @@ function itemProps({ window, items, selectedPaths, onSelect, onOpen, onContextIt
   };
 }
 
-const selectedClass = (window: FileWindow, selected: boolean) => (selected ? (window.focused ? "kago-selection" : "bg-accent-soft") : "hover:bg-hover");
+const selectedClass = (window: FolderWindow, selected: boolean) => (selected ? (window.focused ? "kago-selection" : "bg-accent-soft") : "hover:bg-hover");
 
 /** Folder under a drag, and items waiting to be moved by a cut. */
 const stateClass = ({ dropTarget, cutPaths }: ViewProps, item: FileItem) => cn(dropTarget === item.path && "ring-2 ring-accent ring-inset", cutPaths.has(item.path) && "opacity-50");
@@ -154,20 +155,23 @@ function ListView(props: ViewProps) {
 /** How far each level of an opened folder is set in from the one above. */
 const TREE_INDENT = 16;
 
-export const sortColumns: Array<{ sortBy: FileWindow["sortBy"]; label: string }> = [
+export const sortColumns: Array<{ sortBy: FolderView["sortBy"]; label: string }> = [
   { sortBy: "name", label: t("Name") },
   { sortBy: "mtime", label: t("Modified") },
   { sortBy: "size", label: t("Size") },
   { sortBy: "type", label: t("Kind") }
 ];
 
-/** Picks a sort column; picking the current one again flips its direction. Sizes and dates start largest or newest first. */
-export function toggleSort(window: FileWindow, sortBy: FileWindow["sortBy"]) {
-  const sortDirection = window.sortBy === sortBy ? (window.sortDirection === "asc" ? "desc" : "asc") : sortBy === "size" || sortBy === "mtime" ? "desc" : "asc";
-  useWorkspaceStore.getState().updateWindow(window.id, { sortBy, sortDirection });
+/** The direction a column is sorted in when it is first picked: sizes and dates start largest or newest first. */
+export const firstDirection = (sortBy: FolderView["sortBy"]): FolderView["sortDirection"] => (sortBy === "size" || sortBy === "mtime" ? "desc" : "asc");
+
+/** Picks a sort column for the folder a window shows; picking the current one again flips its direction. */
+export function toggleSort(window: FolderWindow, sortBy: FolderView["sortBy"]) {
+  const sortDirection = window.sortBy === sortBy ? (window.sortDirection === "asc" ? "desc" : "asc") : firstDirection(sortBy);
+  void setFolderView(window.rootSlug, window.logicalPath, { sortBy, sortDirection });
 }
 
-function SortHeader({ window, sortBy, label, className }: { window: FileWindow; sortBy: FileWindow["sortBy"]; label: string; className?: string }) {
+function SortHeader({ window, sortBy, label, className }: { window: FolderWindow; sortBy: FolderView["sortBy"]; label: string; className?: string }) {
   const active = window.sortBy === sortBy;
   const ascending = window.sortDirection === "asc";
   const sort = () => toggleSort(window, sortBy);
@@ -183,7 +187,7 @@ function SortHeader({ window, sortBy, label, className }: { window: FileWindow; 
 function GridView(props: ViewProps) {
   const { window, items, layout, selectedPaths } = props;
   const range = useVisibleRange(props.scroller, layout, items.length);
-  const { icon } = GRID_SIZES[window.iconSize ?? "medium"];
+  const { icon } = GRID_SIZES[window.iconSize];
   return (
     <div
       className="grid content-start px-2"

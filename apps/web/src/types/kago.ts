@@ -71,17 +71,47 @@ export type FileWindow = {
   minimized: boolean;
   maximized: boolean;
   focused: boolean;
-  viewMode: "list" | "grid" | "columns";
-  /** How large the icon view draws its items; medium when unset. */
-  iconSize?: "large" | "medium" | "small";
-  sortBy: "name" | "size" | "mtime" | "type";
-  sortDirection: "asc" | "desc";
   selectedItems: string[];
   scrollTop?: number;
   inspectorOpen?: boolean;
   createdAt: number;
   updatedAt: number;
 };
+
+/** How a folder is shown. It belongs to the folder, not to the window showing it. */
+export type FolderView = {
+  viewMode: "list" | "grid" | "columns";
+  /** How large the icon view draws its items. */
+  iconSize: "large" | "medium" | "small";
+  sortBy: "name" | "size" | "mtime" | "type";
+  sortDirection: "asc" | "desc";
+};
+
+/** A window together with the view of the folder it is showing. */
+export type FolderWindow = FileWindow & FolderView;
+
+/** What has been set for one folder. Whatever is left out is taken from the folders above it, then from the default. */
+export type FolderViewEntry = Partial<FolderView> & {
+  rootSlug: string;
+  path: string;
+  /** Whether the folders inside are shown the same way. */
+  recursive: boolean;
+  /** What the folder's contents suggested when it was first opened, kept so the view does not change as files come and go. */
+  autoMode?: FolderView["viewMode"];
+};
+
+/** What a person has set for themselves, kept with their account. */
+export type AccountSettings = {
+  theme?: "system" | "light" | "dark";
+  locale?: string;
+  motion?: "on" | "off";
+  windowControls?: "left" | "right";
+  /** Whether a folder of pictures and videos opens as icons before anyone has said how to show it. On unless turned off. */
+  smartView?: boolean;
+  defaultView?: Partial<FolderView>;
+};
+
+export type AccountPreferences = { settings: AccountSettings; folderViews: FolderViewEntry[] };
 
 export type WorkspaceState = {
   activeWindowId: string | null;

@@ -1,15 +1,18 @@
 import { useState } from "react";
-import { Monitor, Moon, PanelLeft, PanelRight, Sparkles, Sun, ZapOff } from "lucide-react";
+import { Columns3, LayoutGrid, List, Monitor, Moon, PanelLeft, PanelRight, Sparkles, Sun, ZapOff } from "lucide-react";
 import { api, ApiError } from "@/api/client";
 import { KagoAvatar } from "@/components/kago/avatar";
 import { KagoBadge } from "@/components/kago/badge";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/input";
+import { firstDirection, sortColumns } from "@/features/files/FileList";
+import { BASE_VIEW } from "@/features/files/folderView";
 import { Card, Page, SettingRow } from "@/features/workspace/Page";
 import { localeNames, setLocale, t } from "@/lib/i18n";
 import { getLocalePref, getMotion, getTheme, getWindowControls, setMotion, setTheme, setWindowControls, type LocalePref, type MotionPref, type ThemePref, type WindowControlsPref } from "@/lib/prefs";
+import { saveSettings, useSettingsStore } from "@/stores/settings";
 import { toast } from "@/stores/toast";
-import type { Actor } from "@/types/kago";
+import type { Actor, FolderView } from "@/types/kago";
 import { roleLabels } from "./UsersPage";
 
 const themes: Array<{ value: ThemePref; label: string; icon: React.ReactNode }> = [
@@ -26,6 +29,17 @@ const sides: Array<{ value: WindowControlsPref; label: string; icon: React.React
 const motions: Array<{ value: MotionPref; label: string; icon: React.ReactNode }> = [
   { value: "on", label: t("On"), icon: <Sparkles /> },
   { value: "off", label: t("Off"), icon: <ZapOff /> }
+];
+
+const viewModes: Array<{ value: FolderView["viewMode"]; label: string; icon: React.ReactNode }> = [
+  { value: "list", label: t("List"), icon: <List /> },
+  { value: "grid", label: t("Icons"), icon: <LayoutGrid /> },
+  { value: "columns", label: t("Columns"), icon: <Columns3 /> }
+];
+
+const switches: Array<{ value: "on" | "off"; label: string; icon: React.ReactNode }> = [
+  { value: "on", label: t("On"), icon: null },
+  { value: "off", label: t("Off"), icon: null }
 ];
 
 /** One of a few, as a row of joined buttons. */
@@ -48,31 +62,31 @@ function Choice<T extends string>({ label, options, value, onChange }: { label: 
   );
 }
 
-/** What belongs to the person signed in: how Kago looks in this browser, and their own account. */
+/** What belongs to the person signed in: how Kago looks and shows folders for them, and their own account. */
 export function SettingsPage({ user }: { user: Actor }) {
-  const [theme, setThemeState] = useState(getTheme);
-  const [side, setSide] = useState(getWindowControls);
-  const [motion, setMotionState] = useState(getMotion);
+  // Kept with the account, so a change made in another browser shows here as it arrives.
+  const settings = useSettingsStore((state) => state.settings);
+  const theme = getTheme();
+  const side = getWindowControls();
+  const motion = getMotion();
+  const defaultView = { ...BASE_VIEW, ...settings.defaultView };
 
   return (
-    <Page title={t("General")} description={t("How Kago looks in this browser, and your own account.")}>
+    <Page title={t("General")} description={t("How Kago looks and shows your folders, and your own account.")}>
       <Card title={t("Appearance")}>
         <div className="flex flex-col gap-4">
-          <SettingRow label={t("Language")} description={t("Applies to this browser only. Changing it reloads the page.")}>
+          <SettingRow label={t("Language")} description={t("Follows your account. Changing it reloads the page.")}>
             <Select aria-label={t("Language")} className="w-40" value={getLocalePref()} onChange={(event) => setLocale(event.target.value as LocalePref)}>
               <option value="system">{t("Match system")}</option>
               {Object.entries(localeNames).map(([value, name]) => <option key={value} value={value} lang={value}>{name}</option>)}
             </Select>
           </SettingRow>
-          <SettingRow label={t("Theme")} description={t("Applies to this browser only.")}>
+          <SettingRow label={t("Theme")} description={t("Follows your account to every browser you sign in from.")}>
             <Choice
               label={t("Theme")}
               options={themes}
               value={theme}
-              onChange={(value) => {
-                setTheme(value);
-                setThemeState(value);
-              }}
+              onChange={setTheme}
             />
           </SettingRow>
           <SettingRow label={t("Window controls")} description={t("Which end of the title bar holds close, minimize and maximize.")}>
@@ -80,10 +94,7 @@ export function SettingsPage({ user }: { user: Actor }) {
               label={t("Window controls position")}
               options={sides}
               value={side}
-              onChange={(value) => {
-                setWindowControls(value);
-                setSide(value);
-              }}
+              onChange={setWindowControls}
             />
           </SettingRow>
           <SettingRow label={t("Animations")} description={t("Windows, menus and dialogs come and go at once when this is off.")}>
@@ -91,11 +102,31 @@ export function SettingsPage({ user }: { user: Actor }) {
               label={t("Animations")}
               options={motions}
               value={motion}
-              onChange={(value) => {
-                setMotion(value);
-                setMotionState(value);
-              }}
+              onChange={setMotion}
             />
+          </SettingRow>
+        </div>
+      </Card>
+      <Card title={t("Folders")} description={t("Each folder remembers the view you pick for it. These apply to the folders you have not picked one for.")}>
+        <div className="flex flex-col gap-4">
+          <SettingRow label={t("Default view")}>
+            <Choice label={t("Default view")} options={viewModes} value={defaultView.viewMode} onChange={(viewMode) => void saveSettings({ defaultView: { viewMode } })} />
+          </SettingRow>
+          <SettingRow label={t("Default sort")}>
+            <Select
+              aria-label={t("Default sort")}
+              className="w-40"
+              value={defaultView.sortBy}
+              onChange={(event) => {
+                const sortBy = event.target.value as FolderView["sortBy"];
+                void saveSettings({ defaultView: { sortBy, sortDirection: firstDirection(sortBy) } });
+              }}
+            >
+              {sortColumns.map(({ sortBy, label }) => <option key={sortBy} value={sortBy}>{label}</option>)}
+            </Select>
+          </SettingRow>
+          <SettingRow label={t("Icons for pictures and videos")} description={t("A folder that mostly holds pictures and videos opens as icons, until you pick a view for it.")}>
+            <Choice label={t("Icons for pictures and videos")} options={switches} value={settings.smartView === false ? "off" : "on"} onChange={(value) => void saveSettings({ smartView: value === "on" })} />
           </SettingRow>
         </div>
       </Card>

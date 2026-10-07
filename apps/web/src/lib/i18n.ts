@@ -63,6 +63,5 @@ export function t(message: string, params?: Record<string, string | number>): st
 }
 
 export function setLocale(next: LocalePref) {
-  storeLocalePref(next);
-  location.reload();
+  void storeLocalePref(next).finally(() => location.reload());
 }

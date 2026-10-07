@@ -200,3 +200,26 @@ CREATE TABLE IF NOT EXISTS sync_jobs (
   updated_at INTEGER NOT NULL,
   FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS user_settings (
+  user_id TEXT PRIMARY KEY,
+  settings_json TEXT NOT NULL,
+  updated_at INTEGER NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS folder_views (
+  user_id TEXT NOT NULL,
+  root_id TEXT NOT NULL,
+  path TEXT NOT NULL,
+  view_mode TEXT,
+  auto_mode TEXT,
+  icon_size TEXT,
+  sort_by TEXT,
+  sort_direction TEXT,
+  recursive INTEGER NOT NULL DEFAULT 0,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, root_id, path),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (root_id) REFERENCES roots(id) ON DELETE CASCADE
+);

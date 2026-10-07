@@ -6,6 +6,7 @@ import { FileWindowView } from "@/features/files/FileWindow";
 import { Shelf } from "@/features/shelves/Shelf";
 import { PreviewWindowView } from "@/features/files/PreviewWindow";
 import { AppWindowView } from "@/features/windows/AppWindow";
+import { loadSettings, useSettingsStore } from "@/stores/settings";
 import { setCanvasSize, useWorkspaceStore } from "@/stores/workspace";
 import type { Actor, Root } from "@/types/kago";
 import { CommandPalette } from "./CommandPalette";
@@ -19,12 +20,19 @@ import { useWorkspaceSync } from "./useWorkspaceSync";
 export function Workspace({ user }: { user: Actor }) {
   const roots = useRoots();
   const sync = useWorkspaceSync();
+  const settingsReady = useSettingsStore((state) => state.hydrated);
   const location = useLocation();
   const navigate = useNavigate();
   const [paletteOpen, setPaletteOpen] = useState(false);
   const openPalette = useCallback(() => setPaletteOpen(true), []);
   const isAdmin = user.role === "ADMIN";
   const rootList = roots.data ?? [];
+
+  // Folders are shown the way the account says, so nothing is drawn until that is known.
+  useEffect(() => {
+    useSettingsStore.setState({ hydrated: false });
+    void loadSettings();
+  }, [user.id]);
 
   useRealtime(user.id, sync.onRemoteChange);
   useShortcuts({ enabled: !paletteOpen, onOpenPalette: openPalette });
@@ -41,7 +49,7 @@ export function Workspace({ user }: { user: Actor }) {
     <div className="kago-canvas flex h-full flex-col text-ink">
       <TopBar user={user} onOpenPalette={openPalette} />
       <main className="flex min-h-0 min-w-0 flex-1">
-        {sync.isLoading || roots.isLoading ? (
+        {sync.isLoading || roots.isLoading || !settingsReady ? (
           <div className="flex-1"><KagoLoading /></div>
         ) : (
           <Canvas roots={rootList} user={user} />

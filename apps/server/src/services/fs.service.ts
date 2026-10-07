@@ -17,6 +17,7 @@ import type { AuditService } from "./audit.service.js";
 import { renditionKind, type ImageService } from "./image.service.js";
 import type { PathService, SafePath } from "./path.service.js";
 import type { PermissionService } from "./permission.service.js";
+import type { PreferenceService } from "./preference.service.js";
 import type { StorageService } from "./storage.service.js";
 import type { Actor } from "./types.js";
 
@@ -100,6 +101,7 @@ export class FsService {
     private readonly audit: AuditService,
     private readonly storage: StorageService,
     appDataDir: string,
+    private readonly preferences: PreferenceService,
     /** Absent in the task worker, which then draws no thumbnails for camera RAW. */
     private readonly images?: ImageService
   ) {
@@ -452,6 +454,7 @@ export class FsService {
       await this.storage.assertNameAvailable(parent, this.storage.name(target), target.logicalPath === source.logicalPath ? undefined : this.storage.name(source));
       if (target.logicalPath !== source.logicalPath && (await this.storage.remote.stat(target.root, target.logicalPath))) throw new AppError(409, "Target already exists", "TARGET_EXISTS");
       await this.storage.remote.move(source.root, source.logicalPath, target.logicalPath, (await this.storage.stat(source)).isDirectory());
+      this.preferences.moved(source.root.id, source.logicalPath, target.root.id, target.logicalPath);
       this.audit.write({ actorType: "user", actorId: actor.id, action: "rename", rootId: source.root.id, path: source.logicalPath, target: { to: target.logicalPath }, result: "success" });
       return this.meta(actor, rootSlug, target.logicalPath);
     }
@@ -463,6 +466,7 @@ export class FsService {
       throw new AppError(409, "Target already exists", "TARGET_EXISTS");
     }
     await fsp.rename(source.absolutePath, target.absolutePath);
+    this.preferences.moved(source.root.id, source.logicalPath, target.root.id, target.logicalPath);
     this.audit.write({
       actorType: "user",
       actorId: actor.id,

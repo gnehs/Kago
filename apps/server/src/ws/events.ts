@@ -8,6 +8,7 @@ export type ServerEvent =
   | { type: "task.failed"; userId: string; taskId: string; error: string }
   | { type: "shelf.updated"; userId: string; shelfId: string }
   | { type: "workspace.updated"; userId: string }
+  | { type: "settings.updated"; userId: string }
   | { type: "permission.updated"; userId?: string }
   | { type: "roots.updated" }
   | { type: "share.updated"; userId: string };

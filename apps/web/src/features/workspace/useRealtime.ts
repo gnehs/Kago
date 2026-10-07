@@ -4,6 +4,7 @@ import { taskDownloadUrl } from "@/api/client";
 import { pendingDownloads } from "@/features/files/useFileActions";
 import { taskErrorLabel, taskTypeLabel } from "@/features/tasks/taskUtils";
 import { triggerDownload } from "@/lib/paths";
+import { loadSettings } from "@/stores/settings";
 import { toast } from "@/stores/toast";
 import { showTrashing, useTrashingStore } from "@/stores/trashing";
 import type { FileTask } from "@/types/kago";
@@ -60,6 +61,7 @@ export function useRealtime(userId: string, onRemoteWorkspaceChange: () => void)
       if (type === "share.updated") invalidate("shares");
       if (type === "permission.updated") invalidate("permissions", "roots", "fs");
       if (type === "roots.updated") invalidate("roots", "storage", "fs");
+      if (type === "settings.updated" && message.userId === userId) void loadSettings();
       if (type === "workspace.updated" && message.userId === userId) {
         onRemoteWorkspaceChange();
         invalidate("workspace");
@@ -74,6 +76,7 @@ export function useRealtime(userId: string, onRemoteWorkspaceChange: () => void)
         if (retryCount > 0) {
           onRemoteWorkspaceChange();
           invalidate("workspace");
+          void loadSettings();
         }
         retryCount = 0;
         invalidate("tasks", "shelves", "shares", "permissions", "roots");

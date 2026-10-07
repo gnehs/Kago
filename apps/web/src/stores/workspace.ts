@@ -234,9 +234,6 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         minimized: false,
         maximized: false,
         focused: true,
-        viewMode: "list",
-        sortBy: "name",
-        sortDirection: "asc",
         selectedItems: [],
         createdAt: ts(),
         updatedAt: ts()

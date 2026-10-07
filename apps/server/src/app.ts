@@ -26,6 +26,7 @@ import { createGroupSchema, GroupService } from "./services/group.service.js";
 import { MediaService, mediaSessionSchema, mediaStreamSchema } from "./services/media.service.js";
 import { PathService } from "./services/path.service.js";
 import { permissionInputSchema, PermissionService } from "./services/permission.service.js";
+import { folderViewQuerySchema, folderViewSchema, PreferenceService, settingsSchema } from "./services/preference.service.js";
 import { remoteRootPatchSchema, remoteRootSchema, rootPatchSchema, RootService } from "./services/root.service.js";
 import { ShareService, shareSchema } from "./services/share.service.js";
 import { ShelfService } from "./services/shelf.service.js";
@@ -55,9 +56,10 @@ export async function buildApp(env: Env) {
   const permissions = new PermissionService(db, audit);
   const auth = new AuthService(db, env);
   const images = new ImageService(env.appDataDir);
-  const fsService = new FsService(paths, permissions, audit, storage, env.appDataDir, images);
+  const preferences = new PreferenceService(db, roots, paths, events);
+  const fsService = new FsService(paths, permissions, audit, storage, env.appDataDir, preferences, images);
   const workspace = new WorkspaceService(db, roots, paths);
-  const tasks = new TaskService(db, paths, permissions, audit, events, env.appDataDir, fsService, storage);
+  const tasks = new TaskService(db, paths, permissions, audit, events, env.appDataDir, fsService, storage, preferences);
   const shelves = new ShelfService(db, paths, permissions, events, audit, storage);
   const tags = new TagService(db, paths, permissions, audit);
   const shares = new ShareService(db, paths, permissions, audit, events, storage);
@@ -109,7 +111,7 @@ export async function buildApp(env: Env) {
   await auth.ensureInitialAdminFromEnv();
   roots.syncFromDataDir();
   await remotes.start();
-  registerApi(app, { auth, audit, roots, paths, permissions, fsService, workspace, tasks, shelves, tags, shares, groups, media, images, events, db, storage, remotes, sync, env });
+  registerApi(app, { auth, audit, roots, paths, permissions, fsService, workspace, preferences, tasks, shelves, tags, shares, groups, media, images, events, db, storage, remotes, sync, env });
 
   app.get("/ws", {
     websocket: true,
@@ -183,6 +185,7 @@ type Services = {
   permissions: PermissionService;
   fsService: FsService;
   workspace: WorkspaceService;
+  preferences: PreferenceService;
   tasks: TaskService;
   shelves: ShelfService;
   tags: TagService;
@@ -418,6 +421,11 @@ function registerApi(app: FastifyInstance, services: Services) {
     services.events.publish({ type: "workspace.updated", userId: actor.id });
     return saved;
   });
+
+  app.get("/api/settings", async (request) => services.preferences.get(requireActor(request).id));
+  app.patch("/api/settings", async (request) => services.preferences.patchSettings(requireActor(request).id, settingsSchema.parse(request.body)));
+  app.put("/api/folder-views", async (request) => services.preferences.setFolderView(requireActor(request).id, folderViewSchema.parse(request.body)));
+  app.delete("/api/folder-views", async (request) => services.preferences.resetFolderView(requireActor(request).id, folderViewQuerySchema.parse(request.query)));
 
   app.get("/api/fs/list", async (request) => {
     const actor = requireActor(request);

@@ -21,6 +21,7 @@ import type { AuditService } from "./audit.service.js";
 import type { FsService } from "./fs.service.js";
 import type { PathService, SafePath } from "./path.service.js";
 import type { Action, PermissionService } from "./permission.service.js";
+import type { PreferenceService } from "./preference.service.js";
 import type { StorageService } from "./storage.service.js";
 import type { Actor, FileTask, Root } from "./types.js";
 
@@ -91,7 +92,8 @@ export class TaskService {
     private readonly events: EventPublisher,
     private readonly appDataDir: string,
     private readonly fsService: FsService,
-    private readonly storage: StorageService
+    private readonly storage: StorageService,
+    private readonly preferences: PreferenceService
   ) {}
 
   async create(actor: Actor, input: z.infer<typeof taskInputSchema>): Promise<FileTask> {
@@ -462,6 +464,7 @@ export class TaskService {
         await copyTree(safeSource.absolutePath, target, (processedBytes) => this.bumpProcessedBytes(task.id, processedBytes));
       }
       if (move) {
+        this.preferences.moved(safeSource.root.id, safeSource.logicalPath, dest.root.id, path.posix.join(dest.logicalPath, path.basename(target)));
         this.audit.write({
           actorType: "user",
           actorId: actor.id,
@@ -539,6 +542,7 @@ export class TaskService {
         }
         throw transferFailure(error);
       }
+      if (move) this.preferences.moved(source.root.id, source.logicalPath, dest.root.id, path.posix.join(dest.logicalPath, name));
       this.audit.write({
         actorType: "user",
         actorId: actor.id,

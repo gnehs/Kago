@@ -15,11 +15,12 @@ import { cn } from "@/lib/utils";
 import { useClipboardStore } from "@/stores/clipboard";
 import { useRecentStore } from "@/stores/recent";
 import { useWorkspaceStore } from "@/stores/workspace";
-import type { FileItem, FileWindow } from "@/types/kago";
+import type { FileItem, FileWindow, FolderView, FolderWindow } from "@/types/kago";
 import { FileIcon, isArchive } from "./FileIcon";
 import { fileViews, indexesInArea, revealIndex, useFileLayout, type FileTree } from "./fileLayout";
 import { FileList } from "./FileList";
 import { FileToolbar } from "./FileToolbar";
+import { useFolderView } from "./folderView";
 import { Inspector } from "./Inspector";
 import { readDraggedFiles, useFileActions, type FileRef } from "./useFileActions";
 import { useMarqueeSelection } from "./useMarqueeSelection";
@@ -34,7 +35,7 @@ const FOLDER = { kind: "folder", type: "", name: "" } as const;
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 const compare = (a: string, b: string) => collator.compare(a, b);
 
-function sortItems(items: FileItem[], sortBy: FileWindow["sortBy"], direction: FileWindow["sortDirection"]) {
+function sortItems(items: FileItem[], sortBy: FolderView["sortBy"], direction: FolderView["sortDirection"]) {
   const sign = direction === "asc" ? 1 : -1;
   return [...items].sort((a, b) => {
     // Folders stay grouped first, like Finder and File Station, whatever the sort column.
@@ -44,9 +45,12 @@ function sortItems(items: FileItem[], sortBy: FileWindow["sortBy"], direction: F
   });
 }
 
-export function FileWindowView({ window: win, rootName, isAdmin }: { window: FileWindow; rootName: string; isAdmin: boolean }) {
+export function FileWindowView({ window: frame, rootName, isAdmin }: { window: FileWindow; rootName: string; isAdmin: boolean }) {
   const store = useWorkspaceStore.getState;
-  const fileList = useFileList(win.rootSlug, win.logicalPath);
+  const fileList = useFileList(frame.rootSlug, frame.logicalPath);
+  // The folder says how it is shown; the window only shows it.
+  const folderView = useFolderView(frame.rootSlug, frame.logicalPath, fileList.data?.items);
+  const win = useMemo<FolderWindow>(() => ({ ...frame, ...folderView.view }), [frame, folderView.view]);
   const actions = useFileActions(win);
   const uploadInput = useRef<HTMLInputElement>(null);
   const folderInput = useRef<HTMLInputElement>(null);
@@ -269,6 +273,7 @@ export function FileWindowView({ window: win, rootName, isAdmin }: { window: Fil
     >
       <FileToolbar
         window={win}
+        folderView={folderView}
         rootName={rootName}
         readonly={readonly || Boolean(error)}
         canGoBack={history.index > 0}

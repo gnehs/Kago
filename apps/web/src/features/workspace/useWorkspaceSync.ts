@@ -16,7 +16,7 @@ function saveDelay(previous: WorkspaceState, next: WorkspaceState): number | nul
   for (const window of next.windows) {
     const old = before.get(window.id);
     if (!old) return 0;
-    if (window.logicalPath !== old.logicalPath || window.viewMode !== old.viewMode || window.iconSize !== old.iconSize || window.sortBy !== old.sortBy || window.sortDirection !== old.sortDirection) return 0;
+    if (window.logicalPath !== old.logicalPath) return 0;
     if (window.x !== old.x || window.y !== old.y || window.width !== old.width || window.height !== old.height) geometryChanged = true;
   }
   if (geometryChanged) return 1000;

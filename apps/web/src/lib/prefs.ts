@@ -1,5 +1,11 @@
 export type ThemePref = "system" | "light" | "dark";
 
+/**
+ * The choices that follow the account from one browser to the next. Each browser keeps its own copy as well,
+ * so the page is drawn right before the account has answered, and on the pages shown before signing in.
+ */
+export type SyncedPrefs = { theme: ThemePref; locale: LocalePref; motion: MotionPref; windowControls: WindowControlsPref };
+
 const themeKey = "kago.theme";
 const media = globalThis.matchMedia?.("(prefers-color-scheme: dark)");
 
@@ -23,13 +29,8 @@ const localeKey = "kago.locale";
 
 export const getLocalePref = () => read<LocalePref>(localeKey, ["system", "en", "zh-TW", "zh-CN", "ja"], "system");
 
-export function storeLocalePref(locale: LocalePref) {
-  try {
-    localStorage.setItem(localeKey, locale);
-  } catch {
-    // Private browsing: the browser's language stays in charge.
-  }
-}
+/** Settles once the account has the choice too, so the page can be reloaded without losing it. */
+export const storeLocalePref = (locale: LocalePref) => store("locale", locale);
 
 /** Which end of a title bar the window controls sit at. */
 export type WindowControlsPref = "left" | "right";
@@ -166,6 +167,58 @@ const motionKey = "kago.motion";
 
 export const getMotion = () => read<MotionPref>(motionKey, ["on", "off"], "on");
 
+const synced: { [K in keyof SyncedPrefs]: { key: string; allowed: readonly SyncedPrefs[K][]; fallback: SyncedPrefs[K] } } = {
+  theme: { key: themeKey, allowed: ["system", "light", "dark"], fallback: "system" },
+  locale: { key: localeKey, allowed: ["system", "en", "zh-TW", "zh-CN", "ja"], fallback: "system" },
+  motion: { key: motionKey, allowed: ["on", "off"], fallback: "on" },
+  windowControls: { key: windowControlsKey, allowed: ["left", "right"], fallback: "left" }
+};
+
+let saveToAccount: (patch: Partial<SyncedPrefs>) => Promise<void> = async () => {};
+
+/** Names what sends a choice on to the account. Until someone is signed in there is nowhere to send it. */
+export function onPrefChange(save: typeof saveToAccount) {
+  saveToAccount = save;
+}
+
+function store<K extends keyof SyncedPrefs>(name: K, value: SyncedPrefs[K]) {
+  try {
+    localStorage.setItem(synced[name].key, value);
+  } catch {
+    // Private browsing: the account still hears of it, and this window goes by what it loaded with.
+  }
+  return saveToAccount({ [name]: value });
+}
+
+/**
+ * Takes the account's choices over this browser's. Returns what this browser has chosen that the account has yet
+ * to hear of, which is how choices made before they were kept with the account find their way there.
+ */
+export function adoptPrefs(remote: Partial<Record<keyof SyncedPrefs, string>>): Partial<SyncedPrefs> {
+  const unsent: Partial<Record<keyof SyncedPrefs, string>> = {};
+  let localeChanged = false;
+  for (const name of Object.keys(synced) as Array<keyof SyncedPrefs>) {
+    const { key, fallback } = synced[name];
+    const allowed: readonly string[] = synced[name].allowed;
+    const value = remote[name];
+    try {
+      const local = localStorage.getItem(key);
+      if (value === undefined || !allowed.includes(value)) {
+        if (local !== null && allowed.includes(local)) unsent[name] = local;
+      } else if (value !== (local !== null && allowed.includes(local) ? local : fallback)) {
+        localStorage.setItem(key, value);
+        if (name === "locale") localeChanged = true;
+      }
+    } catch {
+      // Without storage this browser has nothing of its own to compare with or to keep.
+    }
+  }
+  applyPrefs();
+  // The language is settled as the page loads, so another one takes a fresh page.
+  if (localeChanged) location.reload();
+  return unsent as Partial<SyncedPrefs>;
+}
+
 export function applyPrefs() {
   const theme = getTheme();
   const resolved = theme === "system" ? (media?.matches ? "dark" : "light") : theme;
@@ -175,17 +228,17 @@ export function applyPrefs() {
 }
 
 export function setMotion(motion: MotionPref) {
-  localStorage.setItem(motionKey, motion);
+  void store("motion", motion);
   applyPrefs();
 }
 
 export function setWindowControls(side: WindowControlsPref) {
-  localStorage.setItem(windowControlsKey, side);
+  void store("windowControls", side);
   applyPrefs();
 }
 
 export function setTheme(theme: ThemePref) {
-  localStorage.setItem(themeKey, theme);
+  void store("theme", theme);
   applyPrefs();
 }
 
