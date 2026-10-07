@@ -6,7 +6,7 @@ import { clampWindowPosition, fitAspectSize, getCanvasSize, MIN_WINDOW_HEIGHT, M
 
 type ResizeEdge = "e" | "s" | "se";
 
-/** Window chrome: title bar, traffic-light controls, drag-to-move and edge resize. */
+/** Window chrome: title bar, window controls, drag-to-move and edge resize. */
 export function KagoWindow({
   window,
   icon,
@@ -47,24 +47,17 @@ export function KagoWindow({
         onDoubleClick={(event) => !isInteractiveTarget(event.target) && update({ maximized: !window.maximized })}
         {...moveHandlers}
       >
-        {/* Hovering any light reveals all three glyphs, and wakes the colours of an unfocused window. */}
-        <div className="kago-lights group/lights flex items-center gap-2">
-          <TrafficLight label="關閉視窗（⌥W）" tone="close" icon={X} focused={window.focused} onClick={() => void requestCloseWindow(window.id)} />
-          <TrafficLight label="最小化" tone="minimize" icon={Minus} focused={window.focused} onClick={() => update({ minimized: true })} />
-          <TrafficLight
-            label={window.maximized ? "還原大小" : "最大化"}
-            tone="zoom"
-            icon={window.maximized ? Minimize2 : Maximize2}
-            focused={window.focused}
-            onClick={() => update({ maximized: !window.maximized })}
-          />
+        <div className="kago-window-controls">
+          <WindowControl label="關閉視窗（⌥W）" closes icon={X} onClick={() => void requestCloseWindow(window.id)} />
+          <WindowControl label="最小化" icon={Minus} onClick={() => update({ minimized: true })} />
+          <WindowControl label={window.maximized ? "還原大小" : "最大化"} icon={window.maximized ? Minimize2 : Maximize2} onClick={() => update({ maximized: !window.maximized })} />
         </div>
         <div className={cn("flex min-w-0 flex-1 items-center justify-center gap-1.5 font-medium", !window.focused && "text-muted")}>
           {icon}
           <span className="truncate">{window.title}</span>
         </div>
-        {/* Balances the traffic lights so the title stays centred. */}
-        <div className="flex min-w-13 justify-end">{titleExtra}</div>
+        {/* Balances the window controls so the title stays centred. */}
+        <div className="kago-window-extra">{titleExtra}</div>
       </header>
       {children}
       {window.maximized ? null : (
@@ -78,18 +71,10 @@ export function KagoWindow({
   );
 }
 
-function TrafficLight({ label, tone, icon: Icon, focused, onClick }: { label: string; tone: "close" | "minimize" | "zoom"; icon: LucideIcon; focused: boolean; onClick: () => void }) {
+function WindowControl({ label, closes, icon: Icon, onClick }: { label: string; closes?: boolean; icon: LucideIcon; onClick: () => void }) {
   return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      data-on={focused || undefined}
-      className="kago-light flex size-3 items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
-      style={{ "--tone": `var(--kago-light-${tone})` } as React.CSSProperties}
-      onClick={onClick}
-    >
-      <Icon aria-hidden className="size-2 text-black/60 opacity-0 group-hover/lights:opacity-100 group-has-focus-visible/lights:opacity-100" strokeWidth={3.5} />
+    <button type="button" aria-label={label} title={label} data-closes={closes ? "" : undefined} className="kago-window-control outline-none focus-visible:ring-2 focus-visible:ring-accent/50" onClick={onClick}>
+      <Icon aria-hidden className="size-3" strokeWidth={2.2} />
     </button>
   );
 }

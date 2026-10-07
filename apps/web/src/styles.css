@@ -81,11 +81,7 @@
   --kago-primary-to: #1557dc;
   --kago-primary-ring: #1a52c4;
   --kago-primary-glow: rgb(47 111 237 / 0.45);
-  --kago-primary-sheen: rgb(150 205 255 / 0.6);
   --kago-selection: linear-gradient(#4f8df7, #2a66e6);
-  --kago-light-close: #ff5f57;
-  --kago-light-minimize: #febc2e;
-  --kago-light-zoom: #28c840;
   --kago-paper-from: #ffffff;
   --kago-paper-to: #eceef2;
   --kago-paper-edge: rgb(15 23 42 / 0.28);
@@ -166,7 +162,6 @@
   --kago-primary-to: #2059d8;
   --kago-primary-ring: #0f2f7a;
   --kago-primary-glow: rgb(60 120 245 / 0.4);
-  --kago-primary-sheen: rgb(140 195 255 / 0.45);
   --kago-selection: linear-gradient(#4a86f2, #2a5fd6);
   --kago-paper-from: #f4f5f7;
   --kago-paper-to: #d3d7dd;
@@ -306,6 +301,7 @@
     .rounded-sm,
     .rounded-md,
     .kago-checkbox,
+    .kago-window-control,
     .kago-segments,
     .kago-segments > *,
     .kago-markdown :is(code, pre, img),
@@ -408,11 +404,7 @@
   .kago-primary {
     color: #ffffff;
     text-shadow: 0 1px 1px rgb(8 30 90 / 0.45);
-    /* From the top: the gloss on the upper half, light gathering along the bottom edge, and the body. */
-    background:
-      linear-gradient(rgb(255 255 255 / 0.3), transparent 62%),
-      radial-gradient(110% 60% at 50% 118%, var(--kago-primary-sheen), transparent 72%),
-      linear-gradient(var(--kago-primary-from), var(--kago-primary-to));
+    background: linear-gradient(rgb(255 255 255 / 0.22), transparent 55%), linear-gradient(var(--kago-primary-from), var(--kago-primary-to));
     box-shadow:
       0 0 0 0.5px var(--kago-primary-ring),
       0 0.5px 0 0.5px var(--kago-primary-ring),
@@ -489,17 +481,62 @@
     box-shadow: var(--kago-sunk-shadow);
   }
 
-  /* The window controls: three glass beads. Grey until the window is focused or the pointer is over them. */
-  .kago-light {
-    --light: var(--kago-border-strong);
-    background: radial-gradient(circle at 50% 28%, color-mix(in srgb, var(--light) 55%, #ffffff), var(--light) 62%);
-    box-shadow: inset 0 0 0 0.5px rgb(0 0 0 / 0.28), inset 0 -1px 1px rgb(255 255 255 / 0.25);
+  /*
+   * The window controls: three small keys that say what they do. They are the same material as any other button;
+   * only closing has a colour, and only under the pointer. On a window that is not in front they lie flat.
+   */
+  .kago-window-controls {
+    display: flex;
+    align-items: center;
+    gap: 6px;
   }
 
-  .kago-light[data-on],
-  .kago-lights:hover .kago-light,
-  .kago-lights:has(:focus-visible) .kago-light {
-    --light: var(--tone);
+  /* Whatever a window adds to its title bar goes at the other end, as wide as the controls so the title stays centred. */
+  .kago-window-extra {
+    display: flex;
+    min-width: 72px;
+    justify-content: flex-end;
+  }
+
+  /* At the right, the controls are mirrored: closing stays the outermost. */
+  :root[data-window-controls="right"] .kago-window-controls {
+    order: 1;
+    flex-direction: row-reverse;
+  }
+
+  :root[data-window-controls="right"] .kago-window-extra {
+    order: -1;
+    justify-content: flex-start;
+  }
+
+  .kago-window-control {
+    display: flex;
+    width: 20px;
+    height: 20px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6.5px;
+    color: var(--kago-text-muted);
+    background: var(--kago-raised);
+    box-shadow: var(--kago-raised-shadow);
+  }
+
+  .kago-window-control:hover {
+    color: var(--kago-text);
+    background: var(--kago-raised-pressed);
+    box-shadow: var(--kago-pressed-shadow);
+  }
+
+  .kago-window-control[data-closes]:hover {
+    color: #ffffff;
+    background: linear-gradient(color-mix(in srgb, var(--kago-danger) 82%, #ffffff), var(--kago-danger));
+    box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--kago-danger) 70%, #000000), inset 0 0.5px 0 rgb(255 255 255 / 0.45);
+  }
+
+  .kago-window[data-inactive] .kago-window-control:not(:hover) {
+    color: var(--kago-text-faint);
+    background: none;
+    box-shadow: inset 0 0 0 0.5px var(--kago-seam);
   }
 
   .kago-checkbox {

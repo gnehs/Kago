@@ -14,6 +14,13 @@ function read<T extends string>(key: string, allowed: readonly T[], fallback: T)
 
 export const getTheme = () => read<ThemePref>(themeKey, ["system", "light", "dark"], "system");
 
+/** Which end of a title bar the window controls sit at. */
+export type WindowControlsPref = "left" | "right";
+
+const windowControlsKey = "kago.windowControls";
+
+export const getWindowControls = () => read<WindowControlsPref>(windowControlsKey, ["left", "right"], "left");
+
 /** The video quality last picked by hand: play the original file, or cap transcoding at a height. */
 export type VideoQualityPref = "direct" | number;
 
@@ -82,6 +89,12 @@ export function applyPrefs() {
   const theme = getTheme();
   const resolved = theme === "system" ? (media?.matches ? "dark" : "light") : theme;
   document.documentElement.dataset.theme = resolved;
+  document.documentElement.dataset.windowControls = getWindowControls();
+}
+
+export function setWindowControls(side: WindowControlsPref) {
+  localStorage.setItem(windowControlsKey, side);
+  applyPrefs();
 }
 
 export function setTheme(theme: ThemePref) {

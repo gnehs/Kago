@@ -236,6 +236,7 @@ function LINES(tone: string) {
 const FOLDER_BACK = "M5 14.5a4.5 4.5 0 0 1 4.5-4.5h11.3a4.5 4.5 0 0 1 3.7 2l2 3a4.5 4.5 0 0 0 3.7 2h20.3a4.5 4.5 0 0 1 4.5 4.5v25a4.5 4.5 0 0 1-4.5 4.5h-41a4.5 4.5 0 0 1-4.5-4.5z";
 const FOLDER_FRONT = "M5 27a4 4 0 0 1 4-4h42a4 4 0 0 1 4 4v19.5a4.5 4.5 0 0 1-4.5 4.5h-41a4.5 4.5 0 0 1-4.5-4.5z";
 const LABEL = "M17.7 41.5h24.6a3.2 3.2 0 0 1 3.2 3.2v4.1a3.2 3.2 0 0 1-3.2 3.2H17.7a3.2 3.2 0 0 1-3.2-3.2v-4.1a3.2 3.2 0 0 1 3.2-3.2z";
+const FOLD = "M36 3.5V13a4 4 0 0 0 4 4h9.5z";
 const SHEET = "M14.5 3.5H36L49.5 17v35.5a4 4 0 0 1-4 4h-31a4 4 0 0 1-4-4v-45a4 4 0 0 1 4-4z";
 /** Lines of text that fit on a sheet above its label, and the characters that fit across it. */
 const SHEET_LINES = 7;
@@ -274,7 +275,12 @@ export function FileTile({ item, text, className }: { item: IconItem; text?: str
         <path d={FOLDER_FRONT} fill={tone} {...NONE} />
         <path d={FOLDER_FRONT} fill={`url(#${id}-sheen)`} {...NONE} />
         <Rim id={`${id}-front-rim`} d={FOLDER_FRONT} width={0.9} />
-        <path d="M6.5 49.3a3.9 3.9 0 0 0 3 1.2h41a3.9 3.9 0 0 0 3-1.2" style={{ stroke: shade(40) }} strokeOpacity={0.5} strokeWidth={0.8} />
+        {/* The front turns away from the light towards its bottom edge: a shade that fades in, kept inside the shape. */}
+        <linearGradient id={`${id}-under`} gradientUnits="userSpaceOnUse" x1="0" y1="43" x2="0" y2="51">
+          <stop offset="0" style={{ stopColor: shade(45) }} stopOpacity={0} />
+          <stop offset="1" style={{ stopColor: shade(45) }} stopOpacity={0.5} />
+        </linearGradient>
+        <rect x="5" y="43" width="50" height="8" fill={`url(#${id}-under)`} clipPath={`url(#${id}-front-rim)`} {...NONE} />
       </svg>
     );
   }
@@ -317,8 +323,12 @@ export function FileTile({ item, text, className }: { item: IconItem; text?: str
         <g transform={`translate(18 ${label ? 15.5 : 20})`}>{emblem(tone, `${id}-emblem`)}</g>
       ) : null}
       {/* Drawn over the text, so lines that reach the corner run under the fold. */}
-      <path d="M36.5 17.6h13v6.5z" fill="#000000" fillOpacity={0.13} {...NONE} />
-      <path d="M36 3.5V13a4 4 0 0 0 4 4h9.5z" fill={`url(#${id}-fold)`} {...EDGE} />
+      {/* The fold lifts off the sheet a little: its own shape, blurred, lying just under it. */}
+      <filter id={`${id}-soften`} x="-50%" y="-50%" width="200%" height="200%">
+        <feGaussianBlur stdDeviation="1.1" />
+      </filter>
+      <path d={FOLD} transform="translate(-0.7 1.1)" fill="#000000" fillOpacity={0.3} filter={`url(#${id}-soften)`} clipPath={`url(#${id}-paper-rim)`} {...NONE} />
+      <path d={FOLD} fill={`url(#${id}-fold)`} {...EDGE} />
       {label ? (
         <>
           <path d={LABEL} fill={tone} {...NONE} />

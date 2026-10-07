@@ -56,7 +56,7 @@ function locationTone(slug: string) {
 /** What each tile holds, on a 24px field. Nothing here has a colour: the tile paints it. */
 const GLYPHS = {
   location: (
-    <KagoAppIcon texture="rays">
+    <KagoAppIcon texture="weave">
       <path d="M2.5 6.7a2.2 2.2 0 0 1 2.2-2.2h3.8a2.2 2.2 0 0 1 1.8 1l.8 1.2a2.2 2.2 0 0 0 1.8 1h6.4a2.2 2.2 0 0 1 2.2 2.2v7.4a2.2 2.2 0 0 1-2.2 2.2H4.7a2.2 2.2 0 0 1-2.2-2.2z" fillOpacity={0.62} />
       <path d="M2.5 11.9a2 2 0 0 1 2-2h15a2 2 0 0 1 2 2v5.4a2.2 2.2 0 0 1-2.2 2.2H4.7a2.2 2.2 0 0 1-2.2-2.2z" />
     </KagoAppIcon>
@@ -70,7 +70,7 @@ const GLYPHS = {
     </KagoAppIcon>
   ),
   trash: (
-    <KagoAppIcon texture="mesh">
+    <KagoAppIcon texture="slats">
       <path d="M9.2 5v-.7a1.5 1.5 0 0 1 1.5-1.5h2.6a1.5 1.5 0 0 1 1.5 1.5V5h3.7a1.1 1.1 0 0 1 0 2.2h-13a1.1 1.1 0 0 1 0-2.2zm1.5 0h2.6v-.5a.3.3 0 0 0-.3-.3h-2a.3.3 0 0 0-.3.3z" fillRule="evenodd" />
       <path d="M6.3 8.7h11.4l-.8 10.3a2.2 2.2 0 0 1-2.2 2H9.3a2.2 2.2 0 0 1-2.2-2zm3.3 2.3a.7.7 0 0 0-.7.75l.4 6a.7.7 0 0 0 1.4-.1l-.4-6a.7.7 0 0 0-.7-.65zm4.8 0a.7.7 0 0 0-.7.65l-.4 6a.7.7 0 0 0 1.4.1l.4-6a.7.7 0 0 0-.7-.75z" fillRule="evenodd" />
     </KagoAppIcon>

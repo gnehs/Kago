@@ -8,23 +8,29 @@ const TILE =
 const tint = (amount: number) => `color-mix(in srgb, currentColor ${100 - amount}%, #ffffff)`;
 const shade = (amount: number) => `color-mix(in srgb, currentColor ${100 - amount}%, #000000)`;
 
+/** A basket weave across the tile: squares of two strips each, lying across in one square and upright in the next. */
+const WEAVE = (() => {
+  const cell = 8;
+  let d = "";
+  for (let row = 0; row * cell < 96; row += 1) {
+    for (let column = 0; column * cell < 96; column += 1) {
+      const x = column * cell;
+      const y = row * cell;
+      d += (row + column) % 2 === 0 ? `M${x + 1.5} ${y + 2.5}h5M${x + 1.5} ${y + 5.5}h5` : `M${x + 2.5} ${y + 1.5}v5M${x + 5.5} ${y + 1.5}v5`;
+    }
+  }
+  return d;
+})();
+
 /** What is printed on the tile behind the glyph, so that no two kinds of tile are the same surface. */
 const TEXTURES = {
-  /** Light falling across from the top left. */
-  rays: (
-    <g fill="#ffffff" style={{ filter: "blur(2.5px)" }}>
-      <path d="M-10 -10 30 100 8 100Z" fillOpacity={0.1} />
-      <path d="M-10 -10 62 100 44 100Z" fillOpacity={0.14} />
-      <path d="M-10 -10 100 74 100 50Z" fillOpacity={0.09} />
-      <path d="M-10 -10 100 30 100 20Z" fillOpacity={0.12} />
-    </g>
-  ),
-  /** A woven mesh, as of a wire basket. */
-  mesh: (
-    <g stroke="#ffffff" strokeWidth={0.9}>
-      <path d="M0 12h96M0 24h96M0 36h96M0 48h96M0 60h96M0 72h96M0 84h96" strokeOpacity={0.1} />
-      <path d="M12 0v96M24 0v96M36 0v96M48 0v96M60 0v96M72 0v96M84 0v96" strokeOpacity={0.1} />
-      <path d="M0 13h96M0 25h96M0 37h96M0 49h96M0 61h96M0 73h96M0 85h96" stroke="#000000" strokeOpacity={0.14} />
+  /** Strips woven over and under each other, as the side of a basket (a kago) is. */
+  weave: <path d={WEAVE} fill="none" stroke="#ffffff" strokeOpacity={0.17} strokeWidth={1.5} strokeLinecap="round" />,
+  /** The slats of a bin. */
+  slats: (
+    <g fill="none">
+      <path d="M12 0v96M28 0v96M44 0v96M60 0v96M76 0v96M92 0v96" stroke="#000000" strokeOpacity={0.13} strokeWidth={1.2} />
+      <path d="M13.2 0v96M29.2 0v96M45.2 0v96M61.2 0v96M77.2 0v96M93.2 0v96" stroke="#ffffff" strokeOpacity={0.12} strokeWidth={1} />
     </g>
   ),
   /** Rings going out from the middle, as of something being sent. */
