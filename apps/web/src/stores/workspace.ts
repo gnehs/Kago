@@ -150,6 +150,22 @@ function restack(stack: Stack, frontId?: string | null, focusId: string | null |
 
 const titleFromPath = (logicalPath: string, fallback: string) => (logicalPath === "/" ? fallback : baseName(logicalPath) || fallback);
 
+const closeGuards = new Map<string, () => Promise<boolean>>();
+
+/** A window holding unsaved work registers a guard that is asked before it closes. Returns the way to withdraw it. */
+export function guardWindowClose(id: string, guard: () => Promise<boolean>) {
+  closeGuards.set(id, guard);
+  return () => {
+    if (closeGuards.get(id) === guard) closeGuards.delete(id);
+  };
+}
+
+/** Closes a window the way the user does: one with a guard gets to object first. */
+export async function requestCloseWindow(id: string) {
+  const guard = closeGuards.get(id);
+  if (!guard || (await guard())) useWorkspaceStore.getState().closeWindow(id);
+}
+
 export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   hydrated: false,
   activeWindowId: null,

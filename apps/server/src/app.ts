@@ -14,7 +14,7 @@ import { nfc } from "./lib/filename.js";
 import { sendFile } from "./lib/send-file.js";
 import { AuditService } from "./services/audit.service.js";
 import { AuthService, changePasswordSchema, createUserSchema, loginSchema, patchUserSchema, resetPasswordSchema, setupAdminSchema } from "./services/auth.service.js";
-import { FsService, finderTagsSchema, fsQuerySchema, maxUploadFiles, mkdirSchema, renameSchema } from "./services/fs.service.js";
+import { FsService, finderTagsSchema, fsQuerySchema, maxUploadFiles, mkdirSchema, renameSchema, sqliteRowsSchema, writeTextSchema } from "./services/fs.service.js";
 import { createGroupSchema, GroupService } from "./services/group.service.js";
 import { MediaService, mediaSessionSchema, mediaStreamSchema } from "./services/media.service.js";
 import { PathService } from "./services/path.service.js";
@@ -335,6 +335,12 @@ function registerApi(app: FastifyInstance, services: Services) {
     const file = await services.fsService.preview(actor, query.rootSlug, query.path);
     return sendFile(request, reply, file.safe.absolutePath, file.stat, file.contentType);
   });
+  app.put("/api/fs/content", async (request) => services.fsService.writeText(requireActor(request), writeTextSchema.parse(request.body)));
+  app.get("/api/fs/sqlite", async (request) => {
+    const query = fsQuerySchema.parse(request.query);
+    return services.fsService.sqliteOverview(requireActor(request), query.rootSlug, query.path);
+  });
+  app.get("/api/fs/sqlite/rows", async (request) => services.fsService.sqliteRows(requireActor(request), sqliteRowsSchema.parse(request.query)));
   app.get("/api/fs/thumbnail", async (request, reply) => {
     const actor = requireActor(request);
     const query = fsQuerySchema.parse(request.query);

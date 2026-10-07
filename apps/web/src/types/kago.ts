@@ -82,6 +82,11 @@ export type FileList = {
   items: FileItem[];
 };
 
+export type SqliteTable = { name: string; type: "table" | "view"; columns: Array<{ name: string; type: string; pk: boolean; notNull: boolean }> };
+export type SqliteCell = string | number | null | { blob: number };
+/** `total` is null for a database too large to count. */
+export type SqlitePage = { columns: string[]; rows: SqliteCell[][]; offset: number; hasMore: boolean; total: number | null };
+
 export type FileMeta = {
   rootSlug: string;
   path: string;

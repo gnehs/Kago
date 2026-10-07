@@ -5,7 +5,7 @@ import { pasteClipboard, setClipboard } from "@/features/files/useFileActions";
 import { baseName, parentPath } from "@/lib/paths";
 import { isEditableTarget } from "@/lib/usePointerDrag";
 import { useClipboardStore } from "@/stores/clipboard";
-import { useWorkspaceStore } from "@/stores/workspace";
+import { requestCloseWindow, useWorkspaceStore } from "@/stores/workspace";
 
 export const EDIT_ADDRESS_EVENT = "kago:edit-address";
 export const OPEN_ITEM_EVENT = "kago:open-item";
@@ -41,7 +41,7 @@ export function useShortcuts({ enabled, onOpenPalette }: { enabled: boolean; onO
       // Escape dismisses a preview the way it used to dismiss the preview dialog.
       if ((closes || (previewActive && event.key === "Escape")) && [...store.appWindows, ...store.previewWindows].some((window) => window.id === store.activeWindowId)) {
         event.preventDefault();
-        store.closeWindow(store.activeWindowId!);
+        void requestCloseWindow(store.activeWindowId!);
         return;
       }
       const active = store.windows.find((window) => window.id === store.activeWindowId && !window.minimized);

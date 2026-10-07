@@ -32,15 +32,53 @@ export const formatUnixDate = (seconds: number) => dateFormat.format(new Date(se
 /** Files the video player takes; RealMedia has no `video/` type of its own. */
 export const isVideoType = (type: string) => type.startsWith("video/") || type.startsWith("application/vnd.rn-realmedia");
 
+/** The editor holds a file whole; the server refuses to save anything larger. */
+export const MAX_TEXT_BYTES = 2 * 1024 * 1024;
+
+const TEXT_TYPES = new Set(["application/json", "application/ld+json", "application/manifest+json", "application/xml", "application/javascript", "application/x-sh", "application/toml", "application/sql", "application/yaml", "application/x-httpd-php", "application/x-subrip"]);
+const TEXT_EXTENSIONS = new Set(
+  "txt md markdown log csv tsv json jsonc json5 ndjson yml yaml toml ini conf cfg env properties xml html htm css scss sass less js mjs cjs jsx ts mts cts tsx vue svelte astro py rb php java kt kts swift go rs c h cc cpp cxx hpp cs m mm sh bash zsh fish ps1 bat cmd sql lua pl r dart scala clj ex exs erl hs elm tf hcl nix gradle cmake diff patch srt ass ssa vtt lrc tex bib rst adoc proto graphql gql lock gitignore gitattributes editorconfig dockerignore npmrc".split(" ")
+);
+const TEXT_NAMES = new Set(["dockerfile", "makefile", "license", "readme", "changelog", "caddyfile", "gemfile", "rakefile", "procfile"]);
+
+const extensionOf = (name: string) => (name.includes(".") ? name.split(".").at(-1)!.toLowerCase() : "");
+
+/**
+ * Files the text editor opens. The name decides before the type does: `.ts` is registered as a video
+ * container, and a TypeScript file is the one that fits in an editor.
+ */
+export function isTextFile(item: Pick<FileItem, "kind" | "type" | "name" | "size">) {
+  if (item.kind !== "file" || item.size > MAX_TEXT_BYTES) return false;
+  return hasTextName(item.name) || (!isVideoType(item.type) && (item.type.startsWith("text/") || TEXT_TYPES.has(item.type)));
+}
+
+/** True for a name that says text whatever the type registry makes of it. */
+export function hasTextName(value: string) {
+  const name = value.toLowerCase();
+  return TEXT_EXTENSIONS.has(extensionOf(name)) || TEXT_NAMES.has(name) || name.startsWith(".env");
+}
+
+/** `.db` is a guess; the server checks the file's header before reading it as a database. */
+export const isSqliteFile = (item: Pick<FileItem, "kind" | "type" | "name">) =>
+  item.kind === "file" && (item.type === "application/vnd.sqlite3" || item.type === "application/x-sqlite3" || ["sqlite", "sqlite3", "db", "db3", "s3db", "sl3"].includes(extensionOf(item.name)));
+
+export type OfficeKind = "document" | "sheet" | "slides";
+
+const OFFICE_KINDS: Record<string, OfficeKind> = { docx: "document", xlsx: "sheet", xlsm: "sheet", xls: "sheet", ods: "sheet", pptx: "slides" };
+
+/** Office files the browser can lay out itself. The old binary `.doc` and `.ppt` are not among them. */
+export const officeKind = (item: Pick<FileItem, "kind" | "name">): OfficeKind | null => (item.kind === "file" ? OFFICE_KINDS[extensionOf(item.name)] ?? null : null);
+
 export function kindLabel(item: Pick<FileItem, "kind" | "type" | "name">) {
   if (item.kind === "folder") return "資料夾";
   const type = item.type;
   if (type.startsWith("image/")) return "影像";
-  if (type.startsWith("video/")) return "影片";
+  if (type.startsWith("video/") && !hasTextName(item.name)) return "影片";
   if (type.startsWith("audio/")) return "音訊";
   if (type === "application/pdf") return "PDF 文件";
   if (type.includes("zip") || type.includes("compressed") || type.includes("tar")) return "壓縮檔";
   if (type.startsWith("text/")) return "文字文件";
+  if (type === "application/vnd.sqlite3" || type === "application/x-sqlite3") return "SQLite 資料庫";
   const extension = item.name.includes(".") ? item.name.split(".").at(-1) : "";
   return extension ? `${extension.toUpperCase()} 檔案` : "檔案";
 }

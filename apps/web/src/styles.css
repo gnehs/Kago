@@ -26,6 +26,17 @@
   --kago-kind-audio: #cf7a2b;
   --kago-kind-archive: #a3823a;
   --kago-kind-document: #d05a4e;
+  --kago-code-keyword: #0000ff;
+  --kago-code-control: #af00db;
+  --kago-code-string: #a31515;
+  --kago-code-number: #098658;
+  --kago-code-comment: #008000;
+  --kago-code-function: #795e26;
+  --kago-code-type: #267f99;
+  --kago-code-variable: #001080;
+  --kago-code-tag: #800000;
+  --kago-code-attribute: #e50000;
+  --kago-code-match: rgb(234 179 8 / 0.35);
   --kago-overlay: rgb(15 23 42 / 0.32);
   --kago-tag-gray: #8e8e93;
   --kago-tag-green: #34c759;
@@ -68,6 +79,17 @@
   --kago-kind-audio: #e6a05c;
   --kago-kind-archive: #c9a95f;
   --kago-kind-document: #ec8479;
+  --kago-code-keyword: #569cd6;
+  --kago-code-control: #c586c0;
+  --kago-code-string: #ce9178;
+  --kago-code-number: #b5cea8;
+  --kago-code-comment: #6a9955;
+  --kago-code-function: #dcdcaa;
+  --kago-code-type: #4ec9b0;
+  --kago-code-variable: #9cdcfe;
+  --kago-code-tag: #569cd6;
+  --kago-code-attribute: #9cdcfe;
+  --kago-code-match: rgb(234 179 8 / 0.3);
   --kago-overlay: rgb(0 0 0 / 0.5);
   --kago-shadow-window: 0 0 0 1px rgb(255 255 255 / 0.08), 0 12px 32px rgb(0 0 0 / 0.4);
   --kago-shadow-window-active: 0 0 0 1px rgb(255 255 255 / 0.14), 0 20px 48px rgb(0 0 0 / 0.55);
@@ -171,6 +193,162 @@
   ::selection {
     background: var(--kago-accent-soft);
   }
+}
+
+/* Rendered Markdown: the one place where content brings its own headings, lists and tables. */
+@layer components {
+  .kago-markdown {
+    font-size: 14px;
+    line-height: 1.65;
+    overflow-wrap: break-word;
+  }
+
+  .kago-markdown > :first-child {
+    margin-top: 0;
+  }
+
+  .kago-markdown :is(p, ul, ol, pre, table, blockquote, hr) {
+    margin: 0 0 12px;
+  }
+
+  .kago-markdown :is(h1, h2, h3, h4, h5, h6) {
+    margin: 24px 0 10px;
+    font-weight: 600;
+    line-height: 1.3;
+  }
+
+  .kago-markdown h1 {
+    font-size: 24px;
+  }
+
+  .kago-markdown h2 {
+    font-size: 19px;
+  }
+
+  .kago-markdown h3 {
+    font-size: 16px;
+  }
+
+  .kago-markdown :is(h1, h2) {
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--kago-border);
+  }
+
+  .kago-markdown :is(ul, ol) {
+    padding-left: 22px;
+  }
+
+  .kago-markdown ul {
+    list-style: disc;
+  }
+
+  .kago-markdown ol {
+    list-style: decimal;
+  }
+
+  .kago-markdown :is(ul, ol) :is(ul, ol) {
+    margin-bottom: 0;
+  }
+
+  .kago-markdown li:has(> input[type="checkbox"]) {
+    margin-left: -18px;
+    list-style: none;
+  }
+
+  .kago-markdown li > input[type="checkbox"] {
+    margin-right: 6px;
+    accent-color: var(--kago-accent);
+  }
+
+  .kago-markdown a {
+    color: var(--kago-accent);
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .kago-markdown :is(code, pre) {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: 12.5px;
+  }
+
+  .kago-markdown :not(pre) > code {
+    padding: 1px 5px;
+    border-radius: var(--kago-radius-sm);
+    background: var(--kago-hover);
+  }
+
+  .kago-markdown pre {
+    overflow-x: auto;
+    padding: 10px 12px;
+    border: 1px solid var(--kago-border);
+    border-radius: var(--kago-radius-md);
+    background: var(--kago-surface-elevated);
+    line-height: 1.55;
+  }
+
+  .kago-markdown blockquote {
+    padding-left: 12px;
+    border-left: 3px solid var(--kago-border-strong);
+    color: var(--kago-text-muted);
+  }
+
+  .kago-markdown blockquote > :last-child {
+    margin-bottom: 0;
+  }
+
+  .kago-markdown hr {
+    border: 0;
+    border-top: 1px solid var(--kago-border);
+  }
+
+  .kago-markdown img {
+    display: inline-block;
+    max-width: 100%;
+    border-radius: var(--kago-radius-md);
+  }
+
+  .kago-markdown table {
+    display: block;
+    overflow-x: auto;
+    border-collapse: collapse;
+  }
+
+  .kago-markdown :is(th, td) {
+    padding: 5px 10px;
+    border: 1px solid var(--kago-border);
+    text-align: left;
+  }
+
+  .kago-markdown th {
+    background: var(--kago-surface-elevated);
+    font-weight: 600;
+  }
+}
+
+/*
+ * Office documents bring their own page: paper stays white with dark ink in either theme.
+ * Left out of any layer, because the stylesheets the renderers inject are unlayered too.
+ */
+.kago-office .kago-docx-wrapper {
+  padding: 16px;
+  background: transparent;
+}
+
+.kago-office .kago-docx-wrapper > section.kago-docx {
+  margin-bottom: 16px;
+  color: #000000;
+  color-scheme: light;
+  box-shadow: var(--kago-shadow-popup);
+}
+
+.kago-slides .pptx-preview-wrapper {
+  height: auto !important;
+  padding: 16px 0;
+  overflow: visible !important;
+  background: transparent !important;
+  color: #000000;
+  color-scheme: light;
 }
 
 @media (prefers-reduced-motion: reduce) {

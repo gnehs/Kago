@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { access, mkdtemp, mkdir, readdir, readFile, rm, symlink, truncate, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
 import test from "node:test";
 import AdmZip from "adm-zip";
@@ -69,6 +70,48 @@ test("minimum file-manager demo flow", async () => {
     const thumbnail = await admin.get("/api/fs/thumbnail?rootSlug=photos&path=/public/uploaded.txt");
     assert.equal(thumbnail.statusCode, 200);
     assert.match(String(thumbnail.headers["content-type"]), /image\/svg\+xml/);
+
+    // The editor saves a file's text back in place, and refuses to save over a copy that has changed since it was read.
+    const uploadedFile = path.join(fixture.dataDir, "photos", "public", "uploaded.txt");
+    const beforeEdit = await admin.get("/api/fs/meta?rootSlug=photos&path=/public/uploaded.txt");
+    const edited = await admin.put("/api/fs/content", { rootSlug: "photos", path: "/public/uploaded.txt", content: "edited\r\n", mtime: beforeEdit.json.mtime });
+    assert.equal(edited.statusCode, 200);
+    assert.equal(edited.json.size, 8);
+    assert.equal(await readFile(uploadedFile, "utf8"), "edited\r\n");
+    const staleEdit = await admin.put("/api/fs/content", { rootSlug: "photos", path: "/public/uploaded.txt", content: "stale", mtime: beforeEdit.json.mtime - 5000 });
+    assert.equal(staleEdit.statusCode, 409);
+    assert.equal(staleEdit.json.code, "FILE_CHANGED");
+    assert.equal((await admin.put("/api/fs/content", { rootSlug: "photos", path: "/public/uploaded.txt", content: "uploaded" })).statusCode, 200);
+    assert.equal(await readFile(uploadedFile, "utf8"), "uploaded");
+    assert.equal((await admin.put("/api/fs/content", { rootSlug: "photos", path: "/public", content: "" })).statusCode, 400);
+    assert.equal((await admin.put("/api/fs/content", { rootSlug: "photos", path: "/public/missing.txt", content: "" })).statusCode, 404);
+
+    // A SQLite database is read on the server, page by page, without leaving anything beside the file.
+    const sampleDb = path.join(fixture.dataDir, "photos", "public", "sample.db");
+    const sample = new DatabaseSync(sampleDb);
+    sample.exec(`
+      CREATE TABLE "odd ""name" (id INTEGER PRIMARY KEY, title TEXT NOT NULL, payload BLOB, big INTEGER);
+      INSERT INTO "odd ""name" (title, payload, big) VALUES ('first', x'00ff10', 9007199254740993), ('second', NULL, 2), ('third', NULL, 3);
+      CREATE VIEW titles AS SELECT title, title FROM "odd ""name";
+    `);
+    sample.close();
+    const overview = await admin.get("/api/fs/sqlite?rootSlug=photos&path=/public/sample.db");
+    assert.equal(overview.statusCode, 200);
+    assert.deepEqual(overview.json.tables.map((table) => [table.name, table.type]), [['odd "name', "table"], ["titles", "view"]]);
+    assert.deepEqual(overview.json.tables[0].columns[0], { name: "id", type: "INTEGER", pk: true, notNull: false });
+    const sqlitePage = await admin.get(`/api/fs/sqlite/rows?rootSlug=photos&path=/public/sample.db&table=${encodeURIComponent('odd "name')}&limit=2`);
+    assert.equal(sqlitePage.statusCode, 200);
+    assert.deepEqual(sqlitePage.json.columns, ["id", "title", "payload", "big"]);
+    assert.deepEqual(sqlitePage.json.rows, [[1, "first", { blob: 3 }, "9007199254740993"], [2, "second", null, 2]]);
+    assert.equal(sqlitePage.json.hasMore, true);
+    assert.equal(sqlitePage.json.total, 3);
+    const sqliteView = await admin.get("/api/fs/sqlite/rows?rootSlug=photos&path=/public/sample.db&table=titles&offset=2");
+    assert.deepEqual(sqliteView.json.rows, [["third", "third"]]);
+    assert.equal(sqliteView.json.hasMore, false);
+    assert.equal((await admin.get("/api/fs/sqlite/rows?rootSlug=photos&path=/public/sample.db&table=sqlite_schema")).statusCode, 404);
+    assert.equal((await admin.get("/api/fs/sqlite?rootSlug=photos&path=/public/uploaded.txt")).json.code, "NOT_SQLITE");
+    assert.deepEqual((await readdir(path.dirname(sampleDb))).filter((name) => name.startsWith("sample.db")), ["sample.db"]);
+    await rm(sampleDb);
 
     const tag = await admin.post("/api/tags", { name: "Reviewed", color: "lavender" });
     assert.equal(tag.statusCode, 200);

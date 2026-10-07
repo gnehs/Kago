@@ -1,6 +1,6 @@
-import { useMutation, useQueries, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQueries, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { api } from "./client";
-import type { Actor, AuditLog, FileList, FileMeta, FileTask, Group, MediaInfo, PermissionRule, Root, ShareLink, Shelf, SubtitleList, Tag, TrashItem, UserAccount, WorkspaceState } from "../types/kago";
+import type { Actor, AuditLog, FileList, FileMeta, FileTask, Group, MediaInfo, PermissionRule, Root, ShareLink, Shelf, SqlitePage, SqliteTable, SubtitleList, Tag, TrashItem, UserAccount, WorkspaceState } from "../types/kago";
 
 export function useSetupStatus() {
   return useQuery({ queryKey: ["auth", "setup"], queryFn: () => api<{ needsSetup: boolean }>("/api/auth/setup") });
@@ -65,6 +65,25 @@ export function useFileMeta(rootSlug: string, path: string, enabled = true) {
     queryKey: ["fs", "meta", rootSlug, path],
     queryFn: () => api<FileMeta>(`/api/fs/meta?${new URLSearchParams({ rootSlug, path }).toString()}`),
     enabled
+  });
+}
+
+export function useSqliteOverview(rootSlug: string, path: string) {
+  return useQuery({
+    queryKey: ["fs", "sqlite", rootSlug, path],
+    queryFn: () => api<{ tables: SqliteTable[] }>(`/api/fs/sqlite?${new URLSearchParams({ rootSlug, path }).toString()}`),
+    retry: false
+  });
+}
+
+export function useSqliteRows(rootSlug: string, path: string, table: string | undefined, offset: number, limit: number) {
+  return useQuery({
+    queryKey: ["fs", "sqlite", rootSlug, path, table, offset, limit],
+    queryFn: () => api<SqlitePage>(`/api/fs/sqlite/rows?${new URLSearchParams({ rootSlug, path, table: table!, offset: String(offset), limit: String(limit) }).toString()}`),
+    enabled: table !== undefined,
+    retry: false,
+    // Turning the page keeps the rows on screen until the next ones arrive.
+    placeholderData: keepPreviousData
   });
 }
 

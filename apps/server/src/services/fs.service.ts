@@ -8,6 +8,7 @@ import { z } from "zod";
 import { AppError } from "../lib/errors.js";
 import { assertNameAvailable, nfc } from "../lib/filename.js";
 import { readFinderTags, writeFinderTags } from "../lib/finder-tags.js";
+import { MAX_SQLITE_PAGE, sqliteOverview, sqliteRows } from "../lib/sqlite-preview.js";
 import { parseSubtitleName } from "../lib/subtitles.js";
 import type { AuditService } from "./audit.service.js";
 import type { PathService } from "./path.service.js";
@@ -46,6 +47,23 @@ export const finderTagsSchema = z.object({
       })
     )
     .max(100)
+});
+
+/** The editor holds a file whole in the browser, and saves it whole. */
+export const MAX_TEXT_BYTES = 2 * 1024 * 1024;
+
+export const writeTextSchema = z.object({
+  rootSlug: z.string().min(1),
+  path: z.string().min(1),
+  content: z.string(),
+  /** The mtime of the copy that was edited; the save is refused when the file has changed since. */
+  mtime: z.number().optional()
+});
+
+export const sqliteRowsSchema = fsQuerySchema.extend({
+  table: z.string().min(1),
+  offset: z.coerce.number().int().min(0).default(0),
+  limit: z.coerce.number().int().min(1).max(MAX_SQLITE_PAGE).default(100)
 });
 
 export const maxUploadFiles = 20;
@@ -162,6 +180,41 @@ export class FsService {
     const stat = await fsp.stat(safe.absolutePath);
     if (!stat.isFile()) throw new AppError(400, "Path is not a file", "NOT_FILE");
     return { safe, stat, contentType: lookup(safe.absolutePath) || "application/octet-stream" };
+  }
+
+  /** Replaces the text of an existing file with what was typed in the editor. */
+  async writeText(actor: Actor, input: z.infer<typeof writeTextSchema>) {
+    const safe = await this.paths.resolveExisting(input.rootSlug, input.path);
+    // Saving over a file destroys what it held, so it takes the right to remove as well as the right to add.
+    this.permissions.require(actor, "upload", safe.root, safe.logicalPath);
+    this.permissions.require(actor, "delete", safe.root, safe.logicalPath);
+    const stat = await fsp.stat(safe.absolutePath);
+    if (!stat.isFile()) throw new AppError(400, "Path is not a file", "NOT_FILE");
+    if (Buffer.byteLength(input.content) > MAX_TEXT_BYTES) throw new AppError(413, "File is too large to edit", "FILE_TOO_LARGE");
+    if (input.mtime !== undefined && Math.abs(stat.mtimeMs - input.mtime) >= 1) {
+      throw new AppError(409, "The file was changed by someone else", "FILE_CHANGED");
+    }
+    // Written in place rather than swapped in: the file keeps its owner, mode, hard links and the Finder tags stored on it.
+    await fsp.writeFile(safe.absolutePath, input.content, "utf8");
+    this.audit.write({
+      actorType: "user",
+      actorId: actor.id,
+      action: "edit",
+      rootId: safe.root.id,
+      path: safe.logicalPath,
+      result: "success"
+    });
+    return this.meta(actor, input.rootSlug, safe.logicalPath);
+  }
+
+  async sqliteOverview(actor: Actor, rootSlug: string, logicalPath: string) {
+    const file = await this.preview(actor, rootSlug, logicalPath);
+    return sqliteOverview(file.safe.absolutePath);
+  }
+
+  async sqliteRows(actor: Actor, input: z.infer<typeof sqliteRowsSchema>) {
+    const file = await this.preview(actor, input.rootSlug, input.path);
+    return sqliteRows(file.safe.absolutePath, file.stat.size, input.table, input.offset, input.limit);
   }
 
   /** The subtitle files lying next to a video that are named after it and that the actor may read. */

@@ -2,16 +2,23 @@ import { Download } from "lucide-react";
 import { downloadUrl, previewUrl } from "@/api/client";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { KagoWindow } from "@/features/windows/KagoWindow";
-import { isVideoType } from "@/lib/format";
+import { isSqliteFile, isTextFile, isVideoType, officeKind } from "@/lib/format";
 import { triggerDownload } from "@/lib/paths";
 import type { PreviewWindow } from "@/stores/workspace";
 import { FileIcon } from "./FileIcon";
+import { OfficePreviewWindow } from "./OfficePreview";
+import { SqlitePreviewWindow } from "./SqlitePreview";
+import { TextPreviewWindow } from "./TextPreview";
 import { VideoPreviewWindow } from "./VideoPreview";
 
 /** A file opened for viewing, in the same movable, resizable window chrome as a folder. */
 export function PreviewWindowView({ window }: { window: PreviewWindow }) {
   const { rootSlug, item } = window.preview;
+  if (isTextFile(item)) return <TextPreviewWindow window={window} />;
   if (isVideoType(item.type)) return <VideoPreviewWindow window={window} />;
+  if (isSqliteFile(item)) return <SqlitePreviewWindow window={window} />;
+  const office = officeKind(item);
+  if (office) return <OfficePreviewWindow window={window} kind={office} />;
   const source = previewUrl(rootSlug, item.path);
   return (
     <KagoWindow

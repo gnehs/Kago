@@ -1,5 +1,5 @@
-import { File, FileArchive, FileAudio, FileImage, FileText, FileVideo, Folder } from "lucide-react";
-import { isVideoType } from "@/lib/format";
+import { Database, File, FileArchive, FileAudio, FileImage, FileText, FileVideo, Folder } from "lucide-react";
+import { hasTextName, isSqliteFile, isVideoType } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { FileItem } from "@/types/kago";
 
@@ -13,7 +13,7 @@ export function FileIcon({ item, className }: { item: Pick<FileItem, "kind" | "t
   // Each broad kind has its own colour, so a mixed folder can be read by scanning the icons.
   const [Icon, tone] = type.startsWith("image/")
     ? [FileImage, "text-kind-image"]
-    : isVideoType(type)
+    : isVideoType(type) && !hasTextName(item.name)
       ? [FileVideo, "text-kind-video"]
       : type.startsWith("audio/")
         ? [FileAudio, "text-kind-audio"]
@@ -21,8 +21,10 @@ export function FileIcon({ item, className }: { item: Pick<FileItem, "kind" | "t
           ? [FileArchive, "text-kind-archive"]
           : type === "application/pdf"
             ? [FileText, "text-kind-document"]
-            : type.startsWith("text/")
+            : type.startsWith("text/") || hasTextName(item.name)
               ? [FileText, "text-muted"]
-              : [File, "text-muted"];
+              : isSqliteFile(item)
+                ? [Database, "text-muted"]
+                : [File, "text-muted"];
   return <Icon className={cn(tone, className)} />;
 }

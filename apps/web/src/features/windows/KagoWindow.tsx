@@ -2,12 +2,20 @@ import { Maximize2, Minimize2, Minus, X, type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { isInteractiveTarget, usePointerDrag } from "@/lib/usePointerDrag";
 import { cn } from "@/lib/utils";
-import { clampWindowPosition, fitAspectSize, getCanvasSize, MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, TITLEBAR_HEIGHT, useWorkspaceStore, type WindowFrame } from "@/stores/workspace";
+import { clampWindowPosition, fitAspectSize, getCanvasSize, MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, requestCloseWindow, TITLEBAR_HEIGHT, useWorkspaceStore, type WindowFrame } from "@/stores/workspace";
 
 type ResizeEdge = "e" | "s" | "se";
 
 /** Window chrome: title bar, traffic-light controls, drag-to-move and edge resize. */
-export function KagoWindow({ window, icon, titleExtra, className, children, ...props }: Omit<React.ComponentProps<"section">, "title"> & { window: WindowFrame; icon?: ReactNode; titleExtra?: ReactNode }) {
+export function KagoWindow({
+  window,
+  icon,
+  titleExtra,
+  keepMounted,
+  className,
+  children,
+  ...props
+}: Omit<React.ComponentProps<"section">, "title"> & { window: WindowFrame; icon?: ReactNode; titleExtra?: ReactNode; /** Hide rather than unmount while minimized, for content that holds unsaved work. */ keepMounted?: boolean }) {
   const store = useWorkspaceStore.getState;
   const update = (patch: Partial<WindowFrame>) => store().updateWindow(window.id, patch);
 
@@ -16,11 +24,12 @@ export function KagoWindow({ window, icon, titleExtra, className, children, ...p
     (origin, dx, dy) => update(clampWindowPosition(origin.x + dx, origin.y + dy, window.width))
   );
 
-  if (window.minimized) return null;
+  if (window.minimized && !keepMounted) return null;
 
   return (
     <section
       data-window={window.id}
+      hidden={window.minimized}
       className={cn(
         "absolute flex flex-col overflow-hidden bg-surface",
         window.maximized ? "inset-0" : "rounded-lg",
@@ -38,7 +47,7 @@ export function KagoWindow({ window, icon, titleExtra, className, children, ...p
       >
         {/* Hovering any light reveals all three glyphs, and wakes the colours of an unfocused window. */}
         <div className="group/lights flex items-center gap-2">
-          <TrafficLight label="關閉視窗（⌥W）" tone="danger" icon={X} focused={window.focused} onClick={() => store().closeWindow(window.id)} />
+          <TrafficLight label="關閉視窗（⌥W）" tone="danger" icon={X} focused={window.focused} onClick={() => void requestCloseWindow(window.id)} />
           <TrafficLight label="最小化" tone="warning" icon={Minus} focused={window.focused} onClick={() => update({ minimized: true })} />
           <TrafficLight
             label={window.maximized ? "還原大小" : "最大化"}
