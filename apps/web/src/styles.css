@@ -508,7 +508,9 @@
   /* Whatever a window adds to its title bar goes at the other end, as wide as the controls so the title stays centred. */
   .kago-window-extra {
     display: flex;
-    min-width: 72px;
+    min-width: 74px;
+    /* Its buttons are 24px in a 36px bar: pulled 2px outwards so they sit 6px from the edge, as they do from the top, and line up with a footer's. */
+    margin-right: -2px;
     justify-content: flex-end;
   }
 
@@ -520,6 +522,8 @@
 
   :root[data-window-controls="right"] .kago-window-extra {
     order: -1;
+    margin-right: 0;
+    margin-left: -2px;
     justify-content: flex-start;
   }
 
