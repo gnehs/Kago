@@ -82,17 +82,24 @@ export class Thumbnailer {
       }
       // A tenth of the way in is past most title cards; the very first frame is tried when nothing is there.
       const seeks = kind === "video" ? [(await this.duration(source)) * 0.1, 0].filter((seek, index) => index > 0 || seek > 0) : [null];
+      let reason = "no frame to draw";
       for (const seek of seeks) {
-        const input = seek === null ? ["-i", picture] : ["-ss", seek.toFixed(2), "-i", picture, "-an", "-sn", "-dn"];
+        // Past the start only keyframes are decoded: landing between two would mean decoding every frame up to that point,
+        // which for 4K HEVC with keyframes ten seconds apart outlasts the timeout on a slow machine.
+        const input = seek === null ? ["-i", picture] : [...(seek > 0 ? ["-skip_frame", "nokey"] : []), "-ss", seek.toFixed(2), "-i", picture, "-an", "-sn", "-dn"];
         try {
-          await execFileAsync(this.ffmpeg, ["-v", "error", "-nostdin", "-y", ...input, "-filter_complex", FILTER, "-map", "[out]", "-frames:v", "1", ...encoder, "-f", "avif", partial], { timeout: TIMEOUT_MS });
-          if ((await fsp.stat(partial)).size === 0) continue;
+          const { stderr } = await execFileAsync(this.ffmpeg, ["-v", "warning", "-nostdin", "-y", ...input, "-filter_complex", FILTER, "-map", "[out]", "-frames:v", "1", ...encoder, "-f", "avif", partial], { timeout: TIMEOUT_MS });
+          // With no frame after the seek, ffmpeg still succeeds and leaves a file that is only a header.
+          if (stderr.includes("Output file is empty")) continue;
           await fsp.rename(partial, target);
           return target;
-        } catch {
+        } catch (error) {
           // Tried again from the start of the video, or given up on below.
+          const failure = error as { killed?: boolean; stderr?: string; message: string };
+          reason = failure.killed ? `timed out after ${TIMEOUT_MS / 1000}s` : failure.stderr?.trim().split("\n").at(-1) || failure.message;
         }
       }
+      logger.warn(`no thumbnail for ${source}`, reason);
       return null;
     } finally {
       await Promise.all([fsp.rm(partial, { force: true }), fsp.rm(prepared, { force: true })]);
