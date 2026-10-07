@@ -12,10 +12,10 @@ const IDLE_MS = 2500;
 const SEEK_STEP = 5;
 const VOLUME_STEP = 0.1;
 /** The room the control bar takes at the bottom of the picture, in pixels. */
-const CONTROLS_HEIGHT = 68;
+const CONTROLS_HEIGHT = 74;
 
 /** Classes that put a ghost control on the player's dark bar, whatever the app theme is. */
-export const PLAYER_CONTROL_CLASS = "text-white/85 hover:bg-white/15 hover:text-white data-[popup-open]:bg-white/15 data-[popup-open]:text-white";
+export const PLAYER_CONTROL_CLASS = "text-white/80 hover:text-white data-[popup-open]:text-white";
 
 /** Chromium's Document Picture-in-Picture: a floating window that holds page content, not just a video's frames. */
 const documentPip = (globalThis as { documentPictureInPicture?: { requestWindow: (options: { width: number; height: number }) => Promise<Window> } }).documentPictureInPicture;
@@ -339,11 +339,11 @@ export function VideoPlayer({
 
       {(notice ?? (loading ? "載入中…" : null)) ? (
         <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-center">
-          <span className="rounded-full bg-black/75 px-3 py-1 text-xs text-white">{notice ?? "載入中…"}</span>
+          <span className="kago-player-glass rounded-full px-3 py-1 text-xs">{notice ?? "載入中…"}</span>
         </div>
       ) : playing ? null : (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <span className="flex size-14 items-center justify-center rounded-full bg-black/60 text-white">
+          <span className="kago-player-glass flex size-14 items-center justify-center rounded-full">
             <Play className="size-6! translate-x-0.5 fill-current" />
           </span>
         </div>
@@ -351,7 +351,7 @@ export function VideoPlayer({
 
       <div
         className={cn(
-          "absolute inset-x-2 bottom-2 flex flex-col rounded-md bg-black/75 px-2 pt-1 pb-1 text-white transition-opacity duration-150",
+          "kago-player-glass absolute inset-x-2 bottom-2 flex flex-col gap-0.5 rounded-lg px-2.5 pt-1.5 pb-1.5 transition-opacity duration-150",
           controlsShown ? "opacity-100" : "pointer-events-none opacity-0"
         )}
         onFocus={wake}
@@ -366,13 +366,13 @@ export function VideoPlayer({
           // Committed on release: every seek in a transcoded stream may restart the encoder.
           onCommit={seekTo}
         />
-        <div className="flex items-center gap-0.5">
+        <div className="flex items-center gap-1">
           {previous !== undefined ? (
             <PlayerButton label={previous ? `上一部：${previous.label}（⇧P）` : "沒有上一部"} disabled={!previous} onClick={() => previous?.go()}>
               <SkipBack className="fill-current" />
             </PlayerButton>
           ) : null}
-          <PlayerButton label={playing ? "暫停（空白鍵）" : "播放（空白鍵）"} onClick={togglePlay}>
+          <PlayerButton label={playing ? "暫停（空白鍵）" : "播放（空白鍵）"} className="kago-player-key mx-1 size-8 rounded-full" onClick={togglePlay}>
             {playing ? <Pause className="fill-current" /> : <Play className="fill-current" />}
           </PlayerButton>
           {next !== undefined ? (
@@ -391,7 +391,7 @@ export function VideoPlayer({
             format={(volume) => `${Math.round(volume * 100)}%`}
             onChange={(volume) => changeSound(volume, false)}
           />
-          <span className="min-w-0 truncate px-1.5 text-xs text-white/85 tabular-nums">
+          <span className="min-w-0 truncate px-1.5 text-xs text-white/80 tabular-nums">
             {formatClock(time, long)} / {formatClock(duration, long)}
           </span>
           <div className="flex-1" />
@@ -522,16 +522,16 @@ function Slider({
       onPointerUp={(event) => end(event, true)}
       onPointerCancel={(event) => end(event, false)}
     >
-      <div className="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 overflow-hidden rounded-full bg-white/25">
-        <div className="absolute inset-y-0 left-0 bg-white/30" style={{ width: percent(loaded) }} />
-        <div className="absolute inset-y-0 left-0 bg-white" style={{ width: percent(shown) }} />
+      <div className="kago-player-track absolute inset-x-0 top-1/2 h-1.5 -translate-y-1/2 overflow-hidden rounded-full">
+        <div className="absolute inset-y-0 left-0 bg-white/25" style={{ width: percent(loaded) }} />
+        <div className="kago-player-fill absolute inset-y-0 left-0 rounded-full" style={{ width: percent(shown) }} />
       </div>
       <div
-        className={cn("absolute top-1/2 size-3 -translate-1/2 rounded-full bg-white opacity-0 group-hover/slider:opacity-100", drag !== null && "opacity-100")}
+        className={cn("kago-player-knob absolute top-1/2 size-3.5 -translate-1/2 rounded-full opacity-0 group-hover/slider:opacity-100", drag !== null && "opacity-100")}
         style={{ left: percent(shown) }}
       />
       {hint === null ? null : (
-        <span className="pointer-events-none absolute bottom-full mb-1.5 -translate-x-1/2 rounded-sm bg-black/85 px-1.5 py-0.5 text-xs whitespace-nowrap text-white tabular-nums" style={{ left: percent(hint) }}>
+        <span className="kago-player-glass pointer-events-none absolute bottom-full mb-2 -translate-x-1/2 rounded-sm px-1.5 py-0.5 text-xs whitespace-nowrap tabular-nums" style={{ left: percent(hint) }}>
           {format(hint)}
         </span>
       )}
