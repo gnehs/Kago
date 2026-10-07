@@ -62,6 +62,7 @@
   --kago-chrome: var(--kago-grain), linear-gradient(#f7f8fa, #e7e9ed);
   --kago-toolbar: var(--kago-grain), linear-gradient(#e7e9ed, #dddfe4);
   --kago-chrome-edge: inset 0 1px 0 rgb(255 255 255 / 0.9);
+  --kago-badge-edge: inset 0 0.5px 0 rgb(255 255 255 / 0.75);
   --kago-chrome-inactive: linear-gradient(#f7f8fa, #f3f4f6);
   --kago-toolbar-inactive: linear-gradient(#f3f4f6, #eff0f3);
   --kago-raised: linear-gradient(#ffffff, #f9fafb 45%, #eef0f3);
@@ -144,6 +145,7 @@
   --kago-chrome: var(--kago-grain), linear-gradient(#3a3e44, #2e3136);
   --kago-toolbar: var(--kago-grain), linear-gradient(#2e3136, #26292d);
   --kago-chrome-edge: inset 0 1px 0 rgb(255 255 255 / 0.12);
+  --kago-badge-edge: inset 0 0.5px 0 rgb(255 255 255 / 0.1);
   --kago-chrome-inactive: linear-gradient(#2f3237, #2c2f34);
   --kago-toolbar-inactive: linear-gradient(#2c2f34, #292c30);
   --kago-raised: linear-gradient(#4b5058, #3d4148 45%, #33373c);
@@ -352,13 +354,12 @@
     box-shadow: var(--kago-chrome-edge);
   }
 
-  /* The bar of controls under a title bar carries on where it left off, and the bar at the foot of a window matches. */
+  /*
+   * The bar of controls under a title bar carries on where it left off, with a line between the two
+   * so that the title bar still reads as its own, and the bar at the foot of a window matches.
+   */
   .kago-toolbar {
     background: var(--kago-toolbar);
-  }
-
-  .kago-chrome:has(+ .kago-toolbar) {
-    border-bottom-color: transparent;
   }
 
   /*
@@ -385,6 +386,7 @@
    * each other, and what is on them fades, so that nothing on it looks ready to be pressed.
    */
   .kago-window[data-inactive] .kago-chrome {
+    border-color: var(--kago-border);
     background: var(--kago-chrome-inactive);
   }
 
@@ -469,12 +471,32 @@
     backdrop-filter: blur(24px) saturate(1.8);
   }
 
+  /*
+   * Says what something is and cannot be pressed: a badge, an avatar. A plate tinted with the colour of its own
+   * text, lit from above like everything else, but with a rim and no shadow, so that it lies on the surface.
+   * The rim is an opaque colour: a translucent one darkens wherever it lies over another line.
+   */
+  .kago-badge {
+    background: linear-gradient(color-mix(in srgb, currentColor 7%, var(--kago-surface)), color-mix(in srgb, currentColor 17%, var(--kago-surface)));
+    box-shadow:
+      0 0 0 0.5px color-mix(in srgb, currentColor 40%, var(--kago-surface)),
+      var(--kago-badge-edge);
+  }
+
   /* A row that is chosen: in a menu, a list or a sidebar. */
   .kago-selection,
   .kago-menu-item[data-highlighted] {
     color: #ffffff;
     background: var(--kago-selection);
     box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.18);
+  }
+
+  /* Chosen for good rather than passed over, as a section in a sidebar: it stands a little off the surface. */
+  .kago-selection-raised {
+    box-shadow:
+      0 0 0 0.5px var(--kago-primary-ring),
+      0 1px 2.5px rgb(8 30 90 / 0.3),
+      inset 0 1px 0 rgb(255 255 255 / 0.18);
   }
 
   /* A control with no body of its own: the surface gives a little under the pointer, and further when pressed. */

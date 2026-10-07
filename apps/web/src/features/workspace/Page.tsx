@@ -29,7 +29,7 @@ export function Card({ title, description, action, className, children }: { titl
   return (
     <section className={cn("rounded-lg border border-line", className)}>
       {title ? (
-        <header className="flex min-h-11 items-center gap-3 border-b border-line bg-elevated/60 py-1.5 pr-2 pl-4">
+        <header className="flex min-h-11 items-center gap-3 rounded-t-[inherit] border-b border-line bg-elevated/60 py-1.5 pr-2 pl-4">
           <div className="min-w-0 flex-1">
             <h2 className="m-0 font-semibold">{title}</h2>
             {description ? <p className="m-0 text-xs text-muted">{description}</p> : null}

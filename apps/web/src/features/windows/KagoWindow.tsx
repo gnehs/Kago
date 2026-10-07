@@ -44,7 +44,7 @@ export function KagoWindow({
       {...props}
     >
       <header
-        className="kago-chrome flex h-9 shrink-0 touch-none items-center gap-2 border-b border-line px-2 select-none"
+        className="kago-chrome flex h-9 shrink-0 touch-none items-center gap-2 border-b border-line-strong px-2 select-none"
         onDoubleClick={(event) => !isInteractiveTarget(event.target) && update({ maximized: !window.maximized })}
         {...moveHandlers}
       >

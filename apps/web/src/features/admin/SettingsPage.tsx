@@ -111,7 +111,7 @@ function AccountSettings({ user }: { user: Actor }) {
   return (
     <Card title={t("Account")}>
       <div className="flex items-center gap-3">
-        <span aria-hidden className="flex size-9 shrink-0 items-center justify-center rounded-full bg-accent-soft font-semibold text-accent">
+        <span aria-hidden className="kago-badge flex size-9 shrink-0 items-center justify-center rounded-full font-semibold text-accent">
           {(user.displayName || user.email).slice(0, 1).toUpperCase()}
         </span>
         <div className="flex min-w-0 flex-1 flex-col">
