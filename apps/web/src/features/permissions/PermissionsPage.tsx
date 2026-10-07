@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { KeyRound, Plus, X } from "lucide-react";
 import { api } from "@/api/client";
@@ -30,6 +30,13 @@ export function PermissionsPage({ roots }: { roots: Root[] }) {
   const [decisions, setDecisions] = useState<Partial<Record<PermissionAction, Decision>>>({ list: "allow", read: "allow", download: "allow" });
   const [recursive, setRecursive] = useState(true);
   const [creating, setCreating] = useState(false);
+  const form = useRef<HTMLFormElement>(null);
+
+  // The form opens under the rules, which may be a long list: it is brought into view rather than left below the fold.
+  useEffect(() => {
+    // It is taller than most windows, so its card is brought to the top: its title and first fields are what must show.
+    if (creating) form.current?.closest("section")?.scrollIntoView({ block: "start" });
+  }, [creating]);
   const rootName = roots.find((root) => root.id === rootId)?.name ?? "";
   const rules = usePermissions(rootId, Boolean(rootId));
   const normalizedPath = normalizeLogicalPath(pathPrefix);
@@ -82,8 +89,8 @@ export function PermissionsPage({ roots }: { roots: Root[] }) {
       </Card>
 
       {creating ? (
-      <Card title={t("Add a rule to “{rootName}”", { rootName })} action={<KagoIconButton label={t("Cancel adding")} onClick={() => setCreating(false)}><X /></KagoIconButton>}>
-        <form className="flex flex-col gap-4" onSubmit={save}>
+      <Card className="scroll-mt-5" title={t("Add a rule to “{rootName}”", { rootName })} action={<KagoIconButton label={t("Cancel adding")} onClick={() => setCreating(false)}><X /></KagoIconButton>}>
+        <form ref={form} className="flex flex-col gap-4" onSubmit={save}>
           <div className="grid grid-cols-2 gap-3">
             <Field label={t("Applies to")}>
               <Select value={principalType} onChange={(event) => { setPrincipalType(event.target.value as "user" | "group"); setPrincipalId(""); }}>

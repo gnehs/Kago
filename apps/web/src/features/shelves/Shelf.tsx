@@ -2,13 +2,13 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronUp, Inbox, X } from "lucide-react";
 import { api } from "@/api/client";
-import { useFileList, useShelves } from "@/api/hooks";
+import { useFileList, useRoots, useShelves } from "@/api/hooks";
 import { KagoBadge } from "@/components/kago/badge";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { Button } from "@/components/ui/button";
 import { FileIcon } from "@/features/files/FileIcon";
 import { KAGO_DRAG_TYPE, readDraggedFiles } from "@/features/files/useFileActions";
-import { ensureZipName, joinLogicalPath } from "@/lib/paths";
+import { displayPath, ensureZipName, joinLogicalPath } from "@/lib/paths";
 import { run } from "@/lib/run";
 import { isInteractiveTarget, usePointerDrag } from "@/lib/usePointerDrag";
 import { cn } from "@/lib/utils";
@@ -26,6 +26,7 @@ const MARGIN = 12;
 export function Shelf() {
   const queryClient = useQueryClient();
   const shelves = useShelves();
+  const roots = useRoots().data;
   const shelfState = useWorkspaceStore((state) => state.shelf);
   const active = useWorkspaceStore((state) => state.windows.find((window) => window.id === state.activeWindowId && !window.minimized));
   const activeList = useFileList(active?.rootSlug ?? "", active?.logicalPath ?? "/", Boolean(active));
@@ -103,6 +104,8 @@ export function Shelf() {
     });
   }
 
+  const where = (item: { root_slug: string; path: string }) => displayPath(roots?.find((root) => root.slug === item.root_slug)?.name ?? item.root_slug, item.path);
+
   async function remove(itemId: string) {
     await run(async () => {
       await api(`/api/shelves/${shelfId}/items/${itemId}`, { method: "DELETE" });
@@ -145,13 +148,13 @@ export function Shelf() {
                 key={item.id}
                 draggable
                 className="group flex h-9 items-center gap-2 rounded-[calc(var(--kago-radius-md)+1px)] [corner-shape:squircle] px-2 hover:bg-hover"
-                title={`${item.root_slug}:${item.path}`}
+                title={where(item)}
                 onDragStart={(event) => event.dataTransfer.setData(KAGO_DRAG_TYPE, JSON.stringify([{ rootSlug: item.root_slug, path: item.path }]))}
               >
                 <FileIcon item={{ kind: item.kind === "folder" ? "folder" : "file", type: "", name: item.name }} />
                 <span className="flex min-w-0 flex-1 flex-col leading-tight">
                   <span className="truncate">{item.name}</span>
-                  <span className="truncate text-xs text-faint">{item.root_slug}:{item.path}</span>
+                  <span className="truncate text-xs text-faint">{where(item)}</span>
                 </span>
                 <button aria-label={t("Remove {name} from Shelf", { name: item.name })} className="rounded-sm p-1 text-muted opacity-0 group-hover:opacity-100 kago-flat hover:text-ink focus-visible:opacity-100" onClick={() => void remove(item.id)}>
                   <X className="size-3.5" />

@@ -20,7 +20,7 @@ export function KagoSpinner({ className }: { className?: string }) {
 
 export function KagoLoading() {
   return (
-    <div className="flex items-center justify-center p-10">
+    <div className="kago-wait flex items-center justify-center p-10">
       <KagoSpinner className="size-5" />
     </div>
   );

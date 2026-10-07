@@ -51,7 +51,7 @@ export function useShortcuts({ enabled, onOpenPalette }: { enabled: boolean; onO
 
       if (closes) {
         event.preventDefault();
-        store.closeWindow(active.id);
+        void requestCloseWindow(active.id);
       } else if (opensNew) {
         event.preventDefault();
         store.openWindow({ rootSlug: active.rootSlug, logicalPath: active.logicalPath, title: active.title });

@@ -15,7 +15,7 @@ export function KagoContextMenu({ menu, children, className, ...props }: Omit<Co
       </ContextMenu.Trigger>
       <ContextMenu.Portal>
         <ContextMenu.Positioner className="z-[800] outline-none">
-          <ContextMenu.Popup className="kago-glass min-w-44 rounded-lg p-1 outline-none">{menu}</ContextMenu.Popup>
+          <ContextMenu.Popup className="kago-glass kago-pop min-w-44 rounded-lg p-1 outline-none">{menu}</ContextMenu.Popup>
         </ContextMenu.Positioner>
       </ContextMenu.Portal>
     </ContextMenu.Root>
@@ -58,14 +58,14 @@ export function KagoDropdownMenu({
       </Menu.Trigger>
       <Menu.Portal container={container ?? undefined}>
         <Menu.Positioner side={side} sideOffset={4} align="end" className="z-[800] outline-none">
-          <Menu.Popup className="kago-glass min-w-44 rounded-lg p-1 outline-none">{menu}</Menu.Popup>
+          <Menu.Popup className="kago-glass kago-pop min-w-44 rounded-lg p-1 outline-none">{menu}</Menu.Popup>
         </Menu.Positioner>
       </Menu.Portal>
     </Menu.Root>
   );
 }
 
-export function KagoMenuItem({ icon, destructive, className, children, ...props }: ComponentProps<typeof ContextMenu.Item> & { icon?: ReactNode; destructive?: boolean }) {
+export function KagoMenuItem({ icon, shortcut, destructive, className, children, ...props }: ComponentProps<typeof ContextMenu.Item> & { icon?: ReactNode; /** The keys that do the same, shown at the far end. */ shortcut?: string; destructive?: boolean }) {
   return (
     <ContextMenu.Item
       className={cn(
@@ -77,6 +77,7 @@ export function KagoMenuItem({ icon, destructive, className, children, ...props 
     >
       {icon}
       {children}
+      {shortcut ? <kbd className="ml-auto pl-6 font-sans text-xs tracking-wide opacity-55">{shortcut}</kbd> : null}
     </ContextMenu.Item>
   );
 }

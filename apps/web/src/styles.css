@@ -299,6 +299,12 @@
   ::selection {
     background: var(--kago-accent-soft);
   }
+
+  /* Scrollbars are a thin thumb with no track, whatever the platform draws by default. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--kago-text-faint) 55%, transparent) transparent;
+  }
 }
 
 /*
@@ -917,11 +923,82 @@
   color-scheme: light;
 }
 
+/*
+ * Motion, held to what an operating system does. Nothing is ever waited for: what was asked for has already
+ * happened by the time anything moves, and what moves is over in a fifth of a second. Menus and tooltips appear
+ * at once and only fade on their way out. No bounce, nothing arriving in turn, and dragging is never animated.
+ * Windows are moved by lib/motion.ts.
+ */
+@keyframes kago-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes kago-toast-in {
+  from {
+    opacity: 0;
+    translate: 0 8px;
+  }
+}
+
+@layer components {
+  /* A spinner only shows once the wait is long enough to be one; a quick answer never flashes it. */
+  .kago-wait {
+    animation: kago-fade 200ms ease-out 200ms both;
+  }
+
+  .kago-toast {
+    animation: kago-toast-in 160ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+
+  /* A menu, a popover or a tooltip is there at once, and fades when it is dismissed. */
+  .kago-pop[data-ending-style] {
+    opacity: 0;
+    transition: opacity 120ms ease-out;
+  }
+
+  /* A dialog comes forward as the desktop dims behind it, and both go at once. */
+  .kago-backdrop {
+    transition: opacity 140ms ease-out;
+  }
+
+  .kago-dialog {
+    transition:
+      opacity 140ms ease-out,
+      scale 140ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  .kago-backdrop[data-starting-style],
+  .kago-dialog[data-starting-style] {
+    opacity: 0;
+  }
+
+  .kago-dialog[data-starting-style] {
+    scale: 0.97;
+  }
+
+  :is(.kago-backdrop, .kago-dialog)[data-ending-style] {
+    opacity: 0;
+    transition: opacity 90ms ease-in;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
     animation-duration: 0ms !important;
+    animation-delay: 0ms !important;
     transition-duration: 0ms !important;
   }
+}
+
+/* Animations turned off in the settings: the same, except that something still turning says the wait is not over. */
+:root[data-motion="off"] :not(.animate-spin),
+:root[data-motion="off"] :not(.animate-spin)::before,
+:root[data-motion="off"] :not(.animate-spin)::after {
+  animation-duration: 0ms !important;
+  animation-delay: 0ms !important;
+  transition-duration: 0ms !important;
 }

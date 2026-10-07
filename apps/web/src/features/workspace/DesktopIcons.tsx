@@ -17,29 +17,41 @@ export function DesktopIcons({ roots, isAdmin }: { roots: Root[]; isAdmin: boole
 
   return (
     <div className="absolute inset-y-4 left-4 flex flex-col flex-wrap content-start gap-1">
-      {roots.map((root) => (
-        <KagoContextMenu
-          key={root.id}
-          menu={
-            <>
-              <KagoMenuItem icon={<FolderOpen />} onClick={() => store().openRoot(root)}>{t("Open")}</KagoMenuItem>
-              <KagoMenuItem icon={<ExternalLink />} onClick={() => openNew(root)}>{t("Open in new window")}</KagoMenuItem>
-            </>
-          }
-        >
-          <DesktopIcon
-            icon={GLYPHS.location}
-            tone={`var(--kago-app-${locationTone(root.slug)})`}
-            label={root.name}
-            readonly={Boolean(root.readonly)}
-            onClick={(event) => (event.metaKey || event.ctrlKey ? openNew(root) : store().openRoot(root))}
-            onAuxClick={(event) => event.button === 1 && openNew(root)}
-          />
-        </KagoContextMenu>
-      ))}
-      {roots.length > 0 ? <span aria-hidden className="mx-auto my-1.5 h-px w-10 bg-line-strong" /> : null}
-      <DesktopIcon icon={GLYPHS.shares} tone="var(--kago-app-share)" label={t("Shares")} onClick={() => store().openApp("shares")} />
-      <DesktopIcon icon={GLYPHS.trash} tone="var(--kago-app-trash)" label={t("Trash")} onClick={() => store().openApp("trash")} />
+      {roots.map((root, index) => {
+        const icon = (
+          <KagoContextMenu
+            key={root.id}
+            menu={
+              <>
+                <KagoMenuItem icon={<FolderOpen />} onClick={() => store().openRoot(root)}>{t("Open")}</KagoMenuItem>
+                <KagoMenuItem icon={<ExternalLink />} onClick={() => openNew(root)}>{t("Open in new window")}</KagoMenuItem>
+              </>
+            }
+          >
+            <DesktopIcon
+              icon={GLYPHS.location}
+              tone={`var(--kago-app-${locationTone(root.slug)})`}
+              label={root.name}
+              readonly={Boolean(root.readonly)}
+              onClick={(event) => (event.metaKey || event.ctrlKey ? openNew(root) : store().openRoot(root))}
+              onAuxClick={(event) => event.button === 1 && openNew(root)}
+            />
+          </KagoContextMenu>
+        );
+        if (index < roots.length - 1) return icon;
+        // The rule closes the locations, so it stays under the last of them when the tools start a column of their own.
+        return (
+          <div key={root.id} className="flex flex-col gap-1">
+            {icon}
+            <span aria-hidden className="mx-auto my-1.5 h-px w-10 bg-line-strong" />
+          </div>
+        );
+      })}
+      {/* One group, so that a column too short for everything never leaves one of the two on its own at the top of the next. */}
+      <div className="flex flex-col gap-1">
+        <DesktopIcon icon={GLYPHS.shares} tone="var(--kago-app-share)" label={t("Shares")} onClick={() => store().openApp("shares")} />
+        <DesktopIcon icon={GLYPHS.trash} tone="var(--kago-app-trash)" label={t("Trash")} onClick={() => store().openApp("trash")} />
+      </div>
       {roots.length === 0 ? (
         <p className="m-0 w-20 px-1 pt-2 text-center text-xs text-muted">{isAdmin ? t("No folders under /data yet") : t("No locations available. Contact an administrator")}</p>
       ) : null}

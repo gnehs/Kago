@@ -12,6 +12,7 @@ export function Login() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [refused, setRefused] = useState(0);
   const queryClient = useQueryClient();
 
   async function submit(event: React.FormEvent) {
@@ -23,13 +24,14 @@ export function Login() {
       await queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
     } catch (err) {
       setError(errorMessage(err, t("Couldn’t sign in")));
+      setRefused((count) => count + 1);
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <AuthCard title="Kago" subtitle={t("Sign in to continue")}>
+    <AuthCard title="Kago" subtitle={t("Sign in to continue")} refused={refused}>
       <form className="flex flex-col gap-3" onSubmit={submit}>
         <Field label="Email">
           <Input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="username" autoFocus />

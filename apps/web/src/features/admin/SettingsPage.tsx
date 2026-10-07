@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Monitor, Moon, PanelLeft, PanelRight, Sun } from "lucide-react";
+import { Monitor, Moon, PanelLeft, PanelRight, Sparkles, Sun, ZapOff } from "lucide-react";
 import { api, ApiError } from "@/api/client";
 import { KagoAvatar } from "@/components/kago/avatar";
 import { KagoBadge } from "@/components/kago/badge";
@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/input";
 import { Card, Page, SettingRow } from "@/features/workspace/Page";
 import { localeNames, setLocale, t } from "@/lib/i18n";
-import { getLocalePref, getTheme, getWindowControls, setTheme, setWindowControls, type LocalePref, type ThemePref, type WindowControlsPref } from "@/lib/prefs";
+import { getLocalePref, getMotion, getTheme, getWindowControls, setMotion, setTheme, setWindowControls, type LocalePref, type MotionPref, type ThemePref, type WindowControlsPref } from "@/lib/prefs";
 import { toast } from "@/stores/toast";
 import type { Actor } from "@/types/kago";
 import { roleLabels } from "./UsersPage";
@@ -21,6 +21,11 @@ const themes: Array<{ value: ThemePref; label: string; icon: React.ReactNode }> 
 const sides: Array<{ value: WindowControlsPref; label: string; icon: React.ReactNode }> = [
   { value: "left", label: t("Left"), icon: <PanelLeft /> },
   { value: "right", label: t("Right"), icon: <PanelRight /> }
+];
+
+const motions: Array<{ value: MotionPref; label: string; icon: React.ReactNode }> = [
+  { value: "on", label: t("On"), icon: <Sparkles /> },
+  { value: "off", label: t("Off"), icon: <ZapOff /> }
 ];
 
 /** One of a few, as a row of joined buttons. */
@@ -47,6 +52,7 @@ function Choice<T extends string>({ label, options, value, onChange }: { label: 
 export function SettingsPage({ user }: { user: Actor }) {
   const [theme, setThemeState] = useState(getTheme);
   const [side, setSide] = useState(getWindowControls);
+  const [motion, setMotionState] = useState(getMotion);
 
   return (
     <Page title={t("General")} description={t("How Kago looks in this browser, and your own account.")}>
@@ -77,6 +83,17 @@ export function SettingsPage({ user }: { user: Actor }) {
               onChange={(value) => {
                 setWindowControls(value);
                 setSide(value);
+              }}
+            />
+          </SettingRow>
+          <SettingRow label={t("Animations")} description={t("Windows, menus and dialogs come and go at once when this is off.")}>
+            <Choice
+              label={t("Animations")}
+              options={motions}
+              value={motion}
+              onChange={(value) => {
+                setMotion(value);
+                setMotionState(value);
               }}
             />
           </SettingRow>

@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { FileItem, FileWindow, Root, WorkspaceState } from "../types/kago";
+import { ghostWindowOut } from "../lib/motion";
 import { baseName } from "../lib/paths";
 import { randomId } from "../lib/utils";
 import { toast } from "./toast";
@@ -164,7 +165,18 @@ export function guardWindowClose(id: string, guard: () => Promise<boolean>) {
 /** Closes a window the way the user does: one with a guard gets to object first. */
 export async function requestCloseWindow(id: string) {
   const guard = closeGuards.get(id);
-  if (!guard || (await guard())) useWorkspaceStore.getState().closeWindow(id);
+  if (guard && !(await guard())) return;
+  ghostWindowOut(id, "close");
+  useWorkspaceStore.getState().closeWindow(id);
+}
+
+/** Puts windows away into the top bar. */
+export function minimizeWindows(ids: string[]) {
+  const store = useWorkspaceStore.getState();
+  for (const id of ids) {
+    ghostWindowOut(id, "minimize");
+    store.updateWindow(id, { minimized: true });
+  }
 }
 
 export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({

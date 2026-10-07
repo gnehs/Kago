@@ -225,17 +225,17 @@ export function FileWindowView({ window: win, rootName, isAdmin }: { window: Fil
     const count = targets.length;
     return targets.length > 0 ? (
       <>
-        {single ? <KagoMenuItem icon={<FolderOpen />} onClick={() => openItem(single)}>{t("Open")}</KagoMenuItem> : null}
+        {single ? <KagoMenuItem icon={<FolderOpen />} shortcut="↩" onClick={() => openItem(single)}>{t("Open")}</KagoMenuItem> : null}
         {single?.kind === "folder" ? <KagoMenuItem icon={<ExternalLink />} onClick={() => openItem(single, true)}>{t("Open in new window")}</KagoMenuItem> : null}
         {single?.kind === "file" && isVideoType(single.type) ? (
           <KagoMenuItem icon={<SquareArrowOutUpRight />} onClick={() => globalThis.open(videoPageUrl(win.rootSlug, single.path), "_blank", "noopener")}>{t("Play in new tab")}</KagoMenuItem>
         ) : null}
         <KagoMenuItem icon={<Download />} onClick={() => void actions.download(targets)}>{count > 1 ? t("Download {count} item | Download {count} items", { count }) : t("Download")}</KagoMenuItem>
         <KagoMenuItem icon={<Inbox />} onClick={() => void actions.addToShelf(paths)}>{t("Add to Shelf")}</KagoMenuItem>
-        <KagoMenuItem icon={<Info />} onClick={() => store().updateWindow(win.id, { inspectorOpen: true })}>{t("Info, tags and sharing")}</KagoMenuItem>
+        <KagoMenuItem icon={<Info />} shortcut="⌘I" onClick={() => store().updateWindow(win.id, { inspectorOpen: true })}>{t("Info, tags and sharing")}</KagoMenuItem>
         <KagoMenuSeparator />
-        <KagoMenuItem icon={<Copy />} onClick={() => actions.copy(paths)}>{t("Copy")}</KagoMenuItem>
-        <KagoMenuItem icon={<Scissors />} disabled={readonly || targets.some((item) => item.readonly)} onClick={() => actions.cut(paths)}>{t("Cut")}</KagoMenuItem>
+        <KagoMenuItem icon={<Copy />} shortcut="⌘C" onClick={() => actions.copy(paths)}>{t("Copy")}</KagoMenuItem>
+        <KagoMenuItem icon={<Scissors />} shortcut="⌘X" disabled={readonly || targets.some((item) => item.readonly)} onClick={() => actions.cut(paths)}>{t("Cut")}</KagoMenuItem>
         {single ? <KagoMenuItem icon={<Pencil />} disabled={readonly || single.readonly} onClick={() => void actions.rename(single)}>{t("Rename")}</KagoMenuItem> : null}
         <KagoMenuItem icon={<Archive />} disabled={readonly} onClick={() => void actions.compress(paths)}>{count > 1 ? t("Compress {count} item | Compress {count} items", { count }) : t("Compress")}</KagoMenuItem>
         {targets.every(isArchive) ? <KagoMenuItem icon={<ArchiveRestore />} disabled={readonly} onClick={() => void actions.extract(paths)}>{t("Extract here")}</KagoMenuItem> : null}
@@ -247,10 +247,10 @@ export function FileWindowView({ window: win, rootName, isAdmin }: { window: Fil
         <KagoMenuItem icon={<FolderPlus />} disabled={readonly} onClick={() => void actions.newFolder()}>{t("New folder")}</KagoMenuItem>
         <KagoMenuItem icon={<Upload />} disabled={readonly} onClick={() => uploadInput.current?.click()}>{t("Upload files")}</KagoMenuItem>
         <KagoMenuItem icon={<FolderUp />} disabled={readonly} onClick={() => folderInput.current?.click()}>{t("Upload folder")}</KagoMenuItem>
-        <KagoMenuItem icon={<ClipboardPaste />} disabled={readonly || !clip} onClick={() => void actions.paste()}>{clip ? t("Paste {count} item | Paste {count} items", { count: clip.items.length }) : t("Paste")}</KagoMenuItem>
+        <KagoMenuItem icon={<ClipboardPaste />} shortcut="⌘V" disabled={readonly || !clip} onClick={() => void actions.paste()}>{clip ? t("Paste {count} item | Paste {count} items", { count: clip.items.length }) : t("Paste")}</KagoMenuItem>
         <KagoMenuSeparator />
         <KagoMenuItem icon={<ExternalLink />} onClick={() => store().openWindow({ rootSlug: win.rootSlug, logicalPath: win.logicalPath, title: win.title })}>{t("Open this folder in a new window (⌥N)")}</KagoMenuItem>
-        <KagoMenuItem icon={<RefreshCw />} onClick={() => void actions.refresh()}>{t("Refresh")}</KagoMenuItem>
+        <KagoMenuItem icon={<RefreshCw />} shortcut="⌘R" onClick={() => void actions.refresh()}>{t("Refresh")}</KagoMenuItem>
       </>
     );
   }

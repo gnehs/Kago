@@ -1,8 +1,9 @@
 import { Maximize2, Minimize2, Minus, X, type LucideIcon } from "lucide-react";
-import type { ReactNode } from "react";
+import { useLayoutEffect, useRef, type ReactNode } from "react";
+import { animateWindowBox, animateWindowIn } from "@/lib/motion";
 import { isInteractiveTarget, usePointerDrag } from "@/lib/usePointerDrag";
 import { cn } from "@/lib/utils";
-import { clampWindowPosition, fitAspectSize, getCanvasSize, MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, requestCloseWindow, TITLEBAR_HEIGHT, useWorkspaceStore, type WindowFrame } from "@/stores/workspace";
+import { clampWindowPosition, fitAspectSize, getCanvasSize, MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, minimizeWindows, requestCloseWindow, TITLEBAR_HEIGHT, useWorkspaceStore, type WindowFrame } from "@/stores/workspace";
 import { t } from "@/lib/i18n";
 
 type ResizeEdge = "e" | "s" | "se";
@@ -25,10 +26,27 @@ export function KagoWindow({
     (origin, dx, dy) => update(clampWindowPosition(origin.x + dx, origin.y + dy, window.width))
   );
 
+  const element = useRef<HTMLElement>(null);
+  /** What the window looked like the last time it was drawn, to know what it is coming from. */
+  const last = useRef<{ minimized: boolean; maximized: boolean; box: { left: number; top: number; width: number; height: number } | null } | null>(null);
+
+  // A window is seen to arrive, to come back out of the top bar, and to grow or shrink when it is maximized.
+  // Moving and resizing by hand are never animated: the window is under the pointer and has to stay there.
+  useLayoutEffect(() => {
+    const node = element.current;
+    const shown = node && !window.minimized;
+    const box = shown ? { left: node.offsetLeft, top: node.offsetTop, width: node.offsetWidth, height: node.offsetHeight } : null;
+    const before = last.current;
+    if (shown && (!before || before.minimized)) animateWindowIn(node, window.id, Boolean(before?.minimized));
+    else if (shown && box && before?.box && before.maximized !== window.maximized) animateWindowBox(node, before.box, box, window.maximized);
+    last.current = { minimized: window.minimized, maximized: window.maximized, box };
+  });
+
   if (window.minimized && !keepMounted) return null;
 
   return (
     <section
+      ref={element}
       data-window={window.id}
       hidden={window.minimized}
       data-inactive={window.focused ? undefined : ""}
@@ -50,7 +68,7 @@ export function KagoWindow({
       >
         <div className="kago-window-controls">
           <WindowControl label={t("Close window (⌥W)")} closes icon={X} onClick={() => void requestCloseWindow(window.id)} />
-          <WindowControl label={t("Minimize")} icon={Minus} onClick={() => update({ minimized: true })} />
+          <WindowControl label={t("Minimize")} icon={Minus} onClick={() => minimizeWindows([window.id])} />
           <WindowControl label={window.maximized ? t("Restore size") : t("Maximize")} icon={window.maximized ? Minimize2 : Maximize2} onClick={() => update({ maximized: !window.maximized })} />
         </div>
         <div className={cn("flex min-w-0 flex-1 items-center justify-center gap-1.5 font-medium", !window.focused && "text-muted")}>

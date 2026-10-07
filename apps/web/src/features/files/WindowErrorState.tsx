@@ -4,7 +4,7 @@ import { useAdminContacts } from "@/api/hooks";
 import { KagoEmptyState } from "@/components/kago/empty-state";
 import { Button } from "@/components/ui/button";
 import { errorMessage } from "@/lib/format";
-import { useWorkspaceStore } from "@/stores/workspace";
+import { requestCloseWindow, useWorkspaceStore } from "@/stores/workspace";
 import type { FileWindow } from "@/types/kago";
 import { t } from "@/lib/i18n";
 
@@ -43,7 +43,7 @@ export function WindowErrorState({ error, window, onRetry }: { error: FileWindow
       {error.kind === "path_missing" ? <Button onClick={() => store().updateWindow(window.id, { logicalPath: "/", selectedItems: [] })}>{t("Go to the top level")}</Button> : null}
       {error.kind === "forbidden" && admins.length > 0 ? <Button onClick={requestAccess}>{t("Request access by email")}</Button> : null}
       {error.kind === "unknown" ? <Button onClick={onRetry}>{t("Retry")}</Button> : null}
-      <Button onClick={() => store().closeWindow(window.id)}>{t("Close window")}</Button>
+      <Button onClick={() => void requestCloseWindow(window.id)}>{t("Close window")}</Button>
     </KagoEmptyState>
   );
 }

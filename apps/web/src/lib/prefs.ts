@@ -159,11 +159,24 @@ export function setImageInfoOpen(open: boolean) {
   }
 }
 
+/** Whether windows and dialogs are seen to come and go. Off, everything simply appears and disappears. */
+export type MotionPref = "on" | "off";
+
+const motionKey = "kago.motion";
+
+export const getMotion = () => read<MotionPref>(motionKey, ["on", "off"], "on");
+
 export function applyPrefs() {
   const theme = getTheme();
   const resolved = theme === "system" ? (media?.matches ? "dark" : "light") : theme;
   document.documentElement.dataset.theme = resolved;
   document.documentElement.dataset.windowControls = getWindowControls();
+  document.documentElement.dataset.motion = getMotion();
+}
+
+export function setMotion(motion: MotionPref) {
+  localStorage.setItem(motionKey, motion);
+  applyPrefs();
 }
 
 export function setWindowControls(side: WindowControlsPref) {

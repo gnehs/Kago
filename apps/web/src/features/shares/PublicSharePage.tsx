@@ -29,6 +29,7 @@ export function PublicSharePage({ token }: { token: string }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [uploaded, setUploaded] = useState(false);
+  const [refused, setRefused] = useState(0);
 
   useEffect(() => {
     void loadShare();
@@ -53,6 +54,7 @@ export function PublicSharePage({ token }: { token: string }) {
       await loadShare();
     } catch (err) {
       setError(errorMessage(err, t("Couldn’t verify the password")));
+      setRefused((count) => count + 1);
     } finally {
       setBusy(false);
     }
@@ -82,7 +84,7 @@ export function PublicSharePage({ token }: { token: string }) {
   const subtitle = share?.mode === "upload_only" ? t("Upload files to this location") : t("Shared with Kago");
 
   return (
-    <AuthCard title={title} subtitle={subtitle}>
+    <AuthCard title={title} subtitle={subtitle} refused={refused}>
       <div className="flex flex-col gap-3">
         <FormError message={error} />
         {!share && !error ? <KagoLoading /> : null}

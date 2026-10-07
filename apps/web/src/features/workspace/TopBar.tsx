@@ -3,17 +3,18 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Popover } from "@base-ui/react/popover";
 import { ListChecks, LogOut, Search, Settings } from "lucide-react";
 import { api } from "@/api/client";
-import { useTasks } from "@/api/hooks";
+import { useRoots, useTasks } from "@/api/hooks";
 import { KagoSpinner } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { Button } from "@/components/ui/button";
 import { BrandMark } from "@/features/auth/AuthCard";
 import { TaskRow } from "@/features/tasks/TaskRow";
 import { isActiveTask, isQuietTask } from "@/features/tasks/taskUtils";
+import { displayPath } from "@/lib/paths";
 import { cn } from "@/lib/utils";
 import { FileIcon } from "@/features/files/FileIcon";
 import { appIcons } from "@/features/windows/AppWindow";
-import { useWorkspaceStore, type WindowFrame } from "@/stores/workspace";
+import { minimizeWindows, useWorkspaceStore, type WindowFrame } from "@/stores/workspace";
 import type { Actor } from "@/types/kago";
 import { t } from "@/lib/i18n";
 
@@ -26,12 +27,14 @@ export function TopBar({ user, onOpenPalette }: { user: Actor; onOpenPalette: ()
   const settingsFocused = appWindows.some((window) => window.app === "settings" && window.focused && !window.minimized);
   const ordered = [...windows, ...appWindows, ...previewWindows].sort((a, b) => a.createdAt - b.createdAt);
   const anyVisible = ordered.some((window) => !window.minimized);
+  const roots = useRoots().data;
+  const rootName = (slug: string) => roots?.find((root) => root.slug === slug)?.name ?? slug;
 
   /** Taskbar behaviour: restore or focus a window, or minimize it when it is already in front. */
   function activate(window: WindowFrame) {
     const store = useWorkspaceStore.getState();
     if (window.focused && !window.minimized) {
-      store.updateWindow(window.id, { minimized: true });
+      minimizeWindows([window.id]);
       return;
     }
     store.updateWindow(window.id, { minimized: false });
@@ -40,8 +43,12 @@ export function TopBar({ user, onOpenPalette }: { user: Actor; onOpenPalette: ()
 
   /** Clears the desktop by minimizing everything, or brings it all back when already clear. */
   function toggleDesktop() {
+    if (anyVisible) {
+      minimizeWindows(ordered.filter((window) => !window.minimized).map((window) => window.id));
+      return;
+    }
     const store = useWorkspaceStore.getState();
-    for (const window of ordered) store.updateWindow(window.id, { minimized: anyVisible });
+    for (const window of ordered) store.updateWindow(window.id, { minimized: false });
   }
 
   async function logout() {
@@ -64,7 +71,8 @@ export function TopBar({ user, onOpenPalette }: { user: Actor; onOpenPalette: ()
         {ordered.map((window) => (
           <button
             key={window.id}
-            title={"rootSlug" in window ? `${window.rootSlug}:${window.logicalPath}` : "preview" in window ? `${window.preview.rootSlug}:${window.preview.item.path}` : window.title}
+            data-dock={window.id}
+            title={"rootSlug" in window ? displayPath(rootName(window.rootSlug), window.logicalPath) : "preview" in window ? displayPath(rootName(window.preview.rootSlug), window.preview.item.path) : window.title}
             aria-pressed={window.focused && !window.minimized}
             className={cn(
               "flex h-7 max-w-40 min-w-0 items-center gap-1.5 rounded-md px-2 outline-none focus-visible:ring-2 focus-visible:ring-accent/50",
@@ -119,7 +127,7 @@ function TaskStatus() {
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Positioner sideOffset={6} align="end" className="z-[700]">
-          <Popover.Popup className="kago-glass flex w-80 flex-col rounded-lg outline-none">
+          <Popover.Popup className="kago-glass kago-pop flex w-80 flex-col rounded-lg outline-none">
             {visible.length === 0 ? (
               <p className="m-0 px-4 py-6 text-center text-muted">{t("No tasks right now")}</p>
             ) : (

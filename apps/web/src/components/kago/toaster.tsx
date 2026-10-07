@@ -12,7 +12,7 @@ export function KagoToaster() {
     <div className="pointer-events-none fixed bottom-5 left-1/2 z-[1000] flex -translate-x-1/2 flex-col items-center gap-2" role="status" aria-live="polite">
       {uploads.map((upload) => <UploadCard key={upload.id} upload={upload} />)}
       {toasts.map((toast) => (
-        <div key={toast.id} className={cn("pointer-events-auto flex max-w-md items-center gap-2 kago-glass rounded-md py-1.5 pr-1.5 pl-3", toast.kind === "error" && "text-danger")}>
+        <div key={toast.id} className={cn("kago-toast pointer-events-auto flex max-w-md items-center gap-2 kago-glass rounded-md py-1.5 pr-1.5 pl-3", toast.kind === "error" && "text-danger")}>
           {toast.kind === "error" ? <CircleAlert /> : null}
           <span>{toast.message}</span>
           <button className="rounded-sm p-1 text-muted kago-flat" aria-label={t("Dismiss notification")} onClick={() => dismiss(toast.id)}>
@@ -36,7 +36,7 @@ function UploadCard({ upload }: { upload: Upload }) {
         upload.speed > 0 ? t("{duration} left", { duration: formatDuration((upload.total - upload.loaded) / upload.speed) }) : null
       ].filter(Boolean).join(" · ");
   return (
-    <div className="pointer-events-auto flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-1.5 kago-glass rounded-lg py-2 pr-1.5 pl-3" aria-live="off">
+    <div className="kago-toast pointer-events-auto flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-1.5 kago-glass rounded-lg py-2 pr-1.5 pl-3" aria-live="off">
       <div className="flex items-center gap-2">
         <span className="min-w-0 flex-1 truncate">{t("Uploading {name}", { name: upload.label })}</span>
         <span className="text-xs text-muted tabular-nums">{percent}%</span>

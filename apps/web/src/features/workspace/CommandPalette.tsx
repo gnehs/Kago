@@ -2,7 +2,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { Dialog } from "@base-ui/react/dialog";
 import { Clock, Folder, HardDrive, KeyRound, ScrollText, Search, UserRound, UsersRound } from "lucide-react";
 import { appIcons } from "@/features/windows/AppWindow";
-import { baseName, nfc, normalizeLogicalPath } from "@/lib/paths";
+import { baseName, displayPath, nfc, normalizeLogicalPath } from "@/lib/paths";
 import { cn } from "@/lib/utils";
 import { useRecentStore, type RecentFolder } from "@/stores/recent";
 import { useWorkspaceStore, type AppKind, type SettingsSection } from "@/stores/workspace";
@@ -30,7 +30,9 @@ function suggestions(query: string, roots: Root[], activeRootSlug: string | unde
   const pushFolder = (rootSlug: string, logicalPath: string, label: string, icon: ReactNode) => {
     const key = `${rootSlug}:${logicalPath}`;
     if (results.has(key)) return;
-    results.set(key, { key, label, hint: key, icon, open: () => useWorkspaceStore.getState().openWindow({ rootSlug, logicalPath, title: label }) });
+    const rootName = roots.find((root) => root.slug === rootSlug)?.name ?? rootSlug;
+    // The location itself is already named by its label.
+    results.set(key, { key, label, hint: logicalPath === "/" ? "" : displayPath(rootName, logicalPath), icon, open: () => useWorkspaceStore.getState().openWindow({ rootSlug, logicalPath, title: label }) });
   };
   const pushPath = (root: Root, rawPath: string) => {
     const logicalPath = normalizeLogicalPath(rawPath);
