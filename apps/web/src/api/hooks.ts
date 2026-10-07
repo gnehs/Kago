@@ -1,5 +1,6 @@
 import { keepPreviousData, useMutation, useQueries, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { api } from "./client";
+import { isTrashing, useTrashingStore } from "../stores/trashing";
 import type { Actor, AuditLog, FileList, FileMeta, FileTask, Group, ImageMetadata, MediaInfo, PermissionRule, Root, ShareLink, Shelf, SqlitePage, SqliteTable, SubtitleList, Tag, TrashItem, UserAccount, WorkspaceState } from "../types/kago";
 
 export function useSetupStatus() {
@@ -38,10 +39,19 @@ export function useSaveWorkspace() {
   });
 }
 
+/** A listing without the items already on their way to the Trash. */
+function useWithoutTrashing() {
+  const trashing = useTrashingStore((state) => state.tasks);
+  return (list: FileList): FileList =>
+    Object.keys(trashing).length === 0 ? list : { ...list, items: list.items.filter((item) => !isTrashing(trashing, list.rootSlug, item.path)) };
+}
+
 export function useFileList(rootSlug: string, path: string, enabled = true) {
+  const select = useWithoutTrashing();
   return useQuery({
     queryKey: ["fs", "list", rootSlug, path],
     queryFn: () => api<FileList>(`/api/fs/list?${new URLSearchParams({ rootSlug, path }).toString()}`),
+    select,
     enabled
   });
 }
@@ -50,11 +60,13 @@ const folderContents = (results: UseQueryResult<FileList>[]) => results.map((res
 
 /** The contents of several folders at once, in the order asked; a folder still loading has none yet. */
 export function useFolderContents(rootSlug: string, paths: string[]) {
+  const select = useWithoutTrashing();
   return useQueries({
     // Same keys as `useFileList`, so whatever refreshes a folder's window refreshes it here too.
     queries: paths.map((path) => ({
       queryKey: ["fs", "list", rootSlug, path],
-      queryFn: () => api<FileList>(`/api/fs/list?${new URLSearchParams({ rootSlug, path }).toString()}`)
+      queryFn: () => api<FileList>(`/api/fs/list?${new URLSearchParams({ rootSlug, path }).toString()}`),
+      select
     })),
     combine: folderContents
   });

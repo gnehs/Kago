@@ -5,6 +5,7 @@ import { pendingDownloads } from "@/features/files/useFileActions";
 import { taskErrorLabel, taskTypeLabel } from "@/features/tasks/taskUtils";
 import { triggerDownload } from "@/lib/paths";
 import { toast } from "@/stores/toast";
+import { showTrashing, useTrashingStore } from "@/stores/trashing";
 import type { FileTask } from "@/types/kago";
 import { t } from "@/lib/i18n";
 
@@ -41,13 +42,18 @@ export function useRealtime(userId: string, onRemoteWorkspaceChange: () => void)
     }
 
     function handleMessage(event: MessageEvent) {
-      const message = JSON.parse(event.data) as { type?: string; userId?: string; taskId?: string; error?: string };
+      const message = JSON.parse(event.data) as { type?: string; userId?: string; taskId?: string; error?: string; patch?: { status?: string } };
       const type = String(message.type);
       if (type.startsWith("task.")) {
         // Admins also receive other people's task events; only announce your own.
         if ((type === "task.done" || type === "task.failed") && message.userId === userId && message.taskId) announceTask(type, message.taskId, message.error);
         invalidate("tasks");
-        if (type === "task.done") invalidate("fs", "trash");
+        if (type === "task.done") invalidate("trash");
+        // A failed or cancelled move to the Trash leaves items behind, which the fresh listing brings back.
+        if (type === "task.done" || type === "task.failed" || message.patch?.status === "cancelled") {
+          const { taskId } = message;
+          void queryClient.invalidateQueries({ queryKey: ["fs"] }).finally(() => showTrashing(taskId));
+        }
       }
       if (type === "shelf.updated") invalidate("shelves");
       if (type === "share.updated") invalidate("shares");
@@ -69,6 +75,8 @@ export function useRealtime(userId: string, onRemoteWorkspaceChange: () => void)
         }
         retryCount = 0;
         invalidate("tasks", "shelves", "shares", "permissions", "roots");
+        // Whatever settled while the socket was away went unheard.
+        if (Object.keys(useTrashingStore.getState().tasks).length > 0) void queryClient.invalidateQueries({ queryKey: ["fs"] }).finally(() => showTrashing());
       };
       ws.onmessage = handleMessage;
       ws.onerror = () => ws.close();

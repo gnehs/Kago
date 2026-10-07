@@ -9,7 +9,7 @@ import { KagoIconButton } from "@/components/kago/icon-button";
 import { Button } from "@/components/ui/button";
 import { BrandMark } from "@/features/auth/AuthCard";
 import { TaskRow } from "@/features/tasks/TaskRow";
-import { isActiveTask } from "@/features/tasks/taskUtils";
+import { isActiveTask, isQuietTask } from "@/features/tasks/taskUtils";
 import { cn } from "@/lib/utils";
 import { FileIcon } from "@/features/files/FileIcon";
 import { appIcons } from "@/features/windows/AppWindow";
@@ -98,7 +98,7 @@ export function TopBar({ user, onOpenPalette }: { user: Actor; onOpenPalette: ()
 function TaskStatus() {
   const tasks = useTasks();
   const [open, setOpen] = useState(false);
-  const all = tasks.data ?? [];
+  const all = (tasks.data ?? []).filter((task) => !isQuietTask(task));
   const activeCount = all.filter(isActiveTask).length;
   // Active tasks first, then the most recent finished ones.
   const visible = [...all.filter(isActiveTask), ...all.filter((task) => !isActiveTask(task))].slice(0, 5);

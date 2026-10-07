@@ -6,6 +6,7 @@ import type { UploadTree } from "@/lib/uploadTree";
 import { useClipboardStore, type FileRef } from "@/stores/clipboard";
 import { promptText } from "@/stores/dialogs";
 import { toast } from "@/stores/toast";
+import { hideTrashing } from "@/stores/trashing";
 import { isUploadCancelled, uploadForm, uploadLabel } from "@/stores/uploads";
 import { useWorkspaceStore } from "@/stores/workspace";
 import type { FileItem, FileTask, FileWindow } from "@/types/kago";
@@ -131,9 +132,11 @@ export function useFileActions(window: FileWindow) {
       }, t("Couldn’t rename")),
     trash: (paths: string[]) =>
       run(async () => {
-        await createTask(queryClient, { type: "delete_to_trash", sources: refs(paths) });
+        const sources = refs(paths);
+        const task = await createTask(queryClient, { type: "delete_to_trash", sources });
+        // The server moves them in the background; here they are gone at once.
+        hideTrashing(task.id, sources);
         clearSelection();
-        await refreshRoot();
         toast(t("Moved {count} item to Trash | Moved {count} items to Trash", { count: paths.length }));
       }),
     compress: (paths: string[]) =>
