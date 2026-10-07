@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 export function Page({ title, description, actions, children }: { title?: string; description?: string; actions?: ReactNode; children: ReactNode }) {
   return (
     <div className="@container min-h-0 min-w-0 flex-1 overflow-y-auto">
-      <div className="mx-auto flex max-w-3xl flex-col gap-4 p-5">
+      <div className="mx-auto flex min-h-full max-w-3xl flex-col gap-4 p-5 [&>[data-empty]]:flex-1">
         {title || description || actions ? (
           <header className="flex min-h-(--kago-control-h) items-center gap-4">
             <div className="min-w-0 flex-1">

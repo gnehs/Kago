@@ -5,8 +5,8 @@ import { t } from "@/lib/i18n";
 
 export function KagoEmptyState({ icon, title, description, className, children }: { icon?: ReactNode; title: string; description?: string; className?: string; children?: ReactNode }) {
   return (
-    <div className={cn("flex flex-col items-center justify-center gap-1.5 px-6 py-10 text-center text-muted [&>.lucide]:mb-1 [&>.lucide]:size-8 [&>.lucide]:text-faint", className)}>
-      {icon}
+    <div data-empty="" className={cn("flex flex-col items-center justify-center gap-1.5 px-6 py-10 text-center text-muted", className)}>
+      {icon ? <span className="kago-badge mb-2 flex size-12 items-center justify-center rounded-full text-faint [&>.lucide]:size-5">{icon}</span> : null}
       <strong className="font-medium text-ink">{title}</strong>
       {description ? <span className="max-w-xs">{description}</span> : null}
       {children ? <div className="mt-2 flex flex-wrap justify-center gap-2">{children}</div> : null}

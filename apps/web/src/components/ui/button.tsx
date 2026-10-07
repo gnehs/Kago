@@ -7,7 +7,7 @@ export const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "kago-primary",
+        default: "kago-primary disabled:opacity-100",
         outline: "kago-raised text-ink",
         ghost: "kago-flat text-muted hover:text-ink",
         destructive: "kago-raised text-danger"
