@@ -4,13 +4,14 @@ import { KagoEmptyState } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { Button } from "@/components/ui/button";
 import { KagoWindow } from "@/features/windows/KagoWindow";
-import { formatSize, hasTextName, isAudioType, isSqliteFile, isTextFile, isVideoType, kindLabel, MAX_TEXT_BYTES, officeKind } from "@/lib/format";
+import { formatSize, hasTextName, isAudioType, isSplatFile, isSqliteFile, isTextFile, isVideoType, kindLabel, MAX_TEXT_BYTES, officeKind } from "@/lib/format";
 import { triggerDownload } from "@/lib/paths";
 import type { PreviewWindow } from "@/stores/workspace";
 import { FileIcon } from "./FileIcon";
 import { ImagePreviewWindow, isViewableImage } from "./ImagePreview";
 import { OfficePreviewWindow } from "./OfficePreview";
 import { PdfPreviewWindow } from "./PdfPreview";
+import { SplatPreviewWindow } from "./SplatPreview";
 import { SqlitePreviewWindow } from "./SqlitePreview";
 import { TextPreviewWindow } from "./TextPreview";
 import { VideoPreviewWindow } from "./VideoPreview";
@@ -30,6 +31,7 @@ export function PreviewWindowView({ window }: { window: PreviewWindow }) {
   const office = officeKind(item);
   if (office) return <OfficePreviewWindow window={window} kind={office} />;
   if (isViewableImage(item)) return <ImagePreviewWindow window={window} />;
+  if (isSplatFile(item)) return <SplatPreviewWindow window={window} />;
   const source = previewUrl(rootSlug, item.path);
   const download = () => triggerDownload(downloadUrl(rootSlug, item.path));
   return (

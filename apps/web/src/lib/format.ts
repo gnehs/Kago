@@ -79,6 +79,9 @@ export function hasTextName(value: string) {
 export const isSqliteFile = (item: Pick<FileItem, "kind" | "type" | "name">) =>
   item.kind === "file" && (item.type === "application/vnd.sqlite3" || item.type === "application/x-sqlite3" || ["sqlite", "sqlite3", "db", "db3", "s3db", "sl3"].includes(extensionOf(item.name)));
 
+/** Gaussian splat scenes. `.ply` is a guess, since a mesh is saved under the same name; the viewer reads the header before drawing it. */
+export const isSplatFile = (item: Pick<FileItem, "kind" | "name">) => item.kind === "file" && ["ply", "sog", "splat"].includes(extensionOf(item.name));
+
 export type OfficeKind = "document" | "sheet" | "slides";
 
 const OFFICE_KINDS: Record<string, OfficeKind> = { docx: "document", xlsx: "sheet", xlsm: "sheet", xls: "sheet", ods: "sheet", pptx: "slides" };
