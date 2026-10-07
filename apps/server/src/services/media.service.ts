@@ -8,7 +8,7 @@ import { z } from "zod";
 import { AppError } from "../lib/errors.js";
 import { id as createId } from "../lib/ids.js";
 import { logger } from "../lib/logger.js";
-import { streamLanguage, type SubtitleFormat } from "../lib/subtitles.js";
+import { streamLanguage, type PictureSubtitleFormat, type SubtitleFormat } from "../lib/subtitles.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -17,8 +17,10 @@ export const mediaSessionSchema = z.object({
   path: z.string().min(1),
   height: z.number().int().min(144).max(4320),
   audioIndex: z.number().int().min(0).max(63).default(0),
-  /** A picture subtitle to draw into the frames, numbered among the file's subtitle streams. */
+  /** A picture subtitle to draw into the frames, numbered among the subtitle streams of the file it is in. */
   subtitleIndex: z.number().int().min(0).max(255).nullable().default(null),
+  /** The file that subtitle is in, when it lies next to the video rather than inside it. */
+  subtitlePath: z.string().min(1).nullable().default(null),
   /** Whether the player's screen and browser can show HDR; otherwise an HDR source is tone-mapped to SDR. */
   hdr: z.boolean().default(false)
 });
@@ -54,6 +56,9 @@ export type MediaInfo = {
 
 type Hdr = "pq" | "hlg";
 
+/** A picture subtitle file beside the video. */
+export type PictureSubtitleFile = { absolutePath: string; stat: fs.Stats; format: PictureSubtitleFormat };
+
 type Encoder = "software" | "nvenc" | "vaapi" | "vaapi-cqp" | "videotoolbox";
 
 /** How one encoder is driven: what goes before the input, after the scaler, and in place of libx264. */
@@ -79,6 +84,7 @@ type Session = {
   height: number;
   audioIndex: number;
   subtitleIndex: number | null;
+  subtitleFile: PictureSubtitleFile | null;
   /** HDR in, HDR out. Such a stream is HEVC in fragmented MP4, the one form of it browsers take over HLS. */
   hdr: boolean;
   segmentCount: number;
@@ -118,6 +124,10 @@ const TRANSFER: Record<Hdr, string> = { pq: "smpte2084", hlg: "arib-std-b67" };
  */
 const SUBTITLE_LEVEL: Record<Hdr, number> = { pq: 0.58, hlg: 0.75 };
 const INIT_SEGMENT = "init.mp4";
+/** The demuxer each kind of subtitle file is read with. It is named outright, so what is in the file cannot pick another. */
+const SUBTITLE_DEMUXER: Record<PictureSubtitleFormat, string> = { pgs: "sup", vobsub: "vobsub" };
+/** How far before the video a subtitle file starts being read, so a line already on screen at that point is there. */
+const SUBTITLE_LEAD_SECONDS = 120;
 /** Reading a subtitle stream out means reading through the whole file, which takes a while on a large one. */
 const EXTRACT_TIMEOUT_MS = 180_000;
 const EXTRACT_KEEP = 24;
@@ -139,6 +149,7 @@ export class MediaService {
   private tonemap: Tonemap | null = null;
   private readonly sessions = new Map<string, Session>();
   private readonly probes = new Map<string, Omit<MediaInfo, "transcode" | "encoder" | "hdrOutput" | "tonemap">>();
+  private readonly subtitleProbes = new Map<string, Array<{ index: number; language: string }>>();
   private readonly ticker: NodeJS.Timeout;
 
   constructor(appDataDir: string) {
@@ -185,6 +196,27 @@ export class MediaService {
     return { file, format };
   }
 
+  /** The streams of a picture subtitle file: one in a Blu-ray `.sup`, one for each language in a DVD index. */
+  async pictureStreams(file: PictureSubtitleFile): Promise<Array<{ index: number; language: string }>> {
+    if (!(await this.available)) return [];
+    const key = `${file.absolutePath}:${file.stat.mtimeMs}:${file.stat.size}`;
+    let streams = this.subtitleProbes.get(key);
+    if (!streams) {
+      try {
+        const result = await execFileAsync(this.ffprobe, ["-v", "error", "-f", SUBTITLE_DEMUXER[file.format], "-print_format", "json", "-show_streams", file.absolutePath], { timeout: 20_000, maxBuffer: 8 * 1024 * 1024 });
+        const found = (JSON.parse(result.stdout) as { streams?: Array<Record<string, any>> }).streams ?? [];
+        streams = found
+          .filter((stream) => PICTURE_SUBTITLES.has(String(stream.codec_name ?? "")))
+          .map((stream, index) => ({ index, language: streamLanguage(String(stream.tags?.language ?? ""), "") }));
+      } catch {
+        streams = [];
+      }
+      if (this.subtitleProbes.size >= 200) this.subtitleProbes.delete(this.subtitleProbes.keys().next().value!);
+      this.subtitleProbes.set(key, streams);
+    }
+    return streams;
+  }
+
   /** A font attached to the file, e.g. the ones a Matroska release carries for its styled subtitles. */
   async font(absolutePath: string, stat: fs.Stats, index: number): Promise<string> {
     if (!(await this.info(absolutePath, stat)).fonts.some((item) => item.index === index)) throw new AppError(404, "Attachment not found", "NOT_FOUND");
@@ -219,12 +251,14 @@ export class MediaService {
     return pending;
   }
 
-  async createSession(actorId: string, absolutePath: string, stat: fs.Stats, options: { height: number; audioIndex: number; subtitleIndex: number | null; hdr: boolean }) {
+  async createSession(actorId: string, absolutePath: string, stat: fs.Stats, options: { height: number; audioIndex: number; subtitleIndex: number | null; subtitleFile?: PictureSubtitleFile | null; hdr: boolean }) {
     const { height, audioIndex, subtitleIndex } = options;
+    const subtitleFile = subtitleIndex === null ? null : (options.subtitleFile ?? null);
     const info = await this.info(absolutePath, stat);
     if (!info.transcode) throw new AppError(422, "This file cannot be transcoded", "TRANSCODE_UNAVAILABLE");
     if (!info.qualities.includes(height)) throw new AppError(400, "Unsupported quality", "INVALID_INPUT");
-    if (subtitleIndex !== null && !info.subtitles.some((item) => item.index === subtitleIndex && item.picture)) throw new AppError(400, "Unsupported subtitle", "INVALID_INPUT");
+    const drawable = subtitleFile ? await this.pictureStreams(subtitleFile) : info.subtitles.filter((item) => item.picture);
+    if (subtitleIndex !== null && !drawable.some((item) => item.index === subtitleIndex)) throw new AppError(400, "Unsupported subtitle", "INVALID_INPUT");
 
     const own = [...this.sessions.values()].filter((session) => session.actorId === actorId).sort((a, b) => a.lastAccess - b.lastAccess);
     for (const stale of own.slice(0, Math.max(0, own.length - SESSIONS_PER_ACTOR + 1))) this.destroy(stale);
@@ -243,6 +277,7 @@ export class MediaService {
       height,
       audioIndex: Math.min(audioIndex, Math.max(0, info.audio.length - 1)),
       subtitleIndex,
+      subtitleFile,
       hdr: options.hdr && this.hdrOutput && Boolean(info.video?.hdr),
       segmentCount,
       proc: null,
@@ -369,6 +404,7 @@ export class MediaService {
     const hasAudio = session.info.audio.length > 0;
     const accel = session.software ? accelFor("software") : this.accel;
     const sourceHdr = video?.hdr ?? null;
+    const seconds = index * SEGMENT_SECONDS;
     const picture = [
       `scale=w=${boxWidth}:h=${boxHeight}:force_original_aspect_ratio=decrease:force_divisible_by=2`,
       // Scaled first: tone mapping is the costly step, and a smaller picture makes it cheaper.
@@ -386,7 +422,7 @@ export class MediaService {
       const dim = level < 1 ? `,colorchannelmixer=rr=${level}:gg=${level}:bb=${level}` : "";
       filters = [
         "-filter_complex",
-        `[0:v:0]${picture}[picture];[0:s:${session.subtitleIndex}]scale=w=${width}:h=${height}:force_original_aspect_ratio=decrease${dim}[subtitle];` +
+        `[0:v:0]${picture}[picture];[${session.subtitleFile ? 1 : 0}:s:${session.subtitleIndex}]scale=w=${width}:h=${height}:force_original_aspect_ratio=decrease${dim}[subtitle];` +
           `[picture][subtitle]overlay=x=(W-w)/2:y=(H-h)/2:eof_action=pass${session.hdr ? ":format=yuv420p10" : ""}${upload}[out]`,
         "-map", "[out]"
       ];
@@ -395,8 +431,12 @@ export class MediaService {
       "-nostdin", "-hide_banner", "-loglevel", "error",
       ...accel.input,
       // Seeking the input, not the output: a run for the middle of the file starts decoding there.
-      "-ss", String(index * SEGMENT_SECONDS),
+      "-ss", String(seconds),
       "-i", session.input,
+      // A subtitle file keeps its own clock, which `-copyts` lines up with the video's.
+      ...(session.subtitleFile && session.subtitleIndex !== null
+        ? [...(seconds > SUBTITLE_LEAD_SECONDS ? ["-ss", String(seconds - SUBTITLE_LEAD_SECONDS)] : []), "-f", SUBTITLE_DEMUXER[session.subtitleFile.format], "-i", session.subtitleFile.absolutePath]
+        : []),
       ...filters,
       ...(hasAudio ? ["-map", `0:a:${session.audioIndex}`] : []),
       "-sn", "-dn",

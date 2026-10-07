@@ -773,6 +773,28 @@ test("videos are probed and transcoded to HLS on demand", { skip: spawnSync("ffm
     assert.equal(burnedSegment.raw[0], 0x47);
     await admin.delete(`/api/media/sessions/${burned.json.id}`);
 
+    // A picture subtitle lying next to the video is drawn in the same way, read as a second input.
+    await writeFile(path.join(publicDir, "hdr.en.sup"), pgsSubtitle());
+    await writeFile(path.join(publicDir, "hdr.ja.idx"), "# VobSub index file, v7 (do not modify this line!)\n");
+    const beside = await admin.get("/api/media/subtitles?rootSlug=photos&path=/public/hdr.mkv");
+    assert.deepEqual(
+      beside.json.tracks.map((item) => [item.id, item.format, item.language, item.embedded, item.file, item.stream, item.url]),
+      [
+        ["file:/public/hdr.en.sup", "pgs", "en", false, "/public/hdr.en.sup", 0, ""],
+        ["stream:0", "pgs", "", true, undefined, 0, ""]
+      ],
+      "an index without its .sub is not a subtitle"
+    );
+    assert.equal(beside.json.tracks.some((item) => "absolutePath" in item || "stat" in item), false);
+    for (const subtitlePath of ["/public/readme.txt", "/public/inner.sup", "/public/hdr.ja.idx"]) {
+      assert.equal((await admin.post("/api/media/sessions", { ...hdrSource, subtitleIndex: 0, subtitlePath })).statusCode, 400, subtitlePath);
+    }
+    assert.equal((await admin.post("/api/media/sessions", { ...hdrSource, subtitleIndex: 1, subtitlePath: "/public/hdr.en.sup" })).statusCode, 400);
+    const besideSession = await admin.post("/api/media/sessions", { ...hdrSource, subtitleIndex: 0, subtitlePath: "/public/hdr.en.sup" });
+    assert.equal(besideSession.statusCode, 200);
+    assert.equal((await admin.get(`/api/media/sessions/${besideSession.json.id}/1.ts`)).statusCode, 200);
+    await admin.delete(`/api/media/sessions/${besideSession.json.id}`);
+
     // For a screen that shows HDR it stays HDR: HEVC in fragmented MP4, where the server has an encoder for it.
     const kept = await admin.post("/api/media/sessions", { ...hdrSource, subtitleIndex: 0, hdr: true });
     assert.equal(kept.json.hdr, hdrInfo.json.hdrOutput);

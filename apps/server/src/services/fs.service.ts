@@ -9,7 +9,7 @@ import { AppError } from "../lib/errors.js";
 import { assertNameAvailable, nfc } from "../lib/filename.js";
 import { readFinderTags, writeFinderTags } from "../lib/finder-tags.js";
 import { MAX_SQLITE_PAGE, sqliteOverview, sqliteRows } from "../lib/sqlite-preview.js";
-import { parseSubtitleName } from "../lib/subtitles.js";
+import { isPictureFormat, parseSubtitleName } from "../lib/subtitles.js";
 import { Thumbnailer, type ThumbnailSource } from "../lib/thumbnailer.js";
 import type { AuditService } from "./audit.service.js";
 import { renditionKind, type ImageService } from "./image.service.js";
@@ -242,15 +242,24 @@ export class FsService {
     const video = await this.preview(actor, rootSlug, logicalPath);
     const folder = path.dirname(video.safe.absolutePath);
     const videoName = path.basename(video.safe.absolutePath);
+    const names = await fsp.readdir(folder);
     const found = await Promise.all(
-      (await fsp.readdir(folder)).map(async (name) => {
+      names.map(async (name) => {
         const parsed = parseSubtitleName(videoName, name);
         if (!parsed) return null;
         const itemLogicalPath = path.posix.join(path.posix.dirname(video.safe.logicalPath), name);
         if (!this.permissions.can(actor, "read", video.safe.root, itemLogicalPath).allowed) return null;
         const stat = await fsp.lstat(path.join(folder, name));
-        if (!stat.isFile() || stat.size > MAX_SUBTITLE_BYTES) return null;
-        return { path: itemLogicalPath, name: nfc(name), ...parsed };
+        if (!stat.isFile()) return null;
+        const picture = isPictureFormat(parsed.format);
+        // A text subtitle is sent to the browser whole; a picture one is read by ffmpeg, however large.
+        if (!picture && stat.size > MAX_SUBTITLE_BYTES) return null;
+        if (parsed.format === "vobsub") {
+          // The index is only a table of contents: the pictures are in the `.sub` of the same name, which is read with it.
+          const data = `${name.slice(0, -3)}sub`;
+          if (!names.includes(data) || !this.permissions.can(actor, "read", video.safe.root, path.posix.join(path.posix.dirname(video.safe.logicalPath), data)).allowed) return null;
+        }
+        return { path: itemLogicalPath, name: nfc(name), ...parsed, ...(picture ? { absolutePath: path.join(folder, name), stat } : {}) };
       })
     );
     return found.filter((item) => item !== null).sort((a, b) => Number(b.default) - Number(a.default) || a.name.localeCompare(b.name));

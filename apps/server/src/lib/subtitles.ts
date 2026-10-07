@@ -1,10 +1,12 @@
 import { nfc } from "./filename.js";
 
 export type SubtitleFormat = "ass" | "srt";
+/** Picture subtitles kept in files of their own: a Blu-ray stream, or a DVD one as an index beside its `.sub`. */
+export type PictureSubtitleFormat = "pgs" | "vobsub";
 
 /** What a sidecar subtitle's file name says about it. */
 export type SubtitleName = {
-  format: SubtitleFormat;
+  format: SubtitleFormat | PictureSubtitleFormat;
   /** A BCP 47 tag such as `en` or `zh-Hant`; empty when the name carries none. */
   language: string;
   /** Whatever is left of the name once the flags and the language are taken out. */
@@ -15,7 +17,9 @@ export type SubtitleName = {
   sdh: boolean;
 };
 
-const FORMATS: Record<string, SubtitleFormat> = { ass: "ass", ssa: "ass", srt: "srt" };
+const FORMATS: Record<string, SubtitleName["format"]> = { ass: "ass", ssa: "ass", srt: "srt", sup: "pgs", idx: "vobsub" };
+
+export const isPictureFormat = (format: string): format is PictureSubtitleFormat => format === "pgs" || format === "vobsub";
 
 /** Spellings that are not language tags themselves, as fansub releases and three-letter ISO codes write them. */
 const LANGUAGE_ALIASES: Record<string, string> = {
@@ -63,7 +67,7 @@ function languageOf(token: string): string {
 
 /**
  * Reads a subtitle's name against the video it sits next to, the way Jellyfin, Plex and Kodi do:
- * `Movie.srt`, `Movie.en.srt`, `Movie.zh-TW.forced.ass`, `Movie.Commentary.en.sdh.srt`.
+ * `Movie.srt`, `Movie.en.srt`, `Movie.zh-TW.forced.ass`, `Movie.Commentary.en.sdh.srt`, `Movie.en.sup`, `Movie.idx`.
  * Returns null when the file is not a subtitle of that video.
  */
 export function parseSubtitleName(videoName: string, fileName: string): SubtitleName | null {

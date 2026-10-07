@@ -10,6 +10,7 @@ import { z } from "zod";
 import type { Env } from "./config/env.js";
 import { openDb } from "./db/db.js";
 import { AppError, publicError } from "./lib/errors.js";
+import { isPictureFormat } from "./lib/subtitles.js";
 import { nfc } from "./lib/filename.js";
 import { sendFile } from "./lib/send-file.js";
 import { isBrowserViewable } from "./lib/viewable.js";
@@ -383,14 +384,36 @@ function registerApi(app: FastifyInstance, services: Services) {
     const info = await services.media.info(file.safe.absolutePath, file.stat).catch(() => null);
     const own = new URLSearchParams({ rootSlug: query.rootSlug, path: query.path }).toString();
     const embedded = info?.subtitles ?? [];
+    // A DVD index holds a stream for each language; they are listed apart, and say their own language where the name does not.
+    const pictureFiles = info?.transcode
+      ? (
+          await Promise.all(
+            sidecars.map(async ({ path: sidecarPath, name, absolutePath, stat, ...track }) => {
+              if (!isPictureFormat(track.format) || !absolutePath || !stat) return [];
+              const streams = await services.media.pictureStreams({ absolutePath, stat, format: track.format });
+              return streams.map((stream) => ({
+                ...track,
+                language: track.language || stream.language,
+                id: streams.length > 1 ? `file:${sidecarPath}#${stream.index}` : `file:${sidecarPath}`,
+                embedded: false,
+                url: "",
+                file: sidecarPath,
+                stream: stream.index
+              }));
+            })
+          )
+        ).flat()
+      : [];
     return {
       tracks: [
-        ...sidecars.map(({ path: sidecarPath, name, ...track }) => ({
-          ...track,
-          id: `file:${sidecarPath}`,
-          embedded: false,
-          url: `/api/fs/preview?${new URLSearchParams({ rootSlug: query.rootSlug, path: sidecarPath }).toString()}`
-        })),
+        ...sidecars
+          .filter((sidecar) => !isPictureFormat(sidecar.format))
+          .map(({ path: sidecarPath, name, absolutePath, stat, ...track }) => ({
+            ...track,
+            id: `file:${sidecarPath}`,
+            embedded: false,
+            url: `/api/fs/preview?${new URLSearchParams({ rootSlug: query.rootSlug, path: sidecarPath }).toString()}`
+          })),
         ...embedded
           .filter((stream) => stream.text)
           .map(({ index, codec, text, picture, ...track }) => ({
@@ -401,6 +424,7 @@ function registerApi(app: FastifyInstance, services: Services) {
             url: `/api/media/subtitle?${own}&index=${index}`
           })),
         // Picture subtitles (Blu-ray, DVD) come after the text ones: showing one means transcoding, as it is drawn into the frames.
+        ...pictureFiles,
         ...embedded
           .filter((stream) => stream.picture && info?.transcode)
           .map(({ index, codec, text, picture, ...track }) => ({
@@ -437,7 +461,11 @@ function registerApi(app: FastifyInstance, services: Services) {
     const actor = requireActor(request);
     const input = mediaSessionSchema.parse(request.body);
     const file = await services.fsService.preview(actor, input.rootSlug, input.path);
-    const session = await services.media.createSession(actor.id, file.safe.absolutePath, file.stat, input);
+    // A subtitle file is taken only from among the ones found for this video, never as a path of the caller's choosing.
+    const sidecar = input.subtitlePath === null ? null : (await services.fsService.subtitles(actor, input.rootSlug, input.path)).find((item) => item.path === input.subtitlePath);
+    const subtitleFile = sidecar && isPictureFormat(sidecar.format) && sidecar.absolutePath && sidecar.stat ? { absolutePath: sidecar.absolutePath, stat: sidecar.stat, format: sidecar.format } : null;
+    if (input.subtitlePath !== null && !subtitleFile) throw new AppError(400, "Unsupported subtitle", "INVALID_INPUT");
+    const session = await services.media.createSession(actor.id, file.safe.absolutePath, file.stat, { ...input, subtitleFile });
     return { id: session.id, hdr: session.hdr, playlistUrl: `/api/media/sessions/${session.id}/index.m3u8` };
   });
   app.get("/api/media/sessions/:id/:file", async (request, reply) => {
