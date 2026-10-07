@@ -52,6 +52,7 @@ ENV NVIDIA_VISIBLE_DEVICES=all
 ENV NVIDIA_DRIVER_CAPABILITIES=compute,video,utility
 COPY --from=build --chown=kago:kago /prod ./
 COPY --from=build --chown=kago:kago /app/apps/web/dist ./apps/web/dist
+COPY LICENSE THIRD-PARTY-NOTICES ./
 COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/kago-entrypoint
 EXPOSE 8080
 # The entrypoint starts as root only to drop to PUID:PGID (default 1000:1000, the kago user).

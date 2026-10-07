@@ -2,6 +2,7 @@
   "name": "kago",
   "version": "0.1.0",
   "private": true,
+  "license": "AGPL-3.0-only",
   "packageManager": "pnpm@12.9.1",
   "scripts": {
     "dev": "pnpm --parallel --filter @kago/server --filter @kago/web dev",
@@ -9,6 +10,7 @@
     "typecheck": "pnpm -r typecheck",
     "lint": "pnpm -r lint",
     "test:smoke": "pnpm --filter @kago/server test:smoke",
+    "notices": "node scripts/third-party-notices.mjs",
     "start": "pnpm --filter @kago/server start"
   },
   "devDependencies": {

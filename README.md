@@ -225,3 +225,13 @@ pnpm test:smoke
 ```bash
 docker build -t kago:local .
 ```
+
+## 授權
+
+Copyright (C) 2026 gnehs
+
+Kago 以 [GNU Affero General Public License v3.0](LICENSE)（`AGPL-3.0-only`）釋出。你可以自由使用、修改與散布；散布修改版，或把修改版當成網路服務提供給他人使用時，必須以相同授權提供對應的原始碼。
+
+Docker 映像檔另外內含 [jellyfin-ffmpeg](https://github.com/jellyfin/jellyfin-ffmpeg)，它是獨立的程式，以 GPL-3.0 授權，原始碼請見該專案。
+
+Kago 使用的第三方套件與它們的授權條款列在 [THIRD-PARTY-NOTICES](THIRD-PARTY-NOTICES)，映像檔內也附有一份（`/app/THIRD-PARTY-NOTICES`）。相依套件有變動時，執行 `pnpm notices` 重新產生。
