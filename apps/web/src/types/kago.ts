@@ -215,21 +215,29 @@ export type MediaInfo = {
   transcode: boolean;
   duration: number;
   container: string;
-  video: { codec: string; profile: string; width: number; height: number; bitDepth: number } | null;
+  /** `hdr` names the transfer curve of an HDR picture: PQ (HDR10) or HLG. */
+  video: { codec: string; profile: string; width: number; height: number; bitDepth: number; hdr: "pq" | "hlg" | null } | null;
   audio: Array<{ codec: string; channels: number; language: string; title: string }>;
   /** Heights the file can be transcoded to, tallest first. */
   qualities: number[];
   /** What the server encodes with: `software`, or the GPU API in use. */
   encoder: string;
+  /** Whether the server can transcode an HDR picture as HDR, for a screen that shows it. */
+  hdrOutput: boolean;
+  /** Whether the server can tone-map an HDR picture to SDR. */
+  tonemap: boolean;
 };
 
-/** A subtitle for a video: a file lying next to it, or a text stream inside it. */
+/** A subtitle for a video: a file lying next to it, or a stream inside it. */
 export type SubtitleTrack = {
   id: string;
-  /** Where its text is read from. */
+  /** Where its text is read from; empty for a picture subtitle, which has none. */
   url: string;
   embedded: boolean;
-  format: "ass" | "srt";
+  /** Anything but `ass` and `srt` is a picture subtitle (Blu-ray, DVD, broadcast). */
+  format: "ass" | "srt" | "pgs" | "vobsub" | "dvb" | "picture";
+  /** A picture subtitle's number among the video's subtitle streams. The server draws it into the frames, so showing it means transcoding. */
+  stream?: number;
   /** A BCP 47 tag, or empty when neither the name nor the stream carries a language. */
   language: string;
   title: string;

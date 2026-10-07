@@ -18,6 +18,7 @@ import { PLAYER_CONTROL_CLASS, VideoPlayer } from "./VideoPlayer";
 
 const BITRATE_HINT: Record<number, string> = { 2160: "16 Mbps", 1440: "10 Mbps", 1080: "6 Mbps", 720: "3 Mbps", 480: "1.5 Mbps", 360: "0.8 Mbps" };
 const ENCODER_LABEL: Record<string, string> = { nvenc: "NVIDIA GPU", vaapi: "Intel / AMD GPU", "vaapi-cqp": "Intel / AMD GPU", videotoolbox: "Apple GPU", software: "CPU" };
+const SUBTITLE_FORMAT_LABEL: Record<SubtitleTrack["format"], string> = { ass: "ASS", srt: "SRT", pgs: "PGS", vobsub: "VobSub", dvb: "DVB", picture: "圖形字幕" };
 const MAX_RECOVERIES = 2;
 // Numbered episodes sort as numbers, the way the file list shows them.
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
@@ -26,7 +27,8 @@ const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "bas
  * A video preview. The original file is played as-is when the browser can decode it; otherwise,
  * or when a lower quality is picked, the server transcodes it to HLS on the fly. The window takes
  * the picture's proportions and keeps them while it is resized. Subtitle files named after the
- * video are found and shown on their own.
+ * video are found and shown on their own. An HDR picture stays HDR on a screen that shows it and
+ * is tone-mapped to SDR on one that does not.
  */
 export function VideoPreviewWindow({ window }: { window: PreviewWindow }) {
   const { rootSlug, item } = window.preview;
@@ -95,13 +97,21 @@ export function VideoPreview({
   }
   const subtitle = subtitlePick === "off" ? null : (subtitles.find((track) => track.id === subtitlePick) ?? (subtitlePick === null ? pickSubtitle(subtitles, getSubtitlePref()) : null));
 
+  // A picture subtitle is not drawn here: the server lays it over the frames it transcodes.
+  const burned = subtitle?.stream ?? null;
+  const textSubtitle = burned === null ? subtitle : null;
+
   const media = info.data;
   const qualities = media?.transcode ? media.qualities : [];
   // Another audio track can only be had by transcoding: a browser plays the first one of a file.
   const audioTracks = media?.transcode ? media.audio : [];
   const canDirect = !media || qualities.length === 0 || canDirectPlay(media);
-  const directOk = qualities.length === 0 || (canDirect && !directFailed && audioIndex === 0);
+  const directOk = qualities.length === 0 || (canDirect && !directFailed && audioIndex === 0 && burned === null);
   const height = resolveHeight(qualities, picked, directOk);
+  const hdrScreen = useHdrScreen();
+  const sourceHdr = media?.video?.hdr ?? null;
+  // Only a transcode has the choice; the original file is whatever it is, and the browser maps it to the screen.
+  const hdr = height !== null && sourceHdr !== null && Boolean(media?.hdrOutput) && hdrScreen && canPlayHdrStream();
   const ready = !info.isPending;
   const reportAspect = useRef(onAspect);
   reportAspect.current = onAspect;
@@ -133,7 +143,7 @@ export function VideoPreview({
       void (async () => {
         const session = await api<{ id: string; playlistUrl: string }>("/api/media/sessions", {
           method: "POST",
-          body: JSON.stringify({ rootSlug, path, height, audioIndex })
+          body: JSON.stringify({ rootSlug, path, height, audioIndex, subtitleIndex: burned, hdr })
         });
         if (cancelled) return closeSession(session.id);
         sessionId = session.id;
@@ -193,14 +203,15 @@ export function VideoPreview({
       video.load();
       if (sessionId) closeSession(sessionId);
     };
-  }, [ready, rootSlug, path, height, audioIndex, attempt]);
+  }, [ready, rootSlug, path, height, audioIndex, burned, hdr, attempt]);
 
-  useSubtitleRenderer(videoRef, subtitle, subtitleList?.fonts ?? [], aspect ?? probedAspect, () => {
+  useSubtitleRenderer(videoRef, textSubtitle, subtitleList?.fonts ?? [], aspect ?? probedAspect, () => {
     toast("無法載入這個字幕", "error");
     setSubtitlePick("off");
   });
 
   const pickTrack = (track: SubtitleTrack | null) => {
+    recoveries.current = 0;
     // Remembered by language, so the next video opens with the same kind of track.
     setSubtitlePref(track ? track.language : "off");
     setSubtitlePick(track ? track.id : "off");
@@ -229,13 +240,13 @@ export function VideoPreview({
                   <MenuHeading>字幕</MenuHeading>
                   <CheckItem checked={subtitle === null} onClick={() => pickTrack(null)}>關閉</CheckItem>
                   {subtitles.map((track) => (
-                    <CheckItem key={track.id} checked={subtitle?.id === track.id} hint={track.embedded ? `內嵌 ${track.format.toUpperCase()}` : track.format.toUpperCase()} onClick={() => pickTrack(track)}>
+                    <CheckItem key={track.id} checked={subtitle?.id === track.id} hint={track.embedded ? `內嵌 ${SUBTITLE_FORMAT_LABEL[track.format]}` : SUBTITLE_FORMAT_LABEL[track.format]} onClick={() => pickTrack(track)}>
                       {subtitleLabel(track)}
                     </CheckItem>
                   ))}
                 </>
               ) : null}
-              {subtitleList && subtitleList.unsupported > 0 ? <div className="px-2 py-1 text-xs text-muted">另有 {subtitleList.unsupported} 個圖形字幕無法顯示</div> : null}
+              {subtitleList && subtitleList.unsupported > 0 ? <div className="px-2 py-1 text-xs text-muted">另有 {subtitleList.unsupported} 個字幕無法顯示</div> : null}
               {audioTracks.length > 1 ? (
                 <>
                   {subtitles.length > 0 ? <KagoMenuSeparator /> : null}
@@ -285,10 +296,12 @@ export function VideoPreview({
             ))}
             <KagoMenuSeparator />
             <div className="px-2 py-1 text-xs text-muted">轉檔：{ENCODER_LABEL[media?.encoder ?? ""] ?? "CPU"}</div>
+            {sourceHdr ? <div className="px-2 pb-1 text-xs text-muted">{hdrNote(height === null, hdr, hdrScreen, Boolean(media?.tonemap))}</div> : null}
           </>
         }
       >
         {height === null ? "原始" : `${height}p`}
+        {hdr || (height === null && sourceHdr && hdrScreen) ? " HDR" : ""}
       </KagoDropdownMenu>
     ) : null;
 
@@ -341,6 +354,39 @@ function resolveHeight(qualities: number[], picked: VideoQualityPref | null, dir
   return directOk ? null : fallback;
 }
 
+/** What becomes of an HDR picture on its way to this screen. */
+function hdrNote(direct: boolean, hdr: boolean, hdrScreen: boolean, tonemap: boolean): string {
+  if (direct) return hdrScreen ? "HDR：以原始檔案輸出" : "HDR：由瀏覽器轉為 SDR";
+  if (hdr) return "HDR：螢幕支援，以 HDR 輸出";
+  if (!tonemap) return "HDR：伺服器無法轉為 SDR，顏色會偏淡";
+  return hdrScreen ? "HDR：無法以 HDR 串流，已轉為 SDR" : "HDR：螢幕不支援，已轉為 SDR";
+}
+
+const HDR_SCREEN = "(dynamic-range: high)";
+
+/** Whether the screen the page is on shows HDR. It changes when the window is dragged to another display, or the display's HDR mode is switched. */
+function useHdrScreen(): boolean {
+  const [hdr, setHdr] = useState(() => globalThis.matchMedia?.(HDR_SCREEN).matches ?? false);
+  useEffect(() => {
+    const query = globalThis.matchMedia?.(HDR_SCREEN);
+    if (!query) return;
+    const onChange = () => setHdr(query.matches);
+    onChange();
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }, []);
+  return hdr;
+}
+
+const HEVC_MAIN10 = "hvc1.2.4.L153.B0";
+
+/** Whether this browser takes the server's HDR stream: 10-bit HEVC in fragmented MP4, through hls.js where there is Media Source and natively where there is not. */
+function canPlayHdrStream(): boolean {
+  const type = `video/mp4; codecs="${HEVC_MAIN10}"`;
+  const source = (globalThis as { ManagedMediaSource?: typeof MediaSource }).ManagedMediaSource ?? globalThis.MediaSource;
+  return source ? source.isTypeSupported(type) : document.createElement("video").canPlayType(type) !== "";
+}
+
 function closeSession(id: string) {
   void api(`/api/media/sessions/${encodeURIComponent(id)}`, { method: "DELETE", keepalive: true }).catch(() => {});
 }
@@ -351,7 +397,7 @@ const AUDIO_CODECS: Record<string, string> = { aac: "mp4a.40.2", mp3: "mp3", opu
 /** Whether this browser can play the file untouched, judged by container and codecs. A wrong yes is caught by the video's error event. */
 function canDirectPlay(info: MediaInfo): boolean {
   if (!info.video) return true;
-  const videoCodec = VIDEO_CODECS[info.video.codec];
+  const videoCodec = info.video.codec === "hevc" && info.video.bitDepth > 8 ? HEVC_MAIN10 : VIDEO_CODECS[info.video.codec];
   const audioCodec = info.audio[0] ? AUDIO_CODECS[info.audio[0].codec] : "";
   if (!videoCodec || audioCodec === undefined) return false;
   if (info.video.codec === "h264" && info.video.bitDepth > 8) return false;

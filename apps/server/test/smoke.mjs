@@ -638,6 +638,41 @@ test("filenames are written in NFC while existing names keep their on-disk form"
   }
 });
 
+/** A Blu-ray subtitle stream with one white bar on screen for a few seconds; ffmpeg has no encoder to make one with. */
+function pgsSubtitle() {
+  const segment = (millis, type, body) => {
+    const header = Buffer.alloc(13);
+    header.write("PG");
+    header.writeUInt32BE(millis * 90, 2);
+    header[10] = type;
+    header.writeUInt16BE(body.length, 11);
+    return Buffer.concat([header, body]);
+  };
+  const [width, height, left, top] = [200, 20, 220, 300];
+  const shown = Buffer.alloc(19);
+  shown.writeUInt16BE(640, 0);
+  shown.writeUInt16BE(360, 2);
+  shown.set([0x10, 0, 0, 0x80, 0, 0, 1, 0, 0, 0, 0], 4);
+  shown.writeUInt16BE(left, 15);
+  shown.writeUInt16BE(top, 17);
+  const cleared = Buffer.from(shown.subarray(0, 11));
+  cleared.set([0, 1, 0, 0, 0, 0], 5);
+  const area = Buffer.alloc(10);
+  area[0] = 1;
+  [left, top, width, height].forEach((value, index) => area.writeUInt16BE(value, 2 + index * 2));
+  const palette = Buffer.from([0, 0, 1, 235, 128, 128, 255]);
+  const rows = Buffer.concat(Array.from({ length: height }, () => Buffer.from([0, 0xc0 | (width >> 8), width & 255, 1, 0, 0])));
+  const object = Buffer.alloc(11);
+  object[3] = 0xc0;
+  object.writeUIntBE(rows.length + 4, 4, 3);
+  object.writeUInt16BE(width, 7);
+  object.writeUInt16BE(height, 9);
+  return Buffer.concat([
+    segment(1000, 0x16, shown), segment(1000, 0x17, area), segment(1000, 0x14, palette), segment(1000, 0x15, Buffer.concat([object, rows])), segment(1000, 0x80, Buffer.alloc(0)),
+    segment(4000, 0x16, cleared), segment(4000, 0x17, area), segment(4000, 0x80, Buffer.alloc(0))
+  ]);
+}
+
 test("videos are probed and transcoded to HLS on demand", { skip: spawnSync("ffmpeg", ["-version"]).status !== 0 && "ffmpeg is not installed" }, async () => {
   const fixture = await createFixture("kago-smoke-media.");
   const clip = path.join(fixture.dataDir, "photos", "public", "clip.avi");
@@ -711,6 +746,51 @@ test("videos are probed and transcoded to HLS on demand", { skip: spawnSync("ffm
     }
     assert.equal((await admin.get(`${base}/3.ts`)).statusCode, 404);
     assert.equal((await admin.get(`${base}/../../fs/list`)).statusCode !== 200, true);
+
+    // An HDR picture is told apart, and a picture subtitle is listed as one the server draws into the frames.
+    const hdrClip = path.join(publicDir, "hdr.mkv");
+    await writeFile(path.join(publicDir, "inner.sup"), pgsSubtitle());
+    const graded = spawnSync("ffmpeg", [
+      "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=size=640x360:rate=24,format=yuv420p10le,setparams=color_primaries=bt2020:color_trc=smpte2084:colorspace=bt2020nc",
+      "-i", path.join(publicDir, "inner.sup"), "-t", "8", "-map", "0", "-map", "1", "-c:v", "libx264", "-c:s", "copy", hdrClip
+    ]);
+    assert.equal(graded.status, 0, String(graded.stderr));
+    const hdrInfo = await admin.get("/api/media/info?rootSlug=photos&path=/public/hdr.mkv");
+    assert.equal(hdrInfo.json.video.hdr, "pq");
+    assert.equal(info.json.video.hdr, null);
+    const pictures = await admin.get("/api/media/subtitles?rootSlug=photos&path=/public/hdr.mkv");
+    assert.deepEqual(pictures.json.tracks.map((item) => [item.id, item.format, item.stream, item.url]), [["stream:0", "pgs", 0, ""]]);
+    assert.equal(pictures.json.unsupported, 0);
+    assert.equal((await admin.get("/api/media/subtitle?rootSlug=photos&path=/public/hdr.mkv&index=0")).statusCode, 404);
+
+    // Tone-mapped to SDR with the subtitle drawn in, the stream is the same H.264 in MPEG-TS as any other.
+    const hdrSource = { rootSlug: "photos", path: "/public/hdr.mkv", height: 360 };
+    assert.equal((await admin.post("/api/media/sessions", { ...hdrSource, subtitleIndex: 1 })).statusCode, 400);
+    const burned = await admin.post("/api/media/sessions", { ...hdrSource, subtitleIndex: 0 });
+    assert.equal(burned.json.hdr, false);
+    const burnedSegment = await admin.get(`/api/media/sessions/${burned.json.id}/0.ts`);
+    assert.equal(burnedSegment.statusCode, 200);
+    assert.equal(burnedSegment.raw[0], 0x47);
+    await admin.delete(`/api/media/sessions/${burned.json.id}`);
+
+    // For a screen that shows HDR it stays HDR: HEVC in fragmented MP4, where the server has an encoder for it.
+    const kept = await admin.post("/api/media/sessions", { ...hdrSource, subtitleIndex: 0, hdr: true });
+    assert.equal(kept.json.hdr, hdrInfo.json.hdrOutput);
+    if (kept.json.hdr) {
+      const keptBase = `/api/media/sessions/${kept.json.id}`;
+      const keptPlaylist = (await admin.get(`${keptBase}/index.m3u8`)).payload;
+      assert.match(keptPlaylist, /#EXT-X-MAP:URI="init\.mp4"/);
+      assert.deepEqual(keptPlaylist.split("\n").filter((line) => line.endsWith(".m4s")), ["0.m4s", "1.m4s"]);
+      const init = await admin.get(`${keptBase}/init.mp4`);
+      assert.equal(init.statusCode, 200);
+      assert.equal(init.raw.subarray(4, 8).toString(), "ftyp");
+      for (const index of [1, 0]) assert.equal((await admin.get(`${keptBase}/${index}.m4s`)).statusCode, 200);
+    }
+    await admin.delete(`/api/media/sessions/${kept.json.id}`);
+    // An SDR picture has nothing to keep.
+    const plain = await admin.post("/api/media/sessions", { rootSlug: "photos", path: "/public/clip.avi", height: 360, hdr: true });
+    assert.equal(plain.json.hdr, false);
+    await admin.delete(`/api/media/sessions/${plain.json.id}`);
 
     // Sessions belong to whoever opened them.
     await admin.post("/api/users", { email: "viewer@example.test", password: "fake-viewer-password-123", displayName: "Viewer", role: "USER" });

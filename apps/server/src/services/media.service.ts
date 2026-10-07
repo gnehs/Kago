@@ -16,7 +16,11 @@ export const mediaSessionSchema = z.object({
   rootSlug: z.string().min(1),
   path: z.string().min(1),
   height: z.number().int().min(144).max(4320),
-  audioIndex: z.number().int().min(0).max(63).default(0)
+  audioIndex: z.number().int().min(0).max(63).default(0),
+  /** A picture subtitle to draw into the frames, numbered among the file's subtitle streams. */
+  subtitleIndex: z.number().int().min(0).max(255).nullable().default(null),
+  /** Whether the player's screen and browser can show HDR; otherwise an HDR source is tone-mapped to SDR. */
+  hdr: z.boolean().default(false)
 });
 
 export const mediaStreamSchema = z.object({
@@ -31,17 +35,24 @@ export type MediaInfo = {
   duration: number;
   /** ffprobe's format name list, e.g. `mov,mp4,m4a,3gp,3g2,mj2` or `matroska,webm`. */
   container: string;
-  video: { codec: string; profile: string; width: number; height: number; bitDepth: number } | null;
+  /** `hdr` names the transfer curve of an HDR picture: PQ (HDR10, Dolby Vision with an HDR10 base) or HLG. */
+  video: { codec: string; profile: string; width: number; height: number; bitDepth: number; hdr: Hdr | null } | null;
   audio: Array<{ codec: string; channels: number; language: string; title: string }>;
-  /** Subtitle streams inside the file, numbered among themselves. Only `text` ones can be handed to the player. */
-  subtitles: Array<{ index: number; codec: string; language: string; title: string; default: boolean; forced: boolean; sdh: boolean; text: boolean }>;
+  /** Subtitle streams inside the file, numbered among themselves. `text` ones are handed to the player; `picture` ones are drawn into the frames. */
+  subtitles: Array<{ index: number; codec: string; language: string; title: string; default: boolean; forced: boolean; sdh: boolean; text: boolean; picture: boolean }>;
   /** Fonts attached to the file for its subtitles, numbered among the attachments. */
   fonts: Array<{ index: number; name: string }>;
   /** Heights the file can be transcoded to, tallest first. */
   qualities: number[];
   /** What does the encoding: `software`, or the GPU API in use. */
   encoder: Encoder;
+  /** Whether an HDR source can be transcoded as HDR (10-bit HEVC), for a screen that shows it. */
+  hdrOutput: boolean;
+  /** Whether an HDR source can be tone-mapped to SDR. Without it the transcoded picture is washed out. */
+  tonemap: boolean;
 };
+
+type Hdr = "pq" | "hlg";
 
 type Encoder = "software" | "nvenc" | "vaapi" | "vaapi-cqp" | "videotoolbox";
 
@@ -51,7 +62,13 @@ type Accel = {
   input: string[];
   filter: string;
   codec: (maxKbps: number) => string[];
+  /** The same two for HDR output, which is 10-bit HEVC. */
+  hdrFilter: string;
+  hevc: (maxKbps: number) => string[];
 };
+
+/** A filter chain that turns an HDR picture into BT.709 SDR. */
+type Tonemap = { name: string; filter: (hdr: Hdr) => string };
 
 type Session = {
   id: string;
@@ -61,6 +78,9 @@ type Session = {
   info: MediaInfo;
   height: number;
   audioIndex: number;
+  subtitleIndex: number | null;
+  /** HDR in, HDR out. Such a stream is HEVC in fragmented MP4, the one form of it browsers take over HLS. */
+  hdr: boolean;
   segmentCount: number;
   proc: ChildProcess | null;
   /** Set once the GPU pipeline has failed on this file; the rest of the session encodes on the CPU. */
@@ -89,6 +109,15 @@ const KEEP_BEHIND = 10;
 const SEGMENT_WAIT_MS = 55_000;
 /** Subtitle codecs that are text and can be rewritten as ASS or SubRip; the rest are pictures. */
 const TEXT_SUBTITLES = new Set(["ass", "ssa", "subrip", "srt", "mov_text", "webvtt", "text"]);
+/** Picture subtitles ffmpeg can decode and lay over the video: Blu-ray, DVD, broadcast and DivX. */
+const PICTURE_SUBTITLES = new Set(["hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle", "xsub"]);
+const TRANSFER: Record<Hdr, string> = { pq: "smpte2084", hlg: "arib-std-b67" };
+/**
+ * Where white subtitles sit on an HDR signal: at the level of reference white (203 nits), not at the peak of
+ * the curve, where they would be the brightest thing on screen.
+ */
+const SUBTITLE_LEVEL: Record<Hdr, number> = { pq: 0.58, hlg: 0.75 };
+const INIT_SEGMENT = "init.mp4";
 /** Reading a subtitle stream out means reading through the whole file, which takes a while on a large one. */
 const EXTRACT_TIMEOUT_MS = 180_000;
 const EXTRACT_KEEP = 24;
@@ -106,8 +135,10 @@ export class MediaService {
   private readonly extracts = new Map<string, Promise<string>>();
   private readonly available: Promise<boolean>;
   private accel: Accel = accelFor("software");
+  private hdrOutput = false;
+  private tonemap: Tonemap | null = null;
   private readonly sessions = new Map<string, Session>();
-  private readonly probes = new Map<string, Omit<MediaInfo, "transcode" | "encoder">>();
+  private readonly probes = new Map<string, Omit<MediaInfo, "transcode" | "encoder" | "hdrOutput" | "tonemap">>();
   private readonly ticker: NodeJS.Timeout;
 
   constructor(appDataDir: string) {
@@ -118,7 +149,8 @@ export class MediaService {
     this.available = Promise.all([execFileAsync(this.ffmpeg, ["-version"]), execFileAsync(this.ffprobe, ["-version"])]).then(
       async () => {
         this.accel = await this.detectAccel();
-        logger.info(`video transcoding uses ${this.accel.encoder}`);
+        [this.hdrOutput, this.tonemap] = await Promise.all([this.detectHdrOutput(this.accel), this.detectTonemap()]);
+        logger.info(`video transcoding uses ${this.accel.encoder}; HDR is ${this.hdrOutput ? "kept for screens that show it" : "not encoded"} and ${this.tonemap ? `tone-mapped with ${this.tonemap.name}` : "cannot be tone-mapped"} for the rest`);
         return true;
       },
       () => {
@@ -131,7 +163,7 @@ export class MediaService {
   }
 
   async info(absolutePath: string, stat: fs.Stats): Promise<MediaInfo> {
-    if (!(await this.available)) return { transcode: false, duration: 0, container: "", video: null, audio: [], subtitles: [], fonts: [], qualities: [], encoder: "software" };
+    if (!(await this.available)) return { transcode: false, duration: 0, container: "", video: null, audio: [], subtitles: [], fonts: [], qualities: [], encoder: "software", hdrOutput: false, tonemap: false };
     const key = `${absolutePath}:${stat.mtimeMs}:${stat.size}`;
     let probed = this.probes.get(key);
     if (!probed) {
@@ -139,7 +171,7 @@ export class MediaService {
       if (this.probes.size >= 200) this.probes.delete(this.probes.keys().next().value!);
       this.probes.set(key, probed);
     }
-    return { transcode: probed.qualities.length > 0, encoder: this.accel.encoder, ...probed };
+    return { transcode: probed.qualities.length > 0, encoder: this.accel.encoder, hdrOutput: this.hdrOutput, tonemap: this.tonemap !== null, ...probed };
   }
 
   /** A subtitle stream written out as a file of its own: ASS as it is, any other text format as SubRip. */
@@ -187,10 +219,12 @@ export class MediaService {
     return pending;
   }
 
-  async createSession(actorId: string, absolutePath: string, stat: fs.Stats, height: number, audioIndex: number) {
+  async createSession(actorId: string, absolutePath: string, stat: fs.Stats, options: { height: number; audioIndex: number; subtitleIndex: number | null; hdr: boolean }) {
+    const { height, audioIndex, subtitleIndex } = options;
     const info = await this.info(absolutePath, stat);
     if (!info.transcode) throw new AppError(422, "This file cannot be transcoded", "TRANSCODE_UNAVAILABLE");
     if (!info.qualities.includes(height)) throw new AppError(400, "Unsupported quality", "INVALID_INPUT");
+    if (subtitleIndex !== null && !info.subtitles.some((item) => item.index === subtitleIndex && item.picture)) throw new AppError(400, "Unsupported subtitle", "INVALID_INPUT");
 
     const own = [...this.sessions.values()].filter((session) => session.actorId === actorId).sort((a, b) => a.lastAccess - b.lastAccess);
     for (const stale of own.slice(0, Math.max(0, own.length - SESSIONS_PER_ACTOR + 1))) this.destroy(stale);
@@ -208,6 +242,8 @@ export class MediaService {
       info,
       height,
       audioIndex: Math.min(audioIndex, Math.max(0, info.audio.length - 1)),
+      subtitleIndex,
+      hdr: options.hdr && this.hdrOutput && Boolean(info.video?.hdr),
       segmentCount,
       proc: null,
       software: false,
@@ -219,16 +255,17 @@ export class MediaService {
       pruned: 0,
       lastAccess: Date.now()
     });
-    return { id };
+    return { id, hdr: this.sessions.get(id)!.hdr };
   }
 
   playlist(actorId: string, id: string): string {
     const session = this.require(actorId, id);
-    const lines = ["#EXTM3U", "#EXT-X-VERSION:3", `#EXT-X-TARGETDURATION:${SEGMENT_SECONDS + 1}`, "#EXT-X-MEDIA-SEQUENCE:0", "#EXT-X-PLAYLIST-TYPE:VOD"];
+    const lines = ["#EXTM3U", `#EXT-X-VERSION:${session.hdr ? 7 : 3}`, `#EXT-X-TARGETDURATION:${SEGMENT_SECONDS + 1}`, "#EXT-X-MEDIA-SEQUENCE:0", "#EXT-X-PLAYLIST-TYPE:VOD"];
+    if (session.hdr) lines.push(`#EXT-X-MAP:URI="${INIT_SEGMENT}"`);
     for (let index = 0; index < session.segmentCount; index += 1) {
       const last = index === session.segmentCount - 1;
       const length = last ? Math.max(0.1, session.info.duration - index * SEGMENT_SECONDS) : SEGMENT_SECONDS;
-      lines.push(`#EXTINF:${length.toFixed(6)},`, `${index}.ts`);
+      lines.push(`#EXTINF:${length.toFixed(6)},`, path.basename(this.segmentPath(session, index)));
     }
     lines.push("#EXT-X-ENDLIST", "");
     return lines.join("\n");
@@ -246,12 +283,42 @@ export class MediaService {
     const onItsWay = session.proc && index >= session.runStart && index <= session.head + 2;
     if (!onItsWay) this.start(session, index);
     else this.resume(session);
+    return this.awaitFile(session, file);
+  }
 
+  /**
+   * The header of a fragmented MP4 stream. Every run writes it anew, and it is whole once that run's first segment
+   * is, so until then this waits rather than hand out a file ffmpeg has only just opened.
+   */
+  async initSegment(actorId: string, id: string): Promise<string> {
+    const session = this.require(actorId, id);
+    if (!session.hdr) throw new AppError(404, "Segment not found", "NOT_FOUND");
+    const file = path.join(session.dir, INIT_SEGMENT);
+    const deadline = Date.now() + SEGMENT_WAIT_MS;
+    let started = false;
+    while (Date.now() < deadline && this.sessions.has(id)) {
+      this.advanceHead(session);
+      const settled = !session.proc || session.head > session.runStart;
+      if (settled && (fs.statSync(file, { throwIfNoEntry: false })?.size ?? 0) > 0) return file;
+      if (session.proc) {
+        this.resume(session);
+      } else {
+        if (started) break;
+        this.start(session, session.lastRequested);
+        started = true;
+      }
+      session.lastAccess = Date.now();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    throw new AppError(500, "Transcoding failed", "TRANSCODE_FAILED");
+  }
+
+  private async awaitFile(session: Session, file: string): Promise<string> {
     const run = session.run;
     const deadline = Date.now() + SEGMENT_WAIT_MS;
     while (Date.now() < deadline) {
       if (fs.existsSync(file)) return file;
-      if (session.run !== run || !this.sessions.has(id)) throw new AppError(404, "Segment was abandoned", "NOT_FOUND");
+      if (session.run !== run || !this.sessions.has(session.id)) throw new AppError(404, "Segment was abandoned", "NOT_FOUND");
       if (!session.proc) break;
       session.lastAccess = Date.now();
       await new Promise((resolve) => setTimeout(resolve, 100));
@@ -278,7 +345,7 @@ export class MediaService {
   }
 
   private segmentPath(session: Session, index: number): string {
-    return path.join(session.dir, `${index}.ts`);
+    return path.join(session.dir, `${index}.${session.hdr ? "m4s" : "ts"}`);
   }
 
   private advanceHead(session: Session): void {
@@ -298,30 +365,55 @@ export class MediaService {
     const { video } = session.info;
     const landscape = !video || video.width >= video.height;
     const long = Math.round((session.height * 16) / 9);
-    const box = landscape ? `w=${long}:h=${session.height}` : `w=${session.height}:h=${long}`;
+    const [boxWidth, boxHeight] = landscape ? [long, session.height] : [session.height, long];
     const hasAudio = session.info.audio.length > 0;
     const accel = session.software ? accelFor("software") : this.accel;
+    const sourceHdr = video?.hdr ?? null;
+    const picture = [
+      `scale=w=${boxWidth}:h=${boxHeight}:force_original_aspect_ratio=decrease:force_divisible_by=2`,
+      // Scaled first: tone mapping is the costly step, and a smaller picture makes it cheaper.
+      ...(sourceHdr && !session.hdr && this.tonemap ? [this.tonemap.filter(sourceHdr)] : [])
+    ].join(",");
+    const upload = session.hdr ? accel.hdrFilter : accel.filter;
+    let filters: string[];
+    if (session.subtitleIndex === null) {
+      filters = ["-map", "0:v:0", "-vf", `${picture}${upload}`];
+    } else {
+      // The subtitle's canvas is fitted to the picture as it comes out, which a cropped film does not fill the box with.
+      const fit = video && video.width > 0 && video.height > 0 ? Math.min(boxWidth / video.width, boxHeight / video.height) : 0;
+      const [width, height] = fit > 0 ? [Math.floor((video!.width * fit) / 2) * 2, Math.floor((video!.height * fit) / 2) * 2] : [boxWidth, boxHeight];
+      const level = session.hdr && sourceHdr ? SUBTITLE_LEVEL[sourceHdr] : 1;
+      const dim = level < 1 ? `,colorchannelmixer=rr=${level}:gg=${level}:bb=${level}` : "";
+      filters = [
+        "-filter_complex",
+        `[0:v:0]${picture}[picture];[0:s:${session.subtitleIndex}]scale=w=${width}:h=${height}:force_original_aspect_ratio=decrease${dim}[subtitle];` +
+          `[picture][subtitle]overlay=x=(W-w)/2:y=(H-h)/2:eof_action=pass${session.hdr ? ":format=yuv420p10" : ""}${upload}[out]`,
+        "-map", "[out]"
+      ];
+    }
     const args = [
       "-nostdin", "-hide_banner", "-loglevel", "error",
       ...accel.input,
       // Seeking the input, not the output: a run for the middle of the file starts decoding there.
       "-ss", String(index * SEGMENT_SECONDS),
       "-i", session.input,
-      "-map", "0:v:0",
+      ...filters,
       ...(hasAudio ? ["-map", `0:a:${session.audioIndex}`] : []),
       "-sn", "-dn",
-      "-vf", `scale=${box}:force_original_aspect_ratio=decrease:force_divisible_by=2${accel.filter}`,
-      ...accel.codec(MAX_KBPS[session.height] ?? 6000),
+      ...(session.hdr && sourceHdr
+        ? [...accel.hevc(MAX_KBPS[session.height] ?? 6000), "-tag:v", "hvc1", "-color_primaries", "bt2020", "-color_trc", TRANSFER[sourceHdr], "-colorspace", "bt2020nc"]
+        : accel.codec(MAX_KBPS[session.height] ?? 6000)),
       // A keyframe on every segment boundary, so segments line up with the precomputed playlist.
       "-force_key_frames", `expr:gte(t,n_forced*${SEGMENT_SECONDS})`,
       ...(hasAudio ? ["-c:a", "aac", "-ac", "2", "-b:a", session.height <= 480 ? "96k" : "128k"] : []),
       // Keep source timestamps so a run started mid-file lands where the playlist says it does.
       "-copyts", "-avoid_negative_ts", "disabled", "-max_muxing_queue_size", "2048",
-      "-f", "hls", "-hls_time", String(SEGMENT_SECONDS), "-hls_segment_type", "mpegts",
+      "-f", "hls", "-hls_time", String(SEGMENT_SECONDS),
+      ...(session.hdr ? ["-hls_segment_type", "fmp4", "-hls_fmp4_init_filename", INIT_SEGMENT] : ["-hls_segment_type", "mpegts"]),
       // Segments appear under their final name only once complete.
       "-hls_flags", "temp_file",
       "-start_number", String(index),
-      "-hls_segment_filename", path.join(session.dir, "%d.ts"),
+      "-hls_segment_filename", path.join(session.dir, `%d.${session.hdr ? "m4s" : "ts"}`),
       "-hls_playlist_type", "vod", "-hls_list_size", "0",
       path.join(session.dir, "ffmpeg.m3u8")
     ];
@@ -440,7 +532,63 @@ export class MediaService {
     return accelFor("software");
   }
 
-  private async probe(absolutePath: string): Promise<Omit<MediaInfo, "transcode" | "encoder">> {
+  /** Whether this encoder also makes 10-bit HEVC, which is what HDR is sent as. */
+  private async detectHdrOutput(accel: Accel): Promise<boolean> {
+    try {
+      await execFileAsync(
+        this.ffmpeg,
+        [
+          "-nostdin", "-hide_banner", "-loglevel", "error",
+          ...accel.input,
+          "-f", "lavfi", "-i", "testsrc2=size=1280x720:rate=30",
+          "-frames:v", "30",
+          "-vf", `scale=w=640:h=360,format=yuv420p10le${accel.hdrFilter}`,
+          ...accel.hevc(800),
+          "-f", "null", "-"
+        ],
+        { timeout: 20_000 }
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Picks the first tone-mapping chain this ffmpeg build can run. */
+  private async detectTonemap(): Promise<Tonemap | null> {
+    for (const candidate of TONEMAPS) {
+      try {
+        await execFileAsync(
+          this.ffmpeg,
+          [
+            "-nostdin", "-hide_banner", "-loglevel", "error",
+            "-f", "lavfi", "-i", "testsrc2=size=640x360:rate=30,format=yuv420p10le,setparams=color_primaries=bt2020:color_trc=smpte2084:colorspace=bt2020nc:range=tv",
+            "-frames:v", "5",
+            "-vf", candidate.filter("pq"),
+            "-f", "null", "-"
+          ],
+          { timeout: 20_000 }
+        );
+        return candidate;
+      } catch {
+        // Not in this build; try the next one.
+      }
+    }
+    logger.warn("this ffmpeg cannot tone-map (no tonemapx, zscale or colour-aware scale filter); transcoded HDR video will look washed out");
+    return null;
+  }
+
+  /** A picture's transfer curve as its first frame carries it, for files whose container does not say. */
+  private async frameTransfer(absolutePath: string): Promise<string> {
+    try {
+      const result = await execFileAsync(this.ffprobe, ["-v", "error", "-select_streams", "v:0", "-read_intervals", "%+#1", "-show_entries", "frame=color_transfer", "-of", "csv=p=0", absolutePath], { timeout: 20_000 });
+      return result.stdout.trim().replace(/,$/, "");
+    } catch {
+      return "";
+    }
+  }
+
+  private async probe(absolutePath: string): Promise<Omit<MediaInfo, "transcode" | "encoder" | "hdrOutput" | "tonemap">> {
     let raw: string;
     try {
       const result = await execFileAsync(this.ffprobe, ["-v", "error", "-print_format", "json", "-show_format", "-show_streams", absolutePath], {
@@ -468,12 +616,16 @@ export class MediaService {
       const width = Number(turned ? videoStream.height : videoStream.width) || 0;
       const height = Number(turned ? videoStream.width : videoStream.height) || 0;
       const pixFmt = String(videoStream.pix_fmt ?? "");
+      const bitDepth = Number(videoStream.bits_per_raw_sample) || (/1[026](le|be)/.test(pixFmt) ? 10 : 8);
+      const declared = String(videoStream.color_transfer ?? "");
+      const transfer = declared && declared !== "unknown" ? declared : bitDepth > 8 ? await this.frameTransfer(absolutePath) : "";
       video = {
         codec: String(videoStream.codec_name ?? ""),
         profile: String(videoStream.profile ?? ""),
         width,
         height,
-        bitDepth: Number(videoStream.bits_per_raw_sample) || (/1[026](le|be)/.test(pixFmt) ? 10 : 8)
+        bitDepth,
+        hdr: transfer === TRANSFER.pq ? "pq" : transfer === TRANSFER.hlg ? "hlg" : null
       };
       if (duration > 0 && width > 0 && height > 0) {
         // Rate a cropped or portrait picture by the 16:9 frame it fills, so 1920x804 still counts as 1080p.
@@ -497,7 +649,8 @@ export class MediaService {
           default: Boolean(stream.disposition?.default),
           forced: Boolean(stream.disposition?.forced),
           sdh: Boolean(stream.disposition?.hearing_impaired),
-          text: TEXT_SUBTITLES.has(String(stream.codec_name ?? ""))
+          text: TEXT_SUBTITLES.has(String(stream.codec_name ?? "")),
+          picture: PICTURE_SUBTITLES.has(String(stream.codec_name ?? ""))
         };
       }),
       fonts: attachments
@@ -530,7 +683,9 @@ function accelFor(encoder: Encoder, device = ""): Accel {
         input: ["-hwaccel", "cuda"],
         filter: "",
         // NVENC only makes forced keyframes seekable (IDR) when asked to.
-        codec: (maxKbps) => ["-c:v", "h264_nvenc", ...gop, "-preset", "p4", "-rc", "vbr", "-cq", "24", "-b:v", "0", "-maxrate", `${maxKbps}k`, "-bufsize", `${maxKbps * 2}k`, "-pix_fmt", "yuv420p", "-profile:v", "high", "-forced-idr", "1"]
+        codec: (maxKbps) => ["-c:v", "h264_nvenc", ...gop, "-preset", "p4", "-rc", "vbr", "-cq", "24", "-b:v", "0", "-maxrate", `${maxKbps}k`, "-bufsize", `${maxKbps * 2}k`, "-pix_fmt", "yuv420p", "-profile:v", "high", "-forced-idr", "1"],
+        hdrFilter: "",
+        hevc: (maxKbps) => ["-c:v", "hevc_nvenc", ...gop, "-preset", "p4", "-rc", "vbr", "-cq", "26", "-b:v", "0", "-maxrate", `${maxKbps}k`, "-bufsize", `${maxKbps * 2}k`, "-pix_fmt", "p010le", "-profile:v", "main10", "-forced-idr", "1"]
       };
     case "vaapi":
     case "vaapi-cqp":
@@ -539,21 +694,43 @@ function accelFor(encoder: Encoder, device = ""): Accel {
         input: ["-init_hw_device", `vaapi=va:${device}`, "-hwaccel", "vaapi", "-hwaccel_device", "va", "-filter_hw_device", "va"],
         filter: ",format=nv12,hwupload",
         // Some Intel generations only do bitrate control with HuC firmware loaded; constant QP always works.
-        codec: (maxKbps) => ["-c:v", "h264_vaapi", ...gop, ...(encoder === "vaapi" ? rate(maxKbps) : ["-rc_mode", "CQP", "-qp", "25"]), "-profile:v", "high"]
+        codec: (maxKbps) => ["-c:v", "h264_vaapi", ...gop, ...(encoder === "vaapi" ? rate(maxKbps) : ["-rc_mode", "CQP", "-qp", "25"]), "-profile:v", "high"],
+        hdrFilter: ",format=p010,hwupload",
+        hevc: (maxKbps) => ["-c:v", "hevc_vaapi", ...gop, ...(encoder === "vaapi" ? rate(maxKbps) : ["-rc_mode", "CQP", "-qp", "27"]), "-profile:v", "main10"]
       };
     case "videotoolbox":
       return {
         encoder,
         input: ["-hwaccel", "videotoolbox"],
         filter: "",
-        codec: (maxKbps) => ["-c:v", "h264_videotoolbox", ...gop, "-b:v", `${Math.round(maxKbps * 0.7)}k`, "-pix_fmt", "yuv420p", "-profile:v", "high"]
+        codec: (maxKbps) => ["-c:v", "h264_videotoolbox", ...gop, "-b:v", `${Math.round(maxKbps * 0.7)}k`, "-pix_fmt", "yuv420p", "-profile:v", "high"],
+        hdrFilter: "",
+        hevc: (maxKbps) => ["-c:v", "hevc_videotoolbox", ...gop, "-b:v", `${Math.round(maxKbps * 0.7)}k`, "-pix_fmt", "p010le", "-profile:v", "main10"]
       };
     default:
       return {
         encoder: "software",
         input: [],
         filter: "",
-        codec: (maxKbps) => ["-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-maxrate", `${maxKbps}k`, "-bufsize", `${maxKbps * 2}k`, "-pix_fmt", "yuv420p", "-profile:v", "high"]
+        codec: (maxKbps) => ["-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-maxrate", `${maxKbps}k`, "-bufsize", `${maxKbps * 2}k`, "-pix_fmt", "yuv420p", "-profile:v", "high"],
+        hdrFilter: "",
+        hevc: (maxKbps) => ["-c:v", "libx265", ...gop, "-preset", "superfast", "-crf", "25", "-maxrate", `${maxKbps}k`, "-bufsize", `${maxKbps * 2}k`, "-pix_fmt", "yuv420p10le", "-x265-params", "log-level=error"]
       };
   }
 }
+
+/**
+ * Ways to tone-map, best first: jellyfin-ffmpeg's own filter, then zimg, then the colour-aware scaler of ffmpeg 7.1
+ * and later. Each names the source's curve itself, as frames decoded on a GPU may arrive without it.
+ */
+const TONEMAPS: Tonemap[] = [
+  { name: "tonemapx", filter: () => "tonemapx=tonemap=bt2390:desat=0:peak=100:t=bt709:m=bt709:p=bt709:format=yuv420p" },
+  {
+    name: "zscale",
+    filter: (hdr) => `zscale=tin=${TRANSFER[hdr]}:min=bt2020nc:pin=bt2020:rin=tv:t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p`
+  },
+  {
+    name: "scale",
+    filter: (hdr) => `scale=in_transfer=${TRANSFER[hdr]}:in_primaries=bt2020:in_color_matrix=bt2020nc:out_transfer=bt709:out_primaries=bt709:out_color_matrix=bt709,format=yuv420p`
+  }
+];

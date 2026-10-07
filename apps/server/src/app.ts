@@ -393,17 +393,28 @@ function registerApi(app: FastifyInstance, services: Services) {
         })),
         ...embedded
           .filter((stream) => stream.text)
-          .map(({ index, codec, text, ...track }) => ({
+          .map(({ index, codec, text, picture, ...track }) => ({
             ...track,
             format: codec === "ass" || codec === "ssa" ? "ass" : "srt",
             id: `stream:${index}`,
             embedded: true,
             url: `/api/media/subtitle?${own}&index=${index}`
+          })),
+        // Picture subtitles (Blu-ray, DVD) come after the text ones: showing one means transcoding, as it is drawn into the frames.
+        ...embedded
+          .filter((stream) => stream.picture && info?.transcode)
+          .map(({ index, codec, text, picture, ...track }) => ({
+            ...track,
+            format: PICTURE_FORMATS[codec] ?? "picture",
+            id: `stream:${index}`,
+            embedded: true,
+            url: "",
+            stream: index
           }))
       ],
       fonts: (info?.fonts ?? []).map((font) => `/api/media/attachment?${own}&index=${font.index}`),
-      /** Picture subtitles (Blu-ray, DVD) that cannot be drawn in the browser. */
-      unsupported: embedded.filter((stream) => !stream.text).length
+      /** Subtitles in a form that can be neither handed to the browser nor drawn into the picture. */
+      unsupported: embedded.filter((stream) => !stream.text && !(stream.picture && info?.transcode)).length
     };
   });
   app.get("/api/media/subtitle", async (request, reply) => {
@@ -426,20 +437,20 @@ function registerApi(app: FastifyInstance, services: Services) {
     const actor = requireActor(request);
     const input = mediaSessionSchema.parse(request.body);
     const file = await services.fsService.preview(actor, input.rootSlug, input.path);
-    const session = await services.media.createSession(actor.id, file.safe.absolutePath, file.stat, input.height, input.audioIndex);
-    return { id: session.id, playlistUrl: `/api/media/sessions/${session.id}/index.m3u8` };
+    const session = await services.media.createSession(actor.id, file.safe.absolutePath, file.stat, input);
+    return { id: session.id, hdr: session.hdr, playlistUrl: `/api/media/sessions/${session.id}/index.m3u8` };
   });
   app.get("/api/media/sessions/:id/:file", async (request, reply) => {
     const actor = requireActor(request);
-    const params = z.object({ id: z.string().min(1), file: z.string().regex(/^(index\.m3u8|\d{1,9}\.ts)$/) }).parse(request.params);
+    const params = z.object({ id: z.string().min(1), file: z.string().regex(/^(index\.m3u8|init\.mp4|\d{1,9}\.(ts|m4s))$/) }).parse(request.params);
     reply.header("Cache-Control", "no-store");
     if (params.file === "index.m3u8") {
       reply.header("Content-Type", "application/vnd.apple.mpegurl");
       return services.media.playlist(actor.id, params.id);
     }
-    const segment = await services.media.segment(actor.id, params.id, Number.parseInt(params.file, 10));
+    const segment = params.file === "init.mp4" ? await services.media.initSegment(actor.id, params.id) : await services.media.segment(actor.id, params.id, Number.parseInt(params.file, 10));
     const stat = await fs.promises.stat(segment);
-    reply.header("Content-Type", "video/mp2t");
+    reply.header("Content-Type", params.file.endsWith(".ts") ? "video/mp2t" : "video/mp4");
     reply.header("Content-Length", String(stat.size));
     return reply.send(fs.createReadStream(segment));
   });
@@ -711,6 +722,9 @@ function assertAllowedWebSocketOrigin(request: FastifyRequest): void {
   }
   throw new AppError(403, "WebSocket origin is not allowed", "WS_ORIGIN_DENIED");
 }
+
+/** What the player calls each kind of picture subtitle. */
+const PICTURE_FORMATS: Record<string, string> = { hdmv_pgs_subtitle: "pgs", dvd_subtitle: "vobsub", dvb_subtitle: "dvb" };
 
 const uploadRequestSchema = z.object({
   rootSlug: z.string().min(1),
