@@ -347,6 +347,7 @@ export function VideoPreview({
         previous={videos.length > 1 && position !== -1 ? neighbour(videos[position - 1]) : undefined}
         next={videos.length > 1 && position !== -1 ? neighbour(videos[position + 1]) : undefined}
         fallbackDuration={media?.duration}
+        hdr={hdr || (height === null && sourceHdr !== null && screenHdr)}
         notice={status === "preparing" ? t("Transcoding…") : status === "error" ? t("Couldn’t play this video") : null}
         renderSettings={renderSettings}
         onAspect={onAspect}

@@ -7,6 +7,7 @@ import { formatClock } from "@/lib/format";
 import { getVideoVolume, setVideoVolume } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 import { startCompositePip } from "./compositePip";
+import { GlassBackdrop } from "./GlassBackdrop";
 import { t } from "@/lib/i18n";
 
 const IDLE_MS = 2500;
@@ -58,6 +59,7 @@ export function VideoPlayer({
   previous,
   next,
   notice,
+  hdr = false,
   renderSettings,
   onAspect,
   onLoadedData,
@@ -73,6 +75,8 @@ export function VideoPlayer({
   previous?: PlayerNeighbour | null;
   next?: PlayerNeighbour | null;
   notice?: string | null;
+  /** Whether the picture is being shown as HDR, which the glass of the controls cannot blur by itself. */
+  hdr?: boolean;
   /** The quality menu, given where to mount its popup and a way to keep the controls up while it is open. */
   renderSettings?: (slot: SettingsSlot) => ReactNode;
   onAspect?: (aspect: number) => void;
@@ -337,6 +341,7 @@ export function VideoPlayer({
         }}
         onError={onError}
       />
+      {hdr ? <GlassBackdrop videoRef={videoRef} shown={controlsShown || loading || Boolean(notice)} menuOpen={menuOpen} /> : null}
 
       {(notice ?? (loading ? t("Loading…") : null)) ? (
         <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-center">
