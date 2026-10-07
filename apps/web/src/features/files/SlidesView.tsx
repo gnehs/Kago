@@ -1,5 +1,6 @@
 import { init } from "pptx-preview";
 import { useEffect, useRef } from "react";
+import { completeCharts } from "./pptxCharts";
 
 // Slides are drawn at this size and then scaled as a whole, so text keeps its place whatever the window's width.
 const SLIDE_WIDTH = 960;
@@ -21,8 +22,12 @@ export default function SlidesView({ data, onError }: { data: ArrayBuffer; onErr
     const observer = new ResizeObserver(fit);
     observer.observe(scroller.current!);
     const previewer = init(container, { width: SLIDE_WIDTH, height: SLIDE_HEIGHT, mode: "list" });
-    // The library reads the buffer in place; a copy leaves ours whole for a second mount.
-    previewer.preview(data.slice(0)).catch(() => !cancelled && fail.current());
+    completeCharts(data)
+      // A deck whose charts cannot be touched up is still worth showing as it is.
+      .catch(() => data)
+      // The library reads the buffer in place; a copy leaves ours whole for a second mount.
+      .then((deck) => (cancelled ? undefined : previewer.preview(deck.slice(0))))
+      .catch(() => !cancelled && fail.current());
 
     return () => {
       cancelled = true;

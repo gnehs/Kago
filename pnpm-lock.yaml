@@ -269,6 +269,9 @@ importers:
       hls.js:
         specifier: ^1.7.3
         version: 1.7.3
+      jszip:
+        specifier: ^3.10.2
+        version: 3.10.2
       lucide-react:
         specifier: ^0.468.0
         version: 0.468.0(react@19.2.7)
