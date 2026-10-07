@@ -123,10 +123,11 @@ export function useImageMetadata(rootSlug: string, path: string, enabled = true)
   });
 }
 
-export function useMediaInfo(rootSlug: string, path: string) {
+export function useMediaInfo(rootSlug: string, path: string, enabled = true) {
   return useQuery({
     queryKey: ["media", "info", rootSlug, path],
     queryFn: () => api<MediaInfo>(`/api/media/info?${new URLSearchParams({ rootSlug, path }).toString()}`),
+    enabled,
     retry: false,
     staleTime: 60_000
   });

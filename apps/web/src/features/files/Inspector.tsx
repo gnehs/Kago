@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { Link2, X } from "lucide-react";
-import { useFileMeta, useImageMetadata, usePathPermissions, useRoots, useShares } from "@/api/hooks";
+import { useFileMeta, useImageMetadata, useMediaInfo, usePathPermissions, useRoots, useShares } from "@/api/hooks";
 import { KagoBadge } from "@/components/kago/badge";
 import { KagoLoading } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
@@ -10,12 +10,13 @@ import { ShareForm } from "@/features/shares/ShareForm";
 import { parseShareMode, shareModeLabel } from "@/features/shares/shareUtils";
 import { FinderTagEditor } from "@/features/tags/FinderTagEditor";
 import { TagEditor } from "@/features/tags/TagEditor";
-import { formatDate, formatSize, isPicture, kindLabel } from "@/lib/format";
+import { formatDate, formatSize, isPicture, isVideoType, kindLabel } from "@/lib/format";
 import { displayPath } from "@/lib/paths";
 import { usePointerDrag } from "@/lib/usePointerDrag";
 import { useWorkspaceStore } from "@/stores/workspace";
 import type { FileWindow, ImageMetadata } from "@/types/kago";
 import { FileThumbnail } from "./FileThumbnail";
+import { videoInfoGroups } from "./videoInfo";
 import { t } from "@/lib/i18n";
 
 const MIN_WIDTH = 260;
@@ -34,6 +35,8 @@ export function Inspector({ window: activeWindow, isAdmin }: { window: FileWindo
   const permissions = usePathPermissions(rootSlug, path, isAdmin);
   // A picture without shooting data, or a server that cannot read it, simply has no such section.
   const photo = useImageMetadata(rootSlug, path, Boolean(meta.data && isPicture(meta.data))).data;
+  // Likewise a video the server cannot probe.
+  const video = useMediaInfo(rootSlug, path, Boolean(meta.data && meta.data.kind === "file" && isVideoType(meta.data.type))).data;
   const root = roots.data?.find((root) => root.slug === rootSlug);
   const rootId = root?.id;
   const readonly = Boolean(root?.readonly);
@@ -80,6 +83,16 @@ export function Inspector({ window: activeWindow, isAdmin }: { window: FileWindo
           </Section>
 
           {photo && Object.keys(photo).length > 0 ? <PhotoDetails photo={photo} /> : null}
+
+          {video
+            ? videoInfoGroups(video).map((group) => (
+                <Section key={group.title} title={group.title}>
+                  <dl className="m-0 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5">
+                    {group.rows.map((row, index) => <Detail key={index} label={row.label}>{row.value}</Detail>)}
+                  </dl>
+                </Section>
+              ))
+            : null}
 
           {/* Two kinds of tag, one place: where each is kept is what tells them apart. */}
           <Section title={t("Tags")}>

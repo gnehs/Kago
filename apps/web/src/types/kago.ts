@@ -280,9 +280,30 @@ export type MediaInfo = {
   transcode: boolean;
   duration: number;
   container: string;
-  /** `hdr` names the transfer curve of an HDR picture: PQ (HDR10) or HLG. */
-  video: { codec: string; profile: string; width: number; height: number; bitDepth: number; hdr: "pq" | "hlg" | null; peak: number } | null;
-  audio: Array<{ codec: string; channels: number; language: string; title: string }>;
+  /** Bits per second of the whole file; 0 where a figure is not known, here and for each stream. */
+  bitrate: number;
+  /**
+   * `hdr` names the transfer curve of an HDR picture: PQ (HDR10) or HLG. `level` is as ffprobe gives it
+   * (41 for H.264 level 4.1, 153 for HEVC level 5.1); `dolbyVision` is the profile, 0 without it.
+   */
+  video: {
+    codec: string;
+    profile: string;
+    level: number;
+    width: number;
+    height: number;
+    fps: number;
+    bitDepth: number;
+    pixelFormat: string;
+    interlaced: boolean;
+    bitrate: number;
+    hdr: "pq" | "hlg" | null;
+    peak: number;
+    dolbyVision: number;
+  } | null;
+  audio: Array<{ codec: string; profile: string; channels: number; layout: string; sampleRate: number; bitrate: number; language: string; title: string; default: boolean }>;
+  /** Subtitle streams inside the file. */
+  subtitles: Array<{ index: number; codec: string; language: string; title: string; default: boolean; forced: boolean; sdh: boolean }>;
   /** Heights the file can be transcoded to, tallest first. */
   qualities: number[];
   /** What the server encodes with: `software`, or the GPU API in use. */

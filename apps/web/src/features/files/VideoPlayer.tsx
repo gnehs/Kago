@@ -61,6 +61,8 @@ export function VideoPlayer({
   notice,
   hdr = false,
   renderSettings,
+  overlay,
+  onInfo,
   onAspect,
   onLoadedData,
   onPlaying,
@@ -79,6 +81,10 @@ export function VideoPlayer({
   hdr?: boolean;
   /** The quality menu, given where to mount its popup and a way to keep the controls up while it is open. */
   renderSettings?: (slot: SettingsSlot) => ReactNode;
+  /** Something laid over the picture that goes wherever the player goes: fullscreen, or a floating window. */
+  overlay?: ReactNode;
+  /** Shows or hides what is known about the video; the player only lends it a shortcut. */
+  onInfo?: () => void;
   onAspect?: (aspect: number) => void;
   onLoadedData?: () => void;
   onPlaying?: () => void;
@@ -251,6 +257,12 @@ export function VideoPlayer({
   };
 
   const onKeyDown = (event: React.KeyboardEvent) => {
+    // The same keys as the info panel of a picture, and the bare letter the other shortcuts here use.
+    if (onInfo && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "i" && !(event.target as Element).closest("[role=menu]")) {
+      event.preventDefault();
+      onInfo();
+      return;
+    }
     if (event.metaKey || event.ctrlKey || event.altKey) return;
     const target = event.target as Element;
     if (target.closest("[role=menu]")) return;
@@ -354,6 +366,8 @@ export function VideoPlayer({
           </span>
         </div>
       )}
+
+      {overlay}
 
       <div
         className={cn(

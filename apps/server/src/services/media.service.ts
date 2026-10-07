@@ -39,12 +39,29 @@ export type MediaInfo = {
   duration: number;
   /** ffprobe's format name list, e.g. `mov,mp4,m4a,3gp,3g2,mj2` or `matroska,webm`. */
   container: string;
+  /** Bits per second of the whole file; 0 where a figure is not known, here and for each stream. */
+  bitrate: number;
   /**
    * `hdr` names the transfer curve of an HDR picture: PQ (HDR10, Dolby Vision with an HDR10 base) or HLG.
    * `peak` is the brightest its mastering display went, in nits; 0 when the file does not say.
+   * `level` is as ffprobe gives it (41 for H.264 level 4.1, 153 for HEVC level 5.1); `dolbyVision` is the profile, 0 without it.
    */
-  video: { codec: string; profile: string; width: number; height: number; bitDepth: number; hdr: Hdr | null; peak: number } | null;
-  audio: Array<{ codec: string; channels: number; language: string; title: string }>;
+  video: {
+    codec: string;
+    profile: string;
+    level: number;
+    width: number;
+    height: number;
+    fps: number;
+    bitDepth: number;
+    pixelFormat: string;
+    interlaced: boolean;
+    bitrate: number;
+    hdr: Hdr | null;
+    peak: number;
+    dolbyVision: number;
+  } | null;
+  audio: Array<{ codec: string; profile: string; channels: number; layout: string; sampleRate: number; bitrate: number; language: string; title: string; default: boolean }>;
   /** Subtitle streams inside the file, numbered among themselves. `text` ones are handed to the player; `picture` ones are drawn into the frames. */
   subtitles: Array<{ index: number; codec: string; language: string; title: string; default: boolean; forced: boolean; sdh: boolean; text: boolean; picture: boolean }>;
   /** Fonts attached to the file for its subtitles, numbered among the attachments. */
@@ -191,7 +208,7 @@ export class MediaService {
   }
 
   async info(absolutePath: string, stat: FileVersion): Promise<MediaInfo> {
-    if (!(await this.available)) return { transcode: false, duration: 0, container: "", video: null, audio: [], subtitles: [], fonts: [], qualities: [], encoder: "software", hdrOutput: false, tonemap: false };
+    if (!(await this.available)) return { transcode: false, duration: 0, container: "", bitrate: 0, video: null, audio: [], subtitles: [], fonts: [], qualities: [], encoder: "software", hdrOutput: false, tonemap: false };
     const key = `${absolutePath}:${stat.mtimeMs}:${stat.size}`;
     let probed = this.probes.get(key);
     if (!probed) {
@@ -693,11 +710,17 @@ export class MediaService {
       video = {
         codec: String(videoStream.codec_name ?? ""),
         profile: String(videoStream.profile ?? ""),
+        level: Math.max(0, Number(videoStream.level) || 0),
         width,
         height,
+        fps: frameRate(videoStream.avg_frame_rate) || frameRate(videoStream.r_frame_rate),
         bitDepth,
+        pixelFormat: pixFmt,
+        interlaced: !["", "unknown", "progressive"].includes(String(videoStream.field_order ?? "")),
+        bitrate: streamBitrate(videoStream),
         hdr: transfer === TRANSFER.pq ? "pq" : transfer === TRANSFER.hlg ? "hlg" : null,
-        peak
+        peak,
+        dolbyVision: Number((videoStream.side_data_list as Array<Record<string, unknown>> | undefined)?.find((side) => side.dv_profile !== undefined)?.dv_profile) || 0
       };
       if (duration > 0 && width > 0 && height > 0) {
         // Rate a cropped or portrait picture by the 16:9 frame it fills, so 1920x804 still counts as 1080p.
@@ -710,6 +733,7 @@ export class MediaService {
     return {
       duration,
       container: String(data.format?.format_name ?? ""),
+      bitrate: Number(data.format?.bit_rate) || 0,
       video,
       subtitles: subtitleStreams.map((stream, index) => {
         const title = String(stream.tags?.title ?? "");
@@ -731,13 +755,32 @@ export class MediaService {
         .map(({ index, name }) => ({ index, name })),
       audio: audioStreams.map((stream) => ({
         codec: String(stream.codec_name ?? ""),
+        profile: String(stream.profile ?? ""),
         channels: Number(stream.channels) || 0,
+        layout: String(stream.channel_layout ?? ""),
+        sampleRate: Number(stream.sample_rate) || 0,
+        bitrate: streamBitrate(stream),
         language: streamLanguage(String(stream.tags?.language ?? ""), String(stream.tags?.title ?? "")),
-        title: String(stream.tags?.title ?? "")
+        title: String(stream.tags?.title ?? ""),
+        default: Boolean(stream.disposition?.default)
       })),
       qualities
     };
   }
+}
+
+/** ffprobe writes a rate as a fraction: `24000/1001`, or `0/0` where there is none. */
+function frameRate(value: unknown): number {
+  const [count, per = "1"] = String(value ?? "").split("/");
+  const rate = Number(count) / Number(per);
+  return Number.isFinite(rate) && rate > 0 ? Math.round(rate * 1000) / 1000 : 0;
+}
+
+/** Matroska keeps a stream's bit rate in a tag mkvmerge writes, rather than where ffprobe reports one. */
+function streamBitrate(stream: Record<string, any>): number {
+  const tags = (stream.tags ?? {}) as Record<string, unknown>;
+  const tagged = Object.keys(tags).find((name) => /^BPS(-|$)/i.test(name));
+  return Number(stream.bit_rate) || Number(tagged ? tags[tagged] : 0) || 0;
 }
 
 /**

@@ -1,4 +1,4 @@
-import { AudioLines, Captions, CaptionsOff, Check, Download } from "lucide-react";
+import { AudioLines, Captions, CaptionsOff, Check, Download, Info, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, downloadUrl, previewUrl } from "@/api/client";
 import { useFileList, useMediaInfo, useSubtitles } from "@/api/hooks";
@@ -14,6 +14,7 @@ import { useWorkspaceStore, type PreviewWindow } from "@/stores/workspace";
 import type { FileItem, MediaInfo, SubtitleTrack } from "@/types/kago";
 import { FileIcon } from "./FileIcon";
 import { useSubtitleRenderer } from "./useSubtitleRenderer";
+import { chromaSampling, videoInfoGroups, type VideoInfoGroup } from "./videoInfo";
 import { PLAYER_CONTROL_CLASS, VideoPlayer } from "./VideoPlayer";
 import { t } from "@/lib/i18n";
 
@@ -21,6 +22,10 @@ const BITRATE_HINT: Record<number, string> = { 2160: "16 Mbps", 1440: "10 Mbps",
 const ENCODER_LABEL: Record<string, string> = { nvenc: "NVIDIA GPU", vaapi: "Intel / AMD GPU", "vaapi-cqp": "Intel / AMD GPU", videotoolbox: "Apple GPU", software: "CPU" };
 const SUBTITLE_FORMAT_LABEL: Record<SubtitleTrack["format"], string> = { ass: "ASS", srt: "SRT", pgs: "PGS", vobsub: "VobSub", dvb: "DVB", picture: "" };
 const MAX_RECOVERIES = 2;
+/** How long the original file gets to show it is a video at all before the server is asked to transcode it. */
+const DIRECT_LOAD_TIMEOUT_MS = 20_000;
+/** How much of the original file may play without a single frame of picture before it is given up on. */
+const DIRECT_BLIND_SECONDS = 1.5;
 // Numbered episodes sort as numbers, the way the file list shows them.
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 
@@ -81,6 +86,7 @@ export function VideoPreview({
   const [directFailed, setDirectFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [status, setStatus] = useState<"idle" | "preparing" | "error">("idle");
+  const [infoOpen, setInfoOpen] = useState(false);
   const subtitleList = useSubtitles(rootSlug, path).data;
   const subtitles = subtitleList?.tracks ?? [];
   // A subtitle's id, or `off`; null until a choice is made in this window.
@@ -128,6 +134,14 @@ export function VideoPreview({
   reportAspect.current = onAspect;
   // ffprobe knows the shape before the first frame arrives, which a transcode can keep waiting.
   const probedAspect = media?.video && media.video.height > 0 ? media.video.width / media.video.height : 0;
+  // The original file is only watched for trouble where there is something to fall back on, and a picture to miss.
+  const guarded = qualities.length > 0 && Boolean(media?.video);
+
+  /** Hands a file the browser turned out not to play over to the transcoder. */
+  const failDirect = () => {
+    toast(t("The browser can’t play this file directly, so it is being transcoded"));
+    setDirectFailed(true);
+  };
 
   useEffect(() => {
     if (probedAspect > 0) reportAspect.current?.(probedAspect);
@@ -149,6 +163,33 @@ export function VideoPreview({
       setStatus("idle");
       video.src = previewUrl(rootSlug, path);
       video.addEventListener("loadedmetadata", restore, { once: true });
+      if (guarded) {
+        // A browser does not always say so when it cannot play a file: it may never get past the header, or play
+        // the sound of a picture it cannot decode. None of these raise the error that `onError` waits for.
+        const giveUp = () => {
+          if (!cancelled) failDirect();
+        };
+        const timer = globalThis.setTimeout(() => {
+          if (video.readyState === 0) giveUp();
+        }, DIRECT_LOAD_TIMEOUT_MS);
+        const onMetadata = () => {
+          if (video.videoWidth === 0) giveUp();
+        };
+        const onTime = () => {
+          const frames = video.getVideoPlaybackQuality?.().totalVideoFrames;
+          if (frames === undefined || frames > 0) return video.removeEventListener("timeupdate", onTime);
+          let played = 0;
+          for (let index = 0; index < video.played.length; index += 1) played += video.played.end(index) - video.played.start(index);
+          if (played >= DIRECT_BLIND_SECONDS) giveUp();
+        };
+        video.addEventListener("loadedmetadata", onMetadata);
+        video.addEventListener("timeupdate", onTime);
+        teardown = () => {
+          globalThis.clearTimeout(timer);
+          video.removeEventListener("loadedmetadata", onMetadata);
+          video.removeEventListener("timeupdate", onTime);
+        };
+      }
     } else {
       setStatus("preparing");
       void (async () => {
@@ -214,7 +255,7 @@ export function VideoPreview({
       video.load();
       if (sessionId) closeSession(sessionId);
     };
-  }, [ready, rootSlug, path, height, audioIndex, burned, burnedFile, hdr, lift, attempt]);
+  }, [ready, rootSlug, path, height, audioIndex, burned, burnedFile, hdr, lift, attempt, guarded]);
 
   useSubtitleRenderer(videoRef, textSubtitle, subtitleList?.fonts ?? [], aspect ?? probedAspect, () => {
     toast(t("Couldn’t load this subtitle"), "error");
@@ -235,57 +276,13 @@ export function VideoPreview({
     if (quality === "direct") setAudioIndex(0);
   };
 
-  const renderSettings = (slot: { container: HTMLElement | null; onOpenChange: (open: boolean) => void }) => (
-    <>
-      {subtitles.length > 0 || audioTracks.length > 1 ? (
-        <KagoDropdownMenu
-          label={t("Subtitles and audio")}
-          side="top"
-          className={`size-7! ${PLAYER_CONTROL_CLASS}`}
-          container={slot.container}
-          onOpenChange={slot.onOpenChange}
-          menu={
-            <>
-              {subtitles.length > 0 ? (
-                <>
-                  <MenuHeading>{t("Subtitles")}</MenuHeading>
-                  <CheckItem checked={subtitle === null} onClick={() => pickTrack(null)}>{t("Off")}</CheckItem>
-                  {subtitles.map((track) => (
-                    <CheckItem key={track.id} checked={subtitle?.id === track.id} hint={track.embedded ? t("Embedded {format}", { format: SUBTITLE_FORMAT_LABEL[track.format] || t("image subtitles") }) : SUBTITLE_FORMAT_LABEL[track.format]} onClick={() => pickTrack(track)}>
-                      {subtitleLabel(track)}
-                    </CheckItem>
-                  ))}
-                </>
-              ) : null}
-              {subtitleList && subtitleList.unsupported > 0 ? <div className="px-2 py-1 text-xs text-muted">{t("{count} more subtitle can’t be shown | {count} more subtitles can’t be shown",{ count: subtitleList.unsupported })}</div> : null}
-              {audioTracks.length > 1 ? (
-                <>
-                  {subtitles.length > 0 ? <KagoMenuSeparator /> : null}
-                  <MenuHeading>{t("Audio tracks")}</MenuHeading>
-                  {audioTracks.map((track, index) => (
-                    <CheckItem
-                      key={index}
-                      checked={(height === null ? 0 : audioIndex) === index}
-                      hint={[track.codec.toUpperCase(), track.channels > 0 ? `${track.channels}ch` : ""].filter(Boolean).join(" ")}
-                      onClick={() => {
-                        recoveries.current = 0;
-                        setAudioIndex(index);
-                      }}
-                    >
-                      {[languageLabel(track.language), track.title].filter(Boolean).join(" · ") || t("Audio track {number}", { number: index + 1 })}
-                    </CheckItem>
-                  ))}
-                </>
-              ) : null}
-            </>
-          }
-        >
-          {subtitle ? <Captions /> : subtitles.length > 0 ? <CaptionsOff /> : <AudioLines />}
-        </KagoDropdownMenu>
-      ) : null}
-      {qualityMenu(slot)}
-    </>
-  );
+  const output =
+    height === null
+      ? t("Original file")
+      : t("Transcoded to {quality} by {encoder}", { quality: `${height}p${hdr ? " HDR" : ""}`, encoder: ENCODER_LABEL[media?.encoder ?? ""] ?? "CPU" });
+  const infoGroups: VideoInfoGroup[] = media
+    ? [...videoInfoGroups(media, subtitles.filter((track) => !track.embedded)), ...(qualities.length > 0 ? [{ title: t("Playback"), rows: [{ label: t("Output"), value: output }, ...(height !== null ? [{ label: t("Bitrate limit"), value: BITRATE_HINT[height] ?? "" }] : [])] }] : [])]
+    : [];
 
   const qualityMenu = (slot: { container: HTMLElement | null; onOpenChange: (open: boolean) => void }) =>
     qualities.length > 0 ? (
@@ -340,6 +337,63 @@ export function VideoPreview({
       </KagoDropdownMenu>
     ) : null;
 
+  const renderSettings = (slot: { container: HTMLElement | null; onOpenChange: (open: boolean) => void }) => (
+    <>
+      {subtitles.length > 0 || audioTracks.length > 1 ? (
+        <KagoDropdownMenu
+          label={t("Subtitles and audio")}
+          side="top"
+          className={`size-7! ${PLAYER_CONTROL_CLASS}`}
+          container={slot.container}
+          onOpenChange={slot.onOpenChange}
+          menu={
+            <>
+              {subtitles.length > 0 ? (
+                <>
+                  <MenuHeading>{t("Subtitles")}</MenuHeading>
+                  <CheckItem checked={subtitle === null} onClick={() => pickTrack(null)}>{t("Off")}</CheckItem>
+                  {subtitles.map((track) => (
+                    <CheckItem key={track.id} checked={subtitle?.id === track.id} hint={track.embedded ? t("Embedded {format}", { format: SUBTITLE_FORMAT_LABEL[track.format] || t("image subtitles") }) : SUBTITLE_FORMAT_LABEL[track.format]} onClick={() => pickTrack(track)}>
+                      {subtitleLabel(track)}
+                    </CheckItem>
+                  ))}
+                </>
+              ) : null}
+              {subtitleList && subtitleList.unsupported > 0 ? <div className="px-2 py-1 text-xs text-muted">{t("{count} more subtitle can’t be shown | {count} more subtitles can’t be shown",{ count: subtitleList.unsupported })}</div> : null}
+              {audioTracks.length > 1 ? (
+                <>
+                  {subtitles.length > 0 ? <KagoMenuSeparator /> : null}
+                  <MenuHeading>{t("Audio tracks")}</MenuHeading>
+                  {audioTracks.map((track, index) => (
+                    <CheckItem
+                      key={index}
+                      checked={(height === null ? 0 : audioIndex) === index}
+                      hint={[track.codec.toUpperCase(), track.channels > 0 ? `${track.channels}ch` : ""].filter(Boolean).join(" ")}
+                      onClick={() => {
+                        recoveries.current = 0;
+                        setAudioIndex(index);
+                      }}
+                    >
+                      {[languageLabel(track.language), track.title].filter(Boolean).join(" · ") || t("Audio track {number}", { number: index + 1 })}
+                    </CheckItem>
+                  ))}
+                </>
+              ) : null}
+            </>
+          }
+        >
+          {subtitle ? <Captions /> : subtitles.length > 0 ? <CaptionsOff /> : <AudioLines />}
+        </KagoDropdownMenu>
+      ) : null}
+      {qualityMenu(slot)}
+      {infoGroups.length > 0 ? (
+        <KagoIconButton label={t("Video info (⌘I)")} className={`size-7 ${PLAYER_CONTROL_CLASS}`} active={infoOpen} onClick={() => setInfoOpen(!infoOpen)}>
+          <Info />
+        </KagoIconButton>
+      ) : null}
+    </>
+  );
+
   return (
       <VideoPlayer
         videoRef={videoRef}
@@ -350,6 +404,8 @@ export function VideoPreview({
         hdr={hdr || (height === null && sourceHdr !== null && screenHdr)}
         notice={status === "preparing" ? t("Transcoding…") : status === "error" ? t("Couldn’t play this video") : null}
         renderSettings={renderSettings}
+        overlay={infoOpen && infoGroups.length > 0 ? <VideoInfoPanel groups={infoGroups} onClose={() => setInfoOpen(false)} /> : null}
+        onInfo={infoGroups.length > 0 ? () => setInfoOpen((open) => !open) : undefined}
         onAspect={onAspect}
         onLoadedData={() => setStatus("idle")}
         onPlaying={() => {
@@ -358,10 +414,36 @@ export function VideoPreview({
         onError={() => {
           // Only the original file reports failures here; hls.js surfaces its own.
           if (height !== null || qualities.length === 0) return;
-          toast(t("The browser can’t play this file directly, so it is being transcoded"));
-          setDirectFailed(true);
+          failDirect();
         }}
       />
+  );
+}
+
+/** What is known about the video, on a sheet of glass over the picture so it follows the player into fullscreen. */
+function VideoInfoPanel({ groups, onClose }: { groups: VideoInfoGroup[]; onClose: () => void }) {
+  return (
+    <aside className="kago-player-glass absolute top-2 right-2 flex max-h-[calc(100%-6rem)] w-72 max-w-[calc(100%-1rem)] flex-col rounded-lg text-xs" aria-label={t("Video info")}>
+      <header className="flex shrink-0 items-center py-1 pr-1 pl-3">
+        <strong className="flex-1 font-semibold">{t("Video info")}</strong>
+        <KagoIconButton label={t("Close")} className={`size-6 ${PLAYER_CONTROL_CLASS}`} onClick={onClose}><X /></KagoIconButton>
+      </header>
+      <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3 select-text">
+        {groups.map((group) => (
+          <section key={group.title} className="mt-3 first:mt-0">
+            <h3 className="m-0 mb-1 font-medium text-white/60">{group.title}</h3>
+            <dl className="m-0 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1">
+              {group.rows.map((row, index) => (
+                <div key={index} className="contents">
+                  <dt className="text-white/60 tabular-nums">{row.label}</dt>
+                  <dd className="m-0 min-w-0 break-words">{row.value}</dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+        ))}
+      </div>
+    </aside>
   );
 }
 
@@ -429,15 +511,21 @@ function closeSession(id: string) {
 }
 
 const VIDEO_CODECS: Record<string, string> = { h264: "avc1.640028", hevc: "hvc1.1.6.L120.90", vp8: "vp8", vp9: "vp09.00.40.08", av1: "av01.0.08M.08" };
+/** The same codecs with a 10-bit picture, which a browser may not take where it takes 8 bits. */
+const VIDEO_CODECS_10BIT: Record<string, string> = { hevc: HEVC_MAIN10, vp9: "vp09.02.40.10", av1: "av01.0.08M.10" };
 const AUDIO_CODECS: Record<string, string> = { aac: "mp4a.40.2", mp3: "mp3", opus: "opus", vorbis: "vorbis", flac: "flac", ac3: "ac-3", eac3: "ec-3" };
 
 /** Whether this browser can play the file untouched, judged by container and codecs. A wrong yes is caught by the video's error event. */
 function canDirectPlay(info: MediaInfo): boolean {
   if (!info.video) return true;
-  const videoCodec = info.video.codec === "hevc" && info.video.bitDepth > 8 ? HEVC_MAIN10 : VIDEO_CODECS[info.video.codec];
+  const videoCodec = (info.video.bitDepth > 8 ? VIDEO_CODECS_10BIT[info.video.codec] : undefined) ?? VIDEO_CODECS[info.video.codec];
   const audioCodec = info.audio[0] ? AUDIO_CODECS[info.audio[0].codec] : "";
   if (!videoCodec || audioCodec === undefined) return false;
   if (info.video.codec === "h264" && info.video.bitDepth > 8) return false;
+  // Cameras and screen recorders keep more colour than the 4:2:0 that browsers decode everywhere; a browser asked
+  // about such a file answers for the codec and then shows nothing.
+  if (!["", "4:2:0"].includes(chromaSampling(info.video.pixelFormat)) || /^(rgb|bgr|gbr|gray)/.test(info.video.pixelFormat)) return false;
+  if (info.video.bitDepth > 10) return false;
 
   const container = info.container.split(",");
   let mime: string;
