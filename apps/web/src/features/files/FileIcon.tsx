@@ -117,7 +117,7 @@ export function FileIcon({ item, className }: { item: IconItem; className?: stri
       ) : (
         <>
           <Paper id={id} />
-          <path d="M6.5 2.5h7.7l5.3 5.3v11.7a2 2 0 0 1-2 2h-11a2 2 0 0 1-2-2v-15a2 2 0 0 1 2-2z" fill={`url(#${id})`} />
+          <path d="M6.5 2.5h7.7l5.3 5.3v11.7a2 2 0 0 1-2 2h-11a2 2 0 0 1-2-2v-15a2 2 0 0 1 2-2z" className="kago-icon-sheet" fill={`url(#${id})`} />
           {MARKS[kind] ? (
             <g transform="translate(8.2 10.4) scale(0.76)" strokeWidth={1.7}>
               {MARKS[kind]}
