@@ -7,6 +7,7 @@ import { id, now } from "../lib/ids.js";
 import type { EventPublisher } from "../ws/events.js";
 import type { AuditService } from "./audit.service.js";
 import type { PathService } from "./path.service.js";
+import type { StorageService } from "./storage.service.js";
 import type { PermissionService } from "./permission.service.js";
 import type { Actor } from "./types.js";
 
@@ -16,7 +17,8 @@ export class ShelfService {
     private readonly paths: PathService,
     private readonly permissions: PermissionService,
     private readonly events: EventPublisher,
-    private readonly audit: AuditService
+    private readonly audit: AuditService,
+    private readonly storage: StorageService
   ) {}
 
   ensureDefault(ownerId: string) {
@@ -73,14 +75,14 @@ export class ShelfService {
     this.requireOwnedShelf(actor, shelfId);
     const safe = await this.paths.resolveExisting(rootSlug, logicalPath);
     this.permissions.require(actor, "list", safe.root, safe.logicalPath);
-    const stat = await import("node:fs/promises").then((fs) => fs.stat(safe.absolutePath));
+    const stat = await this.storage.stat(safe);
     const item = {
       id: id("shelfitem"),
       shelf_id: shelfId,
       root_id: safe.root.id,
       path: safe.logicalPath,
       kind: stat.isDirectory() ? "folder" : "file",
-      name: nfc(path.basename(safe.absolutePath)),
+      name: nfc(this.storage.name(safe)),
       size: stat.size,
       added_at: now()
     };

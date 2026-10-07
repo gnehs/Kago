@@ -9,6 +9,7 @@ export type ServerEvent =
   | { type: "shelf.updated"; userId: string; shelfId: string }
   | { type: "workspace.updated"; userId: string }
   | { type: "permission.updated"; userId?: string }
+  | { type: "roots.updated" }
   | { type: "share.updated"; userId: string };
 
 type ClientContext = Pick<Actor, "id" | "role">;
@@ -35,6 +36,8 @@ export class EventHub implements EventPublisher {
 }
 
 function canReceive(actor: ClientContext, event: ServerEvent): boolean {
+  // Which locations there are is no secret among those signed in; each still sees only the ones it may list.
+  if (event.type === "roots.updated") return true;
   if (actor.role === "ADMIN") return true;
   if ("userId" in event) return event.userId === actor.id;
   return false;

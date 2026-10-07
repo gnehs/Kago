@@ -17,7 +17,12 @@ export type Root = {
   id: string;
   slug: string;
   name: string;
+  /** The folder on disk for a local root; empty for a remote one, which has no path of its own. */
   base_path: string;
+  /** `local`, or the kind of remote (`smb`, `sftp`, ...) that rclone reaches for it. */
+  provider: string;
+  /** A remote root's connection settings, sealed. */
+  config: string | null;
   readonly: number;
   created_at: number;
   updated_at: number;

@@ -62,7 +62,10 @@ export type MediaInfo = {
 type Hdr = "pq" | "hlg";
 
 /** A picture subtitle file beside the video. */
-export type PictureSubtitleFile = { absolutePath: string; stat: fs.Stats; format: PictureSubtitleFormat };
+/** Only what tells one version of a file from the next is read from `stat`. */
+type FileVersion = { size: number; mtimeMs: number };
+
+export type PictureSubtitleFile = { absolutePath: string; stat: FileVersion; format: PictureSubtitleFormat };
 
 type Encoder = "software" | "nvenc" | "vaapi" | "vaapi-cqp" | "videotoolbox";
 
@@ -187,7 +190,7 @@ export class MediaService {
     this.ticker.unref();
   }
 
-  async info(absolutePath: string, stat: fs.Stats): Promise<MediaInfo> {
+  async info(absolutePath: string, stat: FileVersion): Promise<MediaInfo> {
     if (!(await this.available)) return { transcode: false, duration: 0, container: "", video: null, audio: [], subtitles: [], fonts: [], qualities: [], encoder: "software", hdrOutput: false, tonemap: false };
     const key = `${absolutePath}:${stat.mtimeMs}:${stat.size}`;
     let probed = this.probes.get(key);
@@ -200,7 +203,7 @@ export class MediaService {
   }
 
   /** A subtitle stream written out as a file of its own: ASS as it is, any other text format as SubRip. */
-  async subtitle(absolutePath: string, stat: fs.Stats, index: number): Promise<{ file: string; format: SubtitleFormat }> {
+  async subtitle(absolutePath: string, stat: FileVersion, index: number): Promise<{ file: string; format: SubtitleFormat }> {
     const stream = (await this.info(absolutePath, stat)).subtitles.find((item) => item.index === index);
     if (!stream?.text) throw new AppError(404, "Subtitle not found", "NOT_FOUND");
     const format: SubtitleFormat = stream.codec === "ass" || stream.codec === "ssa" ? "ass" : "srt";
@@ -232,12 +235,12 @@ export class MediaService {
   }
 
   /** A font attached to the file, e.g. the ones a Matroska release carries for its styled subtitles. */
-  async font(absolutePath: string, stat: fs.Stats, index: number): Promise<string> {
+  async font(absolutePath: string, stat: FileVersion, index: number): Promise<string> {
     if (!(await this.info(absolutePath, stat)).fonts.some((item) => item.index === index)) throw new AppError(404, "Attachment not found", "NOT_FOUND");
     return this.extract(absolutePath, stat, `font-${index}`, (out) => [`-dump_attachment:t:${index}`, out, "-i", absolutePath]);
   }
 
-  private extract(absolutePath: string, stat: fs.Stats, name: string, args: (out: string) => string[]): Promise<string> {
+  private extract(absolutePath: string, stat: FileVersion, name: string, args: (out: string) => string[]): Promise<string> {
     const key = createHash("sha1").update(`${absolutePath}:${stat.mtimeMs}:${stat.size}`).digest("hex");
     const target = path.join(this.extractDir, `${key}-${name}`);
     let pending = this.extracts.get(target);
@@ -265,7 +268,7 @@ export class MediaService {
     return pending;
   }
 
-  async createSession(actorId: string, absolutePath: string, stat: fs.Stats, options: { height: number; audioIndex: number; subtitleIndex: number | null; subtitleFile?: PictureSubtitleFile | null; hdr: boolean; lift?: boolean }) {
+  async createSession(actorId: string, absolutePath: string, stat: FileVersion, options: { height: number; audioIndex: number; subtitleIndex: number | null; subtitleFile?: PictureSubtitleFile | null; hdr: boolean; lift?: boolean }) {
     const { height, audioIndex, subtitleIndex } = options;
     const subtitleFile = subtitleIndex === null ? null : (options.subtitleFile ?? null);
     const info = await this.info(absolutePath, stat);

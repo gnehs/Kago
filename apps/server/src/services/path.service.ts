@@ -4,15 +4,22 @@ import type { RootService } from "./root.service.js";
 import type { Root } from "./types.js";
 import { AppError } from "../lib/errors.js";
 import { nfc, sameName } from "../lib/filename.js";
+import { isRemote, REMOTE_TRASH, type RemoteEntry, type RemoteStorage } from "../storage/remote-storage.js";
 
 export type SafePath = {
   root: Root;
   logicalPath: string;
+  /** Where the file is on the server's disk. A path in a remote location has none, and reading this throws. */
   absolutePath: string;
+  /** What a remote location said of the path when it was resolved. */
+  entry?: RemoteEntry;
 };
 
 export class PathService {
-  constructor(private readonly roots: RootService) {}
+  constructor(
+    private readonly roots: RootService,
+    private readonly remote: RemoteStorage
+  ) {}
 
   normalizeLogicalPath(input: string): string {
     if (input.includes("\0")) throw new AppError(400, "Invalid path", "INVALID_PATH");
@@ -32,7 +39,11 @@ export class PathService {
   }
 
   async resolveExisting(rootSlug: string, logicalPath: string): Promise<SafePath> {
-    const root = this.roots.getBySlug(rootSlug);
+    return this.resolveExistingIn(this.roots.getBySlug(rootSlug), logicalPath);
+  }
+
+  private async resolveExistingIn(root: Root, logicalPath: string): Promise<SafePath> {
+    if (isRemote(root)) return this.resolveRemote(root, this.normalizeLogicalPath(logicalPath));
     const normalized = await this.resolveSegments(root, this.normalizeLogicalPath(logicalPath));
     const absolutePath = await this.resolveInsideRoot(root, normalized);
     return { root, logicalPath: normalized, absolutePath };
@@ -41,6 +52,13 @@ export class PathService {
   async resolveForCreate(rootSlug: string, logicalPath: string): Promise<SafePath> {
     const root = this.roots.getBySlug(rootSlug);
     const requested = this.normalizeLogicalPath(logicalPath);
+    if (isRemote(root)) {
+      const parent = await this.resolveRemote(root, path.posix.dirname(requested));
+      if (!parent.entry?.directory) throw new AppError(404, "Path not found", "PATH_NOT_FOUND");
+      const logical = path.posix.join(parent.logicalPath, nfc(path.posix.basename(requested)));
+      if (logical === `/${REMOTE_TRASH}`) throw new AppError(400, "Invalid path", "INVALID_PATH");
+      return remotePath(root, logical);
+    }
     const parentLogical = await this.resolveSegments(root, path.posix.dirname(requested));
     // Anything Kago creates is written in NFC, whatever form the client sent.
     const normalized = path.posix.join(parentLogical, nfc(path.posix.basename(requested)));
@@ -50,10 +68,23 @@ export class PathService {
   }
 
   async resolveRootById(rootId: string, logicalPath: string): Promise<SafePath> {
-    const root = this.roots.getById(rootId);
-    const normalized = await this.resolveSegments(root, this.normalizeLogicalPath(logicalPath));
-    const absolutePath = await this.resolveInsideRoot(root, normalized);
-    return { root, logicalPath: normalized, absolutePath };
+    return this.resolveExistingIn(this.roots.getById(rootId), logicalPath);
+  }
+
+  /**
+   * A path in a remote location, spelled the way the remote stores it. Like on disk, a name that is not there
+   * byte for byte falls back to the one entry of its folder with the same NFC form.
+   */
+  private async resolveRemote(root: Root, logicalPath: string): Promise<SafePath> {
+    if (logicalPath.split("/")[1] === REMOTE_TRASH) throw new AppError(404, "Path not found", "PATH_NOT_FOUND");
+    const entry = await this.remote.stat(root, logicalPath);
+    if (entry) return remotePath(root, logicalPath, entry);
+    const parent = await this.resolveRemote(root, path.posix.dirname(logicalPath));
+    if (!parent.entry?.directory) throw new AppError(404, "Path not found", "PATH_NOT_FOUND");
+    const name = path.posix.basename(logicalPath);
+    const matches = (await this.remote.list(root, parent.logicalPath)).filter((item) => sameName(item.name, name));
+    if (matches.length !== 1) throw new AppError(404, "Path not found", "PATH_NOT_FOUND");
+    return remotePath(root, path.posix.join(parent.logicalPath, matches[0]!.name), matches[0]);
   }
 
   /**
@@ -104,6 +135,17 @@ export class PathService {
     const relative = path.relative(rootReal, targetReal);
     return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
   }
+}
+
+function remotePath(root: Root, logicalPath: string, entry?: RemoteEntry): SafePath {
+  const safe = { root, logicalPath, entry } as SafePath;
+  // Not enumerable, so the path can still be copied and logged; anything that reaches for a file on disk is stopped here.
+  Object.defineProperty(safe, "absolutePath", {
+    get() {
+      throw new AppError(501, "This is not available in a remote location", "REMOTE_UNSUPPORTED");
+    }
+  });
+  return safe;
 }
 
 async function lstatExisting(targetPath: string) {

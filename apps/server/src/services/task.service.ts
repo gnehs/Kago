@@ -1,8 +1,8 @@
 import { createReadStream, createWriteStream } from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
-import { spawn } from "node:child_process";
-import { Transform } from "node:stream";
+import { execFile, spawn } from "node:child_process";
+import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import AdmZip from "adm-zip";
 import { z } from "zod";
@@ -11,12 +11,18 @@ import { row, rows } from "../db/db.js";
 import { AppError } from "../lib/errors.js";
 import { assertNameAvailable, nfc } from "../lib/filename.js";
 import { id, now } from "../lib/ids.js";
+import { logger } from "../lib/logger.js";
+import { ensureSshKey, sshCommand } from "../lib/ssh-key.js";
+import { zipStream, type ZipEntry } from "../lib/zip-stream.js";
+import { RcloneJobStopped } from "../storage/rclone-client.js";
+import { isRemote, joinFs, REMOTE_TRASH, transferProgress } from "../storage/remote-storage.js";
 import type { EventPublisher } from "../ws/events.js";
 import type { AuditService } from "./audit.service.js";
 import type { FsService } from "./fs.service.js";
-import type { PathService } from "./path.service.js";
+import type { PathService, SafePath } from "./path.service.js";
 import type { Action, PermissionService } from "./permission.service.js";
-import type { Actor, FileTask } from "./types.js";
+import type { StorageService } from "./storage.service.js";
+import type { Actor, FileTask, Root } from "./types.js";
 
 const maxExtractEntries = 10_000;
 const maxExtractBytes = 1024 * 1024 * 1024 * 2;
@@ -55,6 +61,21 @@ export const taskInputSchema = z.object({
   }).optional()
 });
 
+/** One end of a sync: a folder of a location, or a folder on another machine that rsync reaches over SSH. */
+export const syncEndpointSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("location"), rootSlug: z.string().min(1), path: z.string().min(1) }),
+  z.object({ kind: z.literal("rsync"), remote: z.string().min(1).max(1024).refine(isSafeRsyncRemote, "Invalid rsync remote"), port: z.number().int().min(1).max(65535).optional() })
+]);
+
+export const syncOptionsSchema = z.object({
+  /** `mirror` also removes from the destination what the source no longer has. */
+  mode: z.enum(["copy", "mirror"]).default("copy"),
+  dryRun: z.boolean().default(false)
+});
+
+export type SyncEndpoint = z.infer<typeof syncEndpointSchema>;
+export type SyncSpec = { jobId?: string; name: string; source: SyncEndpoint; destination: SyncEndpoint; options: z.infer<typeof syncOptionsSchema> };
+
 /** Thrown inside a running task once its row is no longer `running`. */
 class TaskCancelledError extends Error {}
 
@@ -69,7 +90,8 @@ export class TaskService {
     private readonly audit: AuditService,
     private readonly events: EventPublisher,
     private readonly appDataDir: string,
-    private readonly fsService: FsService
+    private readonly fsService: FsService,
+    private readonly storage: StorageService
   ) {}
 
   async create(actor: Actor, input: z.infer<typeof taskInputSchema>): Promise<FileTask> {
@@ -119,6 +141,42 @@ export class TaskService {
       finished_at: null
     };
 
+    this.insertTask(task);
+    this.audit.write({ actorType: "user", actorId: actor.id, action: "create_task", target: input, result: "success" });
+    this.events.publish({ type: "task.created", userId: task.created_by, task });
+    return task;
+  }
+
+  /** Queues one run of a sync. Syncs are not asked for like other tasks: a saved job is their only way in. */
+  async createSync(actor: Actor, spec: SyncSpec, scheduled = false): Promise<FileTask> {
+    await this.assertSyncPermissions(actor, spec);
+    const ts = now();
+    const task: FileTask = {
+      id: id("task"),
+      type: "sync",
+      status: "queued",
+      created_by: actor.id,
+      sources_json: JSON.stringify([spec.source.kind === "location" ? { rootSlug: spec.source.rootSlug, path: spec.source.path } : { rootSlug: "remote", path: spec.source.remote }]),
+      destination: JSON.stringify({ sync: spec }),
+      total_files: 1,
+      processed_files: 0,
+      total_bytes: 0,
+      processed_bytes: 0,
+      current_path: null,
+      error_message: null,
+      auth_snapshot_json: JSON.stringify({ actorId: actor.id, role: actor.role, scheduled }),
+      created_at: ts,
+      updated_at: ts,
+      started_at: null,
+      finished_at: null
+    };
+    this.insertTask(task);
+    this.audit.write({ actorType: "user", actorId: actor.id, action: "create_task", target: { type: "sync", jobId: spec.jobId, scheduled }, result: "success" });
+    this.events.publish({ type: "task.created", userId: task.created_by, task });
+    return task;
+  }
+
+  private insertTask(task: FileTask): void {
     this.db
       .prepare(
         `INSERT INTO tasks
@@ -145,9 +203,6 @@ export class TaskService {
         task.started_at,
         task.finished_at
       );
-    this.audit.write({ actorType: "user", actorId: actor.id, action: "create_task", target: input, result: "success" });
-    this.events.publish({ type: "task.created", userId: task.created_by, task });
-    return task;
   }
 
   list(actor: Actor): FileTask[] {
@@ -178,8 +233,13 @@ export class TaskService {
         : this.db.prepare("SELECT * FROM trash_items WHERE deleted_by = ? AND restored_at IS NULL").all(actor.id)
     );
     for (const item of items) {
-      // Trashed entries always sit directly inside the trash dir; never remove anything else.
-      if (path.dirname(path.resolve(item.trash_path)) === trashDir) {
+      const root = await this.paths.resolveRootById(item.original_root_id, "/").then((safe) => safe.root, () => null);
+      if (root && isRemote(root)) {
+        // What a remote location threw away lies in its own hidden folder; anything else is not Kago's to remove.
+        const entry = isRemoteTrashPath(item.trash_path) ? await this.storage.remote.stat(root, item.trash_path) : null;
+        if (entry) await this.storage.remote.remove(root, item.trash_path, entry.directory);
+      } else if (path.dirname(path.resolve(item.trash_path)) === trashDir) {
+        // Trashed entries always sit directly inside the trash dir; never remove anything else.
         await fsp.rm(item.trash_path, { recursive: true, force: true });
       }
       this.db.prepare("DELETE FROM trash_items WHERE id = ?").run(item.id);
@@ -258,6 +318,13 @@ export class TaskService {
       throw new AppError(409, "Only failed, cancelled, or interrupted tasks can be retried", "TASK_RETRY_NOT_ALLOWED");
     }
 
+    if (task.type === "sync") {
+      const spec = syncSpecOf(task);
+      await this.assertSyncPermissions(actor, spec);
+      const again = this.cloneTask(actor, task);
+      this.audit.write({ actorType: "user", actorId: actor.id, action: "task_retry", target: { taskId, retryTaskId: again.id }, result: "success" });
+      return again;
+    }
     const input = this.taskInputFromTask(task);
     await this.assertTaskPermissions(actor, input);
     const retryTask = this.cloneTask(actor, task);
@@ -334,9 +401,10 @@ export class TaskService {
       else if (task.type === "rsync_pull") await this.runRsyncPull(task, actor);
       else if (task.type === "rsync_push") await this.runRsyncPush(task, actor);
       else if (task.type === "thumbnail") await this.runThumbnail(task, actor);
+      else if (task.type === "sync") await this.runSync(task, actor);
       if (this.finish(task.id, "done")) this.events.publish({ type: "task.done", userId: task.created_by, taskId: task.id });
     } catch (error) {
-      if (error instanceof TaskCancelledError) {
+      if (error instanceof TaskCancelledError || error instanceof RcloneJobStopped) {
         this.flushProgress(task.id, true);
         return;
       }
@@ -360,12 +428,15 @@ export class TaskService {
     const destination = JSON.parse(task.destination ?? "{}") as { rootSlug: string; path: string };
     const dest = await this.paths.resolveExisting(destination.rootSlug, destination.path);
     this.permissions.require(actor, "upload", dest.root, dest.logicalPath);
+    const resolved: SafePath[] = [];
+    for (const source of sources) resolved.push(await this.paths.resolveExisting(source.rootSlug, source.path));
+    // Anything with a remote end is carried by rclone, which reaches both sides itself.
+    if (isRemote(dest.root) || resolved.some((source) => isRemote(source.root))) return this.runTransfer(task, actor, resolved, dest, move);
 
     const operations = [];
     const targetPaths = new Set<string>();
     let totalBytes = 0;
-    for (const source of sources) {
-      const safeSource = await this.paths.resolveExisting(source.rootSlug, source.path);
+    for (const safeSource of resolved) {
       if (move) this.requireAny(actor, ["move", "delete"], safeSource.root, safeSource.logicalPath);
       else this.permissions.require(actor, "read", safeSource.root, safeSource.logicalPath);
       await assertNoSymlinksDeep(safeSource.absolutePath);
@@ -416,6 +487,82 @@ export class TaskService {
     }
   }
 
+  /** Copies or moves between locations of which at least one is remote. */
+  private async runTransfer(task: FileTask, actor: Actor, sources: SafePath[], dest: SafePath, move: boolean): Promise<void> {
+    const operations = [];
+    const names = new Set<string>();
+    let totalBytes = 0;
+    for (const source of sources) {
+      if (move) this.requireAny(actor, ["move", "delete"], source.root, source.logicalPath);
+      else this.permissions.require(actor, "read", source.root, source.logicalPath);
+      if (source.logicalPath === "/") throw new AppError(400, "Invalid path", "INVALID_PATH");
+      assertNotIntoItself(source, dest);
+      const directory = (await this.storage.stat(source)).isDirectory();
+      const name = this.storage.name(source);
+      if (names.has(nfc(name))) throw new AppError(409, "Multiple sources resolve to the same target", "TARGET_COLLISION");
+      names.add(nfc(name));
+      await this.storage.assertNameAvailable(dest, name);
+      let bytes: number;
+      if (isRemote(source.root)) bytes = (await this.storage.remote.size(source.root, source.logicalPath, directory)).bytes;
+      else {
+        await assertNoSymlinksDeep(source.absolutePath);
+        bytes = (await collectPathStats(source.absolutePath)).bytes;
+      }
+      totalBytes += bytes;
+      operations.push({ source, directory, name });
+    }
+    await this.updateTotals(task.id, operations.length, totalBytes);
+
+    for (const { source, directory, name } of operations) {
+      await this.progress(task.id, source.logicalPath);
+      const from = this.rcloneAddress(source);
+      const to = this.rcloneAddress(dest);
+      const target = to.remote ? `${to.remote}/${name}` : name;
+      const onStats = transferProgress((bytes) => this.countBytes(task.id, bytes));
+      const stopped = () => this.isCancelled(task.id);
+      try {
+        if (directory) {
+          await this.storage.remote.client.runJob(
+            move ? "sync/move" : "sync/copy",
+            { srcFs: joinFs(from.fs, from.remote), dstFs: joinFs(to.fs, target), createEmptySrcDirs: true, ...(move ? { deleteEmptySrcDirs: true } : {}) },
+            onStats,
+            stopped
+          );
+        } else {
+          await this.storage.remote.client.runJob(move ? "operations/movefile" : "operations/copyfile", { srcFs: from.fs, srcRemote: from.remote, dstFs: to.fs, dstRemote: target }, onStats, stopped);
+        }
+      } catch (error) {
+        if (error instanceof RcloneJobStopped) {
+          // Like a cancelled copy on disk, a cancelled copy to a remote takes its unfinished target with it.
+          if (!move) await this.removeTarget(dest, name, directory).catch(() => undefined);
+          throw new TaskCancelledError();
+        }
+        throw transferFailure(error);
+      }
+      this.audit.write({
+        actorType: "user",
+        actorId: actor.id,
+        action: move ? "move" : "copy",
+        rootId: source.root.id,
+        path: source.logicalPath,
+        target: { rootSlug: dest.root.slug, path: path.posix.join(dest.logicalPath, name) },
+        result: "success"
+      });
+      await this.bumpProcessed(task.id);
+    }
+  }
+
+  /** A path as rclone is told it: the remote's name and a path in it, or the server's own disk. */
+  private rcloneAddress(safe: SafePath): { fs: string; remote: string } {
+    if (isRemote(safe.root)) return { fs: this.storage.remote.fs(safe.root), remote: this.storage.remote.rel(safe.logicalPath) };
+    return { fs: path.dirname(safe.absolutePath), remote: path.basename(safe.absolutePath) };
+  }
+
+  private async removeTarget(folder: SafePath, name: string, directory: boolean): Promise<void> {
+    if (isRemote(folder.root)) await this.storage.remote.remove(folder.root, path.posix.join(folder.logicalPath, name), directory);
+    else await fsp.rm(path.join(folder.absolutePath, name), { recursive: true, force: true });
+  }
+
   private async runTrash(task: FileTask, actor: Actor): Promise<void> {
     const sources = JSON.parse(task.sources_json) as Array<{ rootSlug: string; path: string }>;
     const trashDir = path.join(this.appDataDir, "trash");
@@ -426,6 +573,12 @@ export class TaskService {
     for (const source of sources) {
       const safe = await this.paths.resolveExisting(source.rootSlug, source.path);
       this.permissions.require(actor, "delete", safe.root, safe.logicalPath);
+      if (isRemote(safe.root)) {
+        if (safe.logicalPath === "/") throw new AppError(400, "Invalid path", "INVALID_PATH");
+        // A remote keeps its own trash, so nothing has to be fetched to throw it away.
+        operations.push({ safe, trashPath: `/${REMOTE_TRASH}/${Date.now()}-${id("trash")}-${this.storage.name(safe)}`, bytes: 0 });
+        continue;
+      }
       await assertNoSymlinksDeep(safe.absolutePath);
       const stats = await collectPathStats(safe.absolutePath);
       totalBytes += stats.bytes;
@@ -437,7 +590,11 @@ export class TaskService {
 
     for (const { safe, trashPath, bytes } of operations) {
       await this.progress(task.id, safe.logicalPath);
-      const streamed = await movePath(safe.absolutePath, trashPath, (processedBytes) => this.bumpProcessedBytes(task.id, processedBytes));
+      let streamed = false;
+      if (isRemote(safe.root)) {
+        await this.storage.remote.mkdir(safe.root, `/${REMOTE_TRASH}`);
+        await this.storage.remote.move(safe.root, safe.logicalPath, trashPath, (await this.storage.stat(safe)).isDirectory());
+      } else streamed = await movePath(safe.absolutePath, trashPath, (processedBytes) => this.bumpProcessedBytes(task.id, processedBytes));
       this.db
         .prepare(
           `INSERT INTO trash_items
@@ -464,6 +621,7 @@ export class TaskService {
     let totalBytes = 0;
     for (const source of sources) {
       const item = this.getRestorableTrashItem(actor, source.path);
+      if (isRemote((await this.paths.resolveRootById(item.original_root_id, "/")).root)) continue;
       await assertRealPathInside(trashDir, item.trash_path);
       totalBytes += (await collectPathStats(item.trash_path)).bytes;
     }
@@ -473,6 +631,17 @@ export class TaskService {
       const item = this.getRestorableTrashItem(actor, source.path);
       const safe = await this.paths.resolveRootById(item.original_root_id, path.posix.dirname(item.original_path));
       this.permissions.require(actor, "upload", safe.root, safe.logicalPath);
+      if (isRemote(safe.root)) {
+        const name = path.posix.basename(item.original_path);
+        const trashed = isRemoteTrashPath(item.trash_path) ? await this.storage.remote.stat(safe.root, item.trash_path) : null;
+        if (!trashed) throw new AppError(404, "Trash item not found", "TRASH_ITEM_NOT_FOUND");
+        await this.storage.assertNameAvailable(safe, name);
+        await this.storage.remote.move(safe.root, item.trash_path, path.posix.join(safe.logicalPath, name), trashed.directory);
+        this.db.prepare("UPDATE trash_items SET restored_at = ? WHERE id = ?").run(now(), item.id);
+        this.audit.write({ actorType: "user", actorId: actor.id, action: "restore_trash", rootId: item.original_root_id, path: item.original_path, result: "success" });
+        await this.bumpProcessed(task.id);
+        continue;
+      }
       const target = path.join(safe.absolutePath, path.basename(item.original_path));
       await assertRealPathInside(trashDir, item.trash_path);
       await assertNameAvailable(safe.absolutePath, path.basename(target));
@@ -509,8 +678,9 @@ export class TaskService {
     const dest = await this.paths.resolveForCreate(destination.rootSlug, destination.path);
     this.permissions.require(actor, "upload", dest.root, path.posix.dirname(dest.logicalPath));
     this.permissions.require(actor, "compress", dest.root, path.posix.dirname(dest.logicalPath));
-    await assertNameAvailable(path.dirname(dest.absolutePath), path.basename(dest.absolutePath));
-    const zipped = await this.zipSources(task, actor, "read", dest.absolutePath);
+    const folder = await this.paths.resolveExisting(destination.rootSlug, path.posix.dirname(dest.logicalPath));
+    await this.storage.assertNameAvailable(folder, this.storage.name(dest));
+    const zipped = await this.zipSources(task, actor, "read", dest);
     this.audit.write({
       actorType: "user",
       actorId: actor.id,
@@ -536,14 +706,21 @@ export class TaskService {
     });
   }
 
-  private async zipSources(task: FileTask, actor: Actor, sourceAction: Action, targetPath: string): Promise<Array<{ rootSlug: string; path: string }>> {
+  /** `target` is a file on the server's disk, or the path of the archive in a location. */
+  private async zipSources(task: FileTask, actor: Actor, sourceAction: Action, target: string | SafePath): Promise<Array<{ rootSlug: string; path: string }>> {
     const sources = JSON.parse(task.sources_json) as Array<{ rootSlug: string; path: string }>;
     const zip = new AdmZip();
     const operations = [];
     let totalBytes = 0;
+    const resolved: SafePath[] = [];
     for (const source of sources) {
       const safe = await this.paths.resolveExisting(source.rootSlug, source.path);
       this.permissions.require(actor, sourceAction, safe.root, safe.logicalPath);
+      resolved.push(safe);
+    }
+    if ((typeof target !== "string" && isRemote(target.root)) || resolved.some((safe) => isRemote(safe.root))) return this.zipSourcesStreamed(task, resolved, target);
+    const targetPath = typeof target === "string" ? target : target.absolutePath;
+    for (const safe of resolved) {
       await assertNoSymlinksDeep(safe.absolutePath);
       const stats = await collectPathStats(safe.absolutePath);
       totalBytes += stats.bytes;
@@ -561,6 +738,70 @@ export class TaskService {
     }
     zip.writeZip(targetPath);
     return operations.map(({ safe }) => ({ rootSlug: safe.root.slug, path: safe.logicalPath }));
+  }
+
+  /** An archive with a remote file in it, or bound for a remote, is written as it is read: nothing is gathered on the server first. */
+  private async zipSourcesStreamed(task: FileTask, sources: SafePath[], target: string | SafePath): Promise<Array<{ rootSlug: string; path: string }>> {
+    const operations: SafePath[] = [];
+    let totalBytes = 0;
+    for (const safe of sources) {
+      const directory = (await this.storage.stat(safe)).isDirectory();
+      if (isRemote(safe.root)) totalBytes += (await this.storage.remote.size(safe.root, safe.logicalPath, directory)).bytes;
+      else {
+        await assertNoSymlinksDeep(safe.absolutePath);
+        totalBytes += (await collectPathStats(safe.absolutePath)).bytes;
+      }
+      operations.push(safe);
+    }
+    await this.updateTotals(task.id, operations.length, totalBytes);
+
+    const storage = this.storage;
+    const count = (bytes: number) => this.bumpProcessedBytes(task.id, bytes);
+    const step = async (safe: SafePath) => {
+      await this.progress(task.id, safe.logicalPath);
+    };
+    const done = () => this.bumpProcessed(task.id);
+    async function* local(absolutePath: string, name: string): AsyncGenerator<ZipEntry> {
+      const stat = await fsp.lstat(absolutePath);
+      yield { name, open: () => createReadStream(absolutePath), directory: stat.isDirectory(), size: stat.size, mtime: stat.mtime };
+      if (!stat.isDirectory()) return count(stat.size);
+      for (const child of (await fsp.readdir(absolutePath)).sort()) yield* local(path.join(absolutePath, child), `${name}/${nfc(child)}`);
+    }
+    async function* remote(safe: SafePath, name: string): AsyncGenerator<ZipEntry> {
+      const stat = await storage.stat(safe);
+      yield { name, open: () => storage.remote.open(safe.root, safe.logicalPath), directory: stat.isDirectory(), size: stat.size, mtime: stat.mtime };
+      if (!stat.isDirectory()) return count(stat.size);
+      for (const entry of await storage.remote.walk(safe.root, safe.logicalPath)) {
+        const logicalPath = path.posix.join(safe.logicalPath, entry.path);
+        yield { name: `${name}/${nfc(entry.path)}`, open: () => storage.remote.open(safe.root, logicalPath), directory: entry.directory, size: entry.size, mtime: new Date(entry.mtimeMs) };
+        count(entry.size);
+      }
+    }
+    async function* entries(): AsyncGenerator<ZipEntry> {
+      const taken = new Set<string>();
+      for (const safe of operations) {
+        await step(safe);
+        const base = nfc(storage.name(safe));
+        let name = base;
+        for (let copy = 2; taken.has(name); copy += 1) name = `${path.parse(base).name} ${copy}${path.parse(base).ext}`;
+        taken.add(name);
+        if (isRemote(safe.root)) yield* remote(safe, name);
+        else yield* local(safe.absolutePath, name);
+        await done();
+      }
+    }
+    const archive = Readable.from(zipStream(entries()));
+    if (typeof target !== "string" && isRemote(target.root)) await this.storage.remote.write(target.root, target.logicalPath, archive);
+    else {
+      const targetPath = typeof target === "string" ? target : target.absolutePath;
+      try {
+        await pipeline(archive, createWriteStream(targetPath, { flags: "wx" }));
+      } catch (error) {
+        await fsp.rm(targetPath, { force: true });
+        throw error;
+      }
+    }
+    return operations.map((safe) => ({ rootSlug: safe.root.slug, path: safe.logicalPath }));
   }
 
   /** The finished archive of a `download_zip` task, re-checking that the actor may still download every source. */
@@ -614,7 +855,8 @@ export class TaskService {
     for (const source of sources) {
       const safe = await this.paths.resolveExisting(source.rootSlug, source.path);
       this.permissions.require(actor, "read", safe.root, safe.logicalPath);
-      const zip = new AdmZip(safe.absolutePath);
+      // The whole archive has to be at hand to be read: one in a remote location is fetched first.
+      const zip = new AdmZip(await this.storage.localFile(safe, await this.storage.stat(safe)));
       const entries = zip.getEntries();
       const stats = this.validateExtractEntries(entries);
       totalFiles += stats.totalFiles;
@@ -627,7 +869,7 @@ export class TaskService {
     for (const archive of archives) {
       for (const entry of archive.entries) {
         await this.progress(task.id, entry.entryName);
-        const processedBytes = await this.extractEntry(entry, dest.absolutePath, storedNames);
+        const processedBytes = isRemote(dest.root) ? await this.extractEntryRemote(entry, dest) : await this.extractEntry(entry, dest.absolutePath, storedNames);
         await this.bumpProcessedBytes(task.id, processedBytes);
         await this.bumpProcessed(task.id);
       }
@@ -695,6 +937,21 @@ export class TaskService {
     return data.length;
   }
 
+  private async extractEntryRemote(entry: AdmZip.IZipEntry, dest: SafePath): Promise<number> {
+    const segments = this.safeZipEntrySegments(entry);
+    if (dest.logicalPath === "/" && segments[0] === REMOTE_TRASH) throw new AppError(400, "Unsafe zip entry", "UNSAFE_ZIP_ENTRY");
+    const target = path.posix.join(dest.logicalPath, ...segments);
+    if (entry.isDirectory) {
+      await this.storage.remote.mkdir(dest.root, target);
+      return 0;
+    }
+    if (await this.storage.remote.stat(dest.root, target)) throw new AppError(409, "Target already exists", "TARGET_EXISTS");
+    const data = entry.getData();
+    if (data.length > maxExtractBytes) throw new AppError(413, "Zip is too large to extract", "ZIP_SIZE_LIMIT");
+    await this.storage.remote.write(dest.root, target, Readable.from([data]));
+    return data.length;
+  }
+
   private safeZipEntrySegments(entry: AdmZip.IZipEntry): string[] {
     // Archives made on macOS carry NFD names; extracted files are new, so they are written in NFC.
     const name = nfc(entry.entryName.replaceAll("\\", "/"));
@@ -717,7 +974,7 @@ export class TaskService {
     this.permissions.require(actor, "upload", dest.root, dest.logicalPath);
     this.permissions.require(actor, "run_rsync", dest.root, dest.logicalPath);
     await this.progress(task.id, remote);
-    await runRsync([...rsyncFlags(destination.options), "--", ensureTrailingSlash(remote), ensureTrailingSlash(dest.absolutePath)], () => this.isCancelled(task.id));
+    await runRsync([...rsyncFlags(destination.options), "-e", sshCommand(this.appDataDir), "--", ensureTrailingSlash(remote), ensureTrailingSlash(dest.absolutePath)], () => this.isCancelled(task.id));
     await this.bumpProcessed(task.id);
     this.audit.write({
       actorType: "user",
@@ -739,7 +996,7 @@ export class TaskService {
       this.permissions.require(actor, "read", safe.root, safe.logicalPath);
       this.permissions.require(actor, "run_rsync", safe.root, safe.logicalPath);
       await this.progress(task.id, safe.logicalPath);
-      await runRsync([...rsyncFlags(destination.options), "--", safe.absolutePath, ensureTrailingSlash(destination.remote)], () => this.isCancelled(task.id));
+      await runRsync([...rsyncFlags(destination.options), "-e", sshCommand(this.appDataDir), "--", safe.absolutePath, ensureTrailingSlash(destination.remote)], () => this.isCancelled(task.id));
       await this.bumpProcessed(task.id);
       this.audit.write({
         actorType: "user",
@@ -751,6 +1008,129 @@ export class TaskService {
         result: "success"
       });
     }
+  }
+
+  /** Whether the actor may run this sync as things stand. */
+  async assertSync(actor: Actor, spec: SyncSpec): Promise<void> {
+    await this.assertSyncPermissions(actor, spec);
+  }
+
+  /** Checks both ends of a sync and returns the ones that are folders of a location. */
+  private async assertSyncPermissions(actor: Actor, spec: SyncSpec): Promise<{ source: SafePath | null; destination: SafePath | null }> {
+    const folder = async (endpoint: SyncEndpoint): Promise<SafePath | null> => {
+      if (endpoint.kind !== "location") return null;
+      const safe = await this.paths.resolveExisting(endpoint.rootSlug, endpoint.path);
+      if (!(await this.storage.stat(safe)).isDirectory()) throw new AppError(400, "Path is not a folder", "NOT_FOLDER");
+      return safe;
+    };
+    const source = await folder(spec.source);
+    const destination = await folder(spec.destination);
+    if (!source && !destination) throw new AppError(400, "One side of a sync has to be a location", "SYNC_NEEDS_LOCATION");
+    if (source) {
+      this.permissions.require(actor, "read", source.root, source.logicalPath);
+      this.permissions.require(actor, "run_rsync", source.root, source.logicalPath);
+    }
+    if (destination) {
+      this.permissions.require(actor, "upload", destination.root, destination.logicalPath);
+      this.permissions.require(actor, "run_rsync", destination.root, destination.logicalPath);
+      if (spec.options.mode === "mirror") this.permissions.require(actor, "delete", destination.root, destination.logicalPath);
+    }
+    // rsync works on the server's own disk; a remote location is rclone's to reach.
+    if (!source || !destination) assertLocalForRsync((source ?? destination)!.root);
+    if (source && destination && source.root.id === destination.root.id) {
+      const inside = (outer: string, inner: string) => outer === "/" || inner === outer || inner.startsWith(`${outer}/`);
+      if (inside(source.logicalPath, destination.logicalPath) || inside(destination.logicalPath, source.logicalPath)) {
+        throw new AppError(400, "The source and the destination overlap", "SYNC_OVERLAP");
+      }
+    }
+    return { source, destination };
+  }
+
+  private async runSync(task: FileTask, actor: Actor): Promise<void> {
+    const spec = syncSpecOf(task);
+    const { source, destination } = await this.assertSyncPermissions(actor, spec);
+    await this.progress(task.id, spec.name);
+    const mirror = spec.options.mode === "mirror";
+    const stopped = () => this.isCancelled(task.id);
+    const onBytes = transferProgress((bytes) => this.countBytes(task.id, bytes));
+
+    if (source && destination) {
+      const from = this.rcloneAddress(source);
+      const to = this.rcloneAddress(destination);
+      let total = 0;
+      // Where times cannot be kept, a file of the same size is taken to have changed when the source's is the newer.
+      const byAge = isRemote(destination.root) && (await this.storage.remote.keepsNoTimes(destination.root));
+      try {
+        await this.storage.remote.client.runJob(
+          mirror ? "sync/sync" : "sync/copy",
+          {
+            srcFs: joinFs(from.fs, from.remote),
+            dstFs: joinFs(to.fs, to.remote),
+            createEmptySrcDirs: true,
+            _config: { DryRun: spec.options.dryRun, ...(byAge ? { UpdateOlder: true, UseServerModTime: true } : {}) },
+            // A remote location's trash is Kago's own business at either end.
+            _filter: { ExcludeRule: [`/${REMOTE_TRASH}/**`] }
+          },
+          (stats) => {
+            if (stats.totalBytes > total) {
+              total = stats.totalBytes;
+              this.setTotalBytes(task.id, total);
+            }
+            onBytes(stats);
+          },
+          stopped
+        );
+      } catch (error) {
+        if (error instanceof RcloneJobStopped) throw new TaskCancelledError();
+        throw transferFailure(error);
+      }
+    } else {
+      const remote = (spec.source.kind === "rsync" ? spec.source : spec.destination) as Extract<SyncEndpoint, { kind: "rsync" }>;
+      const local = ensureTrailingSlash((source ?? destination)!.absolutePath);
+      // The key is the one the form showed; a job made some other way still finds one to offer.
+      await ensureSshKey(this.appDataDir).catch(() => undefined);
+      const progress = await rsyncReportsProgress();
+      let reported = 0;
+      await runRsync(
+        [
+          "-a",
+          ...(mirror ? ["--delete"] : []),
+          ...(spec.options.dryRun ? ["--dry-run"] : []),
+          ...(progress ? ["--info=progress2", "--no-inc-recursive"] : []),
+          "-e",
+          sshCommand(this.appDataDir, remote.port),
+          "--",
+          ...(source ? [local, ensureTrailingSlash(remote.remote)] : [ensureTrailingSlash(remote.remote), local])
+        ],
+        stopped,
+        (text) => {
+          // "  1,234,567  45%  1.20MB/s  0:00:03": the bytes sent so far, over and over on one line.
+          for (const match of text.matchAll(/(?:^|[\r\n])\s*([\d,]+)\s+\d+%/g)) {
+            const bytes = Number(match[1]!.replaceAll(",", ""));
+            if (bytes > reported) {
+              this.countBytes(task.id, bytes - reported);
+              reported = bytes;
+            }
+          }
+        }
+      );
+    }
+    const location = (destination ?? source)!;
+    this.audit.write({
+      actorType: "user",
+      actorId: actor.id,
+      action: "sync",
+      rootId: location.root.id,
+      path: location.logicalPath,
+      target: { taskId: task.id, jobId: spec.jobId, mode: spec.options.mode, dryRun: spec.options.dryRun },
+      result: "success"
+    });
+    await this.bumpProcessed(task.id);
+  }
+
+  private setTotalBytes(taskId: string, totalBytes: number): void {
+    this.db.prepare("UPDATE tasks SET total_bytes = ?, updated_at = ? WHERE id = ?").run(totalBytes, now(), taskId);
+    this.events.publish({ type: "task.progress", userId: this.get(taskId).created_by, taskId, patch: { total_bytes: totalBytes } });
   }
 
   private async runThumbnail(task: FileTask, actor: Actor): Promise<void> {
@@ -771,7 +1151,8 @@ export class TaskService {
         const safe = await this.paths.resolveExisting(source.rootSlug, source.path);
         if (input.type === "move") this.requireAny(actor, ["move", "delete"], safe.root, safe.logicalPath);
         else this.permissions.require(actor, "read", safe.root, safe.logicalPath);
-        await assertTargetOutsideSource(safe.absolutePath, path.join(dest.absolutePath, path.basename(safe.absolutePath)));
+        if (isRemote(safe.root) || isRemote(dest.root)) assertNotIntoItself(safe, dest);
+        else await assertTargetOutsideSource(safe.absolutePath, path.join(dest.absolutePath, path.basename(safe.absolutePath)));
       }
       return;
     }
@@ -832,6 +1213,7 @@ export class TaskService {
       const dest = await this.paths.resolveExisting(destination.rootSlug, destination.path);
       this.permissions.require(actor, "upload", dest.root, dest.logicalPath);
       this.permissions.require(actor, "run_rsync", dest.root, dest.logicalPath);
+      assertLocalForRsync(dest.root);
       return;
     }
 
@@ -840,6 +1222,7 @@ export class TaskService {
         const safe = await this.paths.resolveExisting(source.rootSlug, source.path);
         this.permissions.require(actor, "read", safe.root, safe.logicalPath);
         this.permissions.require(actor, "run_rsync", safe.root, safe.logicalPath);
+        assertLocalForRsync(safe.root);
       }
       return;
     }
@@ -907,6 +1290,12 @@ export class TaskService {
   private bumpProcessedBytes(taskId: string, bytes: number): void {
     if (bytes <= 0) return;
     this.assertNotCancelled(taskId);
+    this.countBytes(taskId, bytes);
+  }
+
+  /** Adds to the bytes done without asking whether the task goes on: for work that is stopped some other way. */
+  private countBytes(taskId: string, bytes: number): void {
+    if (bytes <= 0) return;
     const buffer = this.progressBuffer(taskId);
     buffer.processedBytes += bytes;
     this.flushProgress(taskId);
@@ -1120,16 +1509,65 @@ function isSafeRsyncRemote(value: string): boolean {
   return /^[A-Za-z0-9._~+/@:%=-]+$/.test(remotePath);
 }
 
-function runRsync(args: string[], isCancelled: () => boolean): Promise<void> {
+function syncSpecOf(task: FileTask): SyncSpec {
+  const spec = (JSON.parse(task.destination ?? "{}") as { sync?: SyncSpec }).sync;
+  if (!spec) throw new AppError(400, "Invalid sync task", "INVALID_SYNC_TASK");
+  return { ...spec, source: syncEndpointSchema.parse(spec.source), destination: syncEndpointSchema.parse(spec.destination), options: syncOptionsSchema.parse(spec.options ?? {}) };
+}
+
+/** What a remote location deleted is kept directly inside its hidden folder, under a name Kago made up. */
+function isRemoteTrashPath(value: string): boolean {
+  const segments = value.split("/");
+  return segments.length === 3 && segments[0] === "" && segments[1] === REMOTE_TRASH && Boolean(segments[2]) && segments[2] !== "." && segments[2] !== "..";
+}
+
+/** `assertTargetOutsideSource` for locations that have no path on disk to compare. */
+function assertNotIntoItself(source: SafePath, dest: SafePath): void {
+  if (source.root.id !== dest.root.id) return;
+  if (dest.logicalPath === source.logicalPath || dest.logicalPath.startsWith(`${source.logicalPath}/`)) {
+    throw new AppError(409, "Cannot copy or move a folder into itself", "TARGET_INSIDE_SOURCE");
+  }
+}
+
+function assertLocalForRsync(root: Root): void {
+  if (isRemote(root)) throw new AppError(400, "rsync needs a folder on this server", "RSYNC_LOCAL_ONLY");
+}
+
+/** rclone's reasons are for the log; the task says only that the transfer failed, unless Kago itself refused it. */
+function transferFailure(error: unknown): unknown {
+  if (error instanceof AppError || error instanceof TaskCancelledError) return error;
+  logger.warn("transfer failed", error instanceof Error ? error.message : String(error));
+  return new AppError(502, "The transfer failed", "TRANSFER_FAILED");
+}
+
+let rsyncProgress: Promise<boolean> | undefined;
+
+/** Whether this rsync can report the bytes of a whole run; the one macOS ships cannot. */
+function rsyncReportsProgress(): Promise<boolean> {
+  rsyncProgress ??= new Promise((resolve) => {
+    execFile("rsync", ["--version"], (error, stdout) => {
+      const version = /version (\d+)\.(\d+)/.exec(error ? "" : stdout);
+      resolve(Boolean(version && (Number(version[1]) > 3 || (Number(version[1]) === 3 && Number(version[2]) >= 1))));
+    });
+  });
+  return rsyncProgress;
+}
+
+function runRsync(args: string[], isCancelled: () => boolean, onOutput?: (text: string) => void): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = spawn("rsync", args, { stdio: ["ignore", "ignore", "pipe"] });
+    const child = spawn("rsync", args, { stdio: ["ignore", "pipe", "pipe"] });
+    child.stdout.on("data", (chunk: Buffer) => onOutput?.(chunk.toString("utf8")));
     let cancelled = false;
     const watcher = setInterval(() => {
       if (!isCancelled()) return;
       cancelled = true;
       child.kill();
     }, 500);
-    child.stderr.resume();
+    // The last of what rsync complained of goes to the log: the task itself only says that it failed.
+    let complaint = "";
+    child.stderr.on("data", (chunk: Buffer) => {
+      complaint = `${complaint}${chunk.toString("utf8")}`.slice(-2000);
+    });
     child.on("error", (error) => {
       clearInterval(watcher);
       reject(error);
@@ -1138,7 +1576,10 @@ function runRsync(args: string[], isCancelled: () => boolean): Promise<void> {
       clearInterval(watcher);
       if (cancelled) reject(new TaskCancelledError());
       else if (code === 0) resolve();
-      else reject(new AppError(500, "rsync failed", "RSYNC_FAILED"));
+      else {
+        logger.warn(`rsync exited with ${code}`, complaint.trim());
+        reject(new AppError(500, "rsync failed", "RSYNC_FAILED"));
+      }
     });
   });
 }

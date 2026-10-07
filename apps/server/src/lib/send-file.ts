@@ -1,5 +1,5 @@
-import fs from "node:fs";
 import type { FastifyReply, FastifyRequest } from "fastify";
+import { localSource, type FileSource } from "../services/storage.service.js";
 
 type ByteRange = { start: number; end: number };
 
@@ -7,7 +7,13 @@ type ByteRange = { start: number; end: number };
  * Streams a file, honouring a single-range `Range` header with 206 so browsers can seek
  * (and Safari can play at all) video and audio. Multi-range and malformed headers fall back to the full body.
  */
-export function sendFile(request: FastifyRequest, reply: FastifyReply, absolutePath: string, stat: fs.Stats, contentType: string) {
+export function sendFile(request: FastifyRequest, reply: FastifyReply, absolutePath: string, stat: { size: number; mtimeMs: number }, contentType: string) {
+  return sendSource(request, reply, localSource(absolutePath, stat), contentType);
+}
+
+/** `sendFile` for a file that may be kept somewhere other than the server's disk. */
+export async function sendSource(request: FastifyRequest, reply: FastifyReply, source: FileSource, contentType: string) {
+  const stat = source;
   const size = stat.size;
   const lastModified = new Date(Math.floor(stat.mtimeMs / 1000) * 1000);
   const etag = `W/"${size.toString(16)}-${Math.floor(stat.mtimeMs).toString(16)}"`;
@@ -25,13 +31,16 @@ export function sendFile(request: FastifyRequest, reply: FastifyReply, absoluteP
     return reply.send();
   }
   if (!range) {
+    // Opened before the headers go out, so a file that cannot be read is an error and not an empty 200.
+    const body = await source.open();
     reply.header("Content-Length", String(size));
-    return reply.send(fs.createReadStream(absolutePath));
+    return reply.send(body);
   }
+  const body = await source.open(range);
   reply.code(206);
   reply.header("Content-Range", `bytes ${range.start}-${range.end}/${size}`);
   reply.header("Content-Length", String(range.end - range.start + 1));
-  return reply.send(fs.createReadStream(absolutePath, { start: range.start, end: range.end }));
+  return reply.send(body);
 }
 
 function parseRange(header: string, size: number): ByteRange | "unsatisfiable" | null {

@@ -1,5 +1,8 @@
 # syntax=docker/dockerfile:1
 
+# Used in a FROM below, so it has to be declared ahead of the first one.
+ARG RCLONE_VERSION=1.75.1
+
 # Build stages run on the builder's native platform so multi-arch builds skip
 # QEMU emulation. This is safe because the production deps are pure JS; if a
 # native addon is ever added, drop --platform here.
@@ -25,11 +28,14 @@ RUN pnpm build
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
   pnpm --filter @kago/server deploy --prod /prod
 
+# rclone is what reaches remote locations (SMB, SFTP, WebDAV, ...); it is one static binary.
+FROM rclone/rclone:${RCLONE_VERSION} AS rclone
+
 FROM node:24-bookworm-slim AS runtime
 WORKDIR /app
 # jellyfin-ffmpeg bundles what GPU transcoding needs (NVENC, the Intel media driver, VAAPI), unlike Debian's build.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends rsync attr perl ca-certificates curl gnupg \
+  && apt-get install -y --no-install-recommends rsync openssh-client attr perl ca-certificates curl gnupg \
   && curl -fsSL https://repo.jellyfin.org/jellyfin_team.gpg.key | gpg --dearmor -o /usr/share/keyrings/jellyfin.gpg \
   && echo "deb [signed-by=/usr/share/keyrings/jellyfin.gpg arch=$(dpkg --print-architecture)] https://repo.jellyfin.org/debian bookworm main" > /etc/apt/sources.list.d/jellyfin.list \
   && apt-get update \
@@ -52,6 +58,7 @@ ENV NVIDIA_VISIBLE_DEVICES=all
 ENV NVIDIA_DRIVER_CAPABILITIES=compute,video,utility
 COPY --from=build --chown=kago:kago /prod ./
 COPY --from=build --chown=kago:kago /app/apps/web/dist ./apps/web/dist
+COPY --from=rclone /usr/local/bin/rclone /usr/local/bin/rclone
 COPY LICENSE THIRD-PARTY-NOTICES ./
 COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/kago-entrypoint
 EXPOSE 8080

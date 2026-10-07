@@ -64,7 +64,7 @@ export class ImageService {
   }
 
   /** The path of a JPEG rendition of the file, converting it first unless that was done before. */
-  async rendition(absolutePath: string, stat: fs.Stats): Promise<string> {
+  async rendition(absolutePath: string, stat: { size: number; mtimeMs: number }): Promise<string> {
     const kind = renditionKind(absolutePath);
     if (!kind) throw new AppError(422, "This file needs no conversion", "IMAGE_NOT_CONVERTIBLE");
     const key = createHash("sha256").update(`${absolutePath}:${stat.mtimeMs}:${stat.size}`).digest("hex");

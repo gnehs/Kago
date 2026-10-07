@@ -40,6 +40,8 @@ CREATE TABLE IF NOT EXISTS roots (
   slug TEXT UNIQUE NOT NULL,
   name TEXT NOT NULL,
   base_path TEXT NOT NULL,
+  provider TEXT NOT NULL DEFAULT 'local',
+  config TEXT,
   readonly INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
@@ -180,4 +182,21 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   ip TEXT,
   user_agent TEXT,
   created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sync_jobs (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  source_json TEXT NOT NULL,
+  destination_json TEXT NOT NULL,
+  options_json TEXT NOT NULL DEFAULT '{}',
+  schedule_json TEXT,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  next_run_at INTEGER,
+  last_run_at INTEGER,
+  last_task_id TEXT,
+  created_by TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
 );

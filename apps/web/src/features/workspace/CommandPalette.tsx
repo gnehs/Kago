@@ -1,6 +1,6 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { Dialog } from "@base-ui/react/dialog";
-import { Clock, Folder, HardDrive, KeyRound, ScrollText, Search, UserRound, UsersRound } from "lucide-react";
+import { Clock, Folder, HardDrive, KeyRound, RefreshCw, ScrollText, Search, UserRound, UsersRound } from "lucide-react";
 import { appIcons } from "@/features/windows/AppWindow";
 import { baseName, displayPath, nfc, normalizeLogicalPath } from "@/lib/paths";
 import { cn } from "@/lib/utils";
@@ -17,6 +17,7 @@ const apps: Array<{ app: AppKind; section?: SettingsSection; label: string; icon
   { app: "trash", label: t("Trash"), icon: appIcons.trash },
   { app: "tasks", label: t("Tasks"), icon: appIcons.tasks },
   { app: "settings", section: "general", label: t("Settings"), icon: appIcons.settings },
+  { app: "settings", section: "sync", label: t("Sync"), icon: <RefreshCw /> },
   { app: "settings", section: "locations", label: t("Locations"), icon: <HardDrive />, adminOnly: true },
   { app: "settings", section: "users", label: t("Users"), icon: <UserRound />, adminOnly: true },
   { app: "settings", section: "groups", label: t("Groups"), icon: <UsersRound />, adminOnly: true },

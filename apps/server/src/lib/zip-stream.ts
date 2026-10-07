@@ -1,11 +1,11 @@
-import fs from "node:fs";
-import { Transform, pipeline } from "node:stream";
+import { Transform, pipeline, type Readable } from "node:stream";
 import zlib from "node:zlib";
 
 export type ZipEntry = {
   /** Path inside the archive, `/`-separated, without a trailing slash. */
   name: string;
-  absolutePath: string;
+  /** The file's bytes; not asked of a directory. */
+  open(): Readable | Promise<Readable>;
   directory: boolean;
   size: number;
   mtime: Date;
@@ -53,7 +53,7 @@ export async function* zipStream(entries: AsyncIterable<ZipEntry>): AsyncGenerat
       });
       const deflate = zlib.createDeflateRaw();
       // A failed read destroys `deflate`, which the loop below then throws.
-      pipeline(fs.createReadStream(entry.absolutePath), meter, deflate, () => {});
+      pipeline(await entry.open(), meter, deflate, () => {});
       for await (const chunk of deflate as AsyncIterable<Buffer>) {
         record.compressed += chunk.length;
         yield chunk;

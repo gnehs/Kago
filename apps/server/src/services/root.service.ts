@@ -6,6 +6,8 @@ import type { Db } from "../db/db.js";
 import { row, rows } from "../db/db.js";
 import { AppError } from "../lib/errors.js";
 import { id, now } from "../lib/ids.js";
+import type { SecretBox } from "../lib/secret-box.js";
+import { normalizeRemoteConfig, publicRemoteConfig, remoteConfigSchema, type RemoteConfig } from "../storage/providers.js";
 import type { Root } from "./types.js";
 
 const reservedSlugs = new Set([
@@ -37,10 +39,19 @@ export const rootPatchSchema = z.object({
   readonly: z.boolean().optional()
 });
 
+export const remoteRootSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  readonly: z.boolean().default(false),
+  config: remoteConfigSchema
+});
+
+export const remoteRootPatchSchema = z.object({ config: remoteConfigSchema });
+
 export class RootService {
   constructor(
     private readonly db: Db,
-    private readonly dataDir: string
+    private readonly dataDir: string,
+    private readonly secrets: SecretBox
   ) {}
 
   list(): Root[] {
@@ -50,7 +61,7 @@ export class RootService {
   /** Roots whose folder is currently present under the data dir, after picking up any new folders. */
   listMounted(): Root[] {
     this.syncFromDataDir();
-    return this.list().filter((root) => fs.existsSync(root.base_path));
+    return this.list().filter((root) => root.provider !== "local" || fs.existsSync(root.base_path));
   }
 
   // Roots are not created by hand: every folder directly under the data dir is mounted as one.
@@ -62,13 +73,13 @@ export class RootService {
       return [];
     }
     const dataRoot = path.resolve(this.dataDir);
-    const known = new Set(this.list().map((root) => root.base_path));
+    const known = new Set(this.list().filter((root) => root.provider === "local").map((root) => root.base_path));
     const created: Root[] = [];
     for (const entry of entries) {
       if (!entry.isDirectory() || /^[.@#]/.test(entry.name)) continue;
       const basePath = path.join(dataRoot, entry.name);
       if (known.has(basePath)) continue;
-      created.push(this.insert(this.availableSlug(entry.name), entry.name.slice(0, 120), basePath, false));
+      created.push(this.insert(this.availableSlug(entry.name), entry.name.slice(0, 120), basePath, false, "local", null));
     }
     return created;
   }
@@ -85,22 +96,62 @@ export class RootService {
     return root;
   }
 
-  private insert(slug: string, name: string, basePath: string, readonly: boolean): Root {
+  listRemote(): Root[] {
+    return this.list().filter((root) => root.provider !== "local");
+  }
+
+  /** A location that is not a folder of the data dir but somewhere rclone reaches. */
+  createRemote(input: z.infer<typeof remoteRootSchema>): Root {
+    const config = normalizeRemoteConfig(input.config);
+    return this.insert(this.availableSlug(input.name), input.name, "", input.readonly, config.type, this.secrets.seal(JSON.stringify(config)));
+  }
+
+  updateRemote(rootId: string, input: z.infer<typeof remoteRootPatchSchema>): Root {
+    const root = this.getById(rootId);
+    if (root.provider === "local") throw new AppError(400, "This location is a local folder", "ROOT_NOT_REMOTE");
+    const config = normalizeRemoteConfig(input.config, this.remoteConfig(root));
+    if (config.type !== root.provider) throw new AppError(400, "The kind of a location cannot be changed", "ROOT_PROVIDER_FIXED");
+    this.db.prepare("UPDATE roots SET config = ?, updated_at = ? WHERE id = ?").run(this.secrets.seal(JSON.stringify(config)), now(), rootId);
+    return this.getById(rootId);
+  }
+
+  /** Forgets a remote location, with every rule, share and tag that pointed into it. The remote's own files are untouched. */
+  deleteRemote(rootId: string): Root {
+    const root = this.getById(rootId);
+    if (root.provider === "local") throw new AppError(400, "This location is a local folder", "ROOT_NOT_REMOTE");
+    this.db.prepare("DELETE FROM roots WHERE id = ?").run(rootId);
+    return root;
+  }
+
+  remoteConfig(root: Root): RemoteConfig {
+    if (root.provider === "local" || !root.config) throw new AppError(400, "This location is a local folder", "ROOT_NOT_REMOTE");
+    return JSON.parse(this.secrets.open(root.config)) as RemoteConfig;
+  }
+
+  /** A root as the interface may know it: no path on the server, and no secret of a remote. */
+  publicRoot(root: Root, withConfig = false) {
+    const { base_path: _basePath, config: _config, ...visible } = root;
+    return withConfig && root.provider !== "local" ? { ...visible, remote: publicRemoteConfig(this.remoteConfig(root)) } : visible;
+  }
+
+  private insert(slug: string, name: string, basePath: string, readonly: boolean, provider: string, config: string | null): Root {
     const ts = now();
     const root: Root = {
       id: id("root"),
       slug,
       name,
       base_path: basePath,
+      provider,
+      config,
       readonly: readonly ? 1 : 0,
       created_at: ts,
       updated_at: ts
     };
     this.db
       .prepare(
-        "INSERT INTO roots (id, slug, name, base_path, readonly, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO roots (id, slug, name, base_path, provider, config, readonly, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
       )
-      .run(root.id, root.slug, root.name, root.base_path, root.readonly, root.created_at, root.updated_at);
+      .run(root.id, root.slug, root.name, root.base_path, root.provider, root.config, root.readonly, root.created_at, root.updated_at);
     return root;
   }
 

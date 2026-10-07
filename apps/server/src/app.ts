@@ -13,7 +13,9 @@ import { openDb } from "./db/db.js";
 import { AppError, publicError } from "./lib/errors.js";
 import { isPictureFormat } from "./lib/subtitles.js";
 import { nfc } from "./lib/filename.js";
-import { sendFile } from "./lib/send-file.js";
+import { SecretBox } from "./lib/secret-box.js";
+import { sendFile, sendSource } from "./lib/send-file.js";
+import { ensureSshKey } from "./lib/ssh-key.js";
 import { zipStream } from "./lib/zip-stream.js";
 import { isBrowserViewable } from "./lib/viewable.js";
 import { AuditService } from "./services/audit.service.js";
@@ -24,13 +26,19 @@ import { createGroupSchema, GroupService } from "./services/group.service.js";
 import { MediaService, mediaSessionSchema, mediaStreamSchema } from "./services/media.service.js";
 import { PathService } from "./services/path.service.js";
 import { permissionInputSchema, PermissionService } from "./services/permission.service.js";
-import { rootPatchSchema, RootService } from "./services/root.service.js";
+import { remoteRootPatchSchema, remoteRootSchema, rootPatchSchema, RootService } from "./services/root.service.js";
 import { ShareService, shareSchema } from "./services/share.service.js";
 import { ShelfService } from "./services/shelf.service.js";
+import { StorageService } from "./services/storage.service.js";
+import { syncJobSchema, SyncService } from "./services/sync.service.js";
 import { TagService, tagSchema } from "./services/tag.service.js";
 import { taskInputSchema, TaskService } from "./services/task.service.js";
 import { workspaceSchema, WorkspaceService } from "./services/workspace.service.js";
 import { WorkerManager } from "./workers/worker-manager.js";
+import { normalizeRemoteConfig, providers, remoteConfigSchema } from "./storage/providers.js";
+import { RcloneClient, rcloneSocketPath } from "./storage/rclone-client.js";
+import { RemoteManager } from "./storage/remote-manager.js";
+import { isRemote, RemoteStorage } from "./storage/remote-storage.js";
 import { EventHub } from "./ws/events.js";
 
 export async function buildApp(env: Env) {
@@ -38,17 +46,22 @@ export async function buildApp(env: Env) {
   const db = openDb(env);
   const events = new EventHub();
   const audit = new AuditService(db);
-  const roots = new RootService(db, env.dataDir);
-  const paths = new PathService(roots);
+  const roots = new RootService(db, env.dataDir, new SecretBox(env.appDataDir));
+  const rclone = new RcloneClient(rcloneSocketPath(env.appDataDir));
+  const remote = new RemoteStorage(rclone, roots, env);
+  const remotes = new RemoteManager(rclone, roots, env.appDataDir);
+  const storage = new StorageService(remote);
+  const paths = new PathService(roots, remote);
   const permissions = new PermissionService(db, audit);
   const auth = new AuthService(db, env);
   const images = new ImageService(env.appDataDir);
-  const fsService = new FsService(paths, permissions, audit, env.appDataDir, images);
+  const fsService = new FsService(paths, permissions, audit, storage, env.appDataDir, images);
   const workspace = new WorkspaceService(db, roots, paths);
-  const tasks = new TaskService(db, paths, permissions, audit, events, env.appDataDir, fsService);
-  const shelves = new ShelfService(db, paths, permissions, events, audit);
+  const tasks = new TaskService(db, paths, permissions, audit, events, env.appDataDir, fsService, storage);
+  const shelves = new ShelfService(db, paths, permissions, events, audit, storage);
   const tags = new TagService(db, paths, permissions, audit);
-  const shares = new ShareService(db, paths, permissions, audit, events);
+  const shares = new ShareService(db, paths, permissions, audit, events, storage);
+  const sync = new SyncService(db, tasks, auth, audit);
   const groups = new GroupService(db);
   const media = new MediaService(env.appDataDir);
   const workers = new WorkerManager(tasks, env, events);
@@ -95,7 +108,8 @@ export async function buildApp(env: Env) {
 
   await auth.ensureInitialAdminFromEnv();
   roots.syncFromDataDir();
-  registerApi(app, { auth, audit, roots, paths, permissions, fsService, workspace, tasks, shelves, tags, shares, groups, media, images, events, db });
+  await remotes.start();
+  registerApi(app, { auth, audit, roots, paths, permissions, fsService, workspace, tasks, shelves, tags, shares, groups, media, images, events, db, storage, remotes, sync, env });
 
   app.get("/ws", {
     websocket: true,
@@ -123,12 +137,19 @@ export async function buildApp(env: Env) {
 
   app.addHook("onClose", async () => {
     await workers.stop();
+    sync.stop();
+    clearInterval(pruning);
+    remotes.stop();
     media.stop();
     await images.stop();
     db.close();
   });
 
   workers.start();
+  sync.start();
+  const pruning = setInterval(() => void remote.pruneLocalCopies().catch(() => undefined), 60 * 60 * 1000);
+  pruning.unref();
+  void remote.pruneLocalCopies().catch(() => undefined);
   return app;
 }
 
@@ -171,6 +192,10 @@ type Services = {
   images: ImageService;
   events: EventHub;
   db: ReturnType<typeof openDb>;
+  storage: StorageService;
+  remotes: RemoteManager;
+  sync: SyncService;
+  env: Env;
 };
 
 function registerApi(app: FastifyInstance, services: Services) {
@@ -298,15 +323,89 @@ function registerApi(app: FastifyInstance, services: Services) {
         services.permissions.can(actor, "list", root, "/").allowed ||
         services.permissions.canReachListableDescendant(actor, root, "/")
       )
-      .map(({ base_path: _basePath, ...root }) => root);
+      .map((root) => services.roots.publicRoot(root));
   });
   app.patch("/api/roots/:id", async (request) => {
     const actor = requireAdmin(request);
     const params = z.object({ id: z.string() }).parse(request.params);
     const root = services.roots.patch(params.id, rootPatchSchema.parse(request.body));
     services.audit.write({ actorType: "user", actorId: actor.id, action: "root_update", rootId: root.id, result: "success" });
-    return { ...root, base_path: undefined };
+    services.events.publish({ type: "roots.updated" });
+    return services.roots.publicRoot(root);
   });
+
+  // Remote locations: what kinds there are, the ones set up, and whether rclone is there to reach them.
+  app.get("/api/storage", async (request) => {
+    requireAdmin(request);
+    return {
+      available: await services.remotes.available(),
+      providers,
+      roots: services.roots.listRemote().map((root) => services.roots.publicRoot(root, true))
+    };
+  });
+  app.post("/api/storage/test", async (request) => {
+    requireAdmin(request);
+    const body = z.object({ rootId: z.string().optional(), config: remoteConfigSchema }).parse(request.body);
+    // An existing location is tried with the secrets it already has, unless new ones were typed.
+    const previous = body.rootId ? services.roots.remoteConfig(services.roots.getById(body.rootId)) : undefined;
+    return services.remotes.test(normalizeRemoteConfig(body.config, previous));
+  });
+  app.get("/api/storage/ssh-key", async (request) => {
+    requireActor(request);
+    return { publicKey: (await ensureSshKey(services.env.appDataDir)).publicKey };
+  });
+  app.post("/api/roots/remote", async (request) => {
+    const actor = requireAdmin(request);
+    const root = services.roots.createRemote(remoteRootSchema.parse(request.body));
+    await services.remotes.configure(root);
+    services.audit.write({ actorType: "user", actorId: actor.id, action: "root_create", rootId: root.id, target: { provider: root.provider }, result: "success" });
+    services.events.publish({ type: "roots.updated" });
+    return services.roots.publicRoot(root, true);
+  });
+  app.put("/api/roots/:id/remote", async (request) => {
+    const actor = requireAdmin(request);
+    const params = z.object({ id: z.string() }).parse(request.params);
+    const root = services.roots.updateRemote(params.id, remoteRootPatchSchema.parse(request.body));
+    await services.remotes.configure(root);
+    services.audit.write({ actorType: "user", actorId: actor.id, action: "root_update", rootId: root.id, target: { provider: root.provider }, result: "success" });
+    services.events.publish({ type: "roots.updated" });
+    return services.roots.publicRoot(root, true);
+  });
+  app.delete("/api/roots/:id", async (request) => {
+    const actor = requireAdmin(request);
+    const params = z.object({ id: z.string() }).parse(request.params);
+    const root = services.roots.deleteRemote(params.id);
+    await services.remotes.forget(root);
+    services.audit.write({ actorType: "user", actorId: actor.id, action: "root_delete", target: { rootId: root.id, slug: root.slug, provider: root.provider }, result: "success" });
+    services.events.publish({ type: "roots.updated" });
+    return { ok: true };
+  });
+
+  // ffmpeg reads a remote file here, from this machine only, at an address signed for that one file.
+  app.get("/api/internal/blob/:root/:signature/*", async (request, reply) => {
+    const params = z.object({ root: z.string(), signature: z.string(), "*": z.string() }).parse(request.params);
+    const logicalPath = `/${params["*"]}`;
+    if (!["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(request.ip) || !services.storage.remote.verifyInputUrl(params.root, logicalPath, params.signature)) {
+      throw new AppError(404, "Not found", "NOT_FOUND");
+    }
+    const safe = await services.paths.resolveRootById(params.root, logicalPath);
+    if (!isRemote(safe.root)) throw new AppError(404, "Not found", "NOT_FOUND");
+    const stat = await services.storage.stat(safe);
+    if (!stat.isFile()) throw new AppError(404, "Not found", "NOT_FOUND");
+    return sendSource(request, reply, services.storage.source(safe, stat), "application/octet-stream");
+  });
+
+  app.get("/api/sync-jobs", async (request) => services.sync.list(requireActor(request)));
+  app.post("/api/sync-jobs", async (request) => services.sync.create(requireActor(request), syncJobSchema.parse(request.body)));
+  app.put("/api/sync-jobs/:id", async (request) => {
+    const params = z.object({ id: z.string() }).parse(request.params);
+    return services.sync.update(requireActor(request), params.id, syncJobSchema.parse(request.body));
+  });
+  app.delete("/api/sync-jobs/:id", async (request) => {
+    services.sync.delete(requireActor(request), z.object({ id: z.string() }).parse(request.params).id);
+    return { ok: true };
+  });
+  app.post("/api/sync-jobs/:id/run", async (request) => services.sync.run(requireActor(request), z.object({ id: z.string() }).parse(request.params).id));
 
   app.get("/api/workspace", async (request) => {
     const actor = requireActor(request);
@@ -334,8 +433,8 @@ function registerApi(app: FastifyInstance, services: Services) {
     const actor = requireActor(request);
     const query = fsQuerySchema.parse(request.query);
     const file = await services.fsService.download(actor, query.rootSlug, query.path);
-    reply.header("Content-Disposition", contentDisposition("attachment", path.basename(file.safe.absolutePath)));
-    return sendFile(request, reply, file.safe.absolutePath, file.stat, file.contentType);
+    reply.header("Content-Disposition", contentDisposition("attachment", file.name));
+    return sendSource(request, reply, file.source, file.contentType);
   });
   // Folders and selections as one archive, at an address that can be handed to the browser before anything is prepared.
   app.get("/api/fs/download-zip", async (request, reply) => {
@@ -351,7 +450,7 @@ function registerApi(app: FastifyInstance, services: Services) {
     const actor = requireActor(request);
     const query = fsQuerySchema.parse(request.query);
     const file = await services.fsService.preview(actor, query.rootSlug, query.path);
-    return sendFile(request, reply, file.safe.absolutePath, file.stat, file.contentType);
+    return sendSource(request, reply, file.source, file.contentType);
   });
   app.put("/api/fs/content", async (request) => services.fsService.writeText(requireActor(request), writeTextSchema.parse(request.body)));
   app.get("/api/fs/sqlite", async (request) => {
@@ -361,15 +460,15 @@ function registerApi(app: FastifyInstance, services: Services) {
   app.get("/api/fs/sqlite/rows", async (request) => services.fsService.sqliteRows(requireActor(request), sqliteRowsSchema.parse(request.query)));
   app.get("/api/fs/image", async (request, reply) => {
     const query = fsQuerySchema.parse(request.query);
-    const file = await services.fsService.preview(requireActor(request), query.rootSlug, query.path);
-    const rendition = await services.images.rendition(file.safe.absolutePath, file.stat);
+    const file = await services.fsService.localFile(requireActor(request), query.rootSlug, query.path);
+    const rendition = await services.images.rendition(file.localPath, file.stat);
     reply.header("Cache-Control", "private, max-age=86400");
     return sendFile(request, reply, rendition, await fs.promises.stat(rendition), "image/jpeg");
   });
   app.get("/api/fs/exif", async (request) => {
     const query = fsQuerySchema.parse(request.query);
-    const file = await services.fsService.preview(requireActor(request), query.rootSlug, query.path);
-    return services.images.metadata(file.safe.absolutePath);
+    const file = await services.fsService.localFile(requireActor(request), query.rootSlug, query.path);
+    return services.images.metadata(file.localPath);
   });
   app.get("/api/fs/thumbnail", async (request, reply) => {
     const actor = requireActor(request);
@@ -384,16 +483,16 @@ function registerApi(app: FastifyInstance, services: Services) {
   app.get("/api/media/info", async (request) => {
     const actor = requireActor(request);
     const query = fsQuerySchema.parse(request.query);
-    const file = await services.fsService.preview(actor, query.rootSlug, query.path);
-    return services.media.info(file.safe.absolutePath, file.stat);
+    const file = await services.fsService.media(actor, query.rootSlug, query.path);
+    return services.media.info(file.input, file.stat);
   });
   app.get("/api/media/subtitles", async (request) => {
     const actor = requireActor(request);
     const query = fsQuerySchema.parse(request.query);
-    const file = await services.fsService.preview(actor, query.rootSlug, query.path);
+    const file = await services.fsService.media(actor, query.rootSlug, query.path);
     const sidecars = await services.fsService.subtitles(actor, query.rootSlug, query.path);
     // Something ffprobe cannot read simply has no streams of its own to offer.
-    const info = await services.media.info(file.safe.absolutePath, file.stat).catch(() => null);
+    const info = await services.media.info(file.input, file.stat).catch(() => null);
     const own = new URLSearchParams({ rootSlug: query.rootSlug, path: query.path }).toString();
     const embedded = info?.subtitles ?? [];
     // A DVD index holds a stream for each language; they are listed apart, and say their own language where the name does not.
@@ -456,28 +555,28 @@ function registerApi(app: FastifyInstance, services: Services) {
   app.get("/api/media/subtitle", async (request, reply) => {
     const actor = requireActor(request);
     const query = mediaStreamSchema.parse(request.query);
-    const file = await services.fsService.preview(actor, query.rootSlug, query.path);
-    const subtitle = await services.media.subtitle(file.safe.absolutePath, file.stat, query.index);
+    const file = await services.fsService.media(actor, query.rootSlug, query.path);
+    const subtitle = await services.media.subtitle(file.input, file.stat, query.index);
     reply.header("Cache-Control", "private, max-age=3600");
     return sendFile(request, reply, subtitle.file, await fs.promises.stat(subtitle.file), "text/plain; charset=utf-8");
   });
   app.get("/api/media/attachment", async (request, reply) => {
     const actor = requireActor(request);
     const query = mediaStreamSchema.parse(request.query);
-    const file = await services.fsService.preview(actor, query.rootSlug, query.path);
-    const font = await services.media.font(file.safe.absolutePath, file.stat, query.index);
+    const file = await services.fsService.media(actor, query.rootSlug, query.path);
+    const font = await services.media.font(file.input, file.stat, query.index);
     reply.header("Cache-Control", "private, max-age=3600");
     return sendFile(request, reply, font, await fs.promises.stat(font), "application/octet-stream");
   });
   app.post("/api/media/sessions", async (request) => {
     const actor = requireActor(request);
     const input = mediaSessionSchema.parse(request.body);
-    const file = await services.fsService.preview(actor, input.rootSlug, input.path);
+    const file = await services.fsService.media(actor, input.rootSlug, input.path);
     // A subtitle file is taken only from among the ones found for this video, never as a path of the caller's choosing.
     const sidecar = input.subtitlePath === null ? null : (await services.fsService.subtitles(actor, input.rootSlug, input.path)).find((item) => item.path === input.subtitlePath);
     const subtitleFile = sidecar && isPictureFormat(sidecar.format) && sidecar.absolutePath && sidecar.stat ? { absolutePath: sidecar.absolutePath, stat: sidecar.stat, format: sidecar.format } : null;
     if (input.subtitlePath !== null && !subtitleFile) throw new AppError(400, "Unsupported subtitle", "INVALID_INPUT");
-    const session = await services.media.createSession(actor.id, file.safe.absolutePath, file.stat, { ...input, subtitleFile });
+    const session = await services.media.createSession(actor.id, file.input, file.stat, { ...input, subtitleFile });
     return { id: session.id, hdr: session.hdr, playlistUrl: `/api/media/sessions/${session.id}/index.m3u8` };
   });
   app.get("/api/media/sessions/:id/:file", async (request, reply) => {
@@ -700,24 +799,24 @@ function registerApi(app: FastifyInstance, services: Services) {
   app.get("/s/:token/download", async (request, reply) => {
     const params = z.object({ token: z.string().min(1) }).parse(request.params);
     const safe = await services.shares.publicDownload(params.token, shareAccessCookie(request, params.token));
-    const stat = await fs.promises.stat(safe.absolutePath);
+    const stat = await services.storage.stat(safe);
     if (!stat.isFile()) throw new AppError(400, "Path is not a file", "NOT_FILE");
-    reply.header("Content-Disposition", contentDisposition("attachment", path.basename(safe.absolutePath)));
-    return sendFile(request, reply, safe.absolutePath, stat, lookup(safe.absolutePath) || "application/octet-stream");
+    reply.header("Content-Disposition", contentDisposition("attachment", services.storage.name(safe)));
+    return sendSource(request, reply, services.storage.source(safe, stat), lookup(safe.logicalPath) || "application/octet-stream");
   });
 
   app.get("/s/:token/preview", async (request, reply) => {
     const params = z.object({ token: z.string().min(1) }).parse(request.params);
     const safe = await services.shares.publicPreview(params.token, shareAccessCookie(request, params.token));
-    const stat = await fs.promises.stat(safe.absolutePath);
+    const stat = await services.storage.stat(safe);
     if (!stat.isFile()) throw new AppError(400, "Path is not a file", "NOT_FILE");
-    const contentType = lookup(safe.absolutePath) || "application/octet-stream";
+    const contentType = lookup(safe.logicalPath) || "application/octet-stream";
     if (!isBrowserViewable(contentType)) throw new AppError(415, "This kind of file cannot be viewed in the browser", "PREVIEW_UNSUPPORTED");
-    reply.header("Content-Disposition", contentDisposition("inline", path.basename(safe.absolutePath)));
+    reply.header("Content-Disposition", contentDisposition("inline", services.storage.name(safe)));
     reply.header("X-Content-Type-Options", "nosniff");
     // Opened in a tab of its own, an SVG is a document: without this its scripts would run as Kago.
     if (contentType === "image/svg+xml") reply.header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox");
-    return sendFile(request, reply, safe.absolutePath, stat, contentType);
+    return sendSource(request, reply, services.storage.source(safe, stat), contentType);
   });
 
   app.post("/s/:token/upload", async (request) => {

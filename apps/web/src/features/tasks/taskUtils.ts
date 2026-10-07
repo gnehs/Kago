@@ -12,7 +12,8 @@ const typeLabels: Record<string, string> = {
   restore_trash: t("Restore from Trash"),
   rsync_pull: t("rsync pull"),
   rsync_push: t("rsync push"),
-  thumbnail: t("Thumbnails")
+  thumbnail: t("Thumbnails"),
+  sync: t("Sync")
 };
 
 const statusMeta: Record<string, { label: string; tone: "neutral" | "accent" | "success" | "warning" | "danger" }> = {

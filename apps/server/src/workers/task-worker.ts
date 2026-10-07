@@ -2,6 +2,10 @@ import { parentPort, workerData } from "node:worker_threads";
 import type { Env } from "../config/env.js";
 import { openDb } from "../db/db.js";
 import { logger } from "../lib/logger.js";
+import { SecretBox } from "../lib/secret-box.js";
+import { RcloneClient, rcloneSocketPath } from "../storage/rclone-client.js";
+import { RemoteStorage } from "../storage/remote-storage.js";
+import { StorageService } from "../services/storage.service.js";
 import { AuditService } from "../services/audit.service.js";
 import { AuthService } from "../services/auth.service.js";
 import { FsService } from "../services/fs.service.js";
@@ -38,12 +42,15 @@ const parentEvents: EventPublisher = {
 
 const db = openDb(input.env, { interruptRunningTasks: false });
 const audit = new AuditService(db);
-const roots = new RootService(db, input.env.dataDir);
-const paths = new PathService(roots);
+const roots = new RootService(db, input.env.dataDir, new SecretBox(input.env.appDataDir));
+// The daemon belongs to the main thread; the worker only talks to it.
+const remote = new RemoteStorage(new RcloneClient(rcloneSocketPath(input.env.appDataDir)), roots, input.env);
+const storage = new StorageService(remote);
+const paths = new PathService(roots, remote);
 const permissions = new PermissionService(db, audit);
 const auth = new AuthService(db, input.env);
-const fsService = new FsService(paths, permissions, audit, input.env.appDataDir);
-const tasks = new TaskService(db, paths, permissions, audit, parentEvents, input.env.appDataDir, fsService);
+const fsService = new FsService(paths, permissions, audit, storage, input.env.appDataDir);
+const tasks = new TaskService(db, paths, permissions, audit, parentEvents, input.env.appDataDir, fsService, storage);
 
 let stopped = false;
 let running = false;

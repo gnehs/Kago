@@ -10,9 +10,34 @@ export type Root = {
   id: string;
   slug: string;
   name: string;
+  /** `local` for a folder on the server; otherwise the kind of remote it is kept on. */
+  provider: string;
   readonly: number;
   created_at: number;
   updated_at: number;
+};
+
+export type RemoteField = { key: string; label: string; kind?: "text" | "number" | "secret" | "boolean" | "select"; required?: boolean; placeholder?: string; options?: Array<{ value: string; label: string }> };
+export type RemoteProvider = { type: string; label: string; fields: RemoteField[]; path: { label: string; placeholder: string; required: boolean } };
+/** A remote location's settings as an administrator sees them: secrets are only named, never sent. */
+export type RemoteRoot = Root & { remote: { type: string; base: string; params: Record<string, string>; secrets: string[] } };
+export type StorageInfo = { available: boolean; providers: RemoteProvider[]; roots: RemoteRoot[] };
+
+export type SyncEndpoint = { kind: "location"; rootSlug: string; path: string } | { kind: "rsync"; remote: string; port?: number };
+export type SyncSchedule = { kind: "interval"; minutes: number } | { kind: "daily"; time: string } | { kind: "weekly"; weekday: number; time: string };
+export type SyncJob = {
+  id: string;
+  name: string;
+  source: SyncEndpoint;
+  destination: SyncEndpoint;
+  options: { mode: "copy" | "mirror"; dryRun: boolean };
+  schedule: SyncSchedule | null;
+  enabled: boolean;
+  next_run_at: number | null;
+  last_run_at: number | null;
+  last_status: string | null;
+  last_error: string | null;
+  created_by: string;
 };
 
 export type UserAccount = {

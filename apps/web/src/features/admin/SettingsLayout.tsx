@@ -1,12 +1,18 @@
 import type { ReactNode } from "react";
-import { HardDrive, KeyRound, ScrollText, SlidersHorizontal, UserRound, UsersRound } from "lucide-react";
+import { HardDrive, KeyRound, RefreshCw, ScrollText, SlidersHorizontal, UserRound, UsersRound } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { SettingsSection } from "@/stores/workspace";
 import { t } from "@/lib/i18n";
 
 /** What is yours comes first; what an administrator runs for everyone is a group of its own. */
 const groups: Array<{ label: string; adminOnly?: boolean; sections: Array<{ section: SettingsSection; label: string; icon: ReactNode }> }> = [
-  { label: t("Personal"), sections: [{ section: "general", label: t("General"), icon: <SlidersHorizontal /> }] },
+  {
+    label: t("Personal"),
+    sections: [
+      { section: "general", label: t("General"), icon: <SlidersHorizontal /> },
+      { section: "sync", label: t("Sync"), icon: <RefreshCw /> }
+    ]
+  },
   {
     label: t("Administration"),
     adminOnly: true,
@@ -26,7 +32,7 @@ export function SettingsLayout({ section, isAdmin, onSection, children }: { sect
 
   return (
     <div className="flex min-h-0 flex-1">
-      {visible.length > 1 ? (
+      {visible.some((group) => group.sections.length > 1) || visible.length > 1 ? (
         <nav aria-label={t("Settings sections")} className="flex w-44 shrink-0 flex-col gap-3 overflow-y-auto border-r border-line bg-elevated p-2">
           {visible.map((group) => (
             <div key={group.label} role="group" aria-label={group.label} className="flex flex-col gap-px">

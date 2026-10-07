@@ -14,7 +14,7 @@ export const permissionActions = [
   { key: "manage_permissions", label: t("Manage permissions") },
   { key: "compress", label: t("Compress") },
   { key: "extract", label: t("Extract") },
-  { key: "run_rsync", label: t("Run rsync") }
+  { key: "run_rsync", label: t("Run sync") }
 ] as const;
 
 export type PermissionAction = (typeof permissionActions)[number]["key"];

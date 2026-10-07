@@ -1,7 +1,7 @@
 import { keepPreviousData, useMutation, useQueries, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { api } from "./client";
 import { isTrashing, useTrashingStore } from "../stores/trashing";
-import type { Actor, AuditLog, FileList, FileMeta, FileTask, Group, ImageMetadata, MediaInfo, PermissionRule, Root, ShareLink, Shelf, SqlitePage, SqliteTable, SubtitleList, Tag, TrashItem, UserAccount, WorkspaceState } from "../types/kago";
+import type { Actor, AuditLog, FileList, FileMeta, FileTask, Group, ImageMetadata, MediaInfo, PermissionRule, Root, ShareLink, Shelf, SqlitePage, SqliteTable, StorageInfo, SubtitleList, SyncJob, Tag, TrashItem, UserAccount, WorkspaceState } from "../types/kago";
 
 export function useSetupStatus() {
   return useQuery({ queryKey: ["auth", "setup"], queryFn: () => api<{ needsSetup: boolean }>("/api/auth/setup") });
@@ -25,6 +25,20 @@ export function useGroups() {
 
 export function useRoots() {
   return useQuery({ queryKey: ["roots"], queryFn: () => api<Root[]>("/api/roots") });
+}
+
+/** The kinds of remote location, the ones set up, and whether the server can reach any at all. Administrators only. */
+export function useStorage() {
+  return useQuery({ queryKey: ["storage"], queryFn: () => api<StorageInfo>("/api/storage"), retry: false });
+}
+
+export function useSyncJobs() {
+  // A run changes a job's last result without any event of its own.
+  return useQuery({ queryKey: ["sync-jobs"], queryFn: () => api<SyncJob[]>("/api/sync-jobs"), refetchInterval: 10_000 });
+}
+
+export function useSshKey(enabled = true) {
+  return useQuery({ queryKey: ["ssh-key"], queryFn: () => api<{ publicKey: string }>("/api/storage/ssh-key"), enabled, retry: false, staleTime: Infinity });
 }
 
 export function useWorkspace() {

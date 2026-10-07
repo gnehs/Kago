@@ -10,7 +10,7 @@ import type { FileTask } from "@/types/kago";
 import { t } from "@/lib/i18n";
 
 /** Task types whose completion is worth announcing; the rest finish quietly. */
-const announcedTypes = ["copy", "move", "compress", "extract", "restore_trash", "rsync_pull", "rsync_push"];
+const announcedTypes = ["copy", "move", "compress", "extract", "restore_trash", "rsync_pull", "rsync_push", "sync"];
 
 /**
  * Listens for server events. The socket only tells us what to refetch; SQLite stays the
@@ -49,6 +49,7 @@ export function useRealtime(userId: string, onRemoteWorkspaceChange: () => void)
         if ((type === "task.done" || type === "task.failed") && message.userId === userId && message.taskId) announceTask(type, message.taskId, message.error);
         invalidate("tasks");
         if (type === "task.done") invalidate("trash");
+        if (type === "task.done" || type === "task.failed") invalidate("sync-jobs");
         // A failed or cancelled move to the Trash leaves items behind, which the fresh listing brings back.
         if (type === "task.done" || type === "task.failed" || message.patch?.status === "cancelled") {
           const { taskId } = message;
@@ -58,6 +59,7 @@ export function useRealtime(userId: string, onRemoteWorkspaceChange: () => void)
       if (type === "shelf.updated") invalidate("shelves");
       if (type === "share.updated") invalidate("shares");
       if (type === "permission.updated") invalidate("permissions", "roots", "fs");
+      if (type === "roots.updated") invalidate("roots", "storage", "fs");
       if (type === "workspace.updated" && message.userId === userId) {
         onRemoteWorkspaceChange();
         invalidate("workspace");

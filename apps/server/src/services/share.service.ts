@@ -1,5 +1,4 @@
 import { z } from "zod";
-import fsp from "node:fs/promises";
 import { lookup } from "mime-types";
 import type { Db } from "../db/db.js";
 import { row, rows } from "../db/db.js";
@@ -8,7 +7,8 @@ import { AppError } from "../lib/errors.js";
 import { id, now } from "../lib/ids.js";
 import { isBrowserViewable } from "../lib/viewable.js";
 import type { AuditService } from "./audit.service.js";
-import type { PathService } from "./path.service.js";
+import type { PathService, SafePath } from "./path.service.js";
+import type { StorageService } from "./storage.service.js";
 import type { PermissionService } from "./permission.service.js";
 import type { Actor } from "./types.js";
 import type { EventPublisher } from "../ws/events.js";
@@ -28,7 +28,8 @@ export class ShareService {
     private readonly paths: PathService,
     private readonly permissions: PermissionService,
     private readonly audit: AuditService,
-    private readonly events: EventPublisher
+    private readonly events: EventPublisher,
+    private readonly storage: StorageService
   ) {}
 
   list(actor: Actor) {
@@ -42,7 +43,7 @@ export class ShareService {
   async create(actor: Actor, input: z.infer<typeof shareSchema>) {
     const safe = await this.paths.resolveExisting(input.rootSlug, input.path);
     this.permissions.require(actor, "share", safe.root, safe.logicalPath);
-    await this.assertModeMatchesTarget(input.mode, safe.absolutePath);
+    await this.assertModeMatchesTarget(input.mode, safe);
     if (safe.root.readonly && input.mode === "upload_only") {
       throw new AppError(403, "Readonly roots cannot accept upload-only shares", "ROOT_READONLY");
     }
@@ -201,7 +202,7 @@ export class ShareService {
       path: share.path,
       rootSlug: safe.root.slug,
       // Told up front, so the page offers to show only what the preview will agree to send.
-      previewable: isBrowserViewable(lookup(safe.absolutePath) || "")
+      previewable: isBrowserViewable(lookup(safe.logicalPath) || "")
     };
   }
 
@@ -236,7 +237,7 @@ export class ShareService {
       throw new AppError(403, "Download is not allowed for this share", "SHARE_DOWNLOAD_FORBIDDEN");
     }
     const safe = await this.paths.resolveRootById(share.root_id, share.path);
-    await this.assertModeMatchesTarget("download", safe.absolutePath);
+    await this.assertModeMatchesTarget("download", safe);
     this.permissions.requireShareLink(share.id, "download", safe.root, safe.logicalPath);
     const updated = this.db
       .prepare(
@@ -265,7 +266,7 @@ export class ShareService {
       throw new AppError(403, "Preview is not allowed for this share", "SHARE_PREVIEW_FORBIDDEN");
     }
     const safe = await this.paths.resolveRootById(share.root_id, share.path);
-    await this.assertModeMatchesTarget("view_only", safe.absolutePath);
+    await this.assertModeMatchesTarget("view_only", safe);
     this.permissions.requireShareLink(share.id, "read", safe.root, safe.logicalPath);
     return safe;
   }
@@ -276,13 +277,13 @@ export class ShareService {
     const mode = (JSON.parse(share.permission_json) as { mode: string }).mode;
     if (mode !== "upload_only") throw new AppError(403, "Upload is not allowed for this share", "SHARE_UPLOAD_FORBIDDEN");
     const safe = await this.paths.resolveRootById(share.root_id, share.path);
-    await this.assertModeMatchesTarget("upload_only", safe.absolutePath);
+    await this.assertModeMatchesTarget("upload_only", safe);
     this.permissions.requireShareLink(share.id, "upload", safe.root, safe.logicalPath);
     return { share, safe };
   }
 
-  private async assertModeMatchesTarget(mode: "view_only" | "download" | "upload_only", absolutePath: string): Promise<void> {
-    const stat = await fsp.stat(absolutePath);
+  private async assertModeMatchesTarget(mode: "view_only" | "download" | "upload_only", safe: SafePath): Promise<void> {
+    const stat = await this.storage.stat(safe);
     if (mode === "upload_only") {
       if (!stat.isDirectory()) throw new AppError(400, "Upload-only shares must target a folder", "SHARE_TARGET_NOT_FOLDER");
       return;

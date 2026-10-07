@@ -1,0 +1,234 @@
+import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { Plus, RefreshCw, X } from "lucide-react";
+import { api } from "@/api/client";
+import { useSyncJobs } from "@/api/hooks";
+import { KagoBadge } from "@/components/kago/badge";
+import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
+import { KagoIconButton } from "@/components/kago/icon-button";
+import { Button } from "@/components/ui/button";
+import { Checkbox, Field, Input, Select } from "@/components/ui/input";
+import { taskErrorLabel, taskStatus } from "@/features/tasks/taskUtils";
+import { Card, Page, Row, RowList } from "@/features/workspace/Page";
+import { formatUnixDate } from "@/lib/format";
+import { displayPath, normalizeLogicalPath } from "@/lib/paths";
+import { run } from "@/lib/run";
+import { confirmAction } from "@/stores/dialogs";
+import { toast } from "@/stores/toast";
+import type { Actor, FileTask, Root, SyncEndpoint, SyncJob, SyncSchedule } from "@/types/kago";
+import { SshKeyNote } from "./SshKeyNote";
+import { t } from "@/lib/i18n";
+
+const weekdays = [t("Sunday"), t("Monday"), t("Tuesday"), t("Wednesday"), t("Thursday"), t("Friday"), t("Saturday")];
+
+function describeSchedule(schedule: SyncSchedule | null) {
+  if (!schedule) return t("Runs only when started");
+  if (schedule.kind === "daily") return t("Every day at {time}", { time: schedule.time });
+  if (schedule.kind === "weekly") return t("Every {weekday} at {time}", { weekday: weekdays[schedule.weekday] ?? "", time: schedule.time });
+  return schedule.minutes % 60 === 0
+    ? t("Every {count} hour | Every {count} hours", { count: schedule.minutes / 60 })
+    : t("Every {count} minute | Every {count} minutes", { count: schedule.minutes });
+}
+
+export function SyncPage({ roots, user }: { roots: Root[]; user: Actor }) {
+  const queryClient = useQueryClient();
+  const jobs = useSyncJobs();
+  const [editing, setEditing] = useState<SyncJob | true | null>(null);
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ["sync-jobs"] });
+  const describeEndpoint = (endpoint: SyncEndpoint) =>
+    endpoint.kind === "rsync" ? endpoint.remote : displayPath(roots.find((root) => root.slug === endpoint.rootSlug)?.name ?? endpoint.rootSlug, endpoint.path);
+
+  async function start(job: SyncJob) {
+    await run(async () => {
+      await api<FileTask>(`/api/sync-jobs/${job.id}/run`, { method: "POST" });
+      toast(t("{name} started", { name: job.name }));
+      await Promise.all([refresh(), queryClient.invalidateQueries({ queryKey: ["tasks"] })]);
+    }, t("Couldn’t start the sync"));
+  }
+
+  async function remove(job: SyncJob) {
+    if (!(await confirmAction({ title: t("Delete {name}?", { name: job.name }), description: t("Files it has already synced stay where they are."), confirmLabel: t("Delete"), destructive: true }))) return;
+    await run(async () => {
+      await api(`/api/sync-jobs/${job.id}`, { method: "DELETE" });
+      await refresh();
+    });
+  }
+
+  const addButton = roots.length > 0 ? <Button variant="default" onClick={() => setEditing(true)}><Plus />{t("Add sync")}</Button> : null;
+
+  return (
+    <Page
+      title={t("Sync")}
+      description={t("Keep a folder the same as another: between locations, or with another machine over rsync.")}
+      actions={jobs.data?.length && !editing ? addButton : null}
+    >
+      {editing ? (
+        <Card title={editing === true ? t("Add sync") : t("Edit {name}", { name: editing.name })} action={<KagoIconButton label={t("Close")} onClick={() => setEditing(null)}><X /></KagoIconButton>}>
+          <SyncForm key={editing === true ? "new" : editing.id} roots={roots} job={editing === true ? null : editing} onSaved={async () => { setEditing(null); await refresh(); }} />
+        </Card>
+      ) : null}
+      {jobs.isLoading ? <KagoLoading /> : null}
+      {jobs.data?.length === 0 && !editing ? (
+        <KagoEmptyState icon={<RefreshCw />} title={t("No syncs yet")} description={t("A sync copies what is new or changed from one folder to another, when you start it or on a schedule.")}>
+          {addButton}
+        </KagoEmptyState>
+      ) : null}
+      {jobs.data?.length ? (
+        <RowList>
+          {jobs.data.map((job) => {
+            const last = job.last_status ? taskStatus({ status: job.last_status } as FileTask) : null;
+            const running = job.last_status === "queued" || job.last_status === "running";
+            return (
+              <Row
+                key={job.id}
+                icon={<RefreshCw />}
+                title={job.name}
+                subtitle={[
+                  `${describeEndpoint(job.source)} → ${describeEndpoint(job.destination)}`,
+                  job.enabled ? describeSchedule(job.schedule) : t("Schedule paused"),
+                  job.last_error ? taskErrorLabel(job.last_error) : job.last_run_at ? t("Last run {date}", { date: formatUnixDate(job.last_run_at) }) : null,
+                  job.created_by !== user.id ? t("Someone else’s") : null
+                ].filter(Boolean).join(" · ")}
+              >
+                {last ? <KagoBadge tone={last.tone}>{last.label}</KagoBadge> : null}
+                <Button disabled={running} onClick={() => void start(job)}>{t("Run now")}</Button>
+                <Button onClick={() => setEditing(job)}>{t("Edit")}</Button>
+                <Button variant="destructive" onClick={() => void remove(job)}>{t("Delete")}</Button>
+              </Row>
+            );
+          })}
+        </RowList>
+      ) : null}
+    </Page>
+  );
+}
+
+type EndpointDraft = { kind: "location" | "rsync"; rootSlug: string; path: string; remote: string; port: string };
+
+const draftOf = (endpoint: SyncEndpoint | undefined, roots: Root[]): EndpointDraft =>
+  endpoint?.kind === "rsync"
+    ? { kind: "rsync", rootSlug: roots[0]?.slug ?? "", path: "/", remote: endpoint.remote, port: endpoint.port ? String(endpoint.port) : "" }
+    : { kind: "location", rootSlug: endpoint?.rootSlug ?? roots[0]?.slug ?? "", path: endpoint?.path ?? "/", remote: "", port: "" };
+
+function endpointOf(draft: EndpointDraft): SyncEndpoint | null {
+  if (draft.kind === "rsync") {
+    const port = Number(draft.port);
+    return draft.remote.trim() ? { kind: "rsync", remote: draft.remote.trim(), ...(port > 0 ? { port } : {}) } : null;
+  }
+  const path = normalizeLogicalPath(draft.path);
+  return draft.rootSlug && path ? { kind: "location", rootSlug: draft.rootSlug, path } : null;
+}
+
+function SyncForm({ roots, job, onSaved }: { roots: Root[]; job: SyncJob | null; onSaved: () => Promise<void> }) {
+  const [name, setName] = useState(job?.name ?? "");
+  const [source, setSource] = useState(() => draftOf(job?.source, roots));
+  // A new sync starts out between two different locations when there are two.
+  const [destination, setDestination] = useState(() => draftOf(job?.destination, roots.length > 1 ? [roots[1]!, ...roots] : roots));
+  const [mode, setMode] = useState(job?.options.mode ?? "copy");
+  const [dryRun, setDryRun] = useState(job?.options.dryRun ?? false);
+  const [when, setWhen] = useState<"manual" | SyncSchedule["kind"]>(job?.schedule?.kind ?? "manual");
+  const interval = job?.schedule?.kind === "interval" ? job.schedule.minutes : 60;
+  const [every, setEvery] = useState(String(interval % 60 === 0 ? interval / 60 : interval));
+  const [unit, setUnit] = useState<"minutes" | "hours">(interval % 60 === 0 ? "hours" : "minutes");
+  const [time, setTime] = useState(job?.schedule && job.schedule.kind !== "interval" ? job.schedule.time : "03:00");
+  const [weekday, setWeekday] = useState(job?.schedule?.kind === "weekly" ? job.schedule.weekday : 1);
+  const [enabled, setEnabled] = useState(job?.enabled ?? true);
+
+  const minutes = Number(every) * (unit === "hours" ? 60 : 1);
+  const schedule: SyncSchedule | null = when === "manual" ? null : when === "interval" ? { kind: "interval", minutes } : when === "daily" ? { kind: "daily", time } : { kind: "weekly", weekday, time };
+  const from = endpointOf(source);
+  const to = endpointOf(destination);
+  // rsync reaches one other machine from this one; it does not join two of them.
+  const twoMachines = source.kind === "rsync" && destination.kind === "rsync";
+  const canSubmit = name.trim().length > 0 && from !== null && to !== null && !twoMachines && (when !== "interval" || (Number.isInteger(minutes) && minutes >= 5));
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    if (!canSubmit) return;
+    const body = JSON.stringify({ name: name.trim(), source: from, destination: to, options: { mode, dryRun }, schedule, enabled });
+    const saved = await run(async () => {
+      await api(job ? `/api/sync-jobs/${job.id}` : "/api/sync-jobs", { method: job ? "PUT" : "POST", body });
+      return true;
+    }, t("Couldn’t save the sync"));
+    if (saved) await onSaved();
+  }
+
+  return (
+    <form className="grid grid-cols-2 gap-3" onSubmit={submit}>
+      <Field label={t("Name")} className="col-span-2"><Input autoFocus value={name} onChange={(event) => setName(event.target.value)} /></Field>
+      <EndpointFields label={t("From")} roots={roots} draft={source} onChange={setSource} />
+      <EndpointFields label={t("To")} roots={roots} draft={destination} onChange={setDestination} />
+      {twoMachines ? <p className="col-span-2 m-0 text-xs text-danger">{t("One side of a sync has to be a location")}</p> : null}
+      {source.kind === "rsync" || destination.kind === "rsync" ? <SshKeyNote className="col-span-2" /> : null}
+      <Field label={t("What to do")} hint={mode === "mirror" ? t("Whatever the source no longer has is deleted from the destination.") : t("Nothing is ever deleted from the destination.")}>
+        <Select value={mode} onChange={(event) => setMode(event.target.value as "copy" | "mirror")}>
+          <option value="copy">{t("Copy new and changed files")}</option>
+          <option value="mirror">{t("Make the destination identical")}</option>
+        </Select>
+      </Field>
+      <Field label={t("When")}>
+        <Select value={when} onChange={(event) => setWhen(event.target.value as typeof when)}>
+          <option value="manual">{t("Only when I start it")}</option>
+          <option value="interval">{t("Every so often")}</option>
+          <option value="daily">{t("Every day")}</option>
+          <option value="weekly">{t("Every week")}</option>
+        </Select>
+      </Field>
+      {when === "interval" ? (
+        <>
+          <Field label={t("Every")} hint={t("Five minutes at the least.")}><Input inputMode="numeric" value={every} onChange={(event) => setEvery(event.target.value)} /></Field>
+          <Field label={t("Unit")}>
+            <Select value={unit} onChange={(event) => setUnit(event.target.value as "minutes" | "hours")}>
+              <option value="minutes">{t("Minutes")}</option>
+              <option value="hours">{t("Hours")}</option>
+            </Select>
+          </Field>
+        </>
+      ) : null}
+      {when === "weekly" ? (
+        <Field label={t("Day")}>
+          <Select value={weekday} onChange={(event) => setWeekday(Number(event.target.value))}>
+            {weekdays.map((day, index) => <option key={day} value={index}>{day}</option>)}
+          </Select>
+        </Field>
+      ) : null}
+      {when === "daily" || when === "weekly" ? (
+        <Field label={t("Time")} hint={t("By the server’s clock.")}><Input type="time" required value={time} onChange={(event) => setTime(event.target.value)} /></Field>
+      ) : null}
+      <div className="col-span-2 flex flex-wrap gap-x-4 gap-y-2">
+        <Checkbox label={t("Trial run: report what would change, change nothing")} checked={dryRun} onChange={(event) => setDryRun(event.target.checked)} />
+        {when === "manual" ? null : <Checkbox label={t("Run on schedule")} checked={enabled} onChange={(event) => setEnabled(event.target.checked)} />}
+      </div>
+      <div className="col-span-2 flex justify-end">
+        <Button type="submit" variant="default" disabled={!canSubmit}>{job ? t("Save") : t("Add sync")}</Button>
+      </div>
+    </form>
+  );
+}
+
+/** One end of a sync: a folder of a location, or a folder on another machine. */
+function EndpointFields({ label, roots, draft, onChange }: { label: string; roots: Root[]; draft: EndpointDraft; onChange: (draft: EndpointDraft) => void }) {
+  const local = roots.filter((root) => root.provider === "local");
+  return (
+    <fieldset className="col-span-2 m-0 grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-3 border-0 p-0">
+      <Field label={label}>
+        <Select
+          value={draft.kind === "rsync" ? "rsync" : draft.rootSlug}
+          onChange={(event) => onChange(event.target.value === "rsync" ? { ...draft, kind: "rsync" } : { ...draft, kind: "location", rootSlug: event.target.value })}
+        >
+          {roots.map((root) => <option key={root.id} value={root.slug}>{root.name}</option>)}
+          {/* rsync works from a folder on the server's own disk, so it is offered only when there is one. */}
+          {local.length > 0 ? <option value="rsync">{t("Another machine (rsync over SSH)")}</option> : null}
+        </Select>
+      </Field>
+      {draft.kind === "rsync" ? (
+        <div className="grid grid-cols-[minmax(0,1fr)_5rem] gap-3">
+          <Field label={t("Address")}><Input value={draft.remote} placeholder="user@example.com:/home/user/files" onChange={(event) => onChange({ ...draft, remote: event.target.value })} /></Field>
+          <Field label={t("Port")}><Input inputMode="numeric" value={draft.port} placeholder="22" onChange={(event) => onChange({ ...draft, port: event.target.value })} /></Field>
+        </div>
+      ) : (
+        <Field label={t("Path")}><Input value={draft.path} placeholder="/" onChange={(event) => onChange({ ...draft, path: event.target.value })} /></Field>
+      )}
+    </fieldset>
+  );
+}
