@@ -108,10 +108,13 @@ export function VideoPreview({
   // Another audio track can only be had by transcoding: a browser plays the first one of a file.
   const audioTracks = media?.transcode ? media.audio : [];
   const canDirect = !media || qualities.length === 0 || canDirectPlay(media);
-  const directOk = qualities.length === 0 || (canDirect && !directFailed && audioIndex === 0 && burned === null);
-  const height = resolveHeight(qualities, picked, directOk);
   const hdrScreen = useHdrScreen();
   const sourceHdr = media?.video?.hdr ?? null;
+  // On a screen without HDR the server's tone mapping is used rather than whatever the browser makes of the file,
+  // unless the original was asked for by hand in this window.
+  const tonemapped = sourceHdr !== null && !hdrScreen && Boolean(media?.tonemap) && picked !== "direct";
+  const directOk = qualities.length === 0 || (canDirect && !directFailed && audioIndex === 0 && burned === null && !tonemapped);
+  const height = resolveHeight(qualities, picked, directOk);
   // Only a transcode has the choice; the original file is whatever it is, and the browser maps it to the screen.
   const hdr = height !== null && sourceHdr !== null && Boolean(media?.hdrOutput) && hdrScreen && canPlayHdrStream();
   const ready = !info.isPending;
