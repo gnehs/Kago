@@ -1,16 +1,16 @@
 import type { ReactNode } from "react";
 
-export function BrandMark({ className = "size-7 text-sm" }: { className?: string }) {
-  return <div className={`flex shrink-0 items-center justify-center rounded-md bg-accent font-semibold text-accent-fg ${className}`}>K</div>;
+export function BrandMark({ className = "size-7" }: { className?: string }) {
+  return <img src="/icon.svg" alt="" draggable={false} className={`shrink-0 drop-shadow-sm ${className}`} />;
 }
 
 /** Centered card used by the sign-in, first-run setup and public share screens. */
 export function AuthCard({ title, subtitle, children }: { title: string; subtitle: string; children: ReactNode }) {
   return (
-    <main className="flex h-full items-center justify-center overflow-auto bg-canvas p-4">
-      <section className="w-full max-w-sm rounded-lg bg-surface p-6 shadow-window">
+    <main className="kago-canvas flex h-full items-center justify-center overflow-auto p-4">
+      <section className="w-full max-w-sm rounded-lg bg-surface p-6 shadow-window ring-1 ring-(--kago-window-edge)">
         <header className="mb-5 flex items-center gap-3">
-          <BrandMark className="size-9 text-base" />
+          <BrandMark className="size-10" />
           <div className="min-w-0">
             <h1 className="m-0 truncate text-base font-semibold">{title}</h1>
             <p className="m-0 truncate text-muted">{subtitle}</p>

@@ -49,7 +49,7 @@ export const KIND_TONES: Record<FileKind, string> = {
   document: "text-kind-document",
   sheet: "text-kind-sheet",
   slides: "text-kind-slides",
-  code: "text-muted",
+  code: "text-kind-code",
   text: "text-muted",
   database: "text-muted",
   file: "text-muted"

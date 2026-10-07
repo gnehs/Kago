@@ -38,7 +38,7 @@ export function Workspace({ user }: { user: Actor }) {
   }, [location.pathname, isAdmin, navigate]);
 
   return (
-    <div className="flex h-full flex-col bg-canvas text-ink">
+    <div className="kago-canvas flex h-full flex-col text-ink">
       <TopBar user={user} onOpenPalette={openPalette} />
       <main className="flex min-h-0 min-w-0 flex-1">
         {sync.isLoading || roots.isLoading ? (

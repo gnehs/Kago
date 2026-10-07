@@ -15,7 +15,7 @@ export function KagoTooltip({ label, children }: { label: ReactNode; children: R
       <Tooltip.Trigger render={children} />
       <Tooltip.Portal>
         <Tooltip.Positioner sideOffset={6} className="z-[1000]">
-          <Tooltip.Popup className="rounded-sm bg-ink px-1.5 py-1 text-xs text-surface shadow-popup">{label}</Tooltip.Popup>
+          <Tooltip.Popup className="rounded-md bg-ink/90 px-2 py-1 text-xs text-surface shadow-popup backdrop-blur-md">{label}</Tooltip.Popup>
         </Tooltip.Positioner>
       </Tooltip.Portal>
     </Tooltip.Root>

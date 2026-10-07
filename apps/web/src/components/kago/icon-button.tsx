@@ -7,7 +7,7 @@ import { KagoTooltip } from "./tooltip";
 export function KagoIconButton({ label, active, className, children, ...props }: Omit<ComponentProps<typeof Button>, "aria-label"> & { label: string; active?: boolean; children: ReactNode }) {
   return (
     <KagoTooltip label={label}>
-      <Button variant="ghost" size="icon" aria-label={label} aria-pressed={active} className={cn(active && "bg-hover text-ink", className)} {...props}>
+      <Button variant="ghost" size="icon" aria-label={label} aria-pressed={active} className={cn(active && "kago-pressed text-ink", className)} {...props}>
         {children}
       </Button>
     </KagoTooltip>

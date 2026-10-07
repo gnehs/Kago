@@ -1,16 +1,61 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#5a9cf8" />
-      <stop offset="1" stop-color="#2459d6" />
+      <stop offset="0" stop-color="#5aa8fb" />
+      <stop offset="0.5" stop-color="#2271f0" />
+      <stop offset="1" stop-color="#1546c4" />
     </linearGradient>
+    <radialGradient id="floor" cx="0.5" cy="1.1" r="0.7">
+      <stop offset="0" stop-color="#7cc4ff" stop-opacity="0.6" />
+      <stop offset="1" stop-color="#7cc4ff" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.85" />
+      <stop offset="0.3" stop-color="#fff" stop-opacity="0.1" />
+      <stop offset="0.75" stop-color="#fff" stop-opacity="0.06" />
+      <stop offset="1" stop-color="#fff" stop-opacity="0.4" />
+    </linearGradient>
+    <linearGradient id="white" gradientUnits="userSpaceOnUse" x1="0" y1="26" x2="0" y2="96">
+      <stop offset="0" stop-color="#fff" />
+      <stop offset="1" stop-color="#d3e3ff" />
+    </linearGradient>
+    <filter id="blur" x="-30%" y="-30%" width="160%" height="170%">
+      <feGaussianBlur stdDeviation="3" />
+    </filter>
+    <filter id="soft"><feGaussianBlur stdDeviation="3" /></filter>
+    <clipPath id="tile"><path d="M120 60L119.9 82.6L119.6 89.8L119.2 94.9L118.5 99.1L117.7 102.5L116.6 105.5L115.4 108L113.9 110.3L112.2 112.2L110.3 113.9L108 115.4L105.5 116.6L102.5 117.7L99.1 118.5L94.9 119.2L89.8 119.6L82.6 119.9L60 120L37.4 119.9L30.2 119.6L25.1 119.2L20.9 118.5L17.5 117.7L14.5 116.6L12 115.4L9.7 113.9L7.8 112.2L6.1 110.3L4.6 108L3.4 105.5L2.3 102.5L1.5 99.1L0.8 94.9L0.4 89.8L0.1 82.6L0 60L0.1 37.4L0.4 30.2L0.8 25.1L1.5 20.9L2.3 17.5L3.4 14.5L4.6 12L6.1 9.7L7.8 7.8L9.7 6.1L12 4.6L14.5 3.4L17.5 2.3L20.9 1.5L25.1 0.8L30.2 0.4L37.4 0.1L60 0L82.6 0.1L89.8 0.4L94.9 0.8L99.1 1.5L102.5 2.3L105.5 3.4L108 4.6L110.3 6.1L112.2 7.8L113.9 9.7L115.4 12L116.6 14.5L117.7 17.5L118.5 20.9L119.2 25.1L119.6 30.2L119.9 37.4Z" /></clipPath>
     <mask id="weave" maskUnits="userSpaceOnUse" x="0" y="0" width="120" height="120">
       <path d="M30.6 63h58.8l-5.3 25.4q-1.1 5.6-7.1 5.6H43q-6 0-7.1-5.6z" fill="#fff" />
       <path d="M28 73.5h64M28 84h64M47 61l2 35M60 61v35M73 61l-2 35" fill="none" stroke="#000" stroke-width="3" />
     </mask>
   </defs>
-  <rect width="120" height="120" rx="27" fill="url(#bg)" />
-  <path d="M40 52c0-30 40-30 40 0" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round" />
-  <rect x="25" y="49" width="70" height="11" rx="5.5" fill="#fff" />
-  <rect x="0" y="0" width="120" height="120" fill="#fff" mask="url(#weave)" />
+  <path d="M120 60L119.9 82.6L119.6 89.8L119.2 94.9L118.5 99.1L117.7 102.5L116.6 105.5L115.4 108L113.9 110.3L112.2 112.2L110.3 113.9L108 115.4L105.5 116.6L102.5 117.7L99.1 118.5L94.9 119.2L89.8 119.6L82.6 119.9L60 120L37.4 119.9L30.2 119.6L25.1 119.2L20.9 118.5L17.5 117.7L14.5 116.6L12 115.4L9.7 113.9L7.8 112.2L6.1 110.3L4.6 108L3.4 105.5L2.3 102.5L1.5 99.1L0.8 94.9L0.4 89.8L0.1 82.6L0 60L0.1 37.4L0.4 30.2L0.8 25.1L1.5 20.9L2.3 17.5L3.4 14.5L4.6 12L6.1 9.7L7.8 7.8L9.7 6.1L12 4.6L14.5 3.4L17.5 2.3L20.9 1.5L25.1 0.8L30.2 0.4L37.4 0.1L60 0L82.6 0.1L89.8 0.4L94.9 0.8L99.1 1.5L102.5 2.3L105.5 3.4L108 4.6L110.3 6.1L112.2 7.8L113.9 9.7L115.4 12L116.6 14.5L117.7 17.5L118.5 20.9L119.2 25.1L119.6 30.2L119.9 37.4Z" fill="url(#bg)" />
+  <g clip-path="url(#tile)">
+    <g fill="#fff" filter="url(#soft)">
+      <path d="M-12 -12 38 125 10 125Z" fill-opacity="0.1" />
+      <path d="M-12 -12 78 125 55 125Z" fill-opacity="0.14" />
+      <path d="M-12 -12 125 92 125 62Z" fill-opacity="0.09" />
+      <path d="M-12 -12 125 38 125 25Z" fill-opacity="0.12" />
+    </g>
+    <rect width="120" height="120" fill="url(#floor)" />
+  </g>
+  <path d="M120 60L119.9 82.6L119.6 89.8L119.2 94.9L118.5 99.1L117.7 102.5L116.6 105.5L115.4 108L113.9 110.3L112.2 112.2L110.3 113.9L108 115.4L105.5 116.6L102.5 117.7L99.1 118.5L94.9 119.2L89.8 119.6L82.6 119.9L60 120L37.4 119.9L30.2 119.6L25.1 119.2L20.9 118.5L17.5 117.7L14.5 116.6L12 115.4L9.7 113.9L7.8 112.2L6.1 110.3L4.6 108L3.4 105.5L2.3 102.5L1.5 99.1L0.8 94.9L0.4 89.8L0.1 82.6L0 60L0.1 37.4L0.4 30.2L0.8 25.1L1.5 20.9L2.3 17.5L3.4 14.5L4.6 12L6.1 9.7L7.8 7.8L9.7 6.1L12 4.6L14.5 3.4L17.5 2.3L20.9 1.5L25.1 0.8L30.2 0.4L37.4 0.1L60 0L82.6 0.1L89.8 0.4L94.9 0.8L99.1 1.5L102.5 2.3L105.5 3.4L108 4.6L110.3 6.1L112.2 7.8L113.9 9.7L115.4 12L116.6 14.5L117.7 17.5L118.5 20.9L119.2 25.1L119.6 30.2L119.9 37.4Z" fill="none" stroke="url(#rim)" stroke-width="1.4" transform="translate(0.9 0.9) scale(0.985)" />
+  <g transform="translate(0 5.5)" filter="url(#blur)" opacity="0.55">
+    <path d="M40 52c0-30 40-30 40 0" fill="none" stroke="#0a2a8c" stroke-width="6" stroke-linecap="round" />
+    <rect x="0" y="0" width="120" height="120" fill="#0a2a8c" mask="url(#weave)" />
+    <rect x="25" y="49" width="70" height="11" rx="5.5" fill="#0a2a8c" />
+  </g>
+  <g transform="translate(0 3)">
+    <path d="M40 52c0-30 40-30 40 0" fill="none" stroke="#2a5fd0" stroke-width="6" stroke-linecap="round" />
+    <rect x="0" y="0" width="120" height="120" fill="#2a5fd0" mask="url(#weave)" />
+    <rect x="25" y="49" width="70" height="11" rx="5.5" fill="#2a5fd0" />
+  </g>
+  <g transform="translate(0 1.5)">
+    <path d="M40 52c0-30 40-30 40 0" fill="none" stroke="#a9c8ff" stroke-width="6" stroke-linecap="round" />
+    <rect x="0" y="0" width="120" height="120" fill="#a9c8ff" mask="url(#weave)" />
+    <rect x="25" y="49" width="70" height="11" rx="5.5" fill="#a9c8ff" />
+  </g>
+  <path d="M40 52c0-30 40-30 40 0" fill="none" stroke="url(#white)" stroke-width="6" stroke-linecap="round" />
+    <rect x="0" y="0" width="120" height="120" fill="url(#white)" mask="url(#weave)" />
+    <rect x="25" y="49" width="70" height="11" rx="5.5" fill="#fff" />
 </svg>

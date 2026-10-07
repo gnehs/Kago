@@ -2,7 +2,6 @@ import type { ReactNode } from "react";
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, Columns3, Ellipsis, FolderPlus, Info, LayoutGrid, List, Search, Upload, X } from "lucide-react";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { KagoDropdownMenu, KagoMenuItem } from "@/components/kago/menu";
-import { cn } from "@/lib/utils";
 import { useWorkspaceStore } from "@/stores/workspace";
 import type { FileWindow } from "@/types/kago";
 import { Breadcrumb } from "./Breadcrumb";
@@ -37,12 +36,14 @@ export function FileToolbar({ window, rootName, readonly, canGoBack, canGoForwar
   const store = useWorkspaceStore.getState;
 
   return (
-    <div className="@container flex h-10 shrink-0 items-center gap-1 border-b border-line bg-elevated px-2">
-      <KagoIconButton label="上一頁" disabled={!canGoBack} onClick={() => onGo(-1)}><ChevronLeft /></KagoIconButton>
-      <KagoIconButton label="下一頁" disabled={!canGoForward} onClick={() => onGo(1)}><ChevronRight /></KagoIconButton>
+    <div className="kago-toolbar @container flex h-10 shrink-0 items-center gap-1 border-b border-line-strong px-2">
+      <div className="kago-segments mr-1">
+        <KagoIconButton label="上一頁" className="size-6" disabled={!canGoBack} onClick={() => onGo(-1)}><ChevronLeft /></KagoIconButton>
+        <KagoIconButton label="下一頁" className="size-6" disabled={!canGoForward} onClick={() => onGo(1)}><ChevronRight /></KagoIconButton>
+      </div>
       <Breadcrumb window={window} rootName={rootName} onNavigate={onNavigate} />
 
-      <label className="hidden h-(--kago-control-h) w-40 items-center gap-1.5 rounded-md border border-line bg-surface px-2 focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/25 @2xl:flex">
+      <label className="kago-well hidden h-7 w-40 items-center gap-1.5 rounded-full px-2.5 @2xl:flex">
         <Search className="size-3.5 text-faint" />
         <input aria-label="篩選目前資料夾" placeholder="篩選" className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-faint" value={search} onChange={(event) => onSearch(event.target.value)} />
         {search ? (
@@ -51,7 +52,7 @@ export function FileToolbar({ window, rootName, readonly, canGoBack, canGoForwar
       </label>
 
       <Divider />
-      <div className="flex rounded-md border border-line bg-surface p-px" role="radiogroup" aria-label="檢視方式">
+      <div className="kago-segments" role="radiogroup" aria-label="檢視方式">
         {viewModes.map(({ mode, label, icon }) => (
           <button
             key={mode}
@@ -59,7 +60,7 @@ export function FileToolbar({ window, rootName, readonly, canGoBack, canGoForwar
             aria-checked={window.viewMode === mode}
             aria-label={label}
             title={label}
-            className={cn("flex h-[calc(var(--kago-control-h)-4px)] w-7 items-center justify-center rounded-sm text-muted outline-none hover:text-ink focus-visible:ring-2 focus-visible:ring-accent/50", window.viewMode === mode && "bg-hover text-ink")}
+            className="flex h-6 w-7.5 items-center justify-center outline-none focus-visible:ring-2 focus-visible:ring-accent/50 focus-visible:ring-inset"
             onClick={() => store().updateWindow(window.id, { viewMode: mode })}
           >
             {icon}

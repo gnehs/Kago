@@ -127,7 +127,7 @@ export function PermissionsPage({ roots }: { roots: Root[] }) {
                     <td key={decision} className="text-center">
                       <input
                         type="checkbox"
-                        className="size-3.5 accent-(--kago-accent)"
+                        className="kago-checkbox"
                         aria-label={`${decision === "allow" ? "允許" : "禁止"}${action.label}`}
                         checked={decisions[action.key] === decision}
                         onChange={() => toggle(action.key, decision)}

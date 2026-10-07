@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/input";
 import { Card, Page, SettingRow } from "@/features/workspace/Page";
 import { getTheme, setTheme, type ThemePref } from "@/lib/prefs";
-import { cn } from "@/lib/utils";
 import { toast } from "@/stores/toast";
 import type { Actor } from "@/types/kago";
 import { roleLabels } from "./UsersPage";
@@ -25,16 +24,13 @@ export function SettingsPage({ user }: { user: Actor }) {
     <Page title="一般" description="這個瀏覽器的外觀，以及你自己的帳號。">
       <Card title="外觀">
         <SettingRow label="主題" description="只套用在這個瀏覽器。">
-          <div className="flex rounded-md border border-line bg-surface p-px" role="radiogroup" aria-label="主題">
+          <div className="kago-segments" role="radiogroup" aria-label="主題">
             {themes.map((item) => (
               <button
                 key={item.value}
                 role="radio"
                 aria-checked={theme === item.value}
-                className={cn(
-                  "flex h-[calc(var(--kago-control-h)-4px)] items-center gap-1.5 rounded-sm px-2.5 text-muted outline-none hover:text-ink focus-visible:ring-2 focus-visible:ring-accent/50",
-                  theme === item.value && "bg-hover text-ink"
-                )}
+                className="flex h-[calc(var(--kago-control-h)-4px)] items-center gap-1.5 px-2.5 outline-none focus-visible:ring-2 focus-visible:ring-accent/50 focus-visible:ring-inset"
                 onClick={() => {
                   setTheme(item.value);
                   setThemeState(item.value);

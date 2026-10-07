@@ -16,7 +16,7 @@ import { useClipboardStore } from "@/stores/clipboard";
 import { useRecentStore } from "@/stores/recent";
 import { useWorkspaceStore } from "@/stores/workspace";
 import type { FileItem, FileWindow } from "@/types/kago";
-import { isArchive } from "./FileIcon";
+import { FileIcon, isArchive } from "./FileIcon";
 import { fileViews, indexesInArea, revealIndex, useFileLayout, type FileTree } from "./fileLayout";
 import { FileList } from "./FileList";
 import { FileToolbar } from "./FileToolbar";
@@ -27,6 +27,9 @@ import { videoPageUrl } from "./VideoPage";
 import { classifyFileWindowError, WindowErrorState } from "./WindowErrorState";
 
 // A shared collator sorts a folder of tens of thousands of names far faster than localeCompare does.
+/** The icon of a window showing a folder. */
+const FOLDER = { kind: "folder", type: "", name: "" } as const;
+
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 const compare = (a: string, b: string) => collator.compare(a, b);
 
@@ -254,7 +257,7 @@ export function FileWindowView({ window: win, rootName, isAdmin }: { window: Fil
   return (
     <KagoWindow
       window={win}
-      icon={<Folder className="fill-folder/25 text-folder" />}
+      icon={<FileIcon item={FOLDER} />}
       titleExtra={readonly ? <KagoBadge>唯讀</KagoBadge> : null}
       onDragOver={(event) => {
         event.preventDefault();
@@ -303,7 +306,7 @@ export function FileWindowView({ window: win, rootName, isAdmin }: { window: Fil
         {win.inspectorOpen ? <Inspector window={win} isAdmin={isAdmin} /> : null}
       </div>
 
-      <footer className="flex h-8 shrink-0 items-center gap-1 border-t border-line bg-elevated px-3 text-xs text-muted">
+      <footer className="kago-toolbar flex h-8 shrink-0 items-center gap-1 border-t border-line-strong px-3 text-xs text-muted">
         {selectedItems.length > 0 ? (
           <>
             <span className="min-w-0 flex-1 truncate text-ink">
@@ -324,7 +327,7 @@ export function FileWindowView({ window: win, rootName, isAdmin }: { window: Fil
       {dropChoice ? (
         <>
           <div className="absolute inset-0 z-20" onClick={() => setDropChoice(null)} />
-          <div className={cn("absolute z-30 flex w-44 flex-col gap-1 rounded-lg bg-surface p-1.5 shadow-popup")} style={{ left: Math.max(8, dropChoice.x), top: Math.max(44, dropChoice.y) }}>
+          <div className={cn("absolute z-30 kago-glass flex w-44 flex-col gap-1 rounded-lg p-1.5")} style={{ left: Math.max(8, dropChoice.x), top: Math.max(44, dropChoice.y) }}>
             <span className="truncate px-1.5 py-0.5 text-xs text-muted">
               {dropChoice.sources.length} 個項目{dropChoice.destination === win.logicalPath ? "" : ` → ${baseName(dropChoice.destination)}`}
             </span>

@@ -113,7 +113,7 @@ export function Shelf() {
     <aside
       ref={element}
       aria-label="中轉區"
-      className={cn("absolute z-[600] flex w-66 flex-col rounded-lg bg-surface shadow-popup", dropActive && "ring-2 ring-accent")}
+      className={cn("absolute z-[600] kago-glass flex w-66 flex-col rounded-lg", dropActive && "ring-2 ring-accent")}
       style={style}
       onDragOver={(event) => {
         event.preventDefault();
@@ -143,7 +143,7 @@ export function Shelf() {
               <li
                 key={item.id}
                 draggable
-                className="group flex h-9 items-center gap-2 rounded-md px-2 hover:bg-hover"
+                className="group flex h-9 items-center gap-2 rounded-[calc(var(--kago-radius-md)+1px)] [corner-shape:squircle] px-2 hover:bg-hover"
                 title={`${item.root_slug}:${item.path}`}
                 onDragStart={(event) => event.dataTransfer.setData(KAGO_DRAG_TYPE, JSON.stringify([{ rootSlug: item.root_slug, path: item.path }]))}
               >
@@ -152,7 +152,7 @@ export function Shelf() {
                   <span className="truncate">{item.name}</span>
                   <span className="truncate text-xs text-faint">{item.root_slug}:{item.path}</span>
                 </span>
-                <button aria-label={`從中轉區移除 ${item.name}`} className="rounded-sm p-1 text-muted opacity-0 group-hover:opacity-100 hover:bg-hover hover:text-ink focus-visible:opacity-100" onClick={() => void remove(item.id)}>
+                <button aria-label={`從中轉區移除 ${item.name}`} className="rounded-sm p-1 text-muted opacity-0 group-hover:opacity-100 kago-flat hover:text-ink focus-visible:opacity-100" onClick={() => void remove(item.id)}>
                   <X className="size-3.5" />
                 </button>
               </li>

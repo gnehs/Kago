@@ -20,14 +20,15 @@
   --kago-danger: #d92d20;
   --kago-warning: #b54708;
   --kago-success: #17804a;
-  --kago-folder: #4a9be8;
-  --kago-kind-image: #2f9a6a;
-  --kago-kind-video: #8364d9;
-  --kago-kind-audio: #cf7a2b;
-  --kago-kind-archive: #a3823a;
-  --kago-kind-document: #d05a4e;
-  --kago-kind-sheet: #1f8f96;
-  --kago-kind-slides: #c24d8d;
+  --kago-folder: #3d93ee;
+  --kago-kind-image: #1fa463;
+  --kago-kind-video: #7b55e6;
+  --kago-kind-audio: #ee6f2a;
+  --kago-kind-archive: #c08a1e;
+  --kago-kind-document: #df463c;
+  --kago-kind-sheet: #0f9aa0;
+  --kago-kind-slides: #d23e8c;
+  --kago-kind-code: #4b60de;
   --kago-code-keyword: #0000ff;
   --kago-code-control: #af00db;
   --kago-code-string: #a31515;
@@ -47,12 +48,62 @@
   --kago-tag-yellow: #ffcc00;
   --kago-tag-red: #ff453a;
   --kago-tag-orange: #ff9f0a;
-  --kago-shadow-window: 0 0 0 1px rgb(15 23 42 / 0.1), 0 12px 32px rgb(15 23 42 / 0.16);
-  --kago-shadow-window-active: 0 0 0 1px rgb(15 23 42 / 0.14), 0 20px 48px rgb(15 23 42 / 0.24);
-  --kago-shadow-popup: 0 0 0 1px rgb(15 23 42 / 0.1), 0 8px 24px rgb(15 23 42 / 0.16);
-  --kago-radius-sm: 4px;
-  --kago-radius-md: 6px;
-  --kago-radius-lg: 10px;
+  --kago-shadow-window: 0 2px 4px rgb(15 23 42 / 0.06), 0 12px 28px rgb(15 23 42 / 0.14);
+  --kago-shadow-window-active: 0 3px 8px rgb(15 23 42 / 0.1), 0 24px 56px rgb(15 23 42 / 0.28);
+  --kago-window-edge: rgb(15 23 42 / 0.2);
+  --kago-shadow-popup: 0 0 0 1px rgb(15 23 42 / 0.1), 0 2px 4px rgb(15 23 42 / 0.06), 0 10px 28px rgb(15 23 42 / 0.18);
+  /*
+   * Materials. Surfaces are lit from above: what stands out is lighter at the top and casts a shadow,
+   * what is sunk in is shaded at the top. Each is a background and a box-shadow, used by the classes below.
+   */
+  --kago-canvas: radial-gradient(120% 80% at 50% 0%, #f1f3f6 0%, #e3e6eb 55%, #d9dde3 100%);
+  --kago-grain-opacity: 0.5;
+  --kago-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.2' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.035 0'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E");
+  --kago-chrome: var(--kago-grain), linear-gradient(#f7f8fa, #e7e9ed);
+  --kago-toolbar: var(--kago-grain), linear-gradient(#e7e9ed, #dddfe4);
+  --kago-chrome-edge: inset 0 1px 0 rgb(255 255 255 / 0.9);
+  --kago-chrome-inactive: linear-gradient(#f7f8fa, #f3f4f6);
+  --kago-toolbar-inactive: linear-gradient(#f3f4f6, #eff0f3);
+  --kago-raised: linear-gradient(#ffffff, #f9fafb 45%, #eef0f3);
+  --kago-raised-pressed: linear-gradient(#dfe2e7, #e9ebef);
+  /* The rim is one hairline, a little heavier underneath, as an edge lit from above would be. */
+  --kago-raised-shadow: 0 0 0 0.5px rgb(15 23 42 / 0.22), 0 0.5px 0 0.5px rgb(15 23 42 / 0.14), 0 1px 2.5px rgb(15 23 42 / 0.12), inset 0 0.5px 0 #ffffff;
+  --kago-pressed-shadow: 0 0 0 0.5px rgb(15 23 42 / 0.3), inset 0 1px 2.5px rgb(15 23 42 / 0.22);
+  --kago-sunk: linear-gradient(rgb(15 23 42 / 0.15), rgb(15 23 42 / 0.09));
+  --kago-sunk-shadow: inset 0 1px 2px rgb(15 23 42 / 0.22), inset 0 0 0 0.5px rgb(15 23 42 / 0.1), 0 0.5px 0 rgb(255 255 255 / 0.75);
+  --kago-seam: rgb(15 23 42 / 0.16);
+  --kago-well: #ffffff;
+  --kago-well-track: #e4e7ec;
+  --kago-well-shadow: 0 0 0 1px rgb(15 23 42 / 0.16), inset 0 1px 2px rgb(15 23 42 / 0.12), 0 1px 0 rgb(255 255 255 / 0.8);
+  --kago-glass: rgb(250 251 252 / 0.78);
+  --kago-glass-edge: inset 0 1px 0 rgb(255 255 255 / 0.9), inset 0 0 0 1px rgb(255 255 255 / 0.35);
+  --kago-primary-from: #4f9bf8;
+  --kago-primary-to: #1557dc;
+  --kago-primary-ring: #1a52c4;
+  --kago-primary-glow: rgb(47 111 237 / 0.45);
+  --kago-primary-sheen: rgb(150 205 255 / 0.6);
+  --kago-selection: linear-gradient(#4f8df7, #2a66e6);
+  --kago-light-close: #ff5f57;
+  --kago-light-minimize: #febc2e;
+  --kago-light-zoom: #28c840;
+  --kago-paper-from: #ffffff;
+  --kago-paper-to: #eceef2;
+  --kago-paper-edge: rgb(15 23 42 / 0.28);
+  --kago-paper-ink: #5b6472;
+  --kago-app-1: #1f73ee;
+  --kago-app-2: #5a5ae6;
+  --kago-app-3: #9a4be0;
+  --kago-app-4: #e2437c;
+  --kago-app-5: #ee6a2a;
+  --kago-app-6: #d6960f;
+  --kago-app-7: #10a297;
+  --kago-app-8: #1a98d8;
+  --kago-app-share: #17a865;
+  --kago-app-trash: #6a7380;
+  --kago-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23667080' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 6.5 3-3 3 3M5 9.5l3 3 3-3'/%3E%3C/svg%3E");
+  --kago-radius-sm: 5px;
+  --kago-radius-md: 7px;
+  --kago-radius-lg: 12px;
   --kago-row-h: 32px;
   --kago-control-h: 30px;
   --kago-font-size: 13px;
@@ -75,14 +126,6 @@
   --kago-danger: #f97066;
   --kago-warning: #f5b54a;
   --kago-success: #4cc38a;
-  --kago-folder: #6aaef0;
-  --kago-kind-image: #5cc296;
-  --kago-kind-video: #a68cf0;
-  --kago-kind-audio: #e6a05c;
-  --kago-kind-archive: #c9a95f;
-  --kago-kind-document: #ec8479;
-  --kago-kind-sheet: #4fc0c7;
-  --kago-kind-slides: #e884bb;
   --kago-code-keyword: #569cd6;
   --kago-code-control: #c586c0;
   --kago-code-string: #ce9178;
@@ -95,9 +138,43 @@
   --kago-code-attribute: #9cdcfe;
   --kago-code-match: rgb(234 179 8 / 0.3);
   --kago-overlay: rgb(0 0 0 / 0.5);
-  --kago-shadow-window: 0 0 0 1px rgb(255 255 255 / 0.08), 0 12px 32px rgb(0 0 0 / 0.4);
-  --kago-shadow-window-active: 0 0 0 1px rgb(255 255 255 / 0.14), 0 20px 48px rgb(0 0 0 / 0.55);
-  --kago-shadow-popup: 0 0 0 1px rgb(255 255 255 / 0.1), 0 8px 24px rgb(0 0 0 / 0.5);
+  --kago-shadow-window: 0 2px 4px rgb(0 0 0 / 0.2), 0 12px 28px rgb(0 0 0 / 0.4);
+  --kago-shadow-window-active: 0 3px 8px rgb(0 0 0 / 0.3), 0 24px 56px rgb(0 0 0 / 0.6);
+  --kago-window-edge: rgb(255 255 255 / 0.16);
+  --kago-shadow-popup: 0 0 0 1px rgb(0 0 0 / 0.6), 0 2px 4px rgb(0 0 0 / 0.2), 0 10px 28px rgb(0 0 0 / 0.5);
+  --kago-canvas: radial-gradient(120% 80% at 50% 0%, #1d2025 0%, #141619 55%, #0e1012 100%);
+  --kago-grain-opacity: 0.35;
+  --kago-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.2' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.03 0'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E");
+  --kago-chrome: var(--kago-grain), linear-gradient(#3a3e44, #2e3136);
+  --kago-toolbar: var(--kago-grain), linear-gradient(#2e3136, #26292d);
+  --kago-chrome-edge: inset 0 1px 0 rgb(255 255 255 / 0.12);
+  --kago-chrome-inactive: linear-gradient(#2f3237, #2c2f34);
+  --kago-toolbar-inactive: linear-gradient(#2c2f34, #292c30);
+  --kago-raised: linear-gradient(#4b5058, #3d4148 45%, #33373c);
+  --kago-raised-pressed: linear-gradient(#24272b, #2b2e33);
+  --kago-raised-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.8), 0 1px 2.5px rgb(0 0 0 / 0.4), inset 0 0.5px 0 rgb(255 255 255 / 0.28);
+  --kago-sunk: linear-gradient(rgb(0 0 0 / 0.3), rgb(0 0 0 / 0.2));
+  --kago-sunk-shadow: inset 0 1px 2px rgb(0 0 0 / 0.4), inset 0 0 0 0.5px rgb(0 0 0 / 0.35), 0 0.5px 0 rgb(255 255 255 / 0.1);
+  --kago-seam: rgb(0 0 0 / 0.45);
+  --kago-pressed-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.8), inset 0 1px 2.5px rgb(0 0 0 / 0.5);
+  --kago-well: #16181b;
+  --kago-well-track: #16181b;
+  --kago-well-shadow: 0 0 0 1px rgb(0 0 0 / 0.55), inset 0 1px 2px rgb(0 0 0 / 0.5), 0 1px 0 rgb(255 255 255 / 0.07);
+  --kago-glass: rgb(38 41 46 / 0.78);
+  --kago-glass-edge: inset 0 1px 0 rgb(255 255 255 / 0.14), inset 0 0 0 1px rgb(255 255 255 / 0.06);
+  --kago-primary-from: #5a9bfb;
+  --kago-primary-to: #2059d8;
+  --kago-primary-ring: #0f2f7a;
+  --kago-primary-glow: rgb(60 120 245 / 0.4);
+  --kago-primary-sheen: rgb(140 195 255 / 0.45);
+  --kago-selection: linear-gradient(#4a86f2, #2a5fd6);
+  --kago-paper-from: #f4f5f7;
+  --kago-paper-to: #d3d7dd;
+  --kago-paper-edge: rgb(0 0 0 / 0.6);
+  --kago-paper-ink: #4b5563;
+  --kago-app-share: #1aa866;
+  --kago-app-trash: #636b77;
+  --kago-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%239ca3ae' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 6.5 3-3 3 3M5 9.5l3 3 3-3'/%3E%3C/svg%3E");
   color-scheme: dark;
 }
 
@@ -125,6 +202,7 @@
   --color-kind-document: var(--kago-kind-document);
   --color-kind-sheet: var(--kago-kind-sheet);
   --color-kind-slides: var(--kago-kind-slides);
+  --color-kind-code: var(--kago-kind-code);
   --color-overlay: var(--kago-overlay);
   --color-tag-gray: var(--kago-tag-gray);
   --color-tag-green: var(--kago-tag-green);
@@ -175,19 +253,20 @@
     flex-shrink: 0;
   }
 
-  /* A tile is drawn at many sizes; its lines stay as thin as they are at the smallest. */
-  .kago-tile * {
-    vector-effect: non-scaling-stroke;
+  /* Glyphs are drawn a little finer than the set's default, to sit with 13px text. */
+  .lucide {
+    stroke-width: 1.7;
   }
 
   progress {
     appearance: none;
-    height: 4px;
+    height: 6px;
     width: 100%;
     overflow: hidden;
     border: 0;
     border-radius: 999px;
-    background: var(--kago-hover);
+    background: var(--kago-well-track);
+    box-shadow: inset 0 1px 1.5px rgb(0 0 0 / 0.2);
   }
 
   progress::-webkit-progress-bar {
@@ -195,15 +274,288 @@
   }
 
   progress::-webkit-progress-value {
-    background: var(--kago-accent);
+    border-radius: 999px;
+    background: linear-gradient(var(--kago-primary-from), var(--kago-primary-to));
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.4);
   }
 
   progress::-moz-progress-bar {
-    background: var(--kago-accent);
+    border-radius: 999px;
+    background: linear-gradient(var(--kago-primary-from), var(--kago-primary-to));
   }
 
   ::selection {
     background: var(--kago-accent-soft);
+  }
+}
+
+/*
+ * Where the browser can draw them, the corners of small things (buttons, fields, rows, menu items, badges) ease
+ * into their sides (a squircle) instead of being a quarter circle. The same radius reads as a tighter corner in
+ * that shape, so the two small radii grow to keep their apparent size. Large surfaces (windows, cards, menus,
+ * dialogs) keep round corners. Named by class rather than set on everything, so that documents shown inside a
+ * window keep the corners they were drawn with.
+ */
+@supports (corner-shape: squircle) {
+  :root {
+    --kago-radius-sm: 7px;
+    --kago-radius-md: 10px;
+  }
+
+  @layer base {
+    .rounded-sm,
+    .rounded-md,
+    .kago-checkbox,
+    .kago-segments,
+    .kago-segments > *,
+    .kago-markdown :is(code, pre, img),
+    :is(.cm-textfield, .cm-button, .cm-tooltip) {
+      corner-shape: squircle;
+    }
+  }
+}
+
+/*
+ * Materials: the handful of surfaces everything is made of. Their values are the tokens above;
+ * components pick one by class and never write a gradient or a shadow of their own.
+ */
+@layer components {
+  /* The desktop: a soft light from above, with a grain so that it is not a flat fill. */
+  .kago-canvas {
+    position: relative;
+    isolation: isolate;
+    background: var(--kago-canvas);
+  }
+
+  .kago-canvas::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    opacity: var(--kago-grain-opacity);
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.5 0 0 0 0 0.5 0 0 0 0 0.5 0 0 0 0.16 0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
+    pointer-events: none;
+  }
+
+  /* Title bars and the top bar. */
+  .kago-chrome {
+    background: var(--kago-chrome);
+    box-shadow: var(--kago-chrome-edge);
+  }
+
+  /* The bar of controls under a title bar carries on where it left off, and the bar at the foot of a window matches. */
+  .kago-toolbar {
+    background: var(--kago-toolbar);
+  }
+
+  .kago-chrome:has(+ .kago-toolbar) {
+    border-bottom-color: transparent;
+  }
+
+  /*
+   * The edge of a window is drawn on the window, over its contents, rather than around it:
+   * drawn outside, it is cut off as soon as the window touches a side of the desktop.
+   */
+  .kago-window::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    border-radius: inherit;
+    box-shadow: inset 0 0 0 1px var(--kago-window-edge);
+    pointer-events: none;
+  }
+
+  .kago-window[data-maximized]::after {
+    content: none;
+  }
+
+  /*
+   * A window that is not in front steps back as a whole: its bars lose their depth and grain but still run into
+   * each other, and what is on them fades, so that nothing on it looks ready to be pressed.
+   */
+  .kago-window[data-inactive] .kago-chrome {
+    background: var(--kago-chrome-inactive);
+  }
+
+  .kago-window[data-inactive] .kago-toolbar {
+    border-color: var(--kago-border);
+    background: var(--kago-toolbar-inactive);
+  }
+
+  .kago-window[data-inactive] .kago-toolbar > * {
+    opacity: 0.55;
+  }
+
+  /* Stands out of the surface: buttons, the chosen segment of a segmented control. */
+  .kago-raised {
+    background: var(--kago-raised);
+    box-shadow: var(--kago-raised-shadow);
+  }
+
+  button.kago-raised:hover {
+    filter: brightness(1.03);
+  }
+
+  button.kago-raised:active,
+  .kago-raised[data-popup-open] {
+    background: var(--kago-raised-pressed);
+    box-shadow: var(--kago-pressed-shadow);
+    filter: none;
+  }
+
+  /* The one action a surface is for: lit glass in the accent colour. */
+  .kago-primary {
+    color: #ffffff;
+    text-shadow: 0 1px 1px rgb(8 30 90 / 0.45);
+    /* From the top: the gloss on the upper half, light gathering along the bottom edge, and the body. */
+    background:
+      linear-gradient(rgb(255 255 255 / 0.3), transparent 62%),
+      radial-gradient(110% 60% at 50% 118%, var(--kago-primary-sheen), transparent 72%),
+      linear-gradient(var(--kago-primary-from), var(--kago-primary-to));
+    box-shadow:
+      0 0 0 0.5px var(--kago-primary-ring),
+      0 0.5px 0 0.5px var(--kago-primary-ring),
+      0 1px 2.5px rgb(8 30 90 / 0.35),
+      0 3px 8px -2px var(--kago-primary-glow),
+      inset 0 0.5px 0 rgb(255 255 255 / 0.7),
+      inset 0 0 0 1px rgb(255 255 255 / 0.14);
+  }
+
+  .kago-primary:hover {
+    filter: brightness(1.07);
+  }
+
+  .kago-primary:active {
+    filter: brightness(0.9);
+    box-shadow:
+      0 0 0 0.5px var(--kago-primary-ring),
+      inset 0 1px 3px rgb(8 30 90 / 0.5);
+  }
+
+  /* Sunk into the surface: where something is typed, and the track of a segmented control. */
+  .kago-well {
+    background: var(--kago-well);
+    box-shadow: var(--kago-well-shadow);
+  }
+
+  .kago-well.kago-track {
+    background: var(--kago-well-track);
+  }
+
+  .kago-well:is(input, select, textarea):focus,
+  .kago-well:focus-within {
+    box-shadow:
+      0 0 0 1px var(--kago-accent),
+      0 0 0 4px color-mix(in srgb, var(--kago-accent) 28%, transparent),
+      inset 0 1px 2px rgb(15 23 42 / 0.12);
+  }
+
+  select.kago-raised {
+    appearance: none;
+    background: var(--kago-chevron) right 6px center / 14px no-repeat, var(--kago-raised);
+  }
+
+  /* Floats over everything else: menus, popovers, the shelf, toasts. What is underneath shows through, blurred. */
+  .kago-glass {
+    background: var(--kago-glass);
+    box-shadow: var(--kago-shadow-popup), var(--kago-glass-edge);
+    backdrop-filter: blur(24px) saturate(1.8);
+  }
+
+  /* A row that is chosen: in a menu, a list or a sidebar. */
+  .kago-selection,
+  .kago-menu-item[data-highlighted] {
+    color: #ffffff;
+    background: var(--kago-selection);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.18);
+  }
+
+  /* A control with no body of its own: the surface gives a little under the pointer, and further when pressed. */
+  .kago-flat:not(:disabled):hover,
+  .kago-flat[data-popup-open] {
+    background: var(--kago-hover);
+    box-shadow: var(--kago-sunk-shadow);
+  }
+
+  .kago-flat:not(:disabled):active {
+    background: var(--kago-sunk);
+    box-shadow: var(--kago-sunk-shadow);
+  }
+
+  /* A flat control held down, as a toggle that is on. */
+  .kago-pressed {
+    background: var(--kago-sunk);
+    box-shadow: var(--kago-sunk-shadow);
+  }
+
+  /* The window controls: three glass beads. Grey until the window is focused or the pointer is over them. */
+  .kago-light {
+    --light: var(--kago-border-strong);
+    background: radial-gradient(circle at 50% 28%, color-mix(in srgb, var(--light) 55%, #ffffff), var(--light) 62%);
+    box-shadow: inset 0 0 0 0.5px rgb(0 0 0 / 0.28), inset 0 -1px 1px rgb(255 255 255 / 0.25);
+  }
+
+  .kago-light[data-on],
+  .kago-lights:hover .kago-light,
+  .kago-lights:has(:focus-visible) .kago-light {
+    --light: var(--tone);
+  }
+
+  .kago-checkbox {
+    appearance: none;
+    display: inline-grid;
+    width: 15px;
+    height: 15px;
+    flex-shrink: 0;
+    place-content: center;
+    border-radius: 4.5px;
+    background: var(--kago-well);
+    box-shadow: var(--kago-well-shadow);
+  }
+
+  .kago-checkbox::after {
+    content: "";
+    width: 9px;
+    height: 9px;
+    background: #ffffff;
+    clip-path: polygon(12% 52%, 0 66%, 38% 100%, 100% 22%, 86% 8%, 36% 70%);
+    filter: drop-shadow(0 1px 0.5px rgb(8 30 90 / 0.5));
+    opacity: 0;
+  }
+
+  .kago-checkbox:checked {
+    background: linear-gradient(var(--kago-primary-from), var(--kago-primary-to));
+    box-shadow: 0 0 0 1px var(--kago-primary-ring), 0 1px 2px rgb(8 30 90 / 0.3), inset 0 1px 0 rgb(255 255 255 / 0.45);
+  }
+
+  .kago-checkbox:checked::after {
+    opacity: 1;
+  }
+
+  .kago-checkbox:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--kago-accent) 50%, transparent);
+    outline-offset: 2px;
+  }
+
+  .kago-checkbox:disabled {
+    opacity: 0.5;
+  }
+
+  /* An app icon sits on the desktop, and throws a shadow in its own colour. */
+  .kago-app-icon {
+    width: 100%;
+    height: 100%;
+    filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.3)) drop-shadow(0 3px 4px rgb(0 0 0 / 0.16));
+  }
+
+  /* File icons cast a little shadow of their own, at any size. */
+  .kago-icon {
+    filter: drop-shadow(0 0.5px 0.5px rgb(0 0 0 / 0.2));
+  }
+
+  .kago-tile {
+    filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.14)) drop-shadow(0 3px 5px rgb(0 0 0 / 0.12));
   }
 }
 
@@ -336,6 +688,53 @@
     background: var(--kago-surface-elevated);
     font-weight: 600;
   }
+}
+
+/*
+ * A row of buttons joined into one: the two arrows of a toolbar, or a choice of one among a few,
+ * where the chosen one stays pressed in. Unlayered, since it reshapes the buttons put inside it.
+ */
+.kago-segments {
+  display: flex;
+  flex-shrink: 0;
+  padding: 2px;
+  border-radius: var(--kago-radius-md);
+  background: var(--kago-raised);
+  box-shadow: var(--kago-raised-shadow);
+}
+
+.kago-segments > * {
+  position: relative;
+  border-radius: calc(var(--kago-radius-md) - 2px);
+  color: var(--kago-text-muted);
+}
+
+.kago-segments > :not(:disabled):hover {
+  background: none;
+  box-shadow: none;
+  color: var(--kago-text);
+}
+
+/* A seam between two segments, short of the edges; it gives way next to the one that is pressed in. */
+.kago-segments > * + *::before {
+  content: "";
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  left: -0.5px;
+  width: 1px;
+  background: var(--kago-seam);
+}
+
+.kago-segments > :is(:active, [aria-checked="true"]):not(:disabled) {
+  color: var(--kago-text);
+  background: var(--kago-sunk);
+  box-shadow: var(--kago-sunk-shadow);
+}
+
+.kago-segments > :is(:active, [aria-checked="true"]):not(:disabled)::before,
+.kago-segments > :is(:active, [aria-checked="true"]):not(:disabled) + *::before {
+  content: none;
 }
 
 /*

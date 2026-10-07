@@ -30,8 +30,10 @@ export function KagoWindow({
     <section
       data-window={window.id}
       hidden={window.minimized}
+      data-inactive={window.focused ? undefined : ""}
+      data-maximized={window.maximized ? "" : undefined}
       className={cn(
-        "absolute flex flex-col overflow-hidden bg-surface",
+        "kago-window absolute flex flex-col overflow-hidden bg-surface",
         window.maximized ? "inset-0" : "rounded-lg",
         window.focused ? "shadow-window-active" : "shadow-window",
         className
@@ -41,17 +43,17 @@ export function KagoWindow({
       {...props}
     >
       <header
-        className="flex h-9 shrink-0 touch-none items-center gap-2 border-b border-line bg-elevated px-3 select-none"
+        className="kago-chrome flex h-9 shrink-0 touch-none items-center gap-2 border-b border-line px-3 select-none"
         onDoubleClick={(event) => !isInteractiveTarget(event.target) && update({ maximized: !window.maximized })}
         {...moveHandlers}
       >
         {/* Hovering any light reveals all three glyphs, and wakes the colours of an unfocused window. */}
-        <div className="group/lights flex items-center gap-2">
-          <TrafficLight label="關閉視窗（⌥W）" tone="danger" icon={X} focused={window.focused} onClick={() => void requestCloseWindow(window.id)} />
-          <TrafficLight label="最小化" tone="warning" icon={Minus} focused={window.focused} onClick={() => update({ minimized: true })} />
+        <div className="kago-lights group/lights flex items-center gap-2">
+          <TrafficLight label="關閉視窗（⌥W）" tone="close" icon={X} focused={window.focused} onClick={() => void requestCloseWindow(window.id)} />
+          <TrafficLight label="最小化" tone="minimize" icon={Minus} focused={window.focused} onClick={() => update({ minimized: true })} />
           <TrafficLight
             label={window.maximized ? "還原大小" : "最大化"}
-            tone="success"
+            tone="zoom"
             icon={window.maximized ? Minimize2 : Maximize2}
             focused={window.focused}
             onClick={() => update({ maximized: !window.maximized })}
@@ -76,22 +78,15 @@ export function KagoWindow({
   );
 }
 
-const LIGHT_TONES = {
-  danger: { on: "bg-danger", wake: "group-hover/lights:bg-danger" },
-  warning: { on: "bg-warning", wake: "group-hover/lights:bg-warning" },
-  success: { on: "bg-success", wake: "group-hover/lights:bg-success" }
-};
-
-function TrafficLight({ label, tone, icon: Icon, focused, onClick }: { label: string; tone: keyof typeof LIGHT_TONES; icon: LucideIcon; focused: boolean; onClick: () => void }) {
+function TrafficLight({ label, tone, icon: Icon, focused, onClick }: { label: string; tone: "close" | "minimize" | "zoom"; icon: LucideIcon; focused: boolean; onClick: () => void }) {
   return (
     <button
       type="button"
       aria-label={label}
       title={label}
-      className={cn(
-        "flex size-3 items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-accent/50",
-        focused ? LIGHT_TONES[tone].on : cn("bg-line-strong", LIGHT_TONES[tone].wake)
-      )}
+      data-on={focused || undefined}
+      className="kago-light flex size-3 items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
+      style={{ "--tone": `var(--kago-light-${tone})` } as React.CSSProperties}
       onClick={onClick}
     >
       <Icon aria-hidden className="size-2 text-black/60 opacity-0 group-hover/lights:opacity-100 group-has-focus-visible/lights:opacity-100" strokeWidth={3.5} />

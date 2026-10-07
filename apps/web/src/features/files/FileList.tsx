@@ -74,7 +74,7 @@ function itemProps({ window, items, selectedPaths, onSelect, onOpen, onContextIt
   };
 }
 
-const selectedClass = (window: FileWindow, selected: boolean) => (selected ? (window.focused ? "bg-accent text-accent-fg" : "bg-accent-soft") : "hover:bg-hover");
+const selectedClass = (window: FileWindow, selected: boolean) => (selected ? (window.focused ? "kago-selection" : "bg-accent-soft") : "hover:bg-hover");
 
 /** Folder under a drag, and items waiting to be moved by a cut. */
 const stateClass = ({ dropTarget, cutPaths }: ViewProps, item: FileItem) => cn(dropTarget === item.path && "ring-2 ring-accent ring-inset", cutPaths.has(item.path) && "opacity-50");
@@ -130,7 +130,7 @@ function ListView(props: ViewProps) {
                     <span className="-mx-1 size-4 shrink-0" />
                   )
                 ) : null}
-                <FileIcon item={item} className={cn(selected && window.focused && item.kind === "file" && "text-inherit")} />
+                <FileIcon item={item} />
                 <span className="truncate">{item.name}</span>
                 <FinderTagDots tags={item.finderTags} />
               </span>
@@ -189,7 +189,7 @@ function GridView(props: ViewProps) {
         return (
           // Every cell is the same height whatever the length of its name, so rows can be placed without measuring them.
           <div key={item.path} role="option" className={cn("flex flex-col items-center gap-1 overflow-hidden rounded-md p-1.5", stateClass(props, item))} style={{ height: GRID_CELL_HEIGHT }} {...itemProps(props, item, range.start + offset)}>
-            <div className={cn("flex size-20 shrink-0 items-center justify-center rounded-md", selected ? "bg-hover" : "")}>
+            <div className={cn("flex size-20 shrink-0 items-center justify-center rounded-md", selected && "bg-hover ring-1 ring-line ring-inset")}>
               <FileThumbnail rootSlug={window.rootSlug} item={item} size={72} />
             </div>
             <span className={cn("line-clamp-2 max-w-full rounded-sm px-1.5 text-center leading-4 break-words", selectedClass(window, selected))}>
@@ -215,7 +215,7 @@ function ColumnsView(props: ViewProps) {
           const selected = selectedPaths.has(item.path);
           return (
             <div key={item.path} role="option" className={cn("mx-1 flex h-(--kago-row-h) items-center gap-2 rounded-sm px-2", selectedClass(window, selected), stateClass(props, item))} {...itemProps(props, item, range.start + offset)}>
-              <FileIcon item={item} className={cn(selected && window.focused && item.kind === "file" && "text-inherit")} />
+              <FileIcon item={item} />
               <span className="min-w-0 flex-1 truncate">{item.name}</span>
               <FinderTagDots tags={item.finderTags} />
             </div>

@@ -351,7 +351,7 @@ export function VideoPlayer({
 
       <div
         className={cn(
-          "absolute inset-x-2 bottom-2 flex flex-col rounded-lg bg-black/75 px-2 pt-1 pb-1 text-white transition-opacity duration-150",
+          "absolute inset-x-2 bottom-2 flex flex-col rounded-md bg-black/75 px-2 pt-1 pb-1 text-white transition-opacity duration-150",
           controlsShown ? "opacity-100" : "pointer-events-none opacity-0"
         )}
         onFocus={wake}

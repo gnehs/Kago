@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Popover } from "@base-ui/react/popover";
-import { Folder, ListChecks, LogOut, Search, Settings } from "lucide-react";
+import { ListChecks, LogOut, Search, Settings } from "lucide-react";
 import { api } from "@/api/client";
 import { useTasks } from "@/api/hooks";
 import { KagoSpinner } from "@/components/kago/empty-state";
@@ -49,13 +49,13 @@ export function TopBar({ user, onOpenPalette }: { user: Actor; onOpenPalette: ()
   }
 
   return (
-    <header className="flex h-10 shrink-0 items-center gap-1 border-b border-line bg-elevated px-2">
+    <header className="kago-chrome z-[1] flex h-10 shrink-0 items-center gap-1 border-b border-line px-2">
       <button
-        className="flex h-7 shrink-0 items-center gap-2 rounded-md pr-2.5 pl-1.5 font-semibold outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-accent/50"
+        className="flex h-7 shrink-0 items-center gap-2 rounded-md pr-2.5 pl-1.5 font-semibold outline-none kago-flat focus-visible:ring-2 focus-visible:ring-accent/50"
         title={anyVisible ? "顯示桌面" : "還原所有視窗"}
         onClick={toggleDesktop}
       >
-        <BrandMark className="size-5 text-xs" />
+        <BrandMark className="size-5" />
         Kago
       </button>
 
@@ -66,20 +66,20 @@ export function TopBar({ user, onOpenPalette }: { user: Actor; onOpenPalette: ()
             title={"rootSlug" in window ? `${window.rootSlug}:${window.logicalPath}` : "preview" in window ? `${window.preview.rootSlug}:${window.preview.item.path}` : window.title}
             aria-pressed={window.focused && !window.minimized}
             className={cn(
-              "flex h-7 max-w-40 min-w-0 items-center gap-1.5 rounded-md px-2 outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-accent/50",
-              window.focused && !window.minimized ? "bg-surface ring-1 ring-line-strong hover:bg-surface" : "text-muted",
+              "flex h-7 max-w-40 min-w-0 items-center gap-1.5 rounded-md px-2 outline-none focus-visible:ring-2 focus-visible:ring-accent/50",
+              window.focused && !window.minimized ? "kago-raised" : "kago-flat text-muted",
               window.minimized && "opacity-60"
             )}
             onClick={() => activate(window)}
           >
-            {"app" in window ? appIcons[window.app] : "preview" in window ? <FileIcon item={window.preview.item} className="text-current" /> : <Folder className="fill-folder/25 text-folder" />}
+            {"app" in window ? appIcons[window.app] : "preview" in window ? <FileIcon item={window.preview.item} /> : <FileIcon item={{ kind: "folder", type: "", name: "" }} />}
             <span className="truncate">{window.title}</span>
           </button>
         ))}
       </nav>
 
       <button
-        className="flex h-7 shrink-0 items-center gap-2 rounded-md border border-line bg-surface pr-1.5 pl-2 text-faint outline-none hover:border-line-strong focus-visible:ring-2 focus-visible:ring-accent/50"
+        className="kago-well flex h-7 shrink-0 items-center gap-2 rounded-full pr-2.5 pl-2.5 text-faint outline-none hover:text-muted focus-visible:ring-2 focus-visible:ring-accent/50"
         onClick={onOpenPalette}
       >
         <Search className="size-3.5" />
@@ -110,7 +110,7 @@ function TaskStatus() {
         aria-label={label}
         title={label}
         className={cn(
-          "flex size-7 shrink-0 items-center justify-center rounded-md text-muted outline-none hover:bg-hover hover:text-ink focus-visible:ring-2 focus-visible:ring-accent/50 data-[popup-open]:bg-hover",
+          "flex size-7 shrink-0 items-center justify-center kago-flat rounded-md text-muted outline-none hover:text-ink focus-visible:ring-2 focus-visible:ring-accent/50",
           activeCount > 0 && "text-accent hover:text-accent"
         )}
       >
@@ -118,7 +118,7 @@ function TaskStatus() {
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Positioner sideOffset={6} align="end" className="z-[700]">
-          <Popover.Popup className="flex w-80 flex-col rounded-lg bg-surface shadow-popup outline-none">
+          <Popover.Popup className="kago-glass flex w-80 flex-col rounded-lg outline-none">
             {visible.length === 0 ? (
               <p className="m-0 px-4 py-6 text-center text-muted">目前沒有任務</p>
             ) : (

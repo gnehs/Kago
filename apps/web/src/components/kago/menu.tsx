@@ -15,7 +15,7 @@ export function KagoContextMenu({ menu, children, className, ...props }: Omit<Co
       </ContextMenu.Trigger>
       <ContextMenu.Portal>
         <ContextMenu.Positioner className="z-[800] outline-none">
-          <ContextMenu.Popup className="min-w-44 rounded-lg bg-surface p-1 shadow-popup outline-none">{menu}</ContextMenu.Popup>
+          <ContextMenu.Popup className="kago-glass min-w-44 rounded-lg p-1 outline-none">{menu}</ContextMenu.Popup>
         </ContextMenu.Positioner>
       </ContextMenu.Portal>
     </ContextMenu.Root>
@@ -50,7 +50,7 @@ export function KagoDropdownMenu({
         aria-label={label}
         title={label}
         className={cn(
-          "flex size-(--kago-control-h) shrink-0 items-center justify-center rounded-md text-muted outline-none hover:bg-hover hover:text-ink focus-visible:ring-2 focus-visible:ring-accent/50 data-[popup-open]:bg-hover data-[popup-open]:text-ink",
+          "flex size-(--kago-control-h) shrink-0 items-center justify-center kago-flat rounded-md text-muted outline-none hover:text-ink focus-visible:ring-2 focus-visible:ring-accent/50 data-[popup-open]:text-ink",
           className
         )}
       >
@@ -58,7 +58,7 @@ export function KagoDropdownMenu({
       </Menu.Trigger>
       <Menu.Portal container={container ?? undefined}>
         <Menu.Positioner side={side} sideOffset={4} align="end" className="z-[800] outline-none">
-          <Menu.Popup className="min-w-44 rounded-lg bg-surface p-1 shadow-popup outline-none">{menu}</Menu.Popup>
+          <Menu.Popup className="kago-glass min-w-44 rounded-lg p-1 outline-none">{menu}</Menu.Popup>
         </Menu.Positioner>
       </Menu.Portal>
     </Menu.Root>
@@ -69,8 +69,8 @@ export function KagoMenuItem({ icon, destructive, className, children, ...props 
   return (
     <ContextMenu.Item
       className={cn(
-        "flex h-7 items-center gap-2 rounded-sm px-2 outline-none data-[disabled]:opacity-40 data-[highlighted]:bg-accent data-[highlighted]:text-accent-fg",
-        destructive && "text-danger",
+        "kago-menu-item flex h-7 items-center gap-2 rounded-[calc(var(--kago-radius-md)+1px)] [corner-shape:squircle] px-2 outline-none data-[disabled]:opacity-40",
+        destructive && "text-danger data-[highlighted]:text-white",
         className
       )}
       {...props}

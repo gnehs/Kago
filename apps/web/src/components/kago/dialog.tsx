@@ -10,7 +10,7 @@ export function KagoDialog({ open, onClose, title, className, children }: { open
     <Dialog.Root open={open} onOpenChange={(next) => !next && onClose()}>
       <Dialog.Portal>
         <Dialog.Backdrop className="fixed inset-0 z-[900] bg-overlay" />
-        <Dialog.Popup className={cn("fixed top-1/2 left-1/2 z-[900] flex max-h-[calc(100vh-48px)] w-[min(420px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 flex-col rounded-lg bg-surface shadow-popup outline-none", className)}>
+        <Dialog.Popup className={cn("fixed top-1/2 left-1/2 z-[900] flex max-h-[calc(100vh-48px)] w-[min(420px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 flex-col rounded-lg bg-surface shadow-window-active ring-1 ring-(--kago-window-edge) outline-none", className)}>
           <Dialog.Title className="m-0 px-4 pt-4 text-sm font-semibold">{title}</Dialog.Title>
           {children}
         </Dialog.Popup>

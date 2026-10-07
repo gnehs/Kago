@@ -80,7 +80,7 @@ export function CommandPalette({ roots, isAdmin, onClose }: { roots: Root[]; isA
     <Dialog.Root open onOpenChange={(next) => !next && onClose()}>
       <Dialog.Portal>
         <Dialog.Backdrop className="fixed inset-0 z-[900] bg-overlay" />
-        <Dialog.Popup aria-label="快速開啟" className="fixed top-[18vh] left-1/2 z-[900] w-[min(520px,calc(100vw-32px))] -translate-x-1/2 overflow-hidden rounded-lg bg-surface shadow-popup outline-none">
+        <Dialog.Popup aria-label="快速開啟" className="fixed top-[18vh] left-1/2 z-[900] w-[min(520px,calc(100vw-32px))] -translate-x-1/2 kago-glass overflow-hidden rounded-lg outline-none">
           <label className="flex h-11 items-center gap-2 border-b border-line px-3">
             <Search className="text-muted" />
             <input
@@ -109,7 +109,7 @@ export function CommandPalette({ roots, isAdmin, onClose }: { roots: Root[]; isA
             {items.map((item, itemIndex) => (
               <li key={item.key}>
                 <button
-                  className={cn("flex h-8 w-full items-center gap-2 rounded-md px-2 text-left", itemIndex === index && "bg-accent text-accent-fg")}
+                  className={cn("flex h-8 w-full items-center gap-2 rounded-[calc(var(--kago-radius-md)+1px)] [corner-shape:squircle] px-2 text-left", itemIndex === index && "kago-selection")}
                   onMouseMove={() => setIndex(itemIndex)}
                   onClick={() => open(item)}
                 >
