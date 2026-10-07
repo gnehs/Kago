@@ -99,6 +99,15 @@ CREATE TABLE IF NOT EXISTS tasks (
 CREATE INDEX IF NOT EXISTS idx_tasks_status_created
 ON tasks(status, created_at);
 
+-- What a trial run of a sync would have changed.
+CREATE TABLE IF NOT EXISTS task_reports (
+  task_id TEXT PRIMARY KEY,
+  summary_json TEXT NOT NULL,
+  stats_json TEXT NOT NULL,
+  changes_json TEXT NOT NULL,
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS shelves (
   id TEXT PRIMARY KEY,
   owner_id TEXT NOT NULL,

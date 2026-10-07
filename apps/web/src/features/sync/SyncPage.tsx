@@ -17,6 +17,7 @@ import { confirmAction } from "@/stores/dialogs";
 import { toast } from "@/stores/toast";
 import type { Actor, FileTask, Root, SyncEndpoint, SyncJob, SyncSchedule } from "@/types/kago";
 import { SshKeyNote } from "./SshKeyNote";
+import { describeTrial, TrialDialog } from "./TrialDialog";
 import { t } from "@/lib/i18n";
 
 const weekdays = [t("Sunday"), t("Monday"), t("Tuesday"), t("Wednesday"), t("Thursday"), t("Friday"), t("Saturday")];
@@ -34,6 +35,7 @@ export function SyncPage({ roots, user }: { roots: Root[]; user: Actor }) {
   const queryClient = useQueryClient();
   const jobs = useSyncJobs();
   const [editing, setEditing] = useState<SyncJob | true | null>(null);
+  const [trialOf, setTrialOf] = useState<string | null>(null);
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["sync-jobs"] });
   const describeEndpoint = (endpoint: SyncEndpoint) =>
     endpoint.kind === "rsync" ? endpoint.remote : displayPath(roots.find((root) => root.slug === endpoint.rootSlug)?.name ?? endpoint.rootSlug, endpoint.path);
@@ -83,14 +85,21 @@ export function SyncPage({ roots, user }: { roots: Root[]; user: Actor }) {
                 key={job.id}
                 icon={<RefreshCw />}
                 title={job.name}
-                subtitle={[
-                  `${describeEndpoint(job.source)} → ${describeEndpoint(job.destination)}`,
-                  job.enabled ? describeSchedule(job.schedule) : t("Schedule paused"),
-                  job.last_error ? taskErrorLabel(job.last_error) : job.last_run_at ? t("Last run {date}", { date: formatUnixDate(job.last_run_at) }) : null,
-                  job.created_by !== user.id ? t("Someone else’s") : null
-                ].filter(Boolean).join(" · ")}
+                subtitle={
+                  <>
+                    {[
+                      `${describeEndpoint(job.source)} → ${describeEndpoint(job.destination)}`,
+                      job.enabled ? describeSchedule(job.schedule) : t("Schedule paused"),
+                      job.last_error ? taskErrorLabel(job.last_error) : job.last_run_at ? t("Last run {date}", { date: formatUnixDate(job.last_run_at) }) : null,
+                      job.created_by !== user.id ? t("Someone else’s") : null
+                    ].filter(Boolean).join(" · ")}
+                    {/* What a trial run found is the whole point of it, so it has a line to itself. */}
+                    {job.last_trial ? <span className="block truncate">{describeTrial(job.last_trial)}</span> : null}
+                  </>
+                }
               >
                 {last ? <KagoBadge tone={last.tone}>{last.label}</KagoBadge> : null}
+                {job.last_trial ? <Button onClick={() => setTrialOf(job.id)}>{t("See changes")}</Button> : null}
                 <Button disabled={running} onClick={() => void start(job)}>{t("Run now")}</Button>
                 <Button onClick={() => setEditing(job)}>{t("Edit")}</Button>
                 <Button variant="destructive" onClick={() => void remove(job)}>{t("Delete")}</Button>
@@ -99,6 +108,7 @@ export function SyncPage({ roots, user }: { roots: Root[]; user: Actor }) {
           })}
         </RowList>
       ) : null}
+      <TrialDialog job={jobs.data?.find((job) => job.id === trialOf && job.last_trial) ?? null} onClose={() => setTrialOf(null)} />
     </Page>
   );
 }

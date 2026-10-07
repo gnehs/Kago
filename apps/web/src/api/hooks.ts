@@ -1,7 +1,7 @@
 import { keepPreviousData, useMutation, useQueries, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { api } from "./client";
 import { isTrashing, useTrashingStore } from "../stores/trashing";
-import type { Actor, AuditLog, FileList, FileMeta, FileTask, Group, ImageMetadata, MediaInfo, PermissionRule, Root, ShareLink, Shelf, SqlitePage, SqliteTable, StorageInfo, SubtitleList, SyncJob, Tag, TrashItem, UserAccount, WorkspaceState } from "../types/kago";
+import type { Actor, AuditLog, FileList, FileMeta, FileTask, Group, ImageMetadata, MediaInfo, PermissionRule, Root, ShareLink, Shelf, SqlitePage, SqliteTable, StorageInfo, SubtitleList, SyncJob, SyncTrial, Tag, TrashItem, UserAccount, WorkspaceState } from "../types/kago";
 
 export function useSetupStatus() {
   return useQuery({ queryKey: ["auth", "setup"], queryFn: () => api<{ needsSetup: boolean }>("/api/auth/setup") });
@@ -35,6 +35,11 @@ export function useStorage() {
 export function useSyncJobs() {
   // A run changes a job's last result without any event of its own.
   return useQuery({ queryKey: ["sync-jobs"], queryFn: () => api<SyncJob[]>("/api/sync-jobs"), refetchInterval: 10_000 });
+}
+
+/** What a job's last trial run would have changed; asked for again whenever that run is another one. */
+export function useSyncTrial(job: SyncJob | null) {
+  return useQuery({ queryKey: ["sync-trial", job?.id, job?.last_run_at], queryFn: () => api<SyncTrial>(`/api/sync-jobs/${job!.id}/trial`), enabled: job !== null });
 }
 
 export function useSshKey(enabled = true) {

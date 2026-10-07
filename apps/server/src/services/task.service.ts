@@ -15,6 +15,7 @@ import { logger } from "../lib/logger.js";
 import { ensureSshKey, sshCommand } from "../lib/ssh-key.js";
 import { zipStream, type ZipEntry } from "../lib/zip-stream.js";
 import { RcloneJobStopped } from "../storage/rclone-client.js";
+import { runRclone } from "../storage/rclone-daemon.js";
 import { isRemote, joinFs, REMOTE_TRASH, transferProgress } from "../storage/remote-storage.js";
 import type { EventPublisher } from "../ws/events.js";
 import type { AuditService } from "./audit.service.js";
@@ -23,6 +24,7 @@ import { sharesAreFixed, type PathService, type SafePath } from "./path.service.
 import type { Action, PermissionService } from "./permission.service.js";
 import type { PreferenceService } from "./preference.service.js";
 import type { StorageService } from "./storage.service.js";
+import { byLine, SyncReport } from "./sync-report.js";
 import type { Actor, FileTask, Root } from "./types.js";
 
 const maxExtractEntries = 10_000;
@@ -1069,6 +1071,8 @@ export class TaskService {
     const mirror = spec.options.mode === "mirror";
     const stopped = () => this.isCancelled(task.id);
     const onBytes = transferProgress((bytes) => this.countBytes(task.id, bytes));
+    // A trial run changes nothing; what it would have changed is what it leaves behind.
+    const report = spec.options.dryRun ? new SyncReport() : null;
 
     if (source && destination) {
       const from = this.rcloneAddress(source);
@@ -1076,26 +1080,45 @@ export class TaskService {
       let total = 0;
       // Where times cannot be kept, a file of the same size is taken to have changed when the source's is the newer.
       const byAge = isRemote(destination.root) && (await this.storage.remote.keepsNoTimes(destination.root));
+      // A remote location's trash is Kago's own business at either end.
+      const excluded = [`/${REMOTE_TRASH}/**`, `/*/${REMOTE_TRASH}/**`];
       try {
-        await this.storage.remote.client.runJob(
-          mirror ? "sync/sync" : "sync/copy",
-          {
-            srcFs: joinFs(from.fs, from.remote),
-            dstFs: joinFs(to.fs, to.remote),
-            createEmptySrcDirs: true,
-            _config: { DryRun: spec.options.dryRun, ...(byAge ? { UpdateOlder: true, UseServerModTime: true } : {}) },
-            // A remote location's trash is Kago's own business at either end.
-            _filter: { ExcludeRule: [`/${REMOTE_TRASH}/**`, `/*/${REMOTE_TRASH}/**`] }
-          },
-          (stats) => {
-            if (stats.totalBytes > total) {
-              total = stats.totalBytes;
-              this.setTotalBytes(task.id, total);
-            }
-            onBytes(stats);
-          },
-          stopped
-        );
+        if (report) {
+          await runRclone(
+            this.appDataDir,
+            [
+              mirror ? "sync" : "copy",
+              "--dry-run",
+              "--create-empty-src-dirs",
+              ...(byAge ? ["--update", "--use-server-modtime"] : []),
+              ...excluded.flatMap((rule) => ["--exclude", rule]),
+              "--",
+              joinFs(from.fs, from.remote),
+              joinFs(to.fs, to.remote)
+            ],
+            (entry) => report.addRcloneLog(entry),
+            stopped
+          );
+        } else {
+          await this.storage.remote.client.runJob(
+            mirror ? "sync/sync" : "sync/copy",
+            {
+              srcFs: joinFs(from.fs, from.remote),
+              dstFs: joinFs(to.fs, to.remote),
+              createEmptySrcDirs: true,
+              _config: byAge ? { UpdateOlder: true, UseServerModTime: true } : {},
+              _filter: { ExcludeRule: excluded }
+            },
+            (stats) => {
+              if (stats.totalBytes > total) {
+                total = stats.totalBytes;
+                this.setTotalBytes(task.id, total);
+              }
+              onBytes(stats);
+            },
+            stopped
+          );
+        }
       } catch (error) {
         if (error instanceof RcloneJobStopped) throw new TaskCancelledError();
         throw transferFailure(error);
@@ -1105,13 +1128,13 @@ export class TaskService {
       const local = ensureTrailingSlash((source ?? destination)!.absolutePath);
       // The key is the one the form showed; a job made some other way still finds one to offer.
       await ensureSshKey(this.appDataDir).catch(() => undefined);
-      const progress = await rsyncReportsProgress();
+      const progress = !report && (await rsyncReportsProgress());
       let reported = 0;
       await runRsync(
         [
           "-a",
           ...(mirror ? ["--delete"] : []),
-          ...(spec.options.dryRun ? ["--dry-run"] : []),
+          ...(report ? ["--dry-run", "--out-format=%i %l %n"] : []),
           ...(progress ? ["--info=progress2", "--no-inc-recursive"] : []),
           "-e",
           sshCommand(this.appDataDir, remote.port),
@@ -1119,17 +1142,24 @@ export class TaskService {
           ...(source ? [local, ensureTrailingSlash(remote.remote)] : [ensureTrailingSlash(remote.remote), local])
         ],
         stopped,
-        (text) => {
-          // "  1,234,567  45%  1.20MB/s  0:00:03": the bytes sent so far, over and over on one line.
-          for (const match of text.matchAll(/(?:^|[\r\n])\s*([\d,]+)\s+\d+%/g)) {
-            const bytes = Number(match[1]!.replaceAll(",", ""));
-            if (bytes > reported) {
-              this.countBytes(task.id, bytes - reported);
-              reported = bytes;
+        report
+          ? byLine((line) => report.addRsyncLine(line))
+          : (text) => {
+              // "  1,234,567  45%  1.20MB/s  0:00:03": the bytes sent so far, over and over on one line.
+              for (const match of text.matchAll(/(?:^|[\r\n])\s*([\d,]+)\s+\d+%/g)) {
+                const bytes = Number(match[1]!.replaceAll(",", ""));
+                if (bytes > reported) {
+                  this.countBytes(task.id, bytes - reported);
+                  reported = bytes;
+                }
+              }
             }
-          }
-        }
       );
+    }
+    if (report) {
+      this.db
+        .prepare("INSERT OR REPLACE INTO task_reports (task_id, summary_json, stats_json, changes_json) VALUES (?, ?, ?, ?)")
+        .run(task.id, JSON.stringify({ ...report.summary, truncated: report.truncated }), JSON.stringify(report.stats()), JSON.stringify(report.changes));
     }
     const location = (destination ?? source)!;
     this.audit.write({

@@ -2,16 +2,21 @@ import { spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { logger } from "../lib/logger.js";
-import { RcloneClient, rcloneSocketPath } from "./rclone-client.js";
+import { AppError } from "../lib/errors.js";
+import { RcloneClient, RcloneError, RcloneJobStopped, rcloneSocketPath } from "./rclone-client.js";
 
 const START_TIMEOUT_MS = 15_000;
+
+const rcloneBinary = () => process.env.RCLONE_PATH ?? "rclone";
+const rcloneConfigPath = (appDataDir: string) => path.join(appDataDir, "rclone", "rclone.conf");
+const rcloneCacheDir = (appDataDir: string) => path.join(appDataDir, "temp", "rclone");
 
 /**
  * Keeps one `rclone rcd` running beside the server. It listens on a socket only this user can open,
  * and its configuration is written afresh from the database each time it starts.
  */
 export class RcloneDaemon {
-  private readonly binary = process.env.RCLONE_PATH ?? "rclone";
+  private readonly binary = rcloneBinary();
   private readonly socketPath: string;
   private readonly configPath: string;
   private child: ChildProcess | null = null;
@@ -25,7 +30,7 @@ export class RcloneDaemon {
     private readonly onReady: () => Promise<void>
   ) {
     this.socketPath = rcloneSocketPath(appDataDir);
-    this.configPath = path.join(appDataDir, "rclone", "rclone.conf");
+    this.configPath = rcloneConfigPath(appDataDir);
   }
 
   /** True once the daemon answers; false when rclone is not installed or would not start. */
@@ -57,7 +62,7 @@ export class RcloneDaemon {
     fs.writeFileSync(this.configPath, "", { mode: 0o600 });
     const child = spawn(
       this.binary,
-      ["rcd", "--rc-addr", `unix://${this.socketPath}`, "--rc-no-auth", "--rc-serve", "--config", this.configPath, "--cache-dir", path.join(this.appDataDir, "temp", "rclone"), "--ask-password=false", "--log-level", "NOTICE"],
+      ["rcd", "--rc-addr", `unix://${this.socketPath}`, "--rc-no-auth", "--rc-serve", "--config", this.configPath, "--cache-dir", rcloneCacheDir(this.appDataDir), "--ask-password=false", "--log-level", "NOTICE"],
       { stdio: ["ignore", "ignore", "pipe"] }
     );
     this.child = child;
@@ -94,4 +99,51 @@ export class RcloneDaemon {
     if (this.child === child) child.kill();
     return false;
   }
+}
+
+/**
+ * Runs one rclone command to its end beside the daemon, with the remotes the daemon has, handing over each entry of its JSON log.
+ * The daemon's own log does not say which job a line came from, so a run whose log is the point is done this way.
+ */
+export function runRclone(appDataDir: string, args: string[], onLog: (entry: Record<string, unknown>) => void, shouldStop: () => boolean): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      rcloneBinary(),
+      [...args.slice(0, 1), "--config", rcloneConfigPath(appDataDir), "--cache-dir", rcloneCacheDir(appDataDir), "--ask-password=false", "--log-level", "NOTICE", "--use-json-log", ...args.slice(1)],
+      { stdio: ["ignore", "ignore", "pipe"] }
+    );
+    let stopped = false;
+    const watcher = setInterval(() => {
+      if (!shouldStop()) return;
+      stopped = true;
+      child.kill();
+    }, 500);
+    let complaint = "";
+    let rest = "";
+    child.stderr.on("data", (chunk: Buffer) => {
+      const lines = `${rest}${chunk.toString("utf8")}`.split("\n");
+      rest = lines.pop() ?? "";
+      for (const line of lines) {
+        let entry: Record<string, unknown>;
+        try {
+          entry = JSON.parse(line) as Record<string, unknown>;
+        } catch {
+          continue;
+        }
+        if (entry.level === "error" && typeof entry.msg === "string") complaint = entry.msg;
+        onLog(entry);
+      }
+    });
+    child.on("error", (error) => {
+      clearInterval(watcher);
+      if ("code" in error && error.code === "ENOENT") reject(new AppError(503, "Remote locations are not available", "REMOTE_UNAVAILABLE"));
+      else reject(error);
+    });
+    child.on("close", (code) => {
+      clearInterval(watcher);
+      if (stopped) reject(new RcloneJobStopped());
+      else if (code === 0) resolve();
+      else reject(new RcloneError(500, complaint || `rclone exited with ${code}`));
+    });
+  });
 }

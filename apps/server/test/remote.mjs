@@ -263,9 +263,22 @@ test("a remote location behaves like a local one", { skip: remote ? false : "KAG
     assert.equal(trial.json.next_run_at, null);
     assert.equal((await runJob(job.json.id)).status, "done");
     assert.equal((await api.get(`/api/fs/meta?${q("/backup/a.txt")}`)).status, 200, "a trial run changes nothing");
+    // What it would have changed is what it leaves behind.
+    await writeFile(path.join(dataDir, "local", "source", "deep", "new.txt"), "new!");
+    assert.equal((await runJob(job.json.id)).status, "done");
+    assert.equal((await api.get(`/api/fs/meta?${q("/backup/deep/new.txt")}`)).status, 404);
+    const report = await api.get(`/api/sync-jobs/${job.json.id}/trial`);
+    assert.deepEqual(report.json.changes.map((change) => `${change.action} ${change.path}`).sort(), ["copy deep/new.txt", "delete a.txt"]);
+    assert.equal(report.json.changes.find((change) => change.action === "copy").size, 4);
+    assert.deepEqual(report.json.stats.extensions, [{ extension: "txt", count: 1, bytes: 4 }]);
+    assert.deepEqual(report.json.stats.folders.find((folder) => folder.name === "deep"), { name: "deep", copy: 1, delete: 0, bytes: 4 });
+    assert.deepEqual((await api.get("/api/sync-jobs")).json[0].last_trial, { copy: 1, delete: 1, mkdir: 0, rmdir: 0, touch: 0, bytes: 4, truncated: false });
+    await rm(path.join(dataDir, "local", "source", "deep", "new.txt"));
     await api.put(`/api/sync-jobs/${job.json.id}`, { name: "Backup", source, destination, options: { mode: "mirror" } });
     assert.equal((await runJob(job.json.id)).status, "done");
     assert.equal((await api.get(`/api/fs/meta?${q("/backup/a.txt")}`)).status, 404, "a mirror removes what the source lost");
+    assert.equal((await api.get("/api/sync-jobs")).json[0].last_trial, null);
+    assert.equal((await api.get(`/api/sync-jobs/${job.json.id}/trial`)).json.code, "SYNC_NO_TRIAL");
     assert.equal((await api.get(`/api/fs/preview?${q("/backup/c.txt")}`)).text, "CCC");
 
     // And back again, from the remote to a local folder.

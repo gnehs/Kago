@@ -420,6 +420,7 @@ function registerApi(app: FastifyInstance, services: Services) {
     services.sync.delete(requireActor(request), z.object({ id: z.string() }).parse(request.params).id);
     return { ok: true };
   });
+  app.get("/api/sync-jobs/:id/trial", async (request) => services.sync.trial(requireActor(request), z.object({ id: z.string() }).parse(request.params).id));
   app.post("/api/sync-jobs/:id/run", async (request) => services.sync.run(requireActor(request), z.object({ id: z.string() }).parse(request.params).id));
 
   app.get("/api/workspace", async (request) => {

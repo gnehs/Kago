@@ -38,6 +38,21 @@ export function fileKind(item: KindItem): FileKind {
   return "file";
 }
 
+const PICTURES = words("jpg jpeg jpe png gif webp avif bmp tif tiff svg ico apng psd");
+const FILMS = words("mp4 m4v mov mkv webm avi wmv flv mpg mpeg m2ts mts 3gp ogv rm rmvb vob");
+const SOUNDS = words("mp3 m4a aac flac wav ogg oga opus wma aif aiff alac ape mid midi");
+
+/** The kind of a file of which only the ending of its name is known. */
+export function kindOfExtension(extension: string): FileKind {
+  if (!extension) return "file";
+  const named = fileKind({ kind: "file", name: `a.${extension}`, type: "" });
+  if (named !== "file") return named;
+  if (PICTURES.has(extension)) return "image";
+  if (FILMS.has(extension)) return "video";
+  if (SOUNDS.has(extension)) return "audio";
+  return extension === "pdf" ? "pdf" : "file";
+}
+
 /** Each broad kind has its own colour, so a mixed folder can be read by scanning the icons. */
 export const KIND_TONES: Record<FileKind, string> = {
   folder: "text-folder",

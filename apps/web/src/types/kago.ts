@@ -25,6 +25,18 @@ export type StorageInfo = { available: boolean; providers: RemoteProvider[]; roo
 
 export type SyncEndpoint = { kind: "location"; rootSlug: string; path: string } | { kind: "rsync"; remote: string; port?: number };
 export type SyncSchedule = { kind: "interval"; minutes: number } | { kind: "daily"; time: string } | { kind: "weekly"; weekday: number; time: string };
+export type SyncChange = { action: "copy" | "delete" | "mkdir" | "rmdir" | "touch"; path: string; size?: number };
+/** How much a trial run would have changed; `truncated` when it names fewer changes than it counted. */
+export type SyncTrialSummary = Record<SyncChange["action"], number> & { bytes: number; truncated: boolean };
+/** What the changes add up to, counted over all of them and not only the ones that are listed. */
+export type SyncTrialStats = {
+  freed: number;
+  extensions: Array<{ extension: string; count: number; bytes: number }>;
+  folders: Array<{ name: string; copy: number; delete: number; bytes: number }>;
+  moreFolders: number;
+};
+export type SyncTrial = SyncTrialSummary & { stats: SyncTrialStats; changes: SyncChange[] };
+
 export type SyncJob = {
   id: string;
   name: string;
@@ -37,6 +49,7 @@ export type SyncJob = {
   last_run_at: number | null;
   last_status: string | null;
   last_error: string | null;
+  last_trial: SyncTrialSummary | null;
   created_by: string;
 };
 

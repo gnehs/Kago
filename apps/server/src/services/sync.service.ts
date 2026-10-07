@@ -6,6 +6,7 @@ import { id, now } from "../lib/ids.js";
 import { logger } from "../lib/logger.js";
 import type { AuditService } from "./audit.service.js";
 import type { AuthService } from "./auth.service.js";
+import type { SyncChange, SyncStats, SyncSummary } from "./sync-report.js";
 import { syncEndpointSchema, syncOptionsSchema, type SyncEndpoint, type TaskService } from "./task.service.js";
 import type { Actor } from "./types.js";
 
@@ -128,8 +129,28 @@ export class SyncService {
     const job = this.getForActor(actor, jobId);
     this.assertIdle(job);
     const task = await this.tasks.createSync(actor, this.spec(this.inputOf(job), job.id));
-    this.db.prepare("UPDATE sync_jobs SET last_run_at = ?, last_task_id = ? WHERE id = ?").run(now(), task.id, job.id);
+    this.began(job, task.id);
     return task;
+  }
+
+  /** What the job's last run would have changed, when that was a trial run. */
+  trial(actor: Actor, jobId: string) {
+    const job = this.getForActor(actor, jobId);
+    const report = job.last_task_id
+      ? row<{ summary_json: string; stats_json: string; changes_json: string }>(this.db.prepare("SELECT summary_json, stats_json, changes_json FROM task_reports WHERE task_id = ?").get(job.last_task_id))
+      : null;
+    if (!report) throw new AppError(404, "This sync has no trial run to show", "SYNC_NO_TRIAL");
+    return {
+      ...(JSON.parse(report.summary_json) as SyncSummary & { truncated: boolean }),
+      stats: JSON.parse(report.stats_json) as SyncStats,
+      changes: JSON.parse(report.changes_json) as SyncChange[]
+    };
+  }
+
+  /** A job's new run is the one that counts: what the run before it reported is not kept. */
+  private began(job: SyncJobRow, taskId: string): void {
+    if (job.last_task_id) this.db.prepare("DELETE FROM task_reports WHERE task_id = ?").run(job.last_task_id);
+    this.db.prepare("UPDATE sync_jobs SET last_run_at = ?, last_task_id = ? WHERE id = ?").run(now(), taskId, job.id);
   }
 
   start(): void {
@@ -154,7 +175,7 @@ export class SyncService {
       try {
         if (!owner || owner.disabled) throw new AppError(403, "The owner of the job can no longer sign in", "SYNC_OWNER_DISABLED");
         const task = await this.tasks.createSync(owner, this.spec(input, job.id), true);
-        this.db.prepare("UPDATE sync_jobs SET last_run_at = ?, last_task_id = ? WHERE id = ?").run(now(), task.id, job.id);
+        this.began(job, task.id);
       } catch (error) {
         // A job that may no longer run is passed over until someone changes it or its permissions.
         this.audit.write({ actorType: "system", action: "sync_job_skipped", target: { jobId: job.id, reason: error instanceof Error ? error.message : String(error) }, result: "failure" });
@@ -210,6 +231,7 @@ export class SyncService {
 
   private publicJob(job: SyncJobRow) {
     const last = job.last_task_id ? row<{ status: string; error_message: string | null; finished_at: number | null }>(this.db.prepare("SELECT status, error_message, finished_at FROM tasks WHERE id = ?").get(job.last_task_id)) : null;
+    const trial = last?.status === "done" ? row<{ summary_json: string }>(this.db.prepare("SELECT summary_json FROM task_reports WHERE task_id = ?").get(job.last_task_id)) : null;
     return {
       id: job.id,
       name: job.name,
@@ -222,6 +244,7 @@ export class SyncService {
       last_run_at: job.last_run_at,
       last_status: last?.status ?? null,
       last_error: last?.error_message ?? null,
+      last_trial: trial ? (JSON.parse(trial.summary_json) as SyncSummary & { truncated: boolean }) : null,
       created_by: job.created_by
     };
   }
