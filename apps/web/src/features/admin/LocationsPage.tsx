@@ -83,7 +83,7 @@ export function LocationsPage({ roots }: { roots: Root[] }) {
               <Row key={root.id} icon={root.provider === "local" ? <HardDrive /> : <Server />} title={root.name} subtitle={root.provider === "local" ? root.slug : `${providerLabel(root.provider)} · ${remoteAddress(remote)}`}>
                 {root.readonly ? <KagoBadge>{t("Read-only")}</KagoBadge> : null}
                 <Button onClick={() => void setRootReadonly(root, !root.readonly)}>{root.readonly ? t("Allow writing") : t("Make read-only")}</Button>
-                {remote ? <Button onClick={() => setEditing(remote)}>{t("Connection")}</Button> : null}
+                {remote ? <Button onClick={() => setEditing(remote)}>{t("Edit")}</Button> : null}
                 {root.provider !== "local" ? <Button variant="destructive" onClick={() => void remove(root)}>{t("Remove")}</Button> : null}
               </Row>
             );

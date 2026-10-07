@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronRight, ExternalLink, FolderOpen, HardDrive, PanelTop } from "lucide-react";
+import { ChevronRight, ExternalLink, FolderOpen, HardDrive, PanelTop, Server } from "lucide-react";
 import { useFileList } from "@/api/hooks";
 import { KagoContextMenu, KagoMenuItem } from "@/components/kago/menu";
 import { locationTone } from "@/features/workspace/DesktopIcons";
@@ -29,6 +29,8 @@ type Tree = {
   onNavigate: (folder: FileRef) => void;
   /** The locations nothing can be dropped into. */
   readonly: ReadonlySet<string>;
+  /** The locations kept on another machine. */
+  remote: ReadonlySet<string>;
   /** The folder a drag is over, by `folderKey`. */
   dropTarget: string | null;
   setDropTarget: (key: string | null) => void;
@@ -56,6 +58,7 @@ export function Sidebar({
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const readonly = useMemo(() => new Set(roots.filter((root) => root.readonly).map((root) => root.slug)), [roots]);
+  const remote = useMemo(() => new Set(roots.filter((root) => root.provider !== "local").map((root) => root.slug)), [roots]);
 
   // A drag resting on a closed folder opens it, so what is dragged can be taken further in without letting go.
   useEffect(() => {
@@ -82,6 +85,7 @@ export function Sidebar({
       expanded,
       onNavigate,
       readonly,
+      remote,
       dropTarget,
       setDropTarget: (key) => {
         if (key) onDragTarget();
@@ -95,17 +99,29 @@ export function Sidebar({
           return next;
         })
     }),
-    [window, expanded, onNavigate, readonly, dropTarget, onDragTarget, onDropInto]
+    [window, expanded, onNavigate, readonly, remote, dropTarget, onDragTarget, onDropInto]
   );
+
+  // The locations on other machines stand apart from the server's own, which answer faster and are always there.
+  const sections = [
+    { label: t("Locations"), roots: roots.filter((root) => !remote.has(root.slug)) },
+    { label: t("Remote locations"), roots: roots.filter((root) => remote.has(root.slug)) }
+  ];
 
   return (
     <nav aria-label={t("Folders")} className="hidden w-48 shrink-0 flex-col overflow-y-auto border-r border-line bg-elevated p-1.5 select-none @lg/body:flex">
-      <span className="px-2 pt-0.5 pb-1 text-xs font-medium text-faint">{t("Locations")}</span>
-      <div role="tree" className="flex flex-col gap-px">
-        {roots.map((root) => (
-          <Node key={root.slug} tree={tree} rootSlug={root.slug} path="/" label={root.name} depth={0} />
-        ))}
-      </div>
+      {sections.map((section, index) =>
+        section.roots.length === 0 ? null : (
+          <div key={section.label} className={cn("flex flex-col", index > 0 && "mt-2")}>
+            <span className="px-2 pt-0.5 pb-1 text-xs font-medium text-faint">{section.label}</span>
+            <div role="tree" aria-label={section.label} className="flex flex-col gap-px">
+              {section.roots.map((root) => (
+                <Node key={root.slug} tree={tree} rootSlug={root.slug} path="/" label={root.name} depth={0} />
+              ))}
+            </div>
+          </div>
+        )
+      )}
     </nav>
   );
 }
@@ -119,6 +135,7 @@ function Node({ tree, rootSlug, path, label, depth }: { tree: Tree; rootSlug: st
   const row = useRef<HTMLDivElement>(null);
   const here = { rootSlug, path };
   const openTab = () => store().openTab(window.id, { rootSlug, logicalPath: path });
+  const RootIcon = tree.remote.has(rootSlug) ? Server : HardDrive;
 
   useEffect(() => {
     if (current) row.current?.scrollIntoView({ block: "nearest" });
@@ -170,7 +187,7 @@ function Node({ tree, rootSlug, path, label, depth }: { tree: Tree; rootSlug: st
           >
             <ChevronRight className={cn("size-3.5 transition-transform", open && "rotate-90")} />
           </button>
-          {path === "/" ? <HardDrive className="shrink-0" style={{ color: `var(--kago-app-${locationTone(rootSlug)})` }} /> : <FileIcon item={FOLDER} />}
+          {path !== "/" ? <FileIcon item={FOLDER} /> : <RootIcon className="shrink-0" style={{ color: `var(--kago-app-${locationTone(rootSlug)})` }} />}
           <span className="min-w-0 flex-1 truncate">{label}</span>
         </div>
       </KagoContextMenu>

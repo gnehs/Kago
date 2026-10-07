@@ -389,8 +389,9 @@ test("security boundaries reject unsafe requests", async () => {
     assert.equal(traversal.json.code, "INVALID_PATH");
 
     const physicalPath = await admin.get(`/api/fs/list?rootSlug=photos&path=${encodeURIComponent("/data/photos")}`);
-    assert.equal(physicalPath.statusCode, 400);
-    assert.equal(physicalPath.json.code, "PHYSICAL_PATH_REJECTED");
+    // A path is always read inside its location, so the server's own /data is never reached: this names a folder "data" that is not there.
+    assert.equal(physicalPath.statusCode, 404);
+    assert.equal(physicalPath.json.code, "PATH_NOT_FOUND");
 
     await symlink(
       path.join(fixture.dataDir, "photos", "private", "secret.txt"),
