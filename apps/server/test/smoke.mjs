@@ -69,7 +69,9 @@ test("minimum file-manager demo flow", async () => {
     assert.equal(upload.statusCode, 200);
     const thumbnail = await admin.get("/api/fs/thumbnail?rootSlug=photos&path=/public/uploaded.txt");
     assert.equal(thumbnail.statusCode, 200);
-    assert.match(String(thumbnail.headers["content-type"]), /image\/svg\+xml/);
+    assert.match(String(thumbnail.headers["content-type"]), /text\/plain/);
+    assert.equal(thumbnail.payload, "uploaded");
+    assert.equal((await admin.get("/api/fs/thumbnail?rootSlug=photos&path=/public")).statusCode, 404);
 
     // The editor saves a file's text back in place, and refuses to save over a copy that has changed since it was read.
     const uploadedFile = path.join(fixture.dataDir, "photos", "public", "uploaded.txt");

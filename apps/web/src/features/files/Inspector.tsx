@@ -1,6 +1,5 @@
 import { useState, type ReactNode } from "react";
 import { Link2, X } from "lucide-react";
-import { previewUrl } from "@/api/client";
 import { useFileMeta, usePathPermissions, useRoots, useShares } from "@/api/hooks";
 import { KagoBadge } from "@/components/kago/badge";
 import { KagoLoading } from "@/components/kago/empty-state";
@@ -11,12 +10,12 @@ import { ShareForm } from "@/features/shares/ShareForm";
 import { parseShareMode, shareModeLabel } from "@/features/shares/shareUtils";
 import { FinderTagEditor } from "@/features/tags/FinderTagEditor";
 import { TagEditor } from "@/features/tags/TagEditor";
-import { formatDate, formatSize, isImageType, kindLabel } from "@/lib/format";
+import { formatDate, formatSize, kindLabel } from "@/lib/format";
 import { displayPath } from "@/lib/paths";
 import { usePointerDrag } from "@/lib/usePointerDrag";
 import { useWorkspaceStore } from "@/stores/workspace";
 import type { FileWindow } from "@/types/kago";
-import { FileIcon } from "./FileIcon";
+import { FileThumbnail } from "./FileThumbnail";
 
 const MIN_WIDTH = 260;
 const MAX_WIDTH = 440;
@@ -60,11 +59,7 @@ export function Inspector({ window: activeWindow, isAdmin }: { window: FileWindo
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto">
           <div className="flex flex-col items-center gap-2 p-4 text-center">
-            {meta.data.kind === "file" && isImageType(meta.data.type) ? (
-              <img alt="" src={previewUrl(rootSlug, path)} className="max-h-40 max-w-full rounded-md object-contain" />
-            ) : (
-              <FileIcon item={meta.data} className="size-14 stroke-1" />
-            )}
+            <FileThumbnail rootSlug={rootSlug} item={meta.data} size={path === "/" || meta.data.kind === "folder" ? 64 : 144} />
             <strong className="max-w-full text-sm font-semibold break-words">{path === "/" ? activeWindow.title : meta.data.name}</strong>
             <span className="-mt-1.5 text-muted">
               {kindLabel(meta.data)}

@@ -1,14 +1,14 @@
 import { useMemo, useState } from "react";
 import { ArrowDown, ArrowUp, ChevronRight } from "lucide-react";
-import { previewUrl, thumbnailUrl } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { FinderTagDots } from "@/features/tags/FinderTags";
-import { formatDate, formatSize, isImageType, kindLabel } from "@/lib/format";
+import { formatDate, formatSize, kindLabel } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useClipboardStore } from "@/stores/clipboard";
 import { useWorkspaceStore } from "@/stores/workspace";
 import type { FileItem, FileWindow } from "@/types/kago";
 import { FileIcon } from "./FileIcon";
+import { FileThumbnail } from "./FileThumbnail";
 import { GRID_CELL_HEIGHT, LIST_HEADER_HEIGHT, useVisibleRange, type FileLayout, type FileTree } from "./fileLayout";
 import { KAGO_DRAG_TYPE } from "./useFileActions";
 
@@ -190,7 +190,7 @@ function GridView(props: ViewProps) {
           // Every cell is the same height whatever the length of its name, so rows can be placed without measuring them.
           <div key={item.path} role="option" className={cn("flex flex-col items-center gap-1 overflow-hidden rounded-md p-1.5", stateClass(props, item))} style={{ height: GRID_CELL_HEIGHT }} {...itemProps(props, item, range.start + offset)}>
             <div className={cn("flex size-20 shrink-0 items-center justify-center rounded-md", selected ? "bg-hover" : "")}>
-              <Thumbnail rootSlug={window.rootSlug} item={item} />
+              <FileThumbnail rootSlug={window.rootSlug} item={item} size={72} />
             </div>
             <span className={cn("line-clamp-2 max-w-full rounded-sm px-1.5 text-center leading-4 break-words", selectedClass(window, selected))}>
               <FinderTagDots tags={item.finderTags} className="mr-1 inline-flex align-[-1px]" />
@@ -201,14 +201,6 @@ function GridView(props: ViewProps) {
       })}
     </div>
   );
-}
-
-function Thumbnail({ rootSlug, item }: { rootSlug: string; item: FileItem }) {
-  const [failed, setFailed] = useState(false);
-  if (item.kind === "file" && isImageType(item.type) && !failed) {
-    return <img alt="" loading="lazy" draggable={false} src={thumbnailUrl(rootSlug, item.path)} className="max-h-18 max-w-18 rounded-sm object-contain" onError={() => setFailed(true)} />;
-  }
-  return <FileIcon item={item} className="size-12 stroke-[1.25]" />;
 }
 
 /** Name column on the left, a preview of the selected item on the right. */
@@ -233,11 +225,7 @@ function ColumnsView(props: ViewProps) {
       <div className="sticky top-0 flex min-w-0 flex-1 flex-col items-center gap-2 self-start p-6 text-center">
         {current ? (
           <>
-            {current.kind === "file" && isImageType(current.type) ? (
-              <img alt="" src={previewUrl(window.rootSlug, current.path)} className="max-h-48 max-w-full rounded-md object-contain" />
-            ) : (
-              <FileIcon item={current} className="size-16 stroke-1" />
-            )}
+            <FileThumbnail rootSlug={window.rootSlug} item={current} size={176} />
             <strong className="max-w-full font-medium break-words">{current.name}</strong>
             <span className="text-muted">
               {kindLabel(current)}

@@ -347,8 +347,9 @@ function registerApi(app: FastifyInstance, services: Services) {
     const query = fsQuerySchema.parse(request.query);
     const thumbnail = await services.fsService.thumbnail(actor, query.rootSlug, query.path);
     reply.header("Content-Type", thumbnail.contentType);
-    reply.header("Content-Length", String(thumbnail.stat.size));
     reply.header("Cache-Control", "private, max-age=86400");
+    if ("data" in thumbnail) return thumbnail.data;
+    reply.header("Content-Length", String(thumbnail.size));
     return fs.createReadStream(thumbnail.path);
   });
   app.get("/api/media/info", async (request) => {

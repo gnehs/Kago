@@ -10,6 +10,7 @@ import { assertNameAvailable, nfc } from "../lib/filename.js";
 import { readFinderTags, writeFinderTags } from "../lib/finder-tags.js";
 import { MAX_SQLITE_PAGE, sqliteOverview, sqliteRows } from "../lib/sqlite-preview.js";
 import { parseSubtitleName } from "../lib/subtitles.js";
+import { Thumbnailer, type ThumbnailSource } from "../lib/thumbnailer.js";
 import type { AuditService } from "./audit.service.js";
 import type { PathService } from "./path.service.js";
 import type { PermissionService } from "./permission.service.js";
@@ -49,6 +50,18 @@ export const finderTagsSchema = z.object({
     .max(100)
 });
 
+/** A thumbnail is either a file on disk (a drawn picture, or the original) or a few bytes of text. */
+export type Thumbnail = { contentType: string; path: string; size: number } | { contentType: string; data: Buffer };
+
+/** Enough for the dozen or so lines that fit on an icon. */
+const TEXT_EXCERPT_BYTES = 2048;
+/** Pictures a browser shows by itself, which can stand in for a thumbnail that could not be drawn. */
+const BROWSER_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml", "image/avif", "image/bmp", "image/apng", "image/x-icon", "image/vnd.microsoft.icon"]);
+/** Documents that may carry a preview picture of their first page inside the file. */
+const EMBEDDED_PREVIEW_EXTENSIONS = new Set(["docx", "docm", "xlsx", "xlsm", "pptx", "pptm", "ppsx", "odt", "ods", "odp", "pages", "numbers", "key"]);
+const MAX_ORIGINAL_THUMBNAIL_BYTES = 8 * 1024 * 1024;
+const isVideoType = (type: string) => type.startsWith("video/") || type.startsWith("application/vnd.rn-realmedia");
+
 /** The editor holds a file whole in the browser, and saves it whole. */
 export const MAX_TEXT_BYTES = 2 * 1024 * 1024;
 
@@ -69,12 +82,16 @@ export const sqliteRowsSchema = fsQuerySchema.extend({
 export const maxUploadFiles = 20;
 
 export class FsService {
+  private readonly thumbnailer: Thumbnailer;
+
   constructor(
     private readonly paths: PathService,
     private readonly permissions: PermissionService,
     private readonly audit: AuditService,
-    private readonly appDataDir: string
-  ) {}
+    appDataDir: string
+  ) {
+    this.thumbnailer = new Thumbnailer(path.join(appDataDir, "thumbnails"));
+  }
 
   async list(actor: Actor, rootSlug: string, logicalPath: string) {
     const safe = await this.paths.resolveExisting(rootSlug, logicalPath);
@@ -320,47 +337,50 @@ export class FsService {
     return { rootSlug, path: target.logicalPath, name: nfc(fileName) };
   }
 
-  async thumbnail(actor: Actor, rootSlug: string, logicalPath: string) {
-    return this.prepareThumbnail(actor, rootSlug, logicalPath, true);
+  /**
+   * What a file's icon shows of its contents: a small picture for images and videos, the opening lines for text.
+   * Anything else has no thumbnail, and its icon is drawn by the client alone.
+   */
+  async thumbnail(actor: Actor, rootSlug: string, logicalPath: string): Promise<Thumbnail> {
+    const thumbnail = await this.prepareThumbnail(actor, rootSlug, logicalPath);
+    if (!thumbnail) throw new AppError(404, "No thumbnail for this file", "NO_THUMBNAIL");
+    return thumbnail;
   }
 
   async warmThumbnail(actor: Actor, rootSlug: string, logicalPath: string) {
-    await this.prepareThumbnail(actor, rootSlug, logicalPath, false);
+    await this.prepareThumbnail(actor, rootSlug, logicalPath);
   }
 
-  private async prepareThumbnail(actor: Actor, rootSlug: string, logicalPath: string, auditAccess: boolean) {
+  private async prepareThumbnail(actor: Actor, rootSlug: string, logicalPath: string): Promise<Thumbnail | null> {
     const safe = await this.paths.resolveExisting(rootSlug, logicalPath);
     this.permissions.require(actor, "read", safe.root, safe.logicalPath);
-    const stat = await fsp.lstat(safe.absolutePath);
-    const contentType = stat.isDirectory() ? "inode/directory" : lookup(safe.absolutePath) || "application/octet-stream";
+    const stat = await fsp.stat(safe.absolutePath);
+    if (!stat.isFile() || stat.size === 0) return null;
+    this.auditThumbnail(actor, safe.root.id, safe.logicalPath);
+    const contentType = String(lookup(safe.absolutePath) || "application/octet-stream");
+    const extension = path.extname(safe.absolutePath).slice(1).toLowerCase();
+    const source: ThumbnailSource | null = contentType.startsWith("image/")
+      ? "image"
+      : isVideoType(contentType)
+        ? "video"
+        : contentType === "application/pdf"
+          ? "pdf"
+          : EMBEDDED_PREVIEW_EXTENSIONS.has(extension)
+            ? "embedded"
+            : null;
 
-    if (!stat.isDirectory() && String(contentType).startsWith("image/")) {
-      if (auditAccess) this.auditThumbnail(actor, safe.root.id, safe.logicalPath);
-      return { path: safe.absolutePath, contentType, stat };
+    if (source) {
+      const key = createHash("sha256").update(`${safe.root.id}:${safe.logicalPath}:${stat.mtimeMs}:${stat.size}`).digest("hex");
+      const drawn = await this.thumbnailer.render(safe.absolutePath, key, source);
+      if (drawn) return { contentType: "image/avif", path: drawn, size: (await fsp.stat(drawn)).size };
+      // Without ffmpeg, or for a picture it cannot read, the browser is handed the original when it can show it.
+      if (BROWSER_IMAGE_TYPES.has(contentType) && stat.size <= MAX_ORIGINAL_THUMBNAIL_BYTES) return { contentType, path: safe.absolutePath, size: stat.size };
+      if (source !== "video") return null;
     }
 
-    const thumbnailPath = this.thumbnailCachePath(safe.root.id, safe.logicalPath, stat.mtimeMs, stat.size);
-    try {
-      const cachedStat = await fsp.stat(thumbnailPath);
-      if (auditAccess) this.auditThumbnail(actor, safe.root.id, safe.logicalPath);
-      return { path: thumbnailPath, contentType: "image/svg+xml", stat: cachedStat };
-    } catch {
-      await fsp.mkdir(path.dirname(thumbnailPath), { recursive: true });
-      const svg = renderPlaceholderThumbnail({
-        name: path.basename(safe.absolutePath) || safe.root.name,
-        kind: stat.isDirectory() ? "folder" : "file",
-        type: String(contentType)
-      });
-      await fsp.writeFile(thumbnailPath, svg, "utf8");
-      const cachedStat = await fsp.stat(thumbnailPath);
-      if (auditAccess) this.auditThumbnail(actor, safe.root.id, safe.logicalPath);
-      return { path: thumbnailPath, contentType: "image/svg+xml", stat: cachedStat };
-    }
-  }
-
-  private thumbnailCachePath(rootId: string, logicalPath: string, mtimeMs: number, size: number): string {
-    const key = createHash("sha256").update(`${rootId}:${logicalPath}:${mtimeMs}:${size}`).digest("hex");
-    return path.join(this.appDataDir, "thumbnails", `${key}.svg`);
+    // The type registry reads `.ts` as a video; what ffmpeg could not draw may still be text.
+    const excerpt = await readTextExcerpt(safe.absolutePath);
+    return excerpt === null ? null : { contentType: "text/plain; charset=utf-8", data: Buffer.from(excerpt, "utf8") };
   }
 
   private auditThumbnail(actor: Actor, rootId: string, logicalPath: string): void {
@@ -394,39 +414,23 @@ export class FsService {
   }
 }
 
-function renderPlaceholderThumbnail(input: { name: string; kind: "folder" | "file"; type: string }): string {
-  const label = escapeXml(input.name.length > 24 ? `${input.name.slice(0, 21)}...` : input.name);
-  const badge = input.kind === "folder" ? "資料夾" : escapeXml(shortType(input.type));
-  const accent = input.kind === "folder" ? "#f6b331" : "#6f8fb4";
-  const accentDark = input.kind === "folder" ? "#d99016" : "#426b94";
-  const iconPath =
-    input.kind === "folder"
-      ? `<path d="M30 52h92a8 8 0 0 1 8 8v58a10 10 0 0 1-10 10H28a10 10 0 0 1-10-10V42a8 8 0 0 1 8-8h33l10 18z" fill="${accent}"/><path d="M18 61h112v57a10 10 0 0 1-10 10H28a10 10 0 0 1-10-10z" fill="#ffd166"/>`
-      : `<path d="M42 24h54l22 22v82a10 10 0 0 1-10 10H42a10 10 0 0 1-10-10V34a10 10 0 0 1 10-10z" fill="#ffffff" stroke="#c9d3df" stroke-width="3"/><path d="M95 24v23h23" fill="#e8eef5"/><rect x="48" y="78" width="52" height="8" rx="4" fill="${accent}"/><rect x="48" y="96" width="72" height="8" rx="4" fill="#d9e2ec"/>`;
-
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="180" height="140" viewBox="0 0 180 140" role="img" aria-label="${label}">
-  <rect width="180" height="140" rx="16" fill="#f5f8fb"/>
-  <rect x="10" y="10" width="160" height="120" rx="12" fill="#ffffff" stroke="#dbe4ee"/>
-  <g transform="translate(26 0)">${iconPath}</g>
-  <rect x="18" y="106" width="144" height="22" rx="11" fill="${accentDark}" opacity="0.92"/>
-  <text x="90" y="121" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="11" font-weight="700" fill="#ffffff">${badge}</text>
-  <text x="90" y="94" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="12" font-weight="600" fill="#2f3a45">${label}</text>
-</svg>`;
-}
-
-function shortType(type: string): string {
-  if (type === "application/octet-stream") return "檔案";
-  const [group, subtype] = type.split("/");
-  if (!group || !subtype) return "檔案";
-  return subtype.length > 8 ? group : subtype.toUpperCase();
-}
-
-function escapeXml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&apos;");
+/** The start of a file as text, or null when it does not read as UTF-8 text. */
+async function readTextExcerpt(absolutePath: string): Promise<string | null> {
+  const handle = await fsp.open(absolutePath, "r");
+  try {
+    const { buffer, bytesRead } = await handle.read(Buffer.alloc(TEXT_EXCERPT_BYTES), 0, TEXT_EXCERPT_BYTES, 0);
+    const bytes = buffer.subarray(0, bytesRead);
+    if (bytes.includes(0)) return null;
+    // The excerpt may end in the middle of a character; up to three bytes are dropped to find a clean end.
+    for (let cut = 0; cut <= 3 && cut <= bytes.length; cut += 1) {
+      try {
+        return new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, bytes.length - cut));
+      } catch {
+        if (bytesRead < TEXT_EXCERPT_BYTES) return null;
+      }
+    }
+    return null;
+  } finally {
+    await handle.close();
+  }
 }

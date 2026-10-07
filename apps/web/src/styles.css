@@ -26,6 +26,8 @@
   --kago-kind-audio: #cf7a2b;
   --kago-kind-archive: #a3823a;
   --kago-kind-document: #d05a4e;
+  --kago-kind-sheet: #1f8f96;
+  --kago-kind-slides: #c24d8d;
   --kago-code-keyword: #0000ff;
   --kago-code-control: #af00db;
   --kago-code-string: #a31515;
@@ -79,6 +81,8 @@
   --kago-kind-audio: #e6a05c;
   --kago-kind-archive: #c9a95f;
   --kago-kind-document: #ec8479;
+  --kago-kind-sheet: #4fc0c7;
+  --kago-kind-slides: #e884bb;
   --kago-code-keyword: #569cd6;
   --kago-code-control: #c586c0;
   --kago-code-string: #ce9178;
@@ -119,6 +123,8 @@
   --color-kind-audio: var(--kago-kind-audio);
   --color-kind-archive: var(--kago-kind-archive);
   --color-kind-document: var(--kago-kind-document);
+  --color-kind-sheet: var(--kago-kind-sheet);
+  --color-kind-slides: var(--kago-kind-slides);
   --color-overlay: var(--kago-overlay);
   --color-tag-gray: var(--kago-tag-gray);
   --color-tag-green: var(--kago-tag-green);
@@ -162,10 +168,16 @@
     cursor: default;
   }
 
-  .lucide {
+  .lucide,
+  .kago-icon {
     width: 16px;
     height: 16px;
     flex-shrink: 0;
+  }
+
+  /* A tile is drawn at many sizes; its lines stay as thin as they are at the smallest. */
+  .kago-tile * {
+    vector-effect: non-scaling-stroke;
   }
 
   progress {
