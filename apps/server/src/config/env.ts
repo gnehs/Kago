@@ -29,6 +29,7 @@ export function loadEnv(): Env {
   fs.mkdirSync(path.join(appDataDir, "trash"), { recursive: true });
   fs.mkdirSync(path.join(appDataDir, "temp"), { recursive: true });
   fs.mkdirSync(path.join(appDataDir, "thumbnails"), { recursive: true });
+  fs.mkdirSync(path.join(appDataDir, "previews"), { recursive: true });
   fs.mkdirSync(path.join(appDataDir, "logs"), { recursive: true });
 
   return {

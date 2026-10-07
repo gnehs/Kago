@@ -13,6 +13,7 @@ import { openDb } from "./db/db.js";
 import { AppError, publicError } from "./lib/errors.js";
 import { isPictureFormat } from "./lib/subtitles.js";
 import { nfc } from "./lib/filename.js";
+import { logger } from "./lib/logger.js";
 import { SecretBox } from "./lib/secret-box.js";
 import { sendFile, sendSource } from "./lib/send-file.js";
 import { ensureSshKey } from "./lib/ssh-key.js";
@@ -141,6 +142,7 @@ export async function buildApp(env: Env) {
     await workers.stop();
     sync.stop();
     clearInterval(pruning);
+    clearInterval(pruningPictures);
     remotes.stop();
     media.stop();
     await images.stop();
@@ -152,6 +154,16 @@ export async function buildApp(env: Env) {
   const pruning = setInterval(() => void remote.pruneLocalCopies().catch(() => undefined), 60 * 60 * 1000);
   pruning.unref();
   void remote.pruneLocalCopies().catch(() => undefined);
+  const prunePictures = () =>
+    void Promise.all([fsService.pruneThumbnails(), images.prune()]).then(
+      ([thumbnails, renditions]) => {
+        if (thumbnails + renditions > 0) logger.info(`removed ${thumbnails} thumbnails and ${renditions} converted pictures unused for a month`);
+      },
+      () => undefined
+    );
+  const pruningPictures = setInterval(prunePictures, 24 * 60 * 60 * 1000);
+  pruningPictures.unref();
+  prunePictures();
   return app;
 }
 

@@ -96,6 +96,7 @@ export const maxUploadFiles = 20;
 
 export class FsService {
   private readonly thumbnailer: Thumbnailer;
+  private keptPictureDirs?: Promise<Set<string>>;
 
   constructor(
     private readonly paths: PathService,
@@ -531,6 +532,21 @@ export class FsService {
     return thumbnail;
   }
 
+  /**
+   * Whether a file is one of Kago's own thumbnails or converted pictures, seen through a location that holds its data
+   * folder. Drawing those would fill the folder with thumbnails of thumbnails for as long as someone looks at it.
+   * Folders are told apart by what they are on disk, not by path: the same one may be mounted in two places.
+   */
+  private async isKeptPicture(absolutePath: string): Promise<boolean> {
+    const kept = await (this.keptPictureDirs ??= Promise.all(["thumbnails", "previews"].map((name) => folderIdentity(path.join(this.appDataDir, name)))).then((ids) => new Set(ids.filter((id) => id !== null))));
+    const folder = await folderIdentity(path.dirname(absolutePath));
+    return folder !== null && kept.has(folder);
+  }
+
+  pruneThumbnails(): Promise<number> {
+    return this.thumbnailer.prune();
+  }
+
   async warmThumbnail(actor: Actor, rootSlug: string, logicalPath: string) {
     await this.prepareThumbnail(actor, rootSlug, logicalPath);
   }
@@ -564,7 +580,7 @@ export class FsService {
       if (rendition) {
         const file = await onDisk();
         picture = file ? await this.images?.rendition(file, stat).catch(() => undefined) : undefined;
-      } else if (!remote) picture = safe.absolutePath;
+      } else if (!remote) picture = (await this.isKeptPicture(safe.absolutePath)) ? undefined : safe.absolutePath;
       else picture = source === "image" || source === "video" ? this.storage.mediaInput(safe) : await onDisk();
       const drawn = picture ? await this.thumbnailer.render(picture, key, source) : null;
       if (drawn) return { contentType: "image/avif", path: drawn, size: (await fsp.stat(drawn)).size };
@@ -651,6 +667,12 @@ export class FsService {
     }
   }
 }
+
+const folderIdentity = (dir: string) =>
+  fsp.stat(dir, { bigint: true }).then(
+    (stat) => `${stat.dev}:${stat.ino}`,
+    () => null
+  );
 
 async function readTextExcerptFrom(stream: Readable): Promise<string | null> {
   const chunks: Buffer[] = [];

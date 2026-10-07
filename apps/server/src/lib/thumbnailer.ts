@@ -4,6 +4,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { Worker } from "node:worker_threads";
 import type { ThumbnailJob, ThumbnailJobResult } from "../workers/thumbnail-worker.js";
+import { pruneKeptFiles, useKeptFile } from "./kept-files.js";
 import { logger } from "./logger.js";
 
 const execFileAsync = promisify(execFile);
@@ -53,7 +54,7 @@ export class Thumbnailer {
   /** The path of the thumbnail for `key`, drawing it first when it is not there yet. Null when the file cannot be drawn. */
   async render(source: string, key: string, kind: ThumbnailSource): Promise<string | null> {
     const target = path.join(this.dir, `${key}.avif`);
-    if (await exists(target)) return target;
+    if (await useKeptFile(target)) return target;
     if (this.failed.has(key)) return null;
     let job = this.pending.get(key);
     if (!job) {
@@ -106,6 +107,11 @@ export class Thumbnailer {
       await Promise.all([fsp.rm(partial, { force: true }), fsp.rm(prepared, { force: true })]);
       this.release();
     }
+  }
+
+  /** Deletes the thumbnails nobody looked at for a month: those of files since changed, moved or deleted, mostly. */
+  prune(): Promise<number> {
+    return pruneKeptFiles(this.dir);
   }
 
   /**
@@ -198,9 +204,3 @@ export class Thumbnailer {
     else this.running -= 1;
   }
 }
-
-const exists = (file: string) =>
-  fsp.stat(file).then(
-    (stat) => stat.size > 0,
-    () => false
-  );

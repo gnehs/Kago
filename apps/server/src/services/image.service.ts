@@ -6,6 +6,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { ExifTool, type Tags } from "exiftool-vendored";
 import { AppError } from "../lib/errors.js";
+import { pruneKeptFiles, useKeptFile } from "../lib/kept-files.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -69,7 +70,7 @@ export class ImageService {
     if (!kind) throw new AppError(422, "This file needs no conversion", "IMAGE_NOT_CONVERTIBLE");
     const key = createHash("sha256").update(`${absolutePath}:${stat.mtimeMs}:${stat.size}`).digest("hex");
     const target = path.join(this.cacheDir, `${key}.jpg`);
-    if (fs.existsSync(target)) return target;
+    if (await useKeptFile(target)) return target;
     let job = this.pending.get(target);
     if (!job) {
       // One at a time: decoding a large frame takes every core for a moment, and a folder of them is opened in bursts.
@@ -87,6 +88,11 @@ export class ImageService {
       this.pending.set(target, job);
     }
     return job;
+  }
+
+  /** Deletes the renditions nobody looked at for a month. */
+  prune(): Promise<number> {
+    return pruneKeptFiles(this.cacheDir);
   }
 
   async metadata(absolutePath: string): Promise<ImageMetadata> {
