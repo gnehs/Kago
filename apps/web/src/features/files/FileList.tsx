@@ -9,7 +9,7 @@ import { useWorkspaceStore } from "@/stores/workspace";
 import type { FileItem, FileWindow } from "@/types/kago";
 import { FileIcon } from "./FileIcon";
 import { FileThumbnail } from "./FileThumbnail";
-import { GRID_CELL_HEIGHT, LIST_HEADER_HEIGHT, useVisibleRange, type FileLayout, type FileTree } from "./fileLayout";
+import { GRID_SIZES, LIST_HEADER_HEIGHT, useVisibleRange, type FileLayout, type FileTree } from "./fileLayout";
 import { KAGO_DRAG_TYPE } from "./useFileActions";
 
 type FileListProps = {
@@ -177,6 +177,7 @@ function SortHeader({ window, sortBy, label, className }: { window: FileWindow; 
 function GridView(props: ViewProps) {
   const { window, items, layout, selectedPaths } = props;
   const range = useVisibleRange(props.scroller, layout, items.length);
+  const { icon } = GRID_SIZES[window.iconSize ?? "medium"];
   return (
     <div
       className="grid content-start px-2"
@@ -188,9 +189,9 @@ function GridView(props: ViewProps) {
         const selected = selectedPaths.has(item.path);
         return (
           // Every cell is the same height whatever the length of its name, so rows can be placed without measuring them.
-          <div key={item.path} role="option" className={cn("flex flex-col items-center gap-1 overflow-hidden rounded-md p-1.5", stateClass(props, item))} style={{ height: GRID_CELL_HEIGHT }} {...itemProps(props, item, range.start + offset)}>
-            <div className={cn("flex size-20 shrink-0 items-center justify-center rounded-md", selected && "bg-hover ring-1 ring-line ring-inset")}>
-              <FileThumbnail rootSlug={window.rootSlug} item={item} size={72} />
+          <div key={item.path} role="option" className={cn("flex flex-col items-center gap-1 overflow-hidden rounded-md p-1.5", stateClass(props, item))} style={{ height: layout.cellHeight }} {...itemProps(props, item, range.start + offset)}>
+            <div className={cn("flex shrink-0 items-center justify-center rounded-md", selected && "bg-hover ring-1 ring-line ring-inset")} style={{ width: icon + 8, height: icon + 8 }}>
+              <FileThumbnail rootSlug={window.rootSlug} item={item} size={icon} />
             </div>
             <span className={cn("line-clamp-2 max-w-full rounded-sm px-1.5 text-center leading-4 break-words", selectedClass(window, selected))}>
               <FinderTagDots tags={item.finderTags} className="mr-1 inline-flex align-[-1px]" />

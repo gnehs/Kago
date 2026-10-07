@@ -47,6 +47,8 @@ export type FileWindow = {
   maximized: boolean;
   focused: boolean;
   viewMode: "list" | "grid" | "columns";
+  /** How large the icon view draws its items; medium when unset. */
+  iconSize?: "large" | "medium" | "small";
   sortBy: "name" | "size" | "mtime" | "type";
   sortDirection: "asc" | "desc";
   selectedItems: string[];

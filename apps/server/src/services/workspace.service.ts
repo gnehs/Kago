@@ -20,6 +20,7 @@ const fileWindowSchema = z.object({
   maximized: z.boolean(),
   focused: z.boolean().optional().default(false),
   viewMode: z.enum(["list", "grid", "columns"]),
+  iconSize: z.enum(["large", "medium", "small"]).optional(),
   sortBy: z.enum(["name", "size", "mtime", "type"]),
   sortDirection: z.enum(["asc", "desc"]),
   selectedItems: z.array(z.string()).default([]),

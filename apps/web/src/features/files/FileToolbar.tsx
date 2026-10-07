@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, Columns3, Ellipsis, FolderPlus, Info, LayoutGrid, List, Search, Upload, X } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, Columns3, Ellipsis, FolderPlus, Info, LayoutGrid, List, Search, Square, Upload, X } from "lucide-react";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { KagoDropdownMenu, KagoMenuItem } from "@/components/kago/menu";
 import { useWorkspaceStore } from "@/stores/workspace";
@@ -7,10 +7,18 @@ import type { FileWindow } from "@/types/kago";
 import { Breadcrumb } from "./Breadcrumb";
 import { sortColumns, toggleSort } from "./FileList";
 
-const viewModes = [
-  { mode: "list", label: "列表", icon: <List /> },
-  { mode: "grid", label: "圖示", icon: <LayoutGrid /> },
-  { mode: "columns", label: "直欄", icon: <Columns3 /> }
+/** Nine squares, drawn to sit beside the one and the four that lucide has. */
+const Grid9 = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="lucide">
+    {[3, 10, 17].flatMap((y) => [3, 10, 17].map((x) => <rect key={`${x}-${y}`} x={x} y={y} width="4" height="4" rx="1" />))}
+  </svg>
+);
+
+/** The sizes of the icon view, in the order its button steps through them. The button shows the one in use. */
+const iconSizes = [
+  { size: "large", label: "大", icon: <Square /> },
+  { size: "medium", label: "中", icon: <LayoutGrid /> },
+  { size: "small", label: "小", icon: <Grid9 /> }
 ] as const;
 
 type FileToolbarProps = {
@@ -34,6 +42,19 @@ const Divider = () => <span aria-hidden className="mx-1 h-4 w-px shrink-0 bg-lin
 
 export function FileToolbar({ window, rootName, readonly, canGoBack, canGoForward, search, onSearch, onGo, onNavigate, onNewFolder, onUpload, menu }: FileToolbarProps) {
   const store = useWorkspaceStore.getState;
+  const sizeIndex = Math.max(0, iconSizes.findIndex(({ size }) => size === (window.iconSize ?? "medium")));
+  const iconSize = iconSizes[sizeIndex]!;
+  const viewModes = [
+    { mode: "list", label: "列表", icon: <List />, onClick: () => store().updateWindow(window.id, { viewMode: "list" }) },
+    {
+      mode: "grid",
+      label: window.viewMode === "grid" ? `圖示（${iconSize.label}）· 再按一下切換大小` : "圖示",
+      icon: iconSize.icon,
+      // Already in the icon view, the button steps to the next size instead.
+      onClick: () => store().updateWindow(window.id, window.viewMode === "grid" ? { iconSize: iconSizes[(sizeIndex + 1) % iconSizes.length]!.size } : { viewMode: "grid" })
+    },
+    { mode: "columns", label: "直欄", icon: <Columns3 />, onClick: () => store().updateWindow(window.id, { viewMode: "columns" }) }
+  ] as const;
 
   return (
     <div className="kago-toolbar @container flex h-10 shrink-0 items-center gap-1 border-b border-line-strong px-2">
@@ -53,7 +74,7 @@ export function FileToolbar({ window, rootName, readonly, canGoBack, canGoForwar
 
       <Divider />
       <div className="kago-segments" role="radiogroup" aria-label="檢視方式">
-        {viewModes.map(({ mode, label, icon }) => (
+        {viewModes.map(({ mode, label, icon, onClick }) => (
           <button
             key={mode}
             role="radio"
@@ -61,7 +82,7 @@ export function FileToolbar({ window, rootName, readonly, canGoBack, canGoForwar
             aria-label={label}
             title={label}
             className="flex h-6 w-7.5 items-center justify-center outline-none focus-visible:ring-2 focus-visible:ring-accent/50 focus-visible:ring-inset"
-            onClick={() => store().updateWindow(window.id, { viewMode: mode })}
+            onClick={onClick}
           >
             {icon}
           </button>

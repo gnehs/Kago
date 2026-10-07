@@ -105,7 +105,7 @@ export function FileWindowView({ window: win, rootName, isAdmin }: { window: Fil
     return files.length > 0 ? `${counts} · ${formatSize(files.reduce((total, item) => total + item.size, 0))}` : counts;
   }, [allItems]);
   const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
-  const layout = useFileLayout(scroller, win.viewMode);
+  const layout = useFileLayout(scroller, win.viewMode, win.iconSize);
   const marquee = useMarqueeSelection(win.id, (area) => indexesInArea(layout, items.length, area).map((index) => items[index]!.path));
 
   useEffect(() => {

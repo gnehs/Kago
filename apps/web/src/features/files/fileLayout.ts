@@ -23,8 +23,13 @@ export type FileLayout = {
 };
 
 export const LIST_HEADER_HEIGHT = 28;
-export const GRID_CELL_HEIGHT = 128;
-const GRID_CELL_MIN_WIDTH = 104;
+/** Every size of the icon view: the edge of the picture, and the cell that holds it over two lines of name. */
+export const GRID_SIZES = {
+  large: { icon: 128, cellHeight: 184, minWidth: 160 },
+  medium: { icon: 72, cellHeight: 128, minWidth: 104 },
+  small: { icon: 44, cellHeight: 100, minWidth: 80 }
+} as const;
+export type IconSize = keyof typeof GRID_SIZES;
 const GRID_GAP = 4;
 const GRID_PADDING = 8;
 const ROW_INSET = 4;
@@ -33,7 +38,7 @@ const COLUMNS_MAX_WIDTH = 288;
 const OVERSCAN_ROWS = 6;
 
 /** Measures the scroll container and lays the items of the current view mode out in it. */
-export function useFileLayout(scroller: HTMLElement | null, viewMode: FileWindow["viewMode"]): FileLayout {
+export function useFileLayout(scroller: HTMLElement | null, viewMode: FileWindow["viewMode"], iconSize: IconSize = "medium"): FileLayout {
   const [size, setSize] = useState({ width: 0, height: 0 });
   const rowHeight = useMemo(() => (scroller ? parseFloat(getComputedStyle(scroller).getPropertyValue("--kago-row-h")) : 0) || 32, [scroller]);
 
@@ -50,8 +55,9 @@ export function useFileLayout(scroller: HTMLElement | null, viewMode: FileWindow
     const { width, height: viewportHeight } = size;
     if (viewMode === "grid") {
       const inner = Math.max(0, width - GRID_PADDING * 2);
-      const columns = Math.max(1, Math.floor((inner + GRID_GAP) / (GRID_CELL_MIN_WIDTH + GRID_GAP)));
-      return { columns, top: GRID_PADDING, left: GRID_PADDING, cellWidth: (inner - (columns - 1) * GRID_GAP) / columns, cellHeight: GRID_CELL_HEIGHT, gap: GRID_GAP, bottom: GRID_PADDING, stickyTop: 0, viewportHeight };
+      const { cellHeight, minWidth } = GRID_SIZES[iconSize];
+      const columns = Math.max(1, Math.floor((inner + GRID_GAP) / (minWidth + GRID_GAP)));
+      return { columns, top: GRID_PADDING, left: GRID_PADDING, cellWidth: (inner - (columns - 1) * GRID_GAP) / columns, cellHeight, gap: GRID_GAP, bottom: GRID_PADDING, stickyTop: 0, viewportHeight };
     }
     if (viewMode === "columns") {
       // The name column takes half the width up to a limit, minus its right border.
@@ -59,7 +65,7 @@ export function useFileLayout(scroller: HTMLElement | null, viewMode: FileWindow
       return { columns: 1, top: ROW_INSET, left: ROW_INSET, cellWidth: Math.max(0, column - ROW_INSET * 2), cellHeight: rowHeight, gap: 0, bottom: ROW_INSET, stickyTop: 0, viewportHeight };
     }
     return { columns: 1, top: LIST_HEADER_HEIGHT, left: ROW_INSET, cellWidth: Math.max(0, width - ROW_INSET * 2), cellHeight: rowHeight, gap: 0, bottom: 8, stickyTop: LIST_HEADER_HEIGHT, viewportHeight };
-  }, [size, viewMode, rowHeight]);
+  }, [size, viewMode, iconSize, rowHeight]);
 }
 
 /**
