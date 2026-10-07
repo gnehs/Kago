@@ -87,6 +87,29 @@ export type SqliteCell = string | number | null | { blob: number };
 /** `total` is null for a database too large to count. */
 export type SqlitePage = { columns: string[]; rows: SqliteCell[][]; offset: number; hasMore: boolean; total: number | null };
 
+/** Shooting data read from a picture; every field is there only when the file has it. */
+export type ImageMetadata = {
+  camera?: string;
+  lens?: string;
+  takenAt?: string;
+  timeZone?: string;
+  exposureTime?: string;
+  aperture?: number;
+  iso?: number;
+  focalLength?: string;
+  focalLength35?: string;
+  exposureCompensation?: number;
+  flash?: string;
+  whiteBalance?: string;
+  meteringMode?: string;
+  exposureProgram?: string;
+  width?: number;
+  height?: number;
+  colorSpace?: string;
+  software?: string;
+  gps?: { latitude: number; longitude: number; altitude?: number };
+};
+
 export type FileMeta = {
   rootSlug: string;
   path: string;

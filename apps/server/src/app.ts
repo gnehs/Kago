@@ -16,6 +16,7 @@ import { isBrowserViewable } from "./lib/viewable.js";
 import { AuditService } from "./services/audit.service.js";
 import { AuthService, changePasswordSchema, createUserSchema, loginSchema, patchUserSchema, resetPasswordSchema, setupAdminSchema } from "./services/auth.service.js";
 import { FsService, finderTagsSchema, fsQuerySchema, maxUploadFiles, mkdirSchema, renameSchema, sqliteRowsSchema, writeTextSchema } from "./services/fs.service.js";
+import { ImageService } from "./services/image.service.js";
 import { createGroupSchema, GroupService } from "./services/group.service.js";
 import { MediaService, mediaSessionSchema, mediaStreamSchema } from "./services/media.service.js";
 import { PathService } from "./services/path.service.js";
@@ -38,7 +39,8 @@ export async function buildApp(env: Env) {
   const paths = new PathService(roots);
   const permissions = new PermissionService(db, audit);
   const auth = new AuthService(db, env);
-  const fsService = new FsService(paths, permissions, audit, env.appDataDir);
+  const images = new ImageService(env.appDataDir);
+  const fsService = new FsService(paths, permissions, audit, env.appDataDir, images);
   const workspace = new WorkspaceService(db, roots, paths);
   const tasks = new TaskService(db, paths, permissions, audit, events, env.appDataDir, fsService);
   const shelves = new ShelfService(db, paths, permissions, events, audit);
@@ -90,7 +92,7 @@ export async function buildApp(env: Env) {
 
   await auth.ensureInitialAdminFromEnv();
   roots.syncFromDataDir();
-  registerApi(app, { auth, audit, roots, paths, permissions, fsService, workspace, tasks, shelves, tags, shares, groups, media, events, db });
+  registerApi(app, { auth, audit, roots, paths, permissions, fsService, workspace, tasks, shelves, tags, shares, groups, media, images, events, db });
 
   app.get("/ws", {
     websocket: true,
@@ -119,6 +121,7 @@ export async function buildApp(env: Env) {
   app.addHook("onClose", async () => {
     await workers.stop();
     media.stop();
+    await images.stop();
     db.close();
   });
 
@@ -162,6 +165,7 @@ type Services = {
   shares: ShareService;
   groups: GroupService;
   media: MediaService;
+  images: ImageService;
   events: EventHub;
   db: ReturnType<typeof openDb>;
 };
@@ -342,6 +346,18 @@ function registerApi(app: FastifyInstance, services: Services) {
     return services.fsService.sqliteOverview(requireActor(request), query.rootSlug, query.path);
   });
   app.get("/api/fs/sqlite/rows", async (request) => services.fsService.sqliteRows(requireActor(request), sqliteRowsSchema.parse(request.query)));
+  app.get("/api/fs/image", async (request, reply) => {
+    const query = fsQuerySchema.parse(request.query);
+    const file = await services.fsService.preview(requireActor(request), query.rootSlug, query.path);
+    const rendition = await services.images.rendition(file.safe.absolutePath, file.stat);
+    reply.header("Cache-Control", "private, max-age=86400");
+    return sendFile(request, reply, rendition, await fs.promises.stat(rendition), "image/jpeg");
+  });
+  app.get("/api/fs/exif", async (request) => {
+    const query = fsQuerySchema.parse(request.query);
+    const file = await services.fsService.preview(requireActor(request), query.rootSlug, query.path);
+    return services.images.metadata(file.safe.absolutePath);
+  });
   app.get("/api/fs/thumbnail", async (request, reply) => {
     const actor = requireActor(request);
     const query = fsQuerySchema.parse(request.query);

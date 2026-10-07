@@ -37,6 +37,15 @@ const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp
 const AUDIO_TYPES = new Set(["audio/mpeg", "audio/mp4", "audio/x-m4a", "audio/aac", "audio/x-aac", "audio/ogg", "audio/wav", "audio/wave", "audio/x-wav", "audio/flac", "audio/x-flac", "audio/webm"]);
 
 export const isImageType = (type: string) => IMAGE_TYPES.has(type);
+
+const HEIF_EXTENSIONS = new Set(["heic", "heif", "hif", "heics", "heifs"]);
+const RAW_EXTENSIONS = new Set("3fr arw cr2 cr3 crw dcr dng erf fff iiq k25 kdc mef mos mrw nef nrw orf pef raf raw rw2 rwl sr2 srf srw x3f".split(" "));
+
+export const isRawName = (name: string) => RAW_EXTENSIONS.has(extensionOf(name.toLowerCase()));
+/** Pictures no browser decodes, which the server turns into JPEGs: HEIF from phones and cameras, and camera RAW. */
+export const isConvertedImage = (item: Pick<FileItem, "kind" | "name">) => item.kind === "file" && (HEIF_EXTENSIONS.has(extensionOf(item.name.toLowerCase())) || isRawName(item.name));
+/** Anything that may carry shooting data. */
+export const isPicture = (item: Pick<FileItem, "kind" | "type" | "name">) => item.kind === "file" && (item.type.startsWith("image/") || isConvertedImage(item));
 export const isAudioType = (type: string) => AUDIO_TYPES.has(type);
 
 /** The editor holds a file whole; the server refuses to save anything larger. */
@@ -79,7 +88,8 @@ export const officeKind = (item: Pick<FileItem, "kind" | "name">): OfficeKind | 
 export function kindLabel(item: Pick<FileItem, "kind" | "type" | "name">) {
   if (item.kind === "folder") return "資料夾";
   const type = item.type;
-  if (type.startsWith("image/")) return "影像";
+  if (isRawName(item.name)) return "RAW 影像";
+  if (type.startsWith("image/") || isConvertedImage(item)) return "影像";
   if (type.startsWith("video/") && !hasTextName(item.name)) return "影片";
   if (type.startsWith("audio/")) return "音訊";
   if (type === "application/pdf") return "PDF 文件";

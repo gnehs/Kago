@@ -209,7 +209,7 @@ pnpm install
 pnpm dev
 ```
 
-後端在 `http://localhost:8080`，前端 Vite 在 `http://localhost:5173` 並把 API proxy 到後端。本機轉檔使用 `PATH` 上的 `ffmpeg` / `ffprobe`；沒有安裝時影片仍以原檔播放。
+後端在 `http://localhost:8080`，前端 Vite 在 `http://localhost:5173` 並把 API proxy 到後端。本機轉檔使用 `PATH` 上的 `ffmpeg` / `ffprobe`；沒有安裝時影片仍以原檔播放。HEIF 照片同樣由 ffmpeg 解碼；相機 RAW 的預覽與照片的拍攝資訊由隨套件安裝的 exiftool 讀取，它需要系統上有 `perl`（macOS 內建，映像檔已安裝）。
 
 送出變更前：
 

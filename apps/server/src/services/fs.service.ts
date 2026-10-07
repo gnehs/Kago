@@ -12,6 +12,7 @@ import { MAX_SQLITE_PAGE, sqliteOverview, sqliteRows } from "../lib/sqlite-previ
 import { parseSubtitleName } from "../lib/subtitles.js";
 import { Thumbnailer, type ThumbnailSource } from "../lib/thumbnailer.js";
 import type { AuditService } from "./audit.service.js";
+import { renditionKind, type ImageService } from "./image.service.js";
 import type { PathService } from "./path.service.js";
 import type { PermissionService } from "./permission.service.js";
 import type { Actor } from "./types.js";
@@ -88,7 +89,9 @@ export class FsService {
     private readonly paths: PathService,
     private readonly permissions: PermissionService,
     private readonly audit: AuditService,
-    appDataDir: string
+    appDataDir: string,
+    /** Absent in the task worker, which then draws no thumbnails for camera RAW. */
+    private readonly images?: ImageService
   ) {
     this.thumbnailer = new Thumbnailer(path.join(appDataDir, "thumbnails"));
   }
@@ -359,7 +362,9 @@ export class FsService {
     this.auditThumbnail(actor, safe.root.id, safe.logicalPath);
     const contentType = String(lookup(safe.absolutePath) || "application/octet-stream");
     const extension = path.extname(safe.absolutePath).slice(1).toLowerCase();
-    const source: ThumbnailSource | null = contentType.startsWith("image/")
+    // HEIF and camera RAW are drawn from the JPEG made of them: a HEIF is a grid of tiles, a RAW holds its picture inside.
+    const rendition = renditionKind(safe.absolutePath);
+    const source: ThumbnailSource | null = rendition || contentType.startsWith("image/")
       ? "image"
       : isVideoType(contentType)
         ? "video"
@@ -371,7 +376,8 @@ export class FsService {
 
     if (source) {
       const key = createHash("sha256").update(`${safe.root.id}:${safe.logicalPath}:${stat.mtimeMs}:${stat.size}`).digest("hex");
-      const drawn = await this.thumbnailer.render(safe.absolutePath, key, source);
+      const picture = rendition ? await this.images?.rendition(safe.absolutePath, stat).catch(() => undefined) : safe.absolutePath;
+      const drawn = picture ? await this.thumbnailer.render(picture, key, source) : null;
       if (drawn) return { contentType: "image/avif", path: drawn, size: (await fsp.stat(drawn)).size };
       // Without ffmpeg, or for a picture it cannot read, the browser is handed the original when it can show it.
       if (BROWSER_IMAGE_TYPES.has(contentType) && stat.size <= MAX_ORIGINAL_THUMBNAIL_BYTES) return { contentType, path: safe.absolutePath, size: stat.size };

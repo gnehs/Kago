@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { Link2, X } from "lucide-react";
-import { useFileMeta, usePathPermissions, useRoots, useShares } from "@/api/hooks";
+import { useFileMeta, useImageMetadata, usePathPermissions, useRoots, useShares } from "@/api/hooks";
 import { KagoBadge } from "@/components/kago/badge";
 import { KagoLoading } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
@@ -10,11 +10,11 @@ import { ShareForm } from "@/features/shares/ShareForm";
 import { parseShareMode, shareModeLabel } from "@/features/shares/shareUtils";
 import { FinderTagEditor } from "@/features/tags/FinderTagEditor";
 import { TagEditor } from "@/features/tags/TagEditor";
-import { formatDate, formatSize, kindLabel } from "@/lib/format";
+import { formatDate, formatSize, isPicture, kindLabel } from "@/lib/format";
 import { displayPath } from "@/lib/paths";
 import { usePointerDrag } from "@/lib/usePointerDrag";
 import { useWorkspaceStore } from "@/stores/workspace";
-import type { FileWindow } from "@/types/kago";
+import type { FileWindow, ImageMetadata } from "@/types/kago";
 import { FileThumbnail } from "./FileThumbnail";
 
 const MIN_WIDTH = 260;
@@ -31,6 +31,8 @@ export function Inspector({ window: activeWindow, isAdmin }: { window: FileWindo
   const roots = useRoots();
   const shares = useShares();
   const permissions = usePathPermissions(rootSlug, path, isAdmin);
+  // A picture without shooting data, or a server that cannot read it, simply has no such section.
+  const photo = useImageMetadata(rootSlug, path, Boolean(meta.data && isPicture(meta.data))).data;
   const root = roots.data?.find((root) => root.slug === rootSlug);
   const rootId = root?.id;
   const readonly = Boolean(root?.readonly);
@@ -75,6 +77,8 @@ export function Inspector({ window: activeWindow, isAdmin }: { window: FileWindo
               {readonly ? <Detail label="存取">唯讀</Detail> : null}
             </dl>
           </Section>
+
+          {photo && Object.keys(photo).length > 0 ? <PhotoDetails photo={photo} /> : null}
 
           {/* Two kinds of tag, one place: where each is kept is what tells them apart. */}
           <Section title="標籤">
@@ -122,6 +126,51 @@ export function Inspector({ window: activeWindow, isAdmin }: { window: FileWindo
         </div>
       )}
     </aside>
+  );
+}
+
+// exiftool names these in English; the ones cameras actually write are few enough to say in Chinese.
+const WHITE_BALANCE: Record<string, string> = { Auto: "自動", Manual: "手動", Daylight: "日光", Cloudy: "陰天", Shade: "陰影", Tungsten: "鎢絲燈", Fluorescent: "螢光燈", Flash: "閃光燈" };
+const METERING: Record<string, string> = { "Multi-segment": "多區評價", "Center-weighted average": "中央重點", Spot: "點測光", Average: "平均", Partial: "局部" };
+const PROGRAM: Record<string, string> = { Manual: "手動", "Program AE": "程式自動", "Aperture-priority AE": "光圈先決", "Shutter speed priority AE": "快門先決", Portrait: "人像", Landscape: "風景" };
+
+const trimLength = (value: string) => value.replace(/\.0+(?= ?mm)/, "");
+
+/** What the camera recorded about a picture, in the order a photographer asks for it. */
+function PhotoDetails({ photo }: { photo: ImageMetadata }) {
+  const exposure = [photo.exposureTime ? `${photo.exposureTime} 秒` : "", photo.aperture ? `f/${photo.aperture}` : "", photo.iso ? `ISO ${photo.iso}` : ""].filter(Boolean).join(" · ");
+  const focal = photo.focalLength ? trimLength(photo.focalLength) + (photo.focalLength35 && trimLength(photo.focalLength35) !== trimLength(photo.focalLength) ? `（等效 ${trimLength(photo.focalLength35)}）` : "") : "";
+  const compensation = photo.exposureCompensation ? `${photo.exposureCompensation > 0 ? "+" : ""}${Math.round(photo.exposureCompensation * 100) / 100} EV` : "";
+  const flash = photo.flash ? (/no flash|did not fire|^off/i.test(photo.flash) ? "未閃光" : /fired|^on/i.test(photo.flash) ? "有閃光" : photo.flash) : "";
+  const program = photo.exposureProgram && photo.exposureProgram !== "Not Defined" ? PROGRAM[photo.exposureProgram] ?? photo.exposureProgram : "";
+  const pixels = photo.width && photo.height ? `${photo.width} × ${photo.height}（${((photo.width * photo.height) / 1e6).toFixed(1)} MP）` : "";
+  const gps = photo.gps;
+  return (
+    <Section title="拍攝資訊">
+      <dl className="m-0 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5">
+        {photo.camera ? <Detail label="相機">{photo.camera}</Detail> : null}
+        {photo.lens ? <Detail label="鏡頭">{photo.lens}</Detail> : null}
+        {photo.takenAt ? <Detail label="拍攝時間">{photo.takenAt}{photo.timeZone ? <span className="text-faint"> {photo.timeZone}</span> : null}</Detail> : null}
+        {exposure ? <Detail label="曝光">{exposure}</Detail> : null}
+        {focal ? <Detail label="焦距">{focal}</Detail> : null}
+        {compensation ? <Detail label="曝光補償">{compensation}</Detail> : null}
+        {program ? <Detail label="拍攝模式">{program}</Detail> : null}
+        {photo.meteringMode ? <Detail label="測光">{METERING[photo.meteringMode] ?? photo.meteringMode}</Detail> : null}
+        {photo.whiteBalance ? <Detail label="白平衡">{WHITE_BALANCE[photo.whiteBalance] ?? photo.whiteBalance}</Detail> : null}
+        {flash ? <Detail label="閃光燈">{flash}</Detail> : null}
+        {pixels ? <Detail label="尺寸">{pixels}</Detail> : null}
+        {photo.colorSpace ? <Detail label="色彩空間">{photo.colorSpace}</Detail> : null}
+        {photo.software ? <Detail label="軟體">{photo.software}</Detail> : null}
+        {gps ? (
+          <Detail label="位置">
+            <a className="text-accent underline underline-offset-2" href={`https://www.openstreetmap.org/?mlat=${gps.latitude}&mlon=${gps.longitude}#map=15/${gps.latitude}/${gps.longitude}`} target="_blank" rel="noreferrer">
+              {gps.latitude.toFixed(5)}, {gps.longitude.toFixed(5)}
+            </a>
+            {gps.altitude !== undefined ? <span className="text-faint"> · 海拔 {Math.round(gps.altitude)} m</span> : null}
+          </Detail>
+        ) : null}
+      </dl>
+    </Section>
   );
 }
 

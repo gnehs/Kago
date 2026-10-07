@@ -29,7 +29,7 @@ FROM node:24-bookworm-slim AS runtime
 WORKDIR /app
 # jellyfin-ffmpeg bundles what GPU transcoding needs (NVENC, the Intel media driver, VAAPI), unlike Debian's build.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends rsync attr ca-certificates curl gnupg \
+  && apt-get install -y --no-install-recommends rsync attr perl ca-certificates curl gnupg \
   && curl -fsSL https://repo.jellyfin.org/jellyfin_team.gpg.key | gpg --dearmor -o /usr/share/keyrings/jellyfin.gpg \
   && echo "deb [signed-by=/usr/share/keyrings/jellyfin.gpg arch=$(dpkg --print-architecture)] https://repo.jellyfin.org/debian bookworm main" > /etc/apt/sources.list.d/jellyfin.list \
   && apt-get update \

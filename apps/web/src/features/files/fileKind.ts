@@ -1,4 +1,4 @@
-import { hasTextName, isSqliteFile, isVideoType } from "@/lib/format";
+import { hasTextName, isConvertedImage, isSqliteFile, isVideoType } from "@/lib/format";
 import type { FileItem } from "@/types/kago";
 
 /** The families of files Kago draws differently. Each has a mark, and most a colour, of its own. */
@@ -26,7 +26,7 @@ export function fileKind(item: KindItem): FileKind {
   const type = item.type;
   if (SHEETS.has(extension)) return "sheet";
   if (hasTextName(item.name)) return PROSE.has(extension) || !extension ? "text" : "code";
-  if (type.startsWith("image/")) return "image";
+  if (type.startsWith("image/") || isConvertedImage(item)) return "image";
   if (isVideoType(type)) return "video";
   if (type.startsWith("audio/")) return "audio";
   if (type === "application/pdf") return "pdf";

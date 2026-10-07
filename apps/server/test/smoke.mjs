@@ -88,6 +88,11 @@ test("minimum file-manager demo flow", async () => {
     assert.equal((await admin.put("/api/fs/content", { rootSlug: "photos", path: "/public", content: "" })).statusCode, 400);
     assert.equal((await admin.put("/api/fs/content", { rootSlug: "photos", path: "/public/missing.txt", content: "" })).statusCode, 404);
 
+    // Only pictures a browser cannot decode are converted; anything else is refused before a converter is started.
+    const notConverted = await admin.get("/api/fs/image?rootSlug=photos&path=/public/uploaded.txt");
+    assert.equal(notConverted.statusCode, 422);
+    assert.equal(notConverted.json.code, "IMAGE_NOT_CONVERTIBLE");
+
     // A SQLite database is read on the server, page by page, without leaving anything beside the file.
     const sampleDb = path.join(fixture.dataDir, "photos", "public", "sample.db");
     const sample = new DatabaseSync(sampleDb);

@@ -37,5 +37,8 @@ export const taskDownloadUrl = (taskId: string) => `/api/tasks/${encodeURICompon
 export const thumbnailUrl = (rootSlug: string, path: string) =>
   `/api/fs/thumbnail?${new URLSearchParams({ rootSlug, path }).toString()}`;
 
+/** A JPEG the server makes from a picture the browser cannot decode. */
+export const imageUrl = (rootSlug: string, path: string) => `/api/fs/image?${new URLSearchParams({ rootSlug, path }).toString()}`;
+
 export const previewUrl = (rootSlug: string, path: string) =>
   `/api/fs/preview?${new URLSearchParams({ rootSlug, path }).toString()}`;

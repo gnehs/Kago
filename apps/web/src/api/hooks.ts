@@ -1,6 +1,6 @@
 import { keepPreviousData, useMutation, useQueries, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { api } from "./client";
-import type { Actor, AuditLog, FileList, FileMeta, FileTask, Group, MediaInfo, PermissionRule, Root, ShareLink, Shelf, SqlitePage, SqliteTable, SubtitleList, Tag, TrashItem, UserAccount, WorkspaceState } from "../types/kago";
+import type { Actor, AuditLog, FileList, FileMeta, FileTask, Group, ImageMetadata, MediaInfo, PermissionRule, Root, ShareLink, Shelf, SqlitePage, SqliteTable, SubtitleList, Tag, TrashItem, UserAccount, WorkspaceState } from "../types/kago";
 
 export function useSetupStatus() {
   return useQuery({ queryKey: ["auth", "setup"], queryFn: () => api<{ needsSetup: boolean }>("/api/auth/setup") });
@@ -84,6 +84,16 @@ export function useSqliteRows(rootSlug: string, path: string, table: string | un
     retry: false,
     // Turning the page keeps the rows on screen until the next ones arrive.
     placeholderData: keepPreviousData
+  });
+}
+
+export function useImageMetadata(rootSlug: string, path: string, enabled = true) {
+  return useQuery({
+    queryKey: ["fs", "exif", rootSlug, path],
+    queryFn: () => api<ImageMetadata>(`/api/fs/exif?${new URLSearchParams({ rootSlug, path }).toString()}`),
+    enabled,
+    retry: false,
+    staleTime: 60_000
   });
 }
 
