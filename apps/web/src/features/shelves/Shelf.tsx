@@ -50,10 +50,16 @@ export function Shelf() {
     window.addEventListener("dragstart", onDragStart);
     window.addEventListener("dragend", onDragEnd);
     window.addEventListener("drop", onDragEnd);
+    // A drag dropped outside the browser, onto the desktop or a Finder window, does not always report its end.
+    // The pointer is silent for as long as a drag lasts, so hearing from it again means the drag is over.
+    window.addEventListener("pointermove", onDragEnd);
+    window.addEventListener("pointerdown", onDragEnd);
     return () => {
       window.removeEventListener("dragstart", onDragStart);
       window.removeEventListener("dragend", onDragEnd);
       window.removeEventListener("drop", onDragEnd);
+      window.removeEventListener("pointermove", onDragEnd);
+      window.removeEventListener("pointerdown", onDragEnd);
     };
   }, []);
 
