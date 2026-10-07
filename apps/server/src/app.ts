@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { Readable } from "node:stream";
 import cookie from "@fastify/cookie";
 import multipart from "@fastify/multipart";
 import fastifyStatic from "@fastify/static";
@@ -13,10 +14,11 @@ import { AppError, publicError } from "./lib/errors.js";
 import { isPictureFormat } from "./lib/subtitles.js";
 import { nfc } from "./lib/filename.js";
 import { sendFile } from "./lib/send-file.js";
+import { zipStream } from "./lib/zip-stream.js";
 import { isBrowserViewable } from "./lib/viewable.js";
 import { AuditService } from "./services/audit.service.js";
 import { AuthService, changePasswordSchema, createUserSchema, loginSchema, patchUserSchema, resetPasswordSchema, setupAdminSchema } from "./services/auth.service.js";
-import { FsService, finderTagsSchema, fsQuerySchema, maxUploadFiles, mkdirSchema, renameSchema, sqliteRowsSchema, writeTextSchema } from "./services/fs.service.js";
+import { FsService, finderTagsSchema, fsQuerySchema, maxUploadFiles, mkdirSchema, renameSchema, sqliteRowsSchema, writeTextSchema, zipQuerySchema } from "./services/fs.service.js";
 import { ImageService } from "./services/image.service.js";
 import { createGroupSchema, GroupService } from "./services/group.service.js";
 import { MediaService, mediaSessionSchema, mediaStreamSchema } from "./services/media.service.js";
@@ -334,6 +336,16 @@ function registerApi(app: FastifyInstance, services: Services) {
     const file = await services.fsService.download(actor, query.rootSlug, query.path);
     reply.header("Content-Disposition", contentDisposition("attachment", path.basename(file.safe.absolutePath)));
     return sendFile(request, reply, file.safe.absolutePath, file.stat, file.contentType);
+  });
+  // Folders and selections as one archive, at an address that can be handed to the browser before anything is prepared.
+  app.get("/api/fs/download-zip", async (request, reply) => {
+    const actor = requireActor(request);
+    const query = zipQuerySchema.parse(request.query);
+    const archive = await services.fsService.downloadZip(actor, query.rootSlug, query.path);
+    reply.header("Content-Type", "application/zip");
+    reply.header("Content-Disposition", contentDisposition("attachment", archive.fileName));
+    reply.header("X-Accel-Buffering", "no");
+    return reply.send(Readable.from(zipStream(archive.entries)));
   });
   app.get("/api/fs/preview", async (request, reply) => {
     const actor = requireActor(request);

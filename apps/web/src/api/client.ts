@@ -37,6 +37,13 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
 export const downloadUrl = (rootSlug: string, path: string) =>
   `/api/fs/download?${new URLSearchParams({ rootSlug, path }).toString()}`;
 
+/** A folder, or several items of one location, as a single zip written while it downloads. */
+export function zipDownloadUrl(rootSlug: string, paths: string[]) {
+  const query = new URLSearchParams({ rootSlug });
+  for (const path of paths) query.append("path", path);
+  return `/api/fs/download-zip?${query.toString()}`;
+}
+
 export const taskDownloadUrl = (taskId: string) => `/api/tasks/${encodeURIComponent(taskId)}/download`;
 
 export const thumbnailUrl = (rootSlug: string, path: string) =>

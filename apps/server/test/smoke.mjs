@@ -572,6 +572,41 @@ test("download archives stay out of the data dir and running tasks can be cancel
   }
 });
 
+test("folders and selections download as one archive written on the fly", async () => {
+  const fixture = await createFixture("kago-smoke-zip.");
+  const app = await buildApp(testEnv(fixture));
+  const admin = client(app);
+
+  try {
+    await app.ready();
+    await admin.post("/api/auth/setup", { email: "admin@example.test", password: "fake-admin-password-123", displayName: "Smoke Admin" });
+    await symlink(path.join(fixture.dataDir, "photos", "private", "secret.txt"), path.join(fixture.dataDir, "photos", "src", "link.txt"));
+    await writeFile(path.join(fixture.dataDir, "photos", "src", "child", "名前.txt"), "x".repeat(100_000));
+
+    const folder = await admin.get("/api/fs/download-zip?rootSlug=photos&path=/src", { accept: "*/*" });
+    assert.equal(folder.statusCode, 200);
+    assert.equal(folder.headers["content-type"], "application/zip");
+    assert.match(folder.headers["content-disposition"], /filename="src\.zip"/);
+    const folderZip = new AdmZip(folder.raw);
+    // The symlink is left out; everything else keeps its place under the folder's own name.
+    assert.deepEqual(folderZip.getEntries().map((entry) => entry.entryName), ["src/", "src/child/", "src/child/名前.txt", "src/file.txt"]);
+    assert.equal(folderZip.readAsText("src/file.txt"), "demo");
+    assert.equal(folderZip.readAsText("src/child/名前.txt").length, 100_000);
+    assert.ok(folder.raw.length < 10_000);
+
+    // A folder picked together with something inside it is written once.
+    const several = await admin.get("/api/fs/download-zip?rootSlug=photos&path=/public/readme.txt&path=/src&path=/src/file.txt&path=/2026/demo.txt", { accept: "*/*" });
+    assert.match(several.headers["content-disposition"], /filename="Kago\.zip"/);
+    assert.deepEqual(new AdmZip(several.raw).getEntries().filter((entry) => !entry.isDirectory).map((entry) => entry.entryName), ["readme.txt", "src/child/名前.txt", "src/file.txt", "demo.txt"]);
+
+    assert.equal((await admin.get("/api/fs/download-zip?rootSlug=photos&path=/missing")).statusCode, 404);
+    assert.equal((await client(app).get("/api/fs/download-zip?rootSlug=photos&path=/src")).statusCode, 401);
+  } finally {
+    await app.close();
+    await rm(fixture.baseDir, { recursive: true, force: true });
+  }
+});
+
 test("filenames are written in NFC while existing names keep their on-disk form", async () => {
   const fixture = await createFixture("kago-smoke-nfc.");
   const app = await buildApp(testEnv(fixture));

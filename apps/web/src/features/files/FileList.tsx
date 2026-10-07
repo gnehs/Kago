@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { useClipboardStore } from "@/stores/clipboard";
 import { useWorkspaceStore } from "@/stores/workspace";
 import type { FileItem, FileWindow } from "@/types/kago";
+import { setDragDownload, setDragPreview } from "./dragOut";
 import { FileIcon } from "./FileIcon";
 import { FileThumbnail } from "./FileThumbnail";
 import { GRID_SIZES, LIST_HEADER_HEIGHT, useVisibleRange, type FileLayout, type FileTree } from "./fileLayout";
@@ -62,9 +63,13 @@ function itemProps({ window, items, selectedPaths, onSelect, onOpen, onContextIt
     "aria-posinset": index + 1,
     draggable: true,
     onDragStart(event: React.DragEvent) {
-      const paths = selected ? window.selectedItems : [item.path];
-      event.dataTransfer.setData(KAGO_DRAG_TYPE, JSON.stringify(paths.map((path) => ({ rootSlug: window.rootSlug, path }))));
+      // Dragging an item that is not selected picks it up alone, and selects it, as a click would have.
+      const dragged = selected ? items.filter((entry) => selectedPaths.has(entry.path)) : [item];
+      if (!selected) useWorkspaceStore.getState().selectItems(window.id, [item.path]);
+      event.dataTransfer.setData(KAGO_DRAG_TYPE, JSON.stringify(dragged.map(({ path }) => ({ rootSlug: window.rootSlug, path }))));
       event.dataTransfer.effectAllowed = "copyMove";
+      setDragDownload(event.dataTransfer, window.rootSlug, dragged);
+      setDragPreview(event.dataTransfer, event.currentTarget, dragged.length);
     },
     onClick: (event: React.MouseEvent) => onSelect(event, item),
     onDoubleClick: () => onOpen(item),

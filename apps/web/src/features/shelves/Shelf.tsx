@@ -6,6 +6,7 @@ import { useFileList, useRoots, useShelves } from "@/api/hooks";
 import { KagoBadge } from "@/components/kago/badge";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { Button } from "@/components/ui/button";
+import { setDragDownload, setDragPreview } from "@/features/files/dragOut";
 import { FileIcon } from "@/features/files/FileIcon";
 import { KAGO_DRAG_TYPE, readDraggedFiles } from "@/features/files/useFileActions";
 import { displayPath, ensureZipName, joinLogicalPath } from "@/lib/paths";
@@ -149,7 +150,11 @@ export function Shelf() {
                 draggable
                 className="group flex h-9 items-center gap-2 rounded-[calc(var(--kago-radius-md)+1px)] [corner-shape:squircle] px-2 hover:bg-hover"
                 title={where(item)}
-                onDragStart={(event) => event.dataTransfer.setData(KAGO_DRAG_TYPE, JSON.stringify([{ rootSlug: item.root_slug, path: item.path }]))}
+                onDragStart={(event) => {
+                  event.dataTransfer.setData(KAGO_DRAG_TYPE, JSON.stringify([{ rootSlug: item.root_slug, path: item.path }]));
+                  setDragDownload(event.dataTransfer, item.root_slug, [{ path: item.path, name: item.name, kind: item.kind === "folder" ? "folder" : "file" }]);
+                  setDragPreview(event.dataTransfer, event.currentTarget, 1);
+                }}
               >
                 <FileIcon item={{ kind: item.kind === "folder" ? "folder" : "file", type: "", name: item.name }} />
                 <span className="flex min-w-0 flex-1 flex-col leading-tight">

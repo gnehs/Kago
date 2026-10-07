@@ -11,9 +11,10 @@ import { readFinderTags, writeFinderTags } from "../lib/finder-tags.js";
 import { MAX_SQLITE_PAGE, sqliteOverview, sqliteRows } from "../lib/sqlite-preview.js";
 import { isPictureFormat, parseSubtitleName } from "../lib/subtitles.js";
 import { Thumbnailer, type ThumbnailSource } from "../lib/thumbnailer.js";
+import type { ZipEntry } from "../lib/zip-stream.js";
 import type { AuditService } from "./audit.service.js";
 import { renditionKind, type ImageService } from "./image.service.js";
-import type { PathService } from "./path.service.js";
+import type { PathService, SafePath } from "./path.service.js";
 import type { PermissionService } from "./permission.service.js";
 import type { Actor } from "./types.js";
 
@@ -23,6 +24,12 @@ const MAX_SUBTITLE_BYTES = 16 * 1024 * 1024;
 export const fsQuerySchema = z.object({
   rootSlug: z.string().min(1),
   path: z.string().min(1).default("/")
+});
+
+/** One path or several: a repeated query parameter arrives as a list, a single one as a string. */
+export const zipQuerySchema = z.object({
+  rootSlug: z.string().min(1),
+  path: z.union([z.string().min(1), z.array(z.string().min(1)).min(1).max(1000)]).transform((value) => (typeof value === "string" ? [value] : value))
 });
 
 export const mkdirSchema = z.object({
@@ -192,6 +199,54 @@ export class FsService {
       result: "success"
     });
     return { safe, stat, contentType: lookup(safe.absolutePath) || "application/octet-stream" };
+  }
+
+  /**
+   * A selection as one archive, written while it is read: its address alone says what is in it, and nothing is prepared first.
+   * Whatever the actor may not download, and any symlink, is left out rather than failing an archive that is already on its way.
+   */
+  async downloadZip(actor: Actor, rootSlug: string, logicalPaths: string[]): Promise<{ fileName: string; entries: AsyncGenerator<ZipEntry> }> {
+    const resolved: SafePath[] = [];
+    for (const logicalPath of logicalPaths) {
+      const safe = await this.paths.resolveExisting(rootSlug, logicalPath);
+      this.permissions.require(actor, "download", safe.root, safe.logicalPath);
+      resolved.push(safe);
+    }
+    // A folder already brings everything inside it.
+    const sources = resolved.filter((safe, index) => resolved.findIndex((other) => other.logicalPath === safe.logicalPath) === index && !resolved.some((other) => safe.logicalPath.startsWith(`${other.logicalPath}/`)));
+    this.audit.write({
+      actorType: "user",
+      actorId: actor.id,
+      action: "download_zip",
+      rootId: sources[0]!.root.id,
+      target: { sources: sources.map((safe) => ({ rootSlug, path: safe.logicalPath })) },
+      result: "success"
+    });
+
+    const permissions = this.permissions;
+    async function* walk(absolutePath: string, logicalPath: string, name: string): AsyncGenerator<ZipEntry> {
+      const stat = await fsp.lstat(absolutePath);
+      if (stat.isSymbolicLink() || (!stat.isFile() && !stat.isDirectory())) return;
+      if (!permissions.can(actor, "download", sources[0]!.root, logicalPath).allowed) return;
+      yield { name, absolutePath, directory: stat.isDirectory(), size: stat.size, mtime: stat.mtime };
+      if (!stat.isDirectory()) return;
+      for (const child of (await fsp.readdir(absolutePath)).sort()) {
+        if (child.includes("\0")) continue;
+        yield* walk(path.join(absolutePath, child), path.posix.join(logicalPath, child), `${name}/${nfc(child)}`);
+      }
+    }
+    async function* entries(): AsyncGenerator<ZipEntry> {
+      // Items picked from different folders can share a name; inside the archive each needs its own.
+      const taken = new Set<string>();
+      for (const safe of sources) {
+        const base = nfc(path.basename(safe.absolutePath));
+        let name = base;
+        for (let copy = 2; taken.has(name); copy += 1) name = `${path.parse(base).name} ${copy}${path.parse(base).ext}`;
+        taken.add(name);
+        yield* walk(safe.absolutePath, safe.logicalPath, name);
+      }
+    }
+    return { fileName: sources.length === 1 ? `${nfc(path.basename(sources[0]!.absolutePath))}.zip` : "Kago.zip", entries: entries() };
   }
 
   async preview(actor: Actor, rootSlug: string, logicalPath: string) {
