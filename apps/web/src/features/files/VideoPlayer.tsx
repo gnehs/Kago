@@ -529,7 +529,7 @@ function Slider({
       onPointerCancel={(event) => end(event, false)}
     >
       <div className="kago-player-track absolute inset-x-0 top-1/2 h-1.5 -translate-y-1/2 overflow-hidden rounded-full">
-        <div className="absolute inset-y-0 left-0 bg-white/25" style={{ width: percent(loaded) }} />
+        <div className="absolute inset-y-0 left-0 rounded-full bg-white/25" style={{ width: percent(loaded) }} />
         <div className="kago-player-fill absolute inset-y-0 left-0 rounded-full" style={{ width: percent(shown) }} />
       </div>
       <div
