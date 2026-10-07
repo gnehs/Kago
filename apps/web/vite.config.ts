@@ -33,8 +33,39 @@ function libassAssets(): Plugin {
   };
 }
 
+const pdfjsDir = path.dirname(createRequire(import.meta.url).resolve("pdfjs-dist/package.json"));
+const pdfjsFolders = ["cmaps", "standard_fonts", "wasm", "iccs"];
+const pdfjsTypes: Record<string, string> = { ".wasm": "application/wasm", ".js": "text/javascript" };
+
+/**
+ * pdf.js fetches character maps, fallback fonts and image decoders by name from a base URL,
+ * so those folders are served as they are under /pdfjs/, like the subtitle renderer's files.
+ */
+function pdfjsAssets(): Plugin {
+  return {
+    name: "kago-pdfjs-assets",
+    configureServer(server) {
+      server.middlewares.use("/pdfjs", (request, response, next) => {
+        const [folder, name, ...rest] = (request.url ?? "").split("?")[0]!.slice(1).split("/");
+        const file = path.join(pdfjsDir, folder ?? "", name ?? "");
+        if (rest.length > 0 || !pdfjsFolders.includes(folder ?? "") || !/^[\w.-]+$/.test(name ?? "") || !fs.existsSync(file)) return next();
+        response.setHeader("Content-Type", pdfjsTypes[path.extname(file)] ?? "application/octet-stream");
+        fs.createReadStream(file).pipe(response);
+      });
+    },
+    generateBundle() {
+      for (const folder of pdfjsFolders) {
+        for (const name of fs.readdirSync(path.join(pdfjsDir, folder))) {
+          // The script sandbox is for PDFs that run JavaScript, which the viewer never does.
+          if (!name.startsWith("LICENSE") && !name.startsWith("quickjs")) this.emitFile({ type: "asset", fileName: `pdfjs/${folder}/${name}`, source: fs.readFileSync(path.join(pdfjsDir, folder, name)) });
+        }
+      }
+    }
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), tailwindcss(), libassAssets()],
+  plugins: [react(), tailwindcss(), libassAssets(), pdfjsAssets()],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src")

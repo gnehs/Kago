@@ -11,7 +11,7 @@ import { ShareForm } from "@/features/shares/ShareForm";
 import { parseShareMode, shareModeLabel } from "@/features/shares/shareUtils";
 import { FinderTagEditor } from "@/features/tags/FinderTagEditor";
 import { TagEditor } from "@/features/tags/TagEditor";
-import { formatDate, formatSize, kindLabel } from "@/lib/format";
+import { formatDate, formatSize, isImageType, kindLabel } from "@/lib/format";
 import { displayPath } from "@/lib/paths";
 import { usePointerDrag } from "@/lib/usePointerDrag";
 import { useWorkspaceStore } from "@/stores/workspace";
@@ -60,7 +60,7 @@ export function Inspector({ window: activeWindow, isAdmin }: { window: FileWindo
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto">
           <div className="flex flex-col items-center gap-2 p-4 text-center">
-            {meta.data.kind === "file" && meta.data.type.startsWith("image/") ? (
+            {meta.data.kind === "file" && isImageType(meta.data.type) ? (
               <img alt="" src={previewUrl(rootSlug, path)} className="max-h-40 max-w-full rounded-md object-contain" />
             ) : (
               <FileIcon item={meta.data} className="size-14 stroke-1" />

@@ -3,7 +3,7 @@ import { ArrowDown, ArrowUp, ChevronRight } from "lucide-react";
 import { previewUrl, thumbnailUrl } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { FinderTagDots } from "@/features/tags/FinderTags";
-import { formatDate, formatSize, kindLabel } from "@/lib/format";
+import { formatDate, formatSize, isImageType, kindLabel } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useClipboardStore } from "@/stores/clipboard";
 import { useWorkspaceStore } from "@/stores/workspace";
@@ -205,7 +205,7 @@ function GridView(props: ViewProps) {
 
 function Thumbnail({ rootSlug, item }: { rootSlug: string; item: FileItem }) {
   const [failed, setFailed] = useState(false);
-  if (item.kind === "file" && item.type.startsWith("image/") && !failed) {
+  if (item.kind === "file" && isImageType(item.type) && !failed) {
     return <img alt="" loading="lazy" draggable={false} src={thumbnailUrl(rootSlug, item.path)} className="max-h-18 max-w-18 rounded-sm object-contain" onError={() => setFailed(true)} />;
   }
   return <FileIcon item={item} className="size-12 stroke-[1.25]" />;
@@ -233,7 +233,7 @@ function ColumnsView(props: ViewProps) {
       <div className="sticky top-0 flex min-w-0 flex-1 flex-col items-center gap-2 self-start p-6 text-center">
         {current ? (
           <>
-            {current.kind === "file" && current.type.startsWith("image/") ? (
+            {current.kind === "file" && isImageType(current.type) ? (
               <img alt="" src={previewUrl(window.rootSlug, current.path)} className="max-h-48 max-w-full rounded-md object-contain" />
             ) : (
               <FileIcon item={current} className="size-16 stroke-1" />

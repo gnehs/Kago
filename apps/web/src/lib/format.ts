@@ -32,6 +32,13 @@ export const formatUnixDate = (seconds: number) => dateFormat.format(new Date(se
 /** Files the video player takes; RealMedia has no `video/` type of its own. */
 export const isVideoType = (type: string) => type.startsWith("video/") || type.startsWith("application/vnd.rn-realmedia");
 
+// What a browser can show by itself. Anything else handed to it is not displayed but saved to disk.
+const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml", "image/avif", "image/bmp", "image/apng", "image/x-icon", "image/vnd.microsoft.icon"]);
+const AUDIO_TYPES = new Set(["audio/mpeg", "audio/mp4", "audio/x-m4a", "audio/aac", "audio/x-aac", "audio/ogg", "audio/wav", "audio/wave", "audio/x-wav", "audio/flac", "audio/x-flac", "audio/webm"]);
+
+export const isImageType = (type: string) => IMAGE_TYPES.has(type);
+export const isAudioType = (type: string) => AUDIO_TYPES.has(type);
+
 /** The editor holds a file whole; the server refuses to save anything larger. */
 export const MAX_TEXT_BYTES = 2 * 1024 * 1024;
 
