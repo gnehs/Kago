@@ -652,6 +652,21 @@
     box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.5), 0 1px 3px rgb(0 0 0 / 0.5), inset 0 0.5px 0 #ffffff;
   }
 
+  /*
+   * A word of a line that is sung word by word: lit from its left edge as far as the song has got through it.
+   * The line carries the time and each word the moments it is sung between; the rest is arithmetic.
+   */
+  .kago-lyric-word {
+    --sung: clamp(0, (var(--now, 0) - var(--from)) / (var(--to) - var(--from)), 1);
+    color: transparent;
+    background: linear-gradient(90deg, #ffffff calc(var(--sung) * 100%), rgb(255 255 255 / 0.4) calc(var(--sung) * 100%));
+    background-clip: text;
+    -webkit-background-clip: text;
+    /* A word broken over two lines fills each piece of itself, not one box stretched over both. */
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+  }
+
   .kago-checkbox {
     appearance: none;
     display: inline-grid;

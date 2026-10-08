@@ -57,14 +57,21 @@ const stem = (name: string) => nfc(withoutExtension(name)).toLowerCase();
 function cueTracks(sheet: CueSheet, sheetItem: FileItem, files: FileItem[], opened: FileItem): Track[] {
   const playable = files.filter(isPlayable);
   const single = new Set(sheet.tracks.map((entry) => entry.file)).size === 1;
+  // Names are put in comparable form once: a sheet may name a file for every track of a folder of thousands.
+  const byName = new Map<string, FileItem>();
+  const byStem = new Map<string, FileItem>();
+  for (const file of playable) {
+    if (!byName.has(nfc(file.name).toLowerCase())) byName.set(nfc(file.name).toLowerCase(), file);
+    if (!byStem.has(stem(file.name))) byStem.set(stem(file.name), file);
+  }
   const resolved = new Map<string, FileItem | undefined>();
   const resolve = (named: string) => {
     const name = named.split(/[\\/]/).at(-1)!;
     return (
-      playable.find((file) => nfc(file.name).toLowerCase() === nfc(name).toLowerCase()) ??
+      byName.get(nfc(name).toLowerCase()) ??
       // A sheet often still names the WAV an album was ripped to, long after it was packed as something else.
-      playable.find((file) => stem(file.name) === stem(name)) ??
-      (single ? (isPlayable(opened) ? opened : playable.find((file) => stem(file.name) === stem(sheetItem.name))) : undefined)
+      byStem.get(stem(name)) ??
+      (single ? (isPlayable(opened) ? opened : byStem.get(stem(sheetItem.name))) : undefined)
     );
   };
   return sheet.tracks.flatMap((entry, index) => {
@@ -690,7 +697,14 @@ function Lyrics({
 
   // The player's own clock ticks a few times a second, which is too coarse to change a line on the beat.
   useEffect(() => {
-    const read = () => setActive(lyricIndexAt(lines, clock() - base));
+    const read = () => {
+      const now = clock() - base;
+      const index = lyricIndexAt(lines, now);
+      setActive(index);
+      // A line sung word by word fills as it goes. The line is told the time and works the rest out in CSS,
+      // so nothing is rendered again from one frame to the next.
+      if (lines[index]?.words) (list.current?.children[index] as HTMLElement | undefined)?.style.setProperty("--now", now.toFixed(3));
+    };
     read();
     if (!playing) return;
     let request = requestAnimationFrame(function follow() {
@@ -723,11 +737,17 @@ function Lyrics({
             key={index}
             className={cn(
               "m-0 min-h-6 cursor-pointer px-6 py-1.5 text-center text-base leading-snug font-semibold whitespace-pre-line transition-colors duration-150 @lg:text-xl",
-              index === active ? "text-white" : "text-white/35 hover:text-white/70"
+              index !== active ? "text-white/35 hover:text-white/70" : line.words ? "text-white/40" : "text-white"
             )}
             onClick={() => onSeek(line.time)}
           >
-            {line.text}
+            {index === active && line.words
+              ? line.words.map((word, at) => (
+                  <span key={at} className="kago-lyric-word" style={{ "--from": word.start, "--to": Math.max(word.end, word.start + 0.01) } as React.CSSProperties}>
+                    {word.text}
+                  </span>
+                ))
+              : line.text}
           </p>
         ))}
       </div>
