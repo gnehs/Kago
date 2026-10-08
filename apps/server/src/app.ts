@@ -626,6 +626,7 @@ function registerApi(app: FastifyInstance, services: Services) {
     const file = await services.fsService.media(actor, query.rootSlug, query.path);
     const cover = await services.media.cover(file.input, file.stat);
     reply.header("Cache-Control", "private, max-age=3600");
+    reply.header("X-Content-Type-Options", "nosniff");
     return sendFile(request, reply, cover, await fs.promises.stat(cover), "image/jpeg");
   });
   app.get("/api/media/audio", async (request, reply) => {
@@ -635,7 +636,10 @@ function registerApi(app: FastifyInstance, services: Services) {
     const audio = await services.media.audioStream(actor.id, file.input, file.stat, query.start);
     // A player that seeks or closes drops the connection, and the encoder with it.
     reply.raw.on("close", audio.stop);
+    // One that left while the file was still being looked at will never be heard from again.
+    if (request.raw.socket.destroyed || reply.raw.destroyed) audio.stop();
     reply.header("Content-Type", "audio/webm");
+    reply.header("X-Content-Type-Options", "nosniff");
     reply.header("Cache-Control", "no-store");
     return reply.send(audio.stream);
   });

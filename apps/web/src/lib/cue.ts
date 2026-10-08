@@ -6,6 +6,8 @@ export type CueSheet = { title: string; performer: string; tracks: CueTrack[] };
 /** A cue sheet counts in frames of a CD, 75 to the second. */
 const FRAMES = 75;
 
+const MAX_TRACKS = 999;
+
 /** A value as it is written after a command: quoted, or a bare word. */
 function unquote(value: string) {
   const text = value.trim();
@@ -40,7 +42,8 @@ export function parseCue(text: string): CueSheet {
     } else if (command === "TRACK") {
       const [number = "", kind = ""] = rest.trim().split(/\s+/);
       track = null;
-      if (kind.toUpperCase() !== "AUDIO") continue;
+      // A disc holds 99 tracks; a sheet with far more is not listed without end.
+      if (kind.toUpperCase() !== "AUDIO" || sheet.tracks.length >= MAX_TRACKS) continue;
       track = { number: Number(number) || sheet.tracks.length + 1, title: "", performer: "", file, start: 0, indexed: false };
       sheet.tracks.push(track);
     } else if (command === "TITLE") {

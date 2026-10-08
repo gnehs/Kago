@@ -176,8 +176,12 @@ export function useSubtitles(rootSlug: string, path: string) {
   });
 }
 
+const MAX_SIDECAR_BYTES = 1024 * 1024;
+
 /** A small text file that goes with a piece of media (a cue sheet, lyrics), read in whatever code page it was saved in. */
-export function useTextFile(rootSlug: string, item: Pick<FileItem, "path" | "mtime"> | undefined) {
+export function useTextFile(rootSlug: string, file: Pick<FileItem, "path" | "mtime" | "size"> | undefined) {
+  // It is read whole, into memory. Something far larger than any cue sheet or lyrics is not one, whatever its name says.
+  const item = file && file.size <= MAX_SIDECAR_BYTES ? file : undefined;
   return useQuery({
     queryKey: ["fs", "text", rootSlug, item?.path, item?.mtime],
     queryFn: async () => {

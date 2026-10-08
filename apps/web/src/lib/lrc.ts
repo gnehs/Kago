@@ -1,6 +1,7 @@
 /** A line of lyrics and the second it is sung at. A translation timed to the same moment is a second line of the same text. */
 export type LyricLine = { time: number; text: string };
 
+const MAX_LINES = 5000;
 const TIME_TAG = /\[(\d+):(\d+(?:[.:]\d+)?)\]/g;
 const WORD_TAG = /<\d+:\d+(?:[.:]\d+)?>/g;
 
@@ -34,7 +35,9 @@ export function parseLrc(text: string): LyricLine[] {
 
   return [...byTime]
     .map(([time, lines]) => ({ time: Math.max(0, time - offset), text: lines.filter(Boolean).join("\n") }))
-    .sort((a, b) => a.time - b.time);
+    .sort((a, b) => a.time - b.time)
+    // Every line is laid out on the screen at once; no song has this many.
+    .slice(0, MAX_LINES);
 }
 
 /** The line being sung at `time`: the last one that has started. -1 before the first. */

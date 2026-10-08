@@ -185,6 +185,31 @@ const SUBTITLE_LEAD_SECONDS = 120;
 /** Reading a subtitle stream out means reading through the whole file, which takes a while on a large one. */
 const EXTRACT_TIMEOUT_MS = 180_000;
 const EXTRACT_KEEP = 24;
+/**
+ * The containers ffmpeg may read a file as. It tells what a file is by its contents, not its name, and some of
+ * what it reads are not media but lists of other things to read: a playlist or a concat script saved as `song.ape`
+ * would have it open files, or addresses, that whoever put it there was never allowed to see. Only formats that
+ * hold their own sound and picture are let in. A name of several parts (`mov,mp4,m4a…`) is matched by any one of them.
+ */
+const INPUT_FORMATS = [
+  "aac", "ac3", "aiff", "amr", "ape", "asf", "au", "av1", "avi", "caf", "dsf", "dts", "dtshd", "dv", "eac3", "flac", "flv", "gxf", "h264", "hevc",
+  "iff", "ivf", "live_flv", "m4v", "matroska", "mlp", "mov", "mp3", "mpc", "mpc8", "mpeg", "mpegts", "mpegvideo", "mxf", "nsv", "nut", "obu", "ogg", "oma",
+  "rm", "shn", "swf", "tak", "truehd", "tta", "vc1", "voc", "w64", "wav", "wtv", "wv", "xwma"
+].join(",");
+
+/** How ffmpeg may reach a file: off the disk, or for a remote location from this server's own address for it. Nothing in the file can add to that. */
+const inputProtocols = (input: string) => (/^http:\/\/127\.0\.0\.1:/.test(input) ? "http,tcp" : "file");
+
+/** A file of someone's as ffmpeg is given it, held to the formats and protocols above. */
+const guardedInput = (input: string) => ["-protocol_whitelist", inputProtocols(input), "-format_whitelist", INPUT_FORMATS, "-i", input];
+/** The same for ffprobe, which takes the file without `-i`. */
+const guardedProbe = (input: string) => ["-protocol_whitelist", inputProtocols(input), "-format_whitelist", INPUT_FORMATS, input];
+
+/** A picture attached to a file is decoded whole before it is shrunk; one larger than this is left alone. */
+const MAX_COVER_PIXELS = 64_000_000;
+/** No name of a song is this long; a tag that is longer is cut, so a file cannot make its listing arbitrarily large. */
+const MAX_TAG_LENGTH = 500;
+
 /** Music re-encoded for a browser that cannot decode it: Opus at a rate where it is not told from the original. */
 const AUDIO_KBPS = 160;
 /** One for each music window that may be loading at once; a seek opens a new stream before the old one is let go. */
@@ -253,7 +278,7 @@ export class MediaService {
     if (!stream?.text) throw new AppError(404, "Subtitle not found", "NOT_FOUND");
     const format: SubtitleFormat = stream.codec === "ass" || stream.codec === "ssa" ? "ass" : "srt";
     const file = await this.extract(absolutePath, stat, `sub-${index}.${format}`, (out) => [
-      "-i", absolutePath, "-map", `0:s:${index}`, "-c:s", format === "ass" ? "copy" : "srt", "-f", format, out
+      ...guardedInput(absolutePath), "-map", `0:s:${index}`, "-c:s", format === "ass" ? "copy" : "srt", "-f", format, out
     ]);
     return { file, format };
   }
@@ -265,7 +290,7 @@ export class MediaService {
     let streams = this.subtitleProbes.get(key);
     if (!streams) {
       try {
-        const result = await execFileAsync(this.ffprobe, ["-v", "error", "-f", SUBTITLE_DEMUXER[file.format], "-print_format", "json", "-show_streams", file.absolutePath], { timeout: 20_000, maxBuffer: 8 * 1024 * 1024 });
+        const result = await execFileAsync(this.ffprobe, ["-v", "error", "-protocol_whitelist", inputProtocols(file.absolutePath), "-f", SUBTITLE_DEMUXER[file.format], "-print_format", "json", "-show_streams", file.absolutePath], { timeout: 20_000, maxBuffer: 8 * 1024 * 1024 });
         const found = (JSON.parse(result.stdout) as { streams?: Array<Record<string, any>> }).streams ?? [];
         streams = found
           .filter((stream) => PICTURE_SUBTITLES.has(String(stream.codec_name ?? "")))
@@ -282,14 +307,14 @@ export class MediaService {
   /** A font attached to the file, e.g. the ones a Matroska release carries for its styled subtitles. */
   async font(absolutePath: string, stat: FileVersion, index: number): Promise<string> {
     if (!(await this.info(absolutePath, stat)).fonts.some((item) => item.index === index)) throw new AppError(404, "Attachment not found", "NOT_FOUND");
-    return this.extract(absolutePath, stat, `font-${index}`, (out) => [`-dump_attachment:t:${index}`, out, "-i", absolutePath]);
+    return this.extract(absolutePath, stat, `font-${index}`, (out) => [`-dump_attachment:t:${index}`, out, ...guardedInput(absolutePath)]);
   }
 
   /** The picture attached to a file, as a JPEG no larger than a screen needs. */
   async cover(absolutePath: string, stat: FileVersion): Promise<string> {
     const index = (await this.info(absolutePath, stat)).cover;
     if (index === null) throw new AppError(404, "Cover not found", "NOT_FOUND");
-    return this.extract(absolutePath, stat, "cover.jpg", (out) => ["-i", absolutePath, "-map", `0:v:${index}`, "-frames:v", "1", "-vf", "scale='min(1200,iw)':-2", "-q:v", "3", "-f", "mjpeg", out]);
+    return this.extract(absolutePath, stat, "cover.jpg", (out) => [...guardedInput(absolutePath), "-map", `0:v:${index}`, "-frames:v", "1", "-vf", "scale='min(1200,iw)':-2", "-q:v", "3", "-f", "mjpeg", out]);
   }
 
   private extract(absolutePath: string, stat: FileVersion, name: string, args: (out: string) => string[]): Promise<string> {
@@ -381,8 +406,8 @@ export class MediaService {
       [
         "-nostdin", "-hide_banner", "-loglevel", "error",
         // Seeking the input, not the output: a stream for the middle of an album starts decoding there.
-        "-ss", String(start),
-        "-i", absolutePath,
+        "-ss", start.toFixed(3),
+        ...guardedInput(absolutePath),
         "-map", "0:a:0", "-vn", "-sn", "-dn",
         "-c:a", "libopus", "-b:a", `${AUDIO_KBPS}k`, "-ac", "2",
         "-f", "webm", "pipe:1"
@@ -544,10 +569,10 @@ export class MediaService {
       ...accel.input,
       // Seeking the input, not the output: a run for the middle of the file starts decoding there.
       "-ss", String(seconds),
-      "-i", session.input,
+      ...guardedInput(session.input),
       // A subtitle file keeps its own clock, which `-copyts` lines up with the video's.
       ...(session.subtitleFile && session.subtitleIndex !== null
-        ? [...(seconds > SUBTITLE_LEAD_SECONDS ? ["-ss", String(seconds - SUBTITLE_LEAD_SECONDS)] : []), "-f", SUBTITLE_DEMUXER[session.subtitleFile.format], "-i", session.subtitleFile.absolutePath]
+        ? [...(seconds > SUBTITLE_LEAD_SECONDS ? ["-ss", String(seconds - SUBTITLE_LEAD_SECONDS)] : []), "-protocol_whitelist", inputProtocols(session.subtitleFile.absolutePath), "-f", SUBTITLE_DEMUXER[session.subtitleFile.format], "-i", session.subtitleFile.absolutePath]
         : []),
       ...filters,
       ...(hasAudio ? ["-map", `0:a:${session.audioIndex}`] : []),
@@ -745,7 +770,7 @@ export class MediaService {
     try {
       const result = await execFileAsync(
         this.ffprobe,
-        ["-v", "error", "-select_streams", "v:0", "-read_intervals", "%+#1", "-show_entries", "frame=color_transfer:frame_side_data=max_luminance", "-print_format", "json", absolutePath],
+        ["-v", "error", "-select_streams", "v:0", "-read_intervals", "%+#1", "-show_entries", "frame=color_transfer:frame_side_data=max_luminance", "-print_format", "json", ...guardedProbe(absolutePath)],
         { timeout: 20_000 }
       );
       const frame = (JSON.parse(result.stdout) as { frames?: Array<Record<string, any>> }).frames?.[0];
@@ -758,7 +783,7 @@ export class MediaService {
   private async probe(absolutePath: string): Promise<Omit<MediaInfo, "transcode" | "audioTranscode" | "encoder" | "hdrOutput" | "tonemap">> {
     let raw: string;
     try {
-      const result = await execFileAsync(this.ffprobe, ["-v", "error", "-print_format", "json", "-show_format", "-show_streams", absolutePath], {
+      const result = await execFileAsync(this.ffprobe, ["-v", "error", "-print_format", "json", "-show_format", "-show_streams", ...guardedProbe(absolutePath)], {
         timeout: 20_000,
         maxBuffer: 8 * 1024 * 1024
       });
@@ -770,7 +795,7 @@ export class MediaService {
     const streams = data.streams ?? [];
     const videoStreams = streams.filter((stream) => stream.codec_type === "video");
     const videoStream = videoStreams.find((stream) => !stream.disposition?.attached_pic);
-    const cover = videoStreams.findIndex((stream) => stream.disposition?.attached_pic);
+    const cover = videoStreams.findIndex((stream) => stream.disposition?.attached_pic && Number(stream.width) * Number(stream.height) <= MAX_COVER_PIXELS);
     const audioStreams = streams.filter((stream) => stream.codec_type === "audio");
     const subtitleStreams = streams.filter((stream) => stream.codec_type === "subtitle");
     const attachments = streams.filter((stream) => stream.codec_type === "attachment");
@@ -860,10 +885,10 @@ export class MediaService {
 
 /** The tags a player shows, whatever case and spelling the format gave their names. */
 function readTags(raw: Record<string, unknown>): MediaTags {
-  const named = new Map(Object.entries(raw).map(([name, value]) => [name.toLowerCase(), String(value ?? "").trim()]));
-  const first = (...names: string[]) => names.map((name) => named.get(name)).find(Boolean) ?? "";
+  const named = new Map(Object.entries(raw).map(([name, value]) => [name.toLowerCase(), String(value ?? "").trim()] as const));
+  const first = (...names: string[]) => (names.map((name) => named.get(name)).find(Boolean) ?? "").slice(0, MAX_TAG_LENGTH);
   // ID3 files lyrics under their language: `lyrics-eng`.
-  const lyrics = first("lyrics", "unsyncedlyrics", "syncedlyrics") || ([...named].find(([name]) => name.startsWith("lyrics-"))?.[1] ?? "");
+  const lyrics = ["lyrics", "unsyncedlyrics", "syncedlyrics"].map((name) => named.get(name)).find(Boolean) ?? [...named].find(([name]) => name.startsWith("lyrics-"))?.[1] ?? "";
   return {
     title: first("title"),
     artist: first("artist"),
