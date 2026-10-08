@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { Db } from "../db/db.js";
 import { rows } from "../db/db.js";
+import { AppError } from "../lib/errors.js";
 import { id, now } from "../lib/ids.js";
 import type { AuditService } from "./audit.service.js";
 import type { PathService } from "./path.service.js";
@@ -50,19 +51,24 @@ export class TagService {
         .prepare(
           `SELECT tags.* FROM file_tags
           JOIN tags ON tags.id = file_tags.tag_id
-          WHERE file_tags.root_id = ? AND file_tags.path = ?`
+          WHERE file_tags.root_id = ? AND file_tags.path = ? AND (tags.owner_id IS NULL OR tags.owner_id = ?)`
         )
-        .all(safe.root.id, safe.logicalPath)
+        .all(safe.root.id, safe.logicalPath, actor.id)
     );
   }
 
   async setFileTags(actor: Actor, rootSlug: string, logicalPath: string, tagIds: string[]) {
     const safe = await this.paths.resolveExisting(rootSlug, logicalPath);
     this.permissions.require(actor, "edit", safe.root, safe.logicalPath);
+    // A tag is its maker's own: nobody else puts it on a file, sees it there or takes it off.
+    const own = new Set((this.list(actor) as Array<{ id: string }>).map((tag) => tag.id));
+    if (tagIds.some((tagId) => !own.has(tagId))) throw new AppError(400, "Tag not found", "TAG_NOT_FOUND");
     this.db.exec("BEGIN IMMEDIATE");
     try {
-      this.db.prepare("DELETE FROM file_tags WHERE root_id = ? AND path = ?").run(safe.root.id, safe.logicalPath);
-      for (const tagId of tagIds) {
+      this.db
+        .prepare("DELETE FROM file_tags WHERE root_id = ? AND path = ? AND tag_id IN (SELECT id FROM tags WHERE owner_id IS NULL OR owner_id = ?)")
+        .run(safe.root.id, safe.logicalPath, actor.id);
+      for (const tagId of new Set(tagIds)) {
         this.db
           .prepare("INSERT INTO file_tags (root_id, path, tag_id, created_at) VALUES (?, ?, ?, ?)")
           .run(safe.root.id, safe.logicalPath, tagId, now());

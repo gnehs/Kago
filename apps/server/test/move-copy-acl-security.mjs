@@ -52,6 +52,14 @@ test("a move carries its rules along and a copy refuses a folder with an unreada
     assert.ok(movedFolder.statusCode === 403 || (await waitTask(member, movedFolder.json.id)).status === "failed");
     assert.equal(await readFile(path.join(publicDir, "folder", "visible.txt"), "utf8"), "visible canary");
 
+    // A tag is its maker's own, also on a file both can reach.
+    const tag = await admin.post("/api/tags", { name: "Admin only" });
+    assert.equal((await admin.put("/api/tags/file", { rootSlug: "photos", path: "/public/inbox/secret.txt", tagIds: [tag.json.id] })).statusCode, 200);
+    assert.deepEqual((await member.get("/api/tags/file?rootSlug=photos&path=/public/inbox/secret.txt")).json, []);
+    assert.equal((await member.put("/api/tags/file", { rootSlug: "photos", path: "/public/inbox/secret.txt", tagIds: [tag.json.id] })).statusCode, 400);
+    assert.equal((await member.put("/api/tags/file", { rootSlug: "photos", path: "/public/inbox/secret.txt", tagIds: [] })).statusCode, 200);
+    assert.equal((await admin.get("/api/tags/file?rootSlug=photos&path=/public/inbox/secret.txt")).json.length, 1);
+
     // A sync is a copy by another name: it takes no more out of a folder than a copy would.
     const sync = (source, destination) => member.post("/api/sync-jobs", { name: "Sync", source, destination });
     assert.equal((await sync({ kind: "location", rootSlug: "photos", path: "/public/folder" }, { kind: "location", rootSlug: "photos", path: "/public/inbox" })).statusCode, 403);
@@ -101,7 +109,8 @@ function client(app) {
   }
   return {
     get: (url, options = {}) => request("GET", url, undefined, options.accept),
-    post: (url, body) => request("POST", url, body)
+    post: (url, body) => request("POST", url, body),
+    put: (url, body) => request("PUT", url, body)
   };
 }
 

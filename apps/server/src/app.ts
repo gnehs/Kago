@@ -811,7 +811,7 @@ function registerApi(app: FastifyInstance, services: Services) {
   app.get("/api/shelves", async (request) => services.shelves.list(requireActor(request)));
   app.post("/api/shelves", async (request) => {
     const actor = requireActor(request);
-    const body = z.object({ name: z.string().min(1) }).parse(request.body);
+    const body = z.object({ name: z.string().min(1).max(120) }).parse(request.body);
     return services.shelves.create(actor, body.name);
   });
   app.post("/api/shelves/:id/items", async (request) => {
@@ -852,7 +852,7 @@ function registerApi(app: FastifyInstance, services: Services) {
   });
   app.put("/api/tags/file", async (request) => {
     const actor = requireActor(request);
-    const body = z.object({ rootSlug: z.string(), path: z.string(), tagIds: z.array(z.string()) }).parse(request.body);
+    const body = z.object({ rootSlug: z.string(), path: z.string(), tagIds: z.array(z.string()).max(200) }).parse(request.body);
     return services.tags.setFileTags(actor, body.rootSlug, body.path, body.tagIds);
   });
 

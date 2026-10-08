@@ -159,7 +159,11 @@ export class Thumbnailer {
   }
 
   private startWorker(): Worker {
-    const worker = new Worker(new URL(import.meta.url.endsWith(".ts") ? "../workers/thumbnail-worker.ts" : "../workers/thumbnail-worker.js", import.meta.url), { name: "kago-thumbnail-worker" });
+    const worker = new Worker(new URL(import.meta.url.endsWith(".ts") ? "../workers/thumbnail-worker.ts" : "../workers/thumbnail-worker.js", import.meta.url), {
+      name: "kago-thumbnail-worker",
+      // What it reads is someone's file, whole: one written to exhaust memory takes the worker with it and not the server.
+      resourceLimits: { maxOldGenerationSizeMb: 512 }
+    });
     // Idle between folders; it must not keep the server from shutting down.
     worker.unref();
     worker.on("message", (result: ThumbnailJobResult) => {
