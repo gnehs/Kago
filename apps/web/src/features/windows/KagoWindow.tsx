@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import { clampWindowPosition, fitAspectSize, getCanvasSize, MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, minimizeWindows, requestCloseWindow, TITLEBAR_HEIGHT, useWorkspaceStore, type WindowFrame } from "@/stores/workspace";
 import { t } from "@/lib/i18n";
 
-type ResizeEdge = "e" | "s" | "se";
+type ResizeEdge = "n" | "e" | "s" | "w" | "ne" | "nw" | "se" | "sw";
 
 /** Window chrome: title bar, window controls, drag-to-move and edge resize. */
 export function KagoWindow({
@@ -84,9 +84,15 @@ export function KagoWindow({
       {children}
       {window.maximized ? null : (
         <>
-          <ResizeHandle window={window} edge="e" className="top-9 right-0 bottom-3 w-1.5 cursor-ew-resize" />
-          <ResizeHandle window={window} edge="s" className="right-3 bottom-0 left-0 h-1.5 cursor-ns-resize" />
+          {/* The top handles stay thin and small so the title bar under them still drags and its buttons still press. */}
+          <ResizeHandle window={window} edge="n" className="top-0 right-2 left-2 h-1 cursor-ns-resize" />
+          <ResizeHandle window={window} edge="e" className="top-2 right-0 bottom-3 w-1.5 cursor-ew-resize" />
+          <ResizeHandle window={window} edge="s" className="right-3 bottom-0 left-3 h-1.5 cursor-ns-resize" />
+          <ResizeHandle window={window} edge="w" className="top-2 bottom-3 left-0 w-1.5 cursor-ew-resize" />
+          <ResizeHandle window={window} edge="ne" className="top-0 right-0 size-2 cursor-nesw-resize" />
+          <ResizeHandle window={window} edge="nw" className="top-0 left-0 size-2 cursor-nwse-resize" />
           <ResizeHandle window={window} edge="se" className="right-0 bottom-0 size-3 cursor-nwse-resize" />
+          <ResizeHandle window={window} edge="sw" className="bottom-0 left-0 size-3 cursor-nesw-resize" />
         </>
       )}
     </section>
@@ -103,21 +109,32 @@ function WindowControl({ label, closes, icon: Icon, onClick }: { label: string; 
 
 function ResizeHandle({ window, edge, className }: { window: WindowFrame; edge: ResizeEdge; className: string }) {
   const handlers = usePointerDrag(
-    () => ({ width: window.width, height: window.height }),
+    () => ({ x: window.x, y: window.y, width: window.width, height: window.height }),
     (origin, dx, dy) => {
       const canvas = getCanvasSize();
+      const west = edge.includes("w");
+      const north = edge.includes("n");
+      const horizontal = west || edge.includes("e");
+      const vertical = north || edge.includes("s");
+      // The side across from the one being dragged stays where it is, and the dragged one stops at the canvas.
+      const right = origin.x + origin.width;
+      const bottom = origin.y + origin.height;
+      const maxWidth = west ? right : canvas.width - origin.x;
+      const maxHeight = north ? bottom : canvas.height - origin.y;
+      const byWidth = origin.width + (west ? -dx : dx);
+      const byHeight = origin.height + (north ? -dy : dy);
+      let size: { width: number; height: number };
       if (window.aspect) {
-        // Whichever edge is dragged, the other follows; the corner goes with the larger of the two.
-        const byWidth = origin.width + dx;
-        const byHeight = (origin.height + dy - TITLEBAR_HEIGHT) * window.aspect;
-        const width = edge === "e" ? byWidth : edge === "s" ? byHeight : Math.max(byWidth, byHeight);
-        useWorkspaceStore.getState().updateWindow(window.id, fitAspectSize(window.aspect, width, canvas.width - window.x, canvas.height - window.y));
-        return;
+        // Whichever edge is dragged, the other follows; a corner goes with the larger of the two.
+        const fromHeight = (byHeight - TITLEBAR_HEIGHT) * window.aspect;
+        size = fitAspectSize(window.aspect, horizontal && vertical ? Math.max(byWidth, fromHeight) : horizontal ? byWidth : fromHeight, maxWidth, maxHeight);
+      } else {
+        size = {
+          width: horizontal ? Math.round(Math.max(MIN_WINDOW_WIDTH, Math.min(byWidth, maxWidth))) : origin.width,
+          height: vertical ? Math.round(Math.max(MIN_WINDOW_HEIGHT, Math.min(byHeight, maxHeight))) : origin.height
+        };
       }
-      useWorkspaceStore.getState().updateWindow(window.id, {
-        width: edge === "s" ? origin.width : Math.round(Math.max(MIN_WINDOW_WIDTH, Math.min(origin.width + dx, canvas.width - window.x))),
-        height: edge === "e" ? origin.height : Math.round(Math.max(MIN_WINDOW_HEIGHT, Math.min(origin.height + dy, canvas.height - window.y)))
-      });
+      useWorkspaceStore.getState().updateWindow(window.id, { ...size, x: west ? right - size.width : origin.x, y: north ? bottom - size.height : origin.y });
     }
   );
   return <div className={cn("absolute z-10 touch-none", className)} {...handlers} />;
