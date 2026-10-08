@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Archive, ArchiveRestore, ClipboardPaste, Copy, Download, ExternalLink, Folder, FolderOpen, FolderPlus, FolderUp, Inbox, Info, PanelTop, Pencil, Plus, RefreshCw, Scissors, SquareArrowOutUpRight, Trash2, Upload, Wallpaper } from "lucide-react";
 import { useFileList, useFolderContents } from "@/api/hooks";
 import { KagoBadge } from "@/components/kago/badge";
@@ -172,6 +172,38 @@ export function FileWindowView({ window: frame, roots, isAdmin }: { window: File
     setExpanded(new Set());
   }, [win.logicalPath, win.rootSlug]);
 
+  // Coming back to a folder (back, forward, up, or its tab) shows it scrolled to where it was left; going anywhere else starts at the top.
+  const scrollTops = useRef(new Map<string, number>());
+  const scrollPlace = useRef<{ key: string; tabId: string; rootSlug: string; path: string } | null>(null);
+  const scrollRestore = useRef<number | null>(null);
+  const viaHistory = useRef(false);
+  const scrollKey = `${tabId}\n${win.rootSlug}\n${win.logicalPath}`;
+  const listReady = Boolean(fileList.data);
+
+  useLayoutEffect(() => {
+    const left = scrollPlace.current;
+    if (left?.key !== scrollKey) {
+      const returning = viaHistory.current || (left !== null && (left.tabId !== tabId || (left.rootSlug === win.rootSlug && isInside(left.path, win.logicalPath))));
+      viaHistory.current = false;
+      scrollPlace.current = { key: scrollKey, tabId, rootSlug: win.rootSlug, path: win.logicalPath };
+      scrollRestore.current = (returning ? scrollTops.current.get(scrollKey) : undefined) ?? 0;
+    }
+    // The list has to be there before it can be scrolled.
+    if (scrollRestore.current === null || !scroller || !listReady) return;
+    scroller.scrollTop = scrollRestore.current;
+    scrollRestore.current = null;
+    // Tells the list which rows to render before the next paint, rather than a frame later.
+    scroller.dispatchEvent(new Event("scroll"));
+  }, [scrollKey, tabId, win.rootSlug, win.logicalPath, scroller, listReady]);
+
+  useEffect(() => {
+    if (!scroller) return;
+    // A folder that is still loading has nothing to scroll, which must not count as having been scrolled to the top.
+    const remember = () => scrollRestore.current === null && scrollPlace.current && scrollTops.current.set(scrollPlace.current.key, scroller.scrollTop);
+    scroller.addEventListener("scroll", remember, { passive: true });
+    return () => scroller.removeEventListener("scroll", remember);
+  }, [scroller]);
+
   const tree = useMemo<FileTree | undefined>(() => {
     if (!showsTree) return undefined;
     return {
@@ -238,6 +270,7 @@ export function FileWindowView({ window: frame, roots, isAdmin }: { window: File
     const target = history.stack[index];
     if (target === undefined) return;
     setHistories({ ...histories, [tabId]: { ...history, index } });
+    viaHistory.current = true;
     navigate(target.path, target.rootSlug);
   }
 
