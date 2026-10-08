@@ -13,8 +13,9 @@ import { assertNameAvailable, nfc } from "../lib/filename.js";
 import { id, now } from "../lib/ids.js";
 import { logger } from "../lib/logger.js";
 import { isZipDirectory, isZipSymlink, openZipArchive } from "../lib/zip-archive.js";
+import { SecretBox } from "../lib/secret-box.js";
 import { ensureSshKey, sshCommand } from "../lib/ssh-key.js";
-import { zipStream, type ZipEntry } from "../lib/zip-stream.js";
+import { zipStream, type ZipEntry, type ZipOptions } from "../lib/zip-stream.js";
 import { RcloneJobStopped } from "../storage/rclone-client.js";
 import { runRclone } from "../storage/rclone-daemon.js";
 import { isRemote, joinFs, REMOTE_TRASH, transferProgress } from "../storage/remote-storage.js";
@@ -63,9 +64,16 @@ export const taskInputSchema = z.object({
   options: z.object({
     archive: z.boolean().optional(),
     delete: z.boolean().optional(),
-    dryRun: z.boolean().optional()
+    dryRun: z.boolean().optional(),
+    /** How hard a `compress` task squeezes, and what it locks the archive with. */
+    level: z.enum(["store", "fast", "normal", "best"]).optional(),
+    password: z.string().min(1).max(1024).optional(),
+    encryption: z.enum(["aes256", "zipcrypto"]).optional()
   }).optional()
 });
+
+const zipLevels = { store: 0, fast: 1, normal: 6, best: 9 } as const;
+type CompressOptions = { level?: keyof typeof zipLevels; encryption?: "aes256" | "zipcrypto"; password?: string };
 
 /** One end of a sync: a folder of a location, or a folder on another machine that rsync reaches over SSH. */
 export const syncEndpointSchema = z.discriminatedUnion("kind", [
@@ -93,6 +101,7 @@ class TaskCancelledError extends Error {}
 export class TaskService {
   private readonly progressBuffers = new Map<string, ProgressBuffer>();
   private readonly cancelChecks = new Map<string, number>();
+  private secretBox: SecretBox | null = null;
 
   constructor(
     private readonly db: Db,
@@ -121,13 +130,16 @@ export class TaskService {
     }
 
     const sources = input.type === "rsync_pull" ? [{ rootSlug: "remote", path: input.remote! }] : input.sources;
+    const { level, password, encryption, ...rsyncOptions } = input.options ?? {};
+    // The task row is shown to its owner and kept for a week, so the password only ever sits in it sealed.
+    const compressOptions: CompressOptions = { level, ...(password ? { encryption: encryption ?? "aes256", password: this.secrets().seal(password) } : {}) };
     const destination =
       input.type === "rsync_push"
-        ? JSON.stringify({ remote: input.remote, options: input.options ?? {} })
+        ? JSON.stringify({ remote: input.remote, options: rsyncOptions })
         : input.type === "download_zip"
           ? JSON.stringify({ fileName: downloadFileName(sources) })
           : input.destination
-            ? JSON.stringify({ ...input.destination, options: input.options ?? {} })
+            ? JSON.stringify({ ...input.destination, options: input.type === "compress" ? compressOptions : rsyncOptions })
             : null;
 
     await this.assertTaskPermissions(actor, input);
@@ -154,9 +166,15 @@ export class TaskService {
     };
 
     this.insertTask(task);
-    this.audit.write({ actorType: "user", actorId: actor.id, action: "create_task", target: input, result: "success" });
+    const logged = password ? { ...input, options: { ...input.options, password: "[redacted]" } } : input;
+    this.audit.write({ actorType: "user", actorId: actor.id, action: "create_task", target: logged, result: "success" });
     this.events.publish({ type: "task.created", userId: task.created_by, task });
     return task;
+  }
+
+  private secrets(): SecretBox {
+    this.secretBox ??= new SecretBox(this.appDataDir);
+    return this.secretBox;
   }
 
   /** Queues one run of a sync. Syncs are not asked for like other tasks: a saved job is their only way in. */
@@ -766,21 +784,34 @@ export class TaskService {
 
   private async runCompress(task: FileTask, actor: Actor): Promise<void> {
     const sources = JSON.parse(task.sources_json) as Array<{ rootSlug: string; path: string }>;
-    const destination = JSON.parse(task.destination ?? "{}") as { rootSlug: string; path: string };
-    const dest = await this.paths.resolveForCreate(destination.rootSlug, destination.path);
-    this.permissions.require(actor, "edit", dest.root, path.posix.dirname(dest.logicalPath));
-    const folder = await this.paths.resolveExisting(destination.rootSlug, path.posix.dirname(dest.logicalPath));
-    await this.storage.assertNameAvailable(folder, this.storage.name(dest));
-    const zipped = await this.zipSources(task, actor, "view", dest);
-    this.audit.write({
-      actorType: "user",
-      actorId: actor.id,
-      action: "compress",
-      rootId: dest.root.id,
-      path: dest.logicalPath,
-      target: { taskId: task.id, sources: zipped.sources },
-      result: "success"
-    });
+    const destination = JSON.parse(task.destination ?? "{}") as { rootSlug: string; path: string; options?: CompressOptions };
+    const { level, encryption, password } = destination.options ?? {};
+    try {
+      const dest = await this.paths.resolveForCreate(destination.rootSlug, destination.path);
+      this.permissions.require(actor, "edit", dest.root, path.posix.dirname(dest.logicalPath));
+      const folder = await this.paths.resolveExisting(destination.rootSlug, path.posix.dirname(dest.logicalPath));
+      await this.storage.assertNameAvailable(folder, this.storage.name(dest));
+      const zipped = await this.zipSources(task, actor, "view", dest, {
+        level: level ? zipLevels[level] : undefined,
+        encryption,
+        password: password ? this.secrets().open(password) : undefined
+      });
+      this.audit.write({
+        actorType: "user",
+        actorId: actor.id,
+        action: "compress",
+        rootId: dest.root.id,
+        path: dest.logicalPath,
+        target: { taskId: task.id, sources: zipped.sources, level, encryption: password ? encryption : undefined },
+        result: "success"
+      });
+    } finally {
+      // Nothing needs the password once the archive is written, or will never be.
+      if (password) {
+        const kept = JSON.stringify({ ...destination, options: { level, encryption } });
+        this.db.prepare("UPDATE tasks SET destination = ? WHERE id = ?").run(kept, task.id);
+      }
+    }
   }
 
   /** Zips a selection into Kago's own temp dir so a multi-file download leaves nothing behind in the user's folders. */
@@ -804,7 +835,7 @@ export class TaskService {
   }
 
   /** `target` is a file on the server's disk, or the path of the archive in a location. */
-  private async zipSources(task: FileTask, actor: Actor, sourceLevel: Level, target: string | SafePath): Promise<ZipSourcesResult> {
+  private async zipSources(task: FileTask, actor: Actor, sourceLevel: Level, target: string | SafePath, options: ZipOptions = {}): Promise<ZipSourcesResult> {
     const sources = JSON.parse(task.sources_json) as Array<{ rootSlug: string; path: string }>;
     const resolved: SafePath[] = [];
     for (const source of sources) {
@@ -812,11 +843,11 @@ export class TaskService {
       this.permissions.require(actor, sourceLevel, safe.root, safe.logicalPath);
       resolved.push(safe);
     }
-    return this.zipSourcesStreamed(task, resolved, target, actor, sourceLevel);
+    return this.zipSourcesStreamed(task, resolved, target, actor, sourceLevel, options);
   }
 
   /** Every node is checked before it enters the archive; file data stays streamed from its source. */
-  private async zipSourcesStreamed(task: FileTask, sources: SafePath[], target: string | SafePath, actor: Actor, sourceLevel: Level): Promise<ZipSourcesResult> {
+  private async zipSourcesStreamed(task: FileTask, sources: SafePath[], target: string | SafePath, actor: Actor, sourceLevel: Level, options: ZipOptions): Promise<ZipSourcesResult> {
     const operations: PlannedZipSource[] = [];
     const includedPaths: ZipPathRef[] = [];
     const taken = new Set<string>();
@@ -928,7 +959,7 @@ export class TaskService {
       }
     }
 
-    const archive = Readable.from(zipStream(entries()));
+    const archive = Readable.from(zipStream(entries(), options));
     if (typeof target !== "string" && isRemote(target.root)) await this.storage.remote.write(target.root, target.logicalPath, archive);
     else {
       const targetPath = typeof target === "string" ? target : target.absolutePath;

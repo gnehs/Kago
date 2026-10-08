@@ -822,13 +822,15 @@ function registerApi(app: FastifyInstance, services: Services) {
     const params = z.object({ id: z.string() }).parse(request.params);
     const body = z.object({
       type: z.enum(["copy", "move", "compress"]),
-      destination: z.object({ rootSlug: z.string(), path: z.string() })
+      destination: z.object({ rootSlug: z.string(), path: z.string() }),
+      options: taskInputSchema.shape.options
     }).parse(request.body);
     const items = services.shelves.itemsForTask(actor, params.id);
     return services.tasks.create(actor, {
       type: body.type,
       sources: items.map((item) => ({ rootSlug: item.root_slug, path: item.path })),
-      destination: body.destination
+      destination: body.destination,
+      options: body.options
     });
   });
 

@@ -6,6 +6,7 @@ import { KagoLoading } from "./components/kago/empty-state";
 import { KagoToaster } from "./components/kago/toaster";
 import { Login } from "./features/auth/Login";
 import { SetupAdmin } from "./features/auth/SetupAdmin";
+import { CompressDialogHost } from "./features/files/CompressDialog";
 import { VideoPage } from "./features/files/VideoPage";
 import { PublicSharePage } from "./features/shares/PublicSharePage";
 import { Workspace } from "./features/workspace/Workspace";
@@ -22,6 +23,7 @@ export function App() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <KagoDialogHost />
+      <CompressDialogHost />
       <KagoToaster />
     </>
   );

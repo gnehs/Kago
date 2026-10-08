@@ -13,7 +13,7 @@ import { displayPath, ensureZipName, joinLogicalPath } from "@/lib/paths";
 import { run } from "@/lib/run";
 import { isInteractiveTarget, usePointerDrag } from "@/lib/usePointerDrag";
 import { cn } from "@/lib/utils";
-import { promptText } from "@/stores/dialogs";
+import { promptCompress, type CompressChoice } from "@/features/files/CompressDialog";
 import { toast } from "@/stores/toast";
 import { getCanvasSize, useWorkspaceStore } from "@/stores/workspace";
 import { t } from "@/lib/i18n";
@@ -99,13 +99,15 @@ export function Shelf() {
   async function send(type: "copy" | "move" | "compress") {
     if (!active) return;
     let path = active.logicalPath;
+    let options: CompressChoice["options"] | undefined;
     if (type === "compress") {
-      const name = await promptText({ title: t("Compress the Shelf to zip"), defaultValue: "shelf.zip", confirmLabel: t("Compress") });
-      if (!name) return;
-      path = joinLogicalPath(active.logicalPath, ensureZipName(name));
+      const choice = await promptCompress({ title: t("Compress the Shelf to zip"), defaultName: "shelf.zip" });
+      if (!choice) return;
+      path = joinLogicalPath(active.logicalPath, ensureZipName(choice.name));
+      options = choice.options;
     }
     await run(async () => {
-      await api(`/api/shelves/${shelfId}/tasks`, { method: "POST", body: JSON.stringify({ type, destination: { rootSlug: active.rootSlug, path } }) });
+      await api(`/api/shelves/${shelfId}/tasks`, { method: "POST", body: JSON.stringify({ type, destination: { rootSlug: active.rootSlug, path }, options }) });
       await queryClient.invalidateQueries({ queryKey: ["tasks"] });
       toast(t("Task created"));
     });

@@ -9,6 +9,7 @@ import { toast } from "@/stores/toast";
 import { hideTrashing } from "@/stores/trashing";
 import { isUploadCancelled, uploadForm, uploadLabel } from "@/stores/uploads";
 import { folderTitle, useWorkspaceStore } from "@/stores/workspace";
+import { promptCompress } from "./CompressDialog";
 import type { FileItem, FileTask, FileWindow } from "@/types/kago";
 import { t } from "@/lib/i18n";
 
@@ -141,9 +142,9 @@ export function useFileActions(window: FileWindow) {
       }),
     compress: (paths: string[]) =>
       run(async () => {
-        const name = await promptText({ title: t("Compress to zip"), defaultValue: `${window.title || "archive"}.zip`, confirmLabel: t("Compress") });
-        if (!name) return;
-        await createTask(queryClient, { type: "compress", sources: refs(paths), destination: here(joinLogicalPath(window.logicalPath, ensureZipName(name))) });
+        const choice = await promptCompress({ title: t("Compress to zip"), defaultName: `${window.title || "archive"}.zip` });
+        if (!choice) return;
+        await createTask(queryClient, { type: "compress", sources: refs(paths), destination: here(joinLogicalPath(window.logicalPath, ensureZipName(choice.name))), options: choice.options });
         toast(t("Compress task created"));
       }),
     extract: (paths: string[]) =>

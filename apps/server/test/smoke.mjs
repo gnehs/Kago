@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { createCipheriv, createHmac, pbkdf2Sync } from "node:crypto";
 import { access, mkdtemp, mkdir, readdir, readFile, rm, symlink, truncate, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
 import test from "node:test";
+import { inflateRawSync } from "node:zlib";
 import AdmZip from "adm-zip";
 import { buildApp } from "../dist/app.js";
 import { loadEnv } from "../dist/config/env.js";
@@ -625,6 +627,70 @@ test("download archives stay out of the data dir and running tasks can be cancel
     assert.deepEqual((await admin.delete("/api/tasks")).json, { cleared: listed.length });
     assert.deepEqual((await admin.get("/api/tasks")).json, []);
     assert.deepEqual(await readdir(path.join(fixture.appDataDir, "temp", "downloads")), []);
+  } finally {
+    await app.close();
+    await rm(fixture.baseDir, { recursive: true, force: true });
+  }
+});
+
+test("compress tasks take a compression level and a password", async () => {
+  const fixture = await createFixture("kago-smoke-compress.");
+  const app = await buildApp(testEnv(fixture));
+  const admin = client(app);
+
+  try {
+    await app.ready();
+    assert.equal((await admin.post("/api/auth/setup", { email: "admin@example.test", password: "fake-admin-password-123", displayName: "Smoke Admin" })).statusCode, 200);
+    const text = "kago ".repeat(20_000);
+    await writeFile(path.join(fixture.dataDir, "photos", "public", "long.txt"), text);
+    const password = "fake-zip-password 密碼";
+    const compress = async (name, options) => {
+      const task = await admin.post("/api/tasks", { type: "compress", sources: [{ rootSlug: "photos", path: "/public/long.txt" }], destination: { rootSlug: "photos", path: `/2026/${name}.zip` }, options });
+      assert.equal(task.statusCode, 200);
+      assert.equal(JSON.stringify(task.json).includes(password), false);
+      const done = await waitTask(admin, task.json.id);
+      assert.equal(done.status, "done", done.error_message);
+      // Not even the sealed password outlives the task.
+      assert.equal("password" in JSON.parse(done.destination).options, false);
+      return readFile(path.join(fixture.dataDir, "photos", "2026", `${name}.zip`));
+    };
+
+    const stored = await compress("stored", { level: "store" });
+    const best = await compress("best", { level: "best" });
+    assert.equal(new AdmZip(stored).getEntry("long.txt").header.method, 0);
+    assert.ok(stored.length > text.length);
+    assert.ok(best.length < text.length / 10);
+    assert.equal(new AdmZip(best).readAsText("long.txt"), text);
+
+    const legacy = new AdmZip(await compress("legacy", { password, encryption: "zipcrypto" }));
+    assert.equal(legacy.getEntry("long.txt").header.encrypted, true);
+    assert.equal(legacy.readFile("long.txt", password).toString(), text);
+    assert.throws(() => legacy.readFile("long.txt", "wrong"));
+
+    // AES is the default: WinZip's AE-2, read back here by its own description.
+    const locked = await compress("locked", { password, level: "fast" });
+    assert.equal(locked.readUInt16LE(6) & 1, 1);
+    assert.equal(locked.readUInt16LE(8), 99);
+    const dataStart = 30 + locked.readUInt16LE(26) + locked.readUInt16LE(28);
+    const descriptor = locked.indexOf(Buffer.from([0x50, 0x4b, 0x07, 0x08]), dataStart);
+    assert.equal(locked.readUInt32LE(descriptor + 4), 0);
+    assert.equal(locked.readUInt32LE(descriptor + 8), descriptor - dataStart);
+    const keys = pbkdf2Sync(password, locked.subarray(dataStart, dataStart + 16), 1000, 66, "sha1");
+    assert.deepEqual(locked.subarray(dataStart + 16, dataStart + 18), keys.subarray(64));
+    const sealed = locked.subarray(dataStart + 18, descriptor - 10);
+    assert.deepEqual(locked.subarray(descriptor - 10, descriptor), createHmac("sha1", keys.subarray(32, 64)).update(sealed).digest().subarray(0, 10));
+    const counters = Buffer.alloc(Math.ceil(sealed.length / 16) * 16);
+    for (let block = 0; block * 16 < counters.length; block += 1) counters.writeUInt32LE(block + 1, block * 16);
+    const stream = createCipheriv("aes-256-ecb", keys.subarray(0, 32), null).setAutoPadding(false).update(counters);
+    assert.equal(inflateRawSync(sealed.map((byte, index) => byte ^ stream[index])).toString(), text);
+    assert.equal(locked.includes(Buffer.from("kago kago")), false);
+
+    const logs = new DatabaseSync(path.join(fixture.appDataDir, "app.db"), { readOnly: true });
+    try {
+      assert.equal(logs.prepare("SELECT COUNT(*) AS n FROM audit_logs WHERE target_json LIKE ?").get(`%${password}%`).n, 0);
+    } finally {
+      logs.close();
+    }
   } finally {
     await app.close();
     await rm(fixture.baseDir, { recursive: true, force: true });
