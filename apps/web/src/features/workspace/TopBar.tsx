@@ -9,7 +9,8 @@ import { KagoIconButton } from "@/components/kago/icon-button";
 import { Button } from "@/components/ui/button";
 import { BrandMark } from "@/features/auth/AuthCard";
 import { TaskRow } from "@/features/tasks/TaskRow";
-import { isActiveTask, isQuietTask } from "@/features/tasks/taskUtils";
+import { isActiveTask, isFinishedTask, isQuietTask } from "@/features/tasks/taskUtils";
+import { useClearFinishedTasks } from "@/features/tasks/useClearFinishedTasks";
 import { displayPath } from "@/lib/paths";
 import { cn } from "@/lib/utils";
 import { FileIcon } from "@/features/files/FileIcon";
@@ -105,6 +106,7 @@ export function TopBar({ user, onOpenPalette }: { user: Actor; onOpenPalette: ()
 /** Live task indicator; the popover lists the latest tasks without leaving the desktop. */
 function TaskStatus() {
   const tasks = useTasks();
+  const clear = useClearFinishedTasks();
   const [open, setOpen] = useState(false);
   const all = (tasks.data ?? []).filter((task) => !isQuietTask(task));
   const activeCount = all.filter(isActiveTask).length;
@@ -135,16 +137,23 @@ function TaskStatus() {
                 {visible.map((task) => <TaskRow key={task.id} task={task} />)}
               </div>
             )}
-            <Button
-              variant="ghost"
-              className="m-1.5 border-t border-transparent"
-              onClick={() => {
-                setOpen(false);
-                useWorkspaceStore.getState().openApp("tasks");
-              }}
-            >
-              {t("See all tasks")}
-            </Button>
+            <div className="m-1.5 flex gap-1.5">
+              <Button
+                variant="ghost"
+                className="flex-1"
+                onClick={() => {
+                  setOpen(false);
+                  useWorkspaceStore.getState().openApp("tasks");
+                }}
+              >
+                {t("See all tasks")}
+              </Button>
+              {tasks.data?.some(isFinishedTask) ? (
+                <Button variant="ghost" className="flex-1" onClick={() => void clear()}>
+                  {t("Clear finished")}
+                </Button>
+              ) : null}
+            </div>
           </Popover.Popup>
         </Popover.Positioner>
       </Popover.Portal>

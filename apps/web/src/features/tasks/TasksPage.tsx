@@ -1,27 +1,16 @@
-import { useQueryClient } from "@tanstack/react-query";
 import { ListChecks } from "lucide-react";
-import { api } from "@/api/client";
 import { useTasks } from "@/api/hooks";
 import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
 import { Button } from "@/components/ui/button";
 import { Page } from "@/features/workspace/Page";
-import { run } from "@/lib/run";
-import { toast } from "@/stores/toast";
 import { TaskRow } from "./TaskRow";
 import { isFinishedTask } from "./taskUtils";
+import { useClearFinishedTasks } from "./useClearFinishedTasks";
 import { t } from "@/lib/i18n";
 
 export function TasksPage() {
-  const queryClient = useQueryClient();
   const tasks = useTasks();
-
-  async function clear() {
-    await run(async () => {
-      await api("/api/tasks", { method: "DELETE" });
-      await queryClient.invalidateQueries({ queryKey: ["tasks"] });
-      toast(t("Finished tasks cleared"));
-    }, t("Couldn’t clear the tasks"));
-  }
+  const clear = useClearFinishedTasks();
 
   return (
     <Page
