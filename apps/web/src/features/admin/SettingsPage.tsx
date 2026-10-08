@@ -76,13 +76,13 @@ export function SettingsPage({ user }: { user: Actor }) {
     <Page title={t("General")} description={t("How Kago looks and shows your folders, and your own account.")}>
       <Card title={t("Appearance")}>
         <div className="flex flex-col gap-4">
-          <SettingRow label={t("Language")} description={t("Follows your account. Changing it reloads the page.")}>
+          <SettingRow label={t("Language")} description={t("Changing it reloads the page.")}>
             <Select aria-label={t("Language")} className="w-40" value={getLocalePref()} onChange={(event) => setLocale(event.target.value as LocalePref)}>
               <option value="system">{t("Match system")}</option>
               {Object.entries(localeNames).map(([value, name]) => <option key={value} value={value} lang={value}>{name}</option>)}
             </Select>
           </SettingRow>
-          <SettingRow label={t("Theme")} description={t("Follows your account to every browser you sign in from.")}>
+          <SettingRow label={t("Theme")}>
             <Choice
               label={t("Theme")}
               options={themes}
