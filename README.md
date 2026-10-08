@@ -80,7 +80,7 @@ services:
 
 | Path in the container | Purpose |
 | --- | --- |
-| `/data` | The files you want to manage. **Each folder directly inside it** becomes a "location" on the desktop, so mount a directory that holds several folders, or mount several folders to sub-paths such as `/data/Photos` and `/data/Videos`. |
+| `/data` | The files you want to manage. **Each folder directly inside it** becomes a "location" in the file manager, so mount a directory that holds several folders, or mount several folders to sub-paths such as `/data/Photos` and `/data/Videos`. |
 | `/app-data` | Kago's own data: the SQLite database (accounts, permissions, share links, audit log), the Trash, thumbnails and transcoding scratch files. **Back this folder up.** |
 
 To bring together folders that live on different disks, mount each one separately:
@@ -95,7 +95,7 @@ A location is named after its folder. To make a location read-only, set it in Se
 
 ### Remote locations (SMB, SFTP, WebDAV, FTP)
 
-Folders that aren't on this machine can be locations too. In Settings → Locations → Add remote location, pick the kind, fill in the connection details, press "Test connection" to check them, and save. The location then appears on the desktop next to the folders under `/data`. Browsing, previews, video playback and transcoding, thumbnails, uploads, renaming, moving and copying (across locations too), compressing and extracting, share links and permissions all work as usual.
+Folders that aren't on this machine can be locations too. In Settings → Locations → Add remote location, pick the kind, fill in the connection details, press "Test connection" to check them, and save. The location then appears in the file manager next to the folders under `/data`. Browsing, previews, video playback and transcoding, thumbnails, uploads, renaming, moving and copying (across locations too), compressing and extracting, share links and permissions all work as usual.
 
 - The connection is made entirely in user space (by the [rclone](https://rclone.org) bundled in the image). **The container needs no extra privileges**, and nothing has to be mounted on the host first.
 - Passwords and keys are encrypted before they go into the database. The key is `/app-data/storage.key`; keep it when you back up `/app-data`, because saved passwords can't be decrypted without it.
@@ -219,8 +219,8 @@ Every push to `main` publishes `latest` and `sha-<commit>`; pushing a `v*` tag a
 
 ## FAQ
 
-**There are no locations on the desktop.**
-Locations only appear when `/data` contains folders; files placed directly in the root of `/data` aren't shown.
+**There is no Files icon on the desktop.**
+The icon and its locations only appear when `/data` contains folders; files placed directly in the root of `/data` aren't shown.
 
 **Uploading or creating a folder fails with a permission error.**
 The account behind `PUID` / `PGID` can't write to the folder mounted into `/data`. Change the variables, or change the folder's permissions on the NAS.

@@ -1,60 +1,56 @@
 import type { ReactNode } from "react";
-import { ExternalLink, FolderOpen, Lock } from "lucide-react";
+import { ExternalLink, HardDrive, Server } from "lucide-react";
 import { KagoAppIcon } from "@/components/kago/app-icon";
-import { KagoContextMenu, KagoMenuItem } from "@/components/kago/menu";
+import { KagoContextMenu, KagoMenuItem, KagoMenuSeparator } from "@/components/kago/menu";
 import { useWorkspaceStore } from "@/stores/workspace";
-import type { Root } from "@/types/kago";
+import type { FileWindow, Root } from "@/types/kago";
 import { t } from "@/lib/i18n";
 
 /**
- * Desktop shortcuts: the places you go to. They sit underneath every window and double as
- * the root picker: Kago never opens a root on its own, the user picks one here.
- * Locations come first, each in a colour of its own so they can be told apart at a glance; the two tools that are not locations follow a rule.
+ * Desktop shortcuts: the places you go to. They sit underneath every window.
+ * Files stands for every location: which of them a window shows is picked in the window, from the tree down its side.
  */
 export function DesktopIcons({ roots, isAdmin }: { roots: Root[]; isAdmin: boolean }) {
   const store = useWorkspaceStore.getState;
+  // A new window starts in a location on this machine when there is one: it answers at once and is always there.
+  const home = roots.find((root) => root.provider === "local") ?? roots[0];
   const openNew = (root: Root) => store().openWindow({ rootSlug: root.slug, logicalPath: "/", title: root.name });
+  /** Brings back the file window last in front, and opens one only when there is none. */
+  const openFiles = (home: Root) => {
+    const front = store().windows.reduce<FileWindow | undefined>((top, window) => (top && top.zIndex > window.zIndex ? top : window), undefined);
+    if (!front) return openNew(home);
+    store().updateWindow(front.id, { minimized: false });
+    store().focusWindow(front.id);
+  };
 
   return (
     <div className="absolute inset-y-4 left-4 flex flex-col flex-wrap content-start gap-1">
-      {roots.map((root, index) => {
-        const icon = (
-          <KagoContextMenu
-            key={root.id}
-            menu={
-              <>
-                <KagoMenuItem icon={<FolderOpen />} onClick={() => store().openRoot(root)}>{t("Open")}</KagoMenuItem>
-                <KagoMenuItem icon={<ExternalLink />} onClick={() => openNew(root)}>{t("Open in new window")}</KagoMenuItem>
-              </>
-            }
-          >
-            <DesktopIcon
-              icon={GLYPHS.location}
-              tone={`var(--kago-app-${locationTone(root.slug)})`}
-              label={root.name}
-              readonly={Boolean(root.readonly)}
-              onClick={(event) => (event.metaKey || event.ctrlKey ? openNew(root) : store().openRoot(root))}
-              onAuxClick={(event) => event.button === 1 && openNew(root)}
-            />
-          </KagoContextMenu>
-        );
-        if (index < roots.length - 1) return icon;
-        // The rule closes the locations, so it stays under the last of them when the tools start a column of their own.
-        return (
-          <div key={root.id} className="flex flex-col gap-1">
-            {icon}
-            <span aria-hidden className="mx-auto my-1.5 h-px w-10 bg-line-strong" />
-          </div>
-        );
-      })}
-      {/* One group, so that a column too short for everything never leaves one of the two on its own at the top of the next. */}
-      <div className="flex flex-col gap-1">
-        <DesktopIcon icon={GLYPHS.shares} tone="var(--kago-app-share)" label={t("Shares")} onClick={() => store().openApp("shares")} />
-        <DesktopIcon icon={GLYPHS.trash} tone="var(--kago-app-trash)" label={t("Trash")} onClick={() => store().openApp("trash")} />
-      </div>
-      {roots.length === 0 ? (
-        <p className="m-0 w-20 px-1 pt-2 text-center text-xs text-muted">{isAdmin ? t("No folders under /data yet") : t("No locations available. Contact an administrator")}</p>
+      {home ? (
+        <KagoContextMenu
+          menu={
+            <>
+              <KagoMenuItem icon={<ExternalLink />} onClick={() => openNew(home)}>{t("Open in new window")}</KagoMenuItem>
+              <KagoMenuSeparator />
+              {roots.map((root) => (
+                <KagoMenuItem key={root.id} icon={root.provider === "local" ? <HardDrive /> : <Server />} onClick={() => store().openRoot(root)}>{root.name}</KagoMenuItem>
+              ))}
+            </>
+          }
+        >
+          <DesktopIcon
+            icon={GLYPHS.files}
+            tone="var(--kago-app-1)"
+            label={t("Files")}
+            onClick={(event) => (event.metaKey || event.ctrlKey ? openNew(home) : openFiles(home))}
+            onAuxClick={(event) => event.button === 1 && openNew(home)}
+          />
+        </KagoContextMenu>
       ) : null}
+      <DesktopIcon icon={GLYPHS.shares} tone="var(--kago-app-share)" label={t("Shares")} onClick={() => store().openApp("shares")} />
+      <DesktopIcon icon={GLYPHS.trash} tone="var(--kago-app-trash)" label={t("Trash")} onClick={() => store().openApp("trash")} />
+      {home ? null : (
+        <p className="m-0 w-20 px-1 pt-2 text-center text-xs text-muted">{isAdmin ? t("No folders under /data yet") : t("No locations available. Contact an administrator")}</p>
+      )}
     </div>
   );
 }
@@ -68,7 +64,7 @@ export function locationTone(slug: string) {
 
 /** What each tile holds, on a 24px field. Nothing here has a colour: the tile paints it. */
 const GLYPHS = {
-  location: (
+  files: (
     <KagoAppIcon texture="weave">
       <path d="M2.5 6.7a2.2 2.2 0 0 1 2.2-2.2h3.8a2.2 2.2 0 0 1 1.8 1l.8 1.2a2.2 2.2 0 0 0 1.8 1h6.4a2.2 2.2 0 0 1 2.2 2.2v7.4a2.2 2.2 0 0 1-2.2 2.2H4.7a2.2 2.2 0 0 1-2.2-2.2z" fillOpacity={0.62} />
       <path d="M2.5 11.9a2 2 0 0 1 2-2h15a2 2 0 0 1 2 2v5.4a2.2 2.2 0 0 1-2.2 2.2H4.7a2.2 2.2 0 0 1-2.2-2.2z" />
@@ -90,22 +86,10 @@ const GLYPHS = {
   )
 };
 
-function DesktopIcon({ icon, label, tone, readonly, ...props }: React.ComponentProps<"button"> & { icon: ReactNode; label: string; /** The colour of the tile. */ tone: string; readonly?: boolean }) {
+function DesktopIcon({ icon, label, tone, ...props }: React.ComponentProps<"button"> & { icon: ReactNode; label: string; /** The colour of the tile. */ tone: string }) {
   return (
-    <button
-      type="button"
-      title={readonly ? t("{label} (read-only)", { label }) : undefined}
-      className="group flex w-20 flex-col items-center gap-1.5 rounded-lg px-1 py-2 outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-accent/50"
-      {...props}
-    >
-      <span className="relative flex size-12 transition-transform group-active:scale-95" style={{ color: tone }}>
-        {icon}
-        {readonly ? (
-          <span className="kago-raised absolute -right-1 -bottom-1 flex size-4 items-center justify-center rounded-full text-muted">
-            <Lock aria-label={t("Read-only")} className="size-2.5" />
-          </span>
-        ) : null}
-      </span>
+    <button type="button" className="group flex w-20 flex-col items-center gap-1.5 rounded-lg px-1 py-2 outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-accent/50" {...props}>
+      <span className="flex size-12 transition-transform group-active:scale-95" style={{ color: tone }}>{icon}</span>
       {/* Over a picture the name has to carry its own contrast. */}
       <span className="line-clamp-2 max-w-full text-center leading-tight break-words group-data-[wallpaper]/canvas:text-white group-data-[wallpaper]/canvas:[text-shadow:0_1px_3px_rgb(0_0_0/0.85)]">{label}</span>
     </button>
