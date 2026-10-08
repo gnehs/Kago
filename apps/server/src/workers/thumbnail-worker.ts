@@ -15,6 +15,8 @@ const MAX_BYTES = 128 * 1024 * 1024;
  */
 const EMBEDDED_PICTURES = ["docProps/thumbnail.jpeg", "docProps/thumbnail.jpg", "docProps/thumbnail.png", "Thumbnails/thumbnail.png", "preview.jpg", "QuickLook/Thumbnail.jpg"];
 
+const MAX_PICTURE_BYTES = 32 * 1024 * 1024;
+
 let mupdf: Promise<typeof import("mupdf")> | undefined;
 
 /** The first page of a PDF, drawn by MuPDF. The library is only loaded once a PDF asks for it. */
@@ -39,8 +41,11 @@ async function drawPdf(job: ThumbnailJob): Promise<boolean> {
 function extractEmbedded(job: ThumbnailJob): boolean {
   const zip = new AdmZip(job.source);
   for (const name of EMBEDDED_PICTURES) {
-    const data = zip.getEntry(name)?.getData();
-    if (!data?.length) continue;
+    const entry = zip.getEntry(name);
+    // A preview picture is small. One that says it unpacks to more is not unpacked to find out.
+    if (!entry || entry.header.size > MAX_PICTURE_BYTES) continue;
+    const data = entry.getData();
+    if (!data.length) continue;
     fs.writeFileSync(job.target, data);
     return true;
   }

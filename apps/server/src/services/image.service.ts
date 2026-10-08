@@ -6,6 +6,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { ExifTool, type Tags } from "exiftool-vendored";
 import { AppError } from "../lib/errors.js";
+import { guardedInput } from "../lib/ffmpeg-input.js";
 import { pruneKeptFiles, useKeptFile } from "../lib/kept-files.js";
 
 const execFileAsync = promisify(execFile);
@@ -48,6 +49,9 @@ export function renditionKind(name: string): "heif" | "raw" | null {
   const extension = path.extname(name).slice(1).toLowerCase();
   return HEIF_EXTENSIONS.has(extension) ? "heif" : RAW_EXTENSIONS.has(extension) ? "raw" : null;
 }
+
+/** HEIF is kept in the same container as MP4; ffmpeg reads the file as that or not at all. */
+const HEIF_FORMATS = ["mov"];
 
 /**
  * Pictures browsers cannot show (HEIF from phones and cameras, camera RAW) as JPEGs they can, and the
@@ -156,7 +160,7 @@ export class ImageService {
   private async decodeHeif(source: string, target: string): Promise<void> {
     const scale = `scale=w='min(${MAX_EDGE},iw)':h='min(${MAX_EDGE},ih)':force_original_aspect_ratio=decrease[out]`;
     // A large picture is stored as a grid of tiles, which ffmpeg presents as a stream group; a small one is a single stream.
-    const ffmpeg = (input: string): [string, string[]] => [this.ffmpeg, ["-v", "error", "-nostdin", "-y", "-i", source, "-filter_complex", `[${input}]${scale}`, "-map", "[out]", "-frames:v", "1", "-q:v", "3", target]];
+    const ffmpeg = (input: string): [string, string[]] => [this.ffmpeg, ["-v", "error", "-nostdin", "-y", ...guardedInput(source, HEIF_FORMATS), "-filter_complex", `[${input}]${scale}`, "-map", "[out]", "-frames:v", "1", "-q:v", "3", target]];
     const decoders: Array<[string, string[]]> = [
       ffmpeg("0:g:0"),
       ffmpeg("0:v:0"),

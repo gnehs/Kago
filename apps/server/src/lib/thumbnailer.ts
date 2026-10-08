@@ -4,6 +4,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { Worker } from "node:worker_threads";
 import type { ThumbnailJob, ThumbnailJobResult } from "../workers/thumbnail-worker.js";
+import { guardedInput, guardedProbe, PICTURE_FORMATS } from "./ffmpeg-input.js";
 import { pruneKeptFiles, useKeptFile } from "./kept-files.js";
 import { logger } from "./logger.js";
 
@@ -72,6 +73,10 @@ export class Thumbnailer {
   private async draw(source: string, target: string, kind: ThumbnailSource): Promise<string | null> {
     const encoder = await (this.encoder ??= this.findEncoder());
     if (!encoder) return null;
+    // An SVG is a document that may name other files to draw; the browser shows it as it is instead.
+    if (kind === "image" && /\.svgz?$/i.test(source)) return null;
+    // A video is read as a video and everything else as a still picture, whatever the file turns out to hold.
+    const formats = kind === "video" ? undefined : PICTURE_FORMATS;
     await this.acquire();
     const partial = `${target}.partial`;
     const prepared = `${target}.source`;
@@ -88,7 +93,7 @@ export class Thumbnailer {
       for (const seek of seeks) {
         // Past the start only keyframes are decoded: landing between two would mean decoding every frame up to that point,
         // which for 4K HEVC with keyframes ten seconds apart outlasts the timeout on a slow machine.
-        const input = seek === null ? ["-i", picture] : [...(seek > 0 ? ["-skip_frame", "nokey"] : []), "-ss", seek.toFixed(2), "-i", picture, "-an", "-sn", "-dn"];
+        const input = seek === null ? guardedInput(picture, formats) : [...(seek > 0 ? ["-skip_frame", "nokey"] : []), "-ss", seek.toFixed(2), ...guardedInput(picture, formats), "-an", "-sn", "-dn"];
         try {
           const { stderr } = await execFileAsync(this.ffmpeg, ["-v", "warning", "-nostdin", "-y", ...input, "-filter_complex", filter(MAX_EDGE), "-map", "[out]", "-frames:v", "1", ...encoder, "-f", "avif", partial], { timeout: TIMEOUT_MS });
           // With no frame after the seek, ffmpeg still succeeds and leaves a file that is only a header.
@@ -120,13 +125,13 @@ export class Thumbnailer {
    */
   async convert(source: string, target: string, edge: number): Promise<boolean> {
     const encoder = await (this.encoder ??= this.findEncoder());
-    if (!encoder) return false;
+    if (!encoder || /\.svgz?$/i.test(source)) return false;
     await this.acquire();
     // Two conversions for one target may overlap; each writes a file of its own and the later rename wins.
     const partial = `${target}.${process.hrtime.bigint()}.partial`;
     try {
       await fsp.mkdir(path.dirname(target), { recursive: true });
-      await execFileAsync(this.ffmpeg, ["-v", "warning", "-nostdin", "-y", "-i", source, "-filter_complex", filter(edge), "-map", "[out]", "-frames:v", "1", ...encoder, "-f", "avif", partial], { timeout: TIMEOUT_MS });
+      await execFileAsync(this.ffmpeg, ["-v", "warning", "-nostdin", "-y", ...guardedInput(source, PICTURE_FORMATS), "-filter_complex", filter(edge), "-map", "[out]", "-frames:v", "1", ...encoder, "-f", "avif", partial], { timeout: TIMEOUT_MS });
       if ((await fsp.stat(partial)).size === 0) return false;
       await fsp.rename(partial, target);
       return true;
@@ -172,7 +177,7 @@ export class Thumbnailer {
 
   private async duration(source: string): Promise<number> {
     try {
-      const { stdout } = await execFileAsync(this.ffprobe, ["-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", source], { timeout: TIMEOUT_MS });
+      const { stdout } = await execFileAsync(this.ffprobe, ["-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", ...guardedProbe(source)], { timeout: TIMEOUT_MS });
       const seconds = Number.parseFloat(stdout);
       return Number.isFinite(seconds) && seconds > 0 ? seconds : 0;
     } catch {

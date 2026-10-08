@@ -7,6 +7,7 @@ import type { Readable } from "node:stream";
 import { promisify } from "node:util";
 import { z } from "zod";
 import { AppError } from "../lib/errors.js";
+import { guardedInput, guardedProbe, inputProtocols } from "../lib/ffmpeg-input.js";
 import { id as createId } from "../lib/ids.js";
 import { logger } from "../lib/logger.js";
 import { streamLanguage, type PictureSubtitleFormat, type SubtitleFormat } from "../lib/subtitles.js";
@@ -185,26 +186,6 @@ const SUBTITLE_LEAD_SECONDS = 120;
 /** Reading a subtitle stream out means reading through the whole file, which takes a while on a large one. */
 const EXTRACT_TIMEOUT_MS = 180_000;
 const EXTRACT_KEEP = 24;
-/**
- * The containers ffmpeg may read a file as. It tells what a file is by its contents, not its name, and some of
- * what it reads are not media but lists of other things to read: a playlist or a concat script saved as `song.ape`
- * would have it open files, or addresses, that whoever put it there was never allowed to see. Only formats that
- * hold their own sound and picture are let in. A name of several parts (`mov,mp4,m4a…`) is matched by any one of them.
- */
-const INPUT_FORMATS = [
-  "aac", "ac3", "aiff", "amr", "ape", "asf", "au", "av1", "avi", "caf", "dsf", "dts", "dtshd", "dv", "eac3", "flac", "flv", "gxf", "h264", "hevc",
-  "iff", "ivf", "live_flv", "m4v", "matroska", "mlp", "mov", "mp3", "mpc", "mpc8", "mpeg", "mpegts", "mpegvideo", "mxf", "nsv", "nut", "obu", "ogg", "oma",
-  "rm", "shn", "swf", "tak", "truehd", "tta", "vc1", "voc", "w64", "wav", "wtv", "wv", "xwma"
-].join(",");
-
-/** How ffmpeg may reach a file: off the disk, or for a remote location from this server's own address for it. Nothing in the file can add to that. */
-const inputProtocols = (input: string) => (/^http:\/\/127\.0\.0\.1:/.test(input) ? "http,tcp" : "file");
-
-/** A file of someone's as ffmpeg is given it, held to the formats and protocols above. */
-const guardedInput = (input: string) => ["-protocol_whitelist", inputProtocols(input), "-format_whitelist", INPUT_FORMATS, "-i", input];
-/** The same for ffprobe, which takes the file without `-i`. */
-const guardedProbe = (input: string) => ["-protocol_whitelist", inputProtocols(input), "-format_whitelist", INPUT_FORMATS, input];
-
 /** A picture attached to a file is decoded whole before it is shrunk; one larger than this is left alone. */
 const MAX_COVER_PIXELS = 64_000_000;
 /** No name of a song is this long; a tag that is longer is cut, so a file cannot make its listing arbitrarily large. */
