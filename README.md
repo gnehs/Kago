@@ -112,6 +112,7 @@ Settings → Sync stores sync jobs: bring the contents of one folder to another,
 
 - The two sides can be any two locations (local or remote), or a local location and a folder on another machine (`user@host:/path`, rsync over SSH).
 - "Copy new and changed files" never deletes anything at the destination. "Make the destination identical" deletes what the source no longer has, and needs permission to delete at the destination. When in doubt, tick "Trial run" first; it only reports what would change.
+- Only administrators can sync with another machine: the key is the server's own, so whoever may use it reaches everything it opens.
 - rsync signs in with Kago's own SSH key (`/app-data/ssh/id_ed25519`, generated the first time it is needed). The form shows the public key; add it to the other side's `~/.ssh/authorized_keys`. The host key is recorded on the first connection, and a connection is refused later if the key doesn't match.
 - Creating and running a sync needs permission to sync the folders at both ends. A scheduled sync runs as the person who created it; when that person is disabled or loses permission, the run is skipped and noted in the audit log.
 - Schedules follow the server's time zone, which you can set with the `TZ` environment variable (for example `TZ=Asia/Taipei`).

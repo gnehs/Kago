@@ -424,7 +424,7 @@ function registerApi(app: FastifyInstance, services: Services) {
     return services.remotes.test(normalizeRemoteConfig(body.config, previous));
   });
   app.get("/api/storage/ssh-key", async (request) => {
-    requireActor(request);
+    requireAdmin(request);
     return { publicKey: (await ensureSshKey(services.env.appDataDir)).publicKey };
   });
   app.post("/api/roots/remote", async (request) => {

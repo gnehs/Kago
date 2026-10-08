@@ -51,6 +51,17 @@ test("a move carries its rules along and a copy refuses a folder with an unreada
     const movedFolder = await member.post("/api/tasks", { type: "move", sources: [{ rootSlug: "photos", path: "/public/folder" }], destination: { rootSlug: "photos", path: "/public/inbox" } });
     assert.ok(movedFolder.statusCode === 403 || (await waitTask(member, movedFolder.json.id)).status === "failed");
     assert.equal(await readFile(path.join(publicDir, "folder", "visible.txt"), "utf8"), "visible canary");
+
+    // A sync is a copy by another name: it takes no more out of a folder than a copy would.
+    const sync = (source, destination) => member.post("/api/sync-jobs", { name: "Sync", source, destination });
+    assert.equal((await sync({ kind: "location", rootSlug: "photos", path: "/public/folder" }, { kind: "location", rootSlug: "photos", path: "/public/inbox" })).statusCode, 403);
+
+    // The server's SSH key is the administrator's to use.
+    assert.equal((await sync({ kind: "location", rootSlug: "photos", path: "/public/inbox" }, { kind: "rsync", remote: "user@example.test:/backup" })).statusCode, 403);
+    assert.equal((await member.post("/api/tasks", { type: "rsync_push", sources: [{ rootSlug: "photos", path: "/public/inbox" }], remote: "user@example.test:/backup" })).statusCode, 403);
+    assert.equal((await member.post("/api/tasks", { type: "rsync_pull", remote: "user@example.test:/backup", destination: { rootSlug: "photos", path: "/public/inbox" } })).statusCode, 403);
+    assert.equal((await member.get("/api/storage/ssh-key")).statusCode, 403);
+    assert.equal((await admin.post("/api/sync-jobs", { name: "Backup", source: { kind: "location", rootSlug: "photos", path: "/public/inbox" }, destination: { kind: "rsync", remote: "user@example.test:/backup" } })).statusCode, 200);
   } finally {
     await app.close();
     await rm(fixture.baseDir, { recursive: true, force: true });

@@ -68,7 +68,7 @@ export function SyncPage({ roots, user }: { roots: Root[]; user: Actor }) {
     >
       {editing ? (
         <Card title={editing === true ? t("Add sync") : t("Edit {name}", { name: editing.name })} action={<KagoIconButton label={t("Close")} onClick={() => setEditing(null)}><X /></KagoIconButton>}>
-          <SyncForm key={editing === true ? "new" : editing.id} roots={roots} job={editing === true ? null : editing} onSaved={async () => { setEditing(null); await refresh(); }} />
+          <SyncForm key={editing === true ? "new" : editing.id} roots={roots} admin={user.role === "ADMIN"} job={editing === true ? null : editing} onSaved={async () => { setEditing(null); await refresh(); }} />
         </Card>
       ) : null}
       {jobs.isLoading ? <KagoLoading /> : null}
@@ -136,7 +136,7 @@ function endpointOf(draft: EndpointDraft): SyncEndpoint | null {
   return draft.rootSlug && path ? { kind: "location", rootSlug: draft.rootSlug, path } : null;
 }
 
-function SyncForm({ roots, job, onSaved }: { roots: Root[]; job: SyncJob | null; onSaved: () => Promise<void> }) {
+function SyncForm({ roots, admin, job, onSaved }: { roots: Root[]; admin: boolean; job: SyncJob | null; onSaved: () => Promise<void> }) {
   const [name, setName] = useState(job?.name ?? "");
   const [source, setSource] = useState(() => draftOf(job?.source, roots));
   // A new sync starts out between two different locations when there are two.
@@ -173,8 +173,8 @@ function SyncForm({ roots, job, onSaved }: { roots: Root[]; job: SyncJob | null;
   return (
     <form className="grid grid-cols-2 gap-3" onSubmit={submit}>
       <Field label={t("Name")} className="col-span-2"><Input autoFocus value={name} onChange={(event) => setName(event.target.value)} /></Field>
-      <EndpointFields label={t("From")} roots={roots} draft={source} onChange={setSource} />
-      <EndpointFields label={t("To")} roots={roots} draft={destination} onChange={setDestination} />
+      <EndpointFields label={t("From")} roots={roots} admin={admin} draft={source} onChange={setSource} />
+      <EndpointFields label={t("To")} roots={roots} admin={admin} draft={destination} onChange={setDestination} />
       {twoMachines ? <p className="col-span-2 m-0 text-xs text-danger">{t("One side of a sync has to be a location")}</p> : null}
       {source.kind === "rsync" || destination.kind === "rsync" ? <SshKeyNote className="col-span-2" /> : null}
       <Field label={t("What to do")} hint={mode === "mirror" ? t("Whatever the source no longer has is deleted from the destination.") : t("Nothing is ever deleted from the destination.")}>
@@ -224,7 +224,7 @@ function SyncForm({ roots, job, onSaved }: { roots: Root[]; job: SyncJob | null;
 }
 
 /** One end of a sync: a folder of a location, or a folder on another machine. */
-function EndpointFields({ label, roots, draft, onChange }: { label: string; roots: Root[]; draft: EndpointDraft; onChange: (draft: EndpointDraft) => void }) {
+function EndpointFields({ label, roots, admin, draft, onChange }: { label: string; roots: Root[]; admin: boolean; draft: EndpointDraft; onChange: (draft: EndpointDraft) => void }) {
   const local = roots.filter((root) => root.provider === "local");
   return (
     <fieldset className="col-span-2 m-0 grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-3 border-0 p-0">
@@ -234,8 +234,8 @@ function EndpointFields({ label, roots, draft, onChange }: { label: string; root
           onChange={(event) => onChange(event.target.value === "rsync" ? { ...draft, kind: "rsync" } : { ...draft, kind: "location", rootSlug: event.target.value })}
         >
           {roots.map((root) => <option key={root.id} value={root.slug}>{root.name}</option>)}
-          {/* rsync works from a folder on the server's own disk, so it is offered only when there is one. */}
-          {local.length > 0 ? <option value="rsync">{t("Another machine (rsync over SSH)")}</option> : null}
+          {/* rsync works from a folder on the server's own disk, so it is offered only when there is one, and signs in with the server's own key, so only to administrators. */}
+          {local.length > 0 && (admin || draft.kind === "rsync") ? <option value="rsync">{t("Another machine (rsync over SSH)")}</option> : null}
         </Select>
       </Field>
       {draft.kind === "rsync" ? (

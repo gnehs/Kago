@@ -1265,6 +1265,7 @@ export class TaskService {
     const remote = sources[0]?.path;
     const destination = JSON.parse(task.destination ?? "{}") as { rootSlug: string; path: string; options?: RsyncOptions };
     if (!remote) throw new AppError(400, "Remote is required", "RSYNC_REMOTE_REQUIRED");
+    requireAdminForRsync(actor);
     const dest = await this.paths.resolveExisting(destination.rootSlug, destination.path);
     this.permissions.require(actor, "edit", dest.root, dest.logicalPath);
     await this.progress(task.id, remote);
@@ -1285,9 +1286,11 @@ export class TaskService {
     const sources = JSON.parse(task.sources_json) as Array<{ rootSlug: string; path: string }>;
     const destination = JSON.parse(task.destination ?? "{}") as { remote: string; options?: RsyncOptions };
     if (!destination.remote) throw new AppError(400, "Remote is required", "RSYNC_REMOTE_REQUIRED");
+    requireAdminForRsync(actor);
     for (const source of sources) {
       const safe = await this.paths.resolveExisting(source.rootSlug, source.path);
       this.permissions.require(actor, "view", safe.root, safe.logicalPath);
+      await this.requireReadableTree(actor, safe);
       await this.progress(task.id, safe.logicalPath);
       await runRsync([...rsyncFlags(destination.options), "-e", sshCommand(this.appDataDir), "--", safe.absolutePath, ensureTrailingSlash(destination.remote)], () => this.isCancelled(task.id));
       await this.bumpProcessed(task.id);
@@ -1316,11 +1319,14 @@ export class TaskService {
       if (!(await this.storage.stat(safe)).isDirectory()) throw new AppError(400, "Path is not a folder", "NOT_FOLDER");
       return safe;
     };
+    if (spec.source.kind === "rsync" || spec.destination.kind === "rsync") requireAdminForRsync(actor);
     const source = await folder(spec.source);
     const destination = await folder(spec.destination);
     if (!source && !destination) throw new AppError(400, "One side of a sync has to be a location", "SYNC_NEEDS_LOCATION");
     if (source) {
       this.permissions.require(actor, "view", source.root, source.logicalPath);
+      // Like a copy, a sync lands where the rules of its source no longer reach.
+      await this.requireReadableTree(actor, source);
     }
     if (destination) {
       this.permissions.require(actor, "edit", destination.root, destination.logicalPath);
@@ -1529,6 +1535,7 @@ export class TaskService {
     }
 
     if (input.type === "rsync_pull") {
+      requireAdminForRsync(actor);
       const destination = this.requiredDestination(input);
       const dest = await this.paths.resolveExisting(destination.rootSlug, destination.path);
       this.permissions.require(actor, "edit", dest.root, dest.logicalPath);
@@ -1537,10 +1544,12 @@ export class TaskService {
     }
 
     if (input.type === "rsync_push") {
+      requireAdminForRsync(actor);
       for (const source of input.sources) {
         const safe = await this.paths.resolveExisting(source.rootSlug, source.path);
         this.permissions.require(actor, "view", safe.root, safe.logicalPath);
         assertLocalForRsync(safe.root);
+        await this.requireReadableTree(actor, safe);
       }
       return;
     }
@@ -1824,6 +1833,11 @@ function assertNotIntoItself(source: SafePath, dest: SafePath): void {
   if (dest.logicalPath === source.logicalPath || dest.logicalPath.startsWith(`${source.logicalPath}/`)) {
     throw new AppError(409, "Cannot copy or move a folder into itself", "TARGET_INSIDE_SOURCE");
   }
+}
+
+/** rsync signs in to other machines with the server's one key, so whoever may use it reaches all that the key opens. */
+function requireAdminForRsync(actor: Actor): void {
+  if (actor.role !== "ADMIN") throw new AppError(403, "Only an administrator can sync with another machine", "ADMIN_REQUIRED");
 }
 
 function assertLocalForRsync(root: Root): void {
