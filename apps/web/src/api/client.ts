@@ -54,3 +54,11 @@ export const imageUrl = (rootSlug: string, path: string) => `/api/fs/image?${new
 
 export const previewUrl = (rootSlug: string, path: string) =>
   `/api/fs/preview?${new URLSearchParams({ rootSlug, path }).toString()}`;
+
+/** A file's sound from `start` seconds in, re-encoded by the server into something every browser plays. */
+export const audioStreamUrl = (rootSlug: string, path: string, start: number) =>
+  `/api/media/audio?${new URLSearchParams({ rootSlug, path, start: start.toFixed(3) }).toString()}`;
+
+/** The picture kept inside a music file, as a JPEG. `version` tells one state of the file from the next. */
+export const embeddedCoverUrl = (rootSlug: string, path: string, version: number) =>
+  `/api/media/cover?${new URLSearchParams({ rootSlug, path, v: String(Math.round(version)) }).toString()}`;

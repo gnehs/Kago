@@ -24,7 +24,7 @@ import { AuthService, changePasswordSchema, createUserSchema, loginSchema, patch
 import { FsService, finderTagsSchema, fsQuerySchema, maxUploadFiles, mkdirSchema, renameSchema, sqliteRowsSchema, writeTextSchema, zipQuerySchema } from "./services/fs.service.js";
 import { ImageService } from "./services/image.service.js";
 import { createGroupSchema, GroupService } from "./services/group.service.js";
-import { MediaService, mediaSessionSchema, mediaStreamSchema } from "./services/media.service.js";
+import { MediaService, mediaAudioSchema, mediaSessionSchema, mediaStreamSchema } from "./services/media.service.js";
 import { PathService } from "./services/path.service.js";
 import { permissionInputSchema, PermissionService } from "./services/permission.service.js";
 import { folderViewQuerySchema, folderViewSchema, PreferenceService, settingsSchema } from "./services/preference.service.js";
@@ -619,6 +619,25 @@ function registerApi(app: FastifyInstance, services: Services) {
     const font = await services.media.font(file.input, file.stat, query.index);
     reply.header("Cache-Control", "private, max-age=3600");
     return sendFile(request, reply, font, await fs.promises.stat(font), "application/octet-stream");
+  });
+  app.get("/api/media/cover", async (request, reply) => {
+    const actor = requireActor(request);
+    const query = fsQuerySchema.parse(request.query);
+    const file = await services.fsService.media(actor, query.rootSlug, query.path);
+    const cover = await services.media.cover(file.input, file.stat);
+    reply.header("Cache-Control", "private, max-age=3600");
+    return sendFile(request, reply, cover, await fs.promises.stat(cover), "image/jpeg");
+  });
+  app.get("/api/media/audio", async (request, reply) => {
+    const actor = requireActor(request);
+    const query = mediaAudioSchema.parse(request.query);
+    const file = await services.fsService.media(actor, query.rootSlug, query.path);
+    const audio = await services.media.audioStream(actor.id, file.input, file.stat, query.start);
+    // A player that seeks or closes drops the connection, and the encoder with it.
+    reply.raw.on("close", audio.stop);
+    reply.header("Content-Type", "audio/webm");
+    reply.header("Cache-Control", "no-store");
+    return reply.send(audio.stream);
   });
   app.post("/api/media/sessions", async (request) => {
     const actor = requireActor(request);

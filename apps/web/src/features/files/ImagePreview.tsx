@@ -41,7 +41,8 @@ const OVERSHOOT = { min: 0.5, max: 1.5 };
 const STEP = 1.5;
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
-const sourceOf = (rootSlug: string, item: FileItem) => (isImageType(item.type) ? previewUrl(rootSlug, item.path) : `${imageUrl(rootSlug, item.path)}&v=${Math.round(item.mtime)}`);
+/** Where a picture is read from: the file itself, or the JPEG the server makes of one the browser cannot decode. */
+export const sourceOf = (rootSlug: string, item: FileItem) => (isImageType(item.type) ? previewUrl(rootSlug, item.path) : `${imageUrl(rootSlug, item.path)}&v=${Math.round(item.mtime)}`);
 // Keyed by the file as it is now: one replaced on disk is read, or converted, again.
 const keyOf = (item: FileItem) => `${item.path}:${item.mtime}`;
 

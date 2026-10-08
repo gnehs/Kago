@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
+import type { Readable } from "node:stream";
 import { promisify } from "node:util";
 import { z } from "zod";
 import { AppError } from "../lib/errors.js";
@@ -31,6 +32,13 @@ export const mediaStreamSchema = z.object({
   rootSlug: z.string().min(1),
   path: z.string().min(1),
   index: z.coerce.number().int().min(0).max(255)
+});
+
+/** Where in a file a stream of its sound re-encoded as Opus should begin. */
+export const mediaAudioSchema = z.object({
+  rootSlug: z.string().min(1),
+  path: z.string().min(1),
+  start: z.coerce.number().min(0).max(1_000_000).default(0)
 });
 
 export type MediaInfo = {
@@ -68,6 +76,12 @@ export type MediaInfo = {
   fonts: Array<{ index: number; name: string }>;
   /** Heights the file can be transcoded to, tallest first. */
   qualities: number[];
+  /** What the file says about itself: ID3 in an MP3, Vorbis comments in FLAC and Ogg, atoms in MP4, and so on. Empty where it says nothing. */
+  tags: MediaTags;
+  /** Which of the file's video streams is a picture attached to it, such as the cover of an album; null without one. */
+  cover: number | null;
+  /** Whether the file's sound can be re-encoded as Opus as it plays, for music the browser cannot decode. */
+  audioTranscode: boolean;
   /** What does the encoding: `software`, or the GPU API in use. */
   encoder: Encoder;
   /** Whether an HDR source can be transcoded as HDR (10-bit HEVC), for a screen that shows it. */
@@ -75,6 +89,12 @@ export type MediaInfo = {
   /** Whether an HDR source can be tone-mapped to SDR. Without it the transcoded picture is washed out. */
   tonemap: boolean;
 };
+
+export type MediaTags = { title: string; artist: string; album: string; albumArtist: string; track: string; date: string; genre: string; lyrics: string };
+
+const NO_TAGS: MediaTags = { title: "", artist: "", album: "", albumArtist: "", track: "", date: "", genre: "", lyrics: "" };
+/** Lyrics are kept whole in a tag; anything longer than a song's worth is not lyrics. */
+const MAX_LYRICS_LENGTH = 100_000;
 
 type Hdr = "pq" | "hlg";
 
@@ -165,6 +185,10 @@ const SUBTITLE_LEAD_SECONDS = 120;
 /** Reading a subtitle stream out means reading through the whole file, which takes a while on a large one. */
 const EXTRACT_TIMEOUT_MS = 180_000;
 const EXTRACT_KEEP = 24;
+/** Music re-encoded for a browser that cannot decode it: Opus at a rate where it is not told from the original. */
+const AUDIO_KBPS = 160;
+/** One for each music window that may be loading at once; a seek opens a new stream before the old one is let go. */
+const AUDIO_STREAMS_PER_ACTOR = 4;
 
 /**
  * On-the-fly video transcoding, modelled on Jellyfin: the playlist is computed up front from the
@@ -181,8 +205,11 @@ export class MediaService {
   private accel: Accel = accelFor("software");
   private hdrOutput = false;
   private tonemap: Tonemap | null = null;
+  private opus = false;
+  /** The ffmpeg behind each stream of re-encoded music, oldest first, by whose it is. */
+  private readonly audioStreams = new Map<string, Set<ChildProcess>>();
   private readonly sessions = new Map<string, Session>();
-  private readonly probes = new Map<string, Omit<MediaInfo, "transcode" | "encoder" | "hdrOutput" | "tonemap">>();
+  private readonly probes = new Map<string, Omit<MediaInfo, "transcode" | "audioTranscode" | "encoder" | "hdrOutput" | "tonemap">>();
   private readonly subtitleProbes = new Map<string, Array<{ index: number; language: string }>>();
   private readonly ticker: NodeJS.Timeout;
 
@@ -194,7 +221,8 @@ export class MediaService {
     this.available = Promise.all([execFileAsync(this.ffmpeg, ["-version"]), execFileAsync(this.ffprobe, ["-version"])]).then(
       async () => {
         this.accel = await this.detectAccel();
-        [this.hdrOutput, this.tonemap] = await Promise.all([this.detectHdrOutput(this.accel), this.detectTonemap()]);
+        [this.hdrOutput, this.tonemap, this.opus] = await Promise.all([this.detectHdrOutput(this.accel), this.detectTonemap(), this.detectOpus()]);
+        if (!this.opus) logger.warn("this ffmpeg has no libopus encoder; music the browser cannot play will not be transcoded");
         logger.info(`video transcoding uses ${this.accel.encoder}; HDR is ${this.hdrOutput ? "kept for screens that show it" : "not encoded"} and ${this.tonemap ? `tone-mapped with ${this.tonemap.name}` : "cannot be tone-mapped"} for the rest`);
         return true;
       },
@@ -208,7 +236,7 @@ export class MediaService {
   }
 
   async info(absolutePath: string, stat: FileVersion): Promise<MediaInfo> {
-    if (!(await this.available)) return { transcode: false, duration: 0, container: "", bitrate: 0, video: null, audio: [], subtitles: [], fonts: [], qualities: [], encoder: "software", hdrOutput: false, tonemap: false };
+    if (!(await this.available)) return { transcode: false, duration: 0, container: "", bitrate: 0, video: null, audio: [], subtitles: [], fonts: [], qualities: [], tags: NO_TAGS, cover: null, audioTranscode: false, encoder: "software", hdrOutput: false, tonemap: false };
     const key = `${absolutePath}:${stat.mtimeMs}:${stat.size}`;
     let probed = this.probes.get(key);
     if (!probed) {
@@ -216,7 +244,7 @@ export class MediaService {
       if (this.probes.size >= 200) this.probes.delete(this.probes.keys().next().value!);
       this.probes.set(key, probed);
     }
-    return { transcode: probed.qualities.length > 0, encoder: this.accel.encoder, hdrOutput: this.hdrOutput, tonemap: this.tonemap !== null, ...probed };
+    return { transcode: probed.qualities.length > 0, audioTranscode: this.opus && probed.audio.length > 0, encoder: this.accel.encoder, hdrOutput: this.hdrOutput, tonemap: this.tonemap !== null, ...probed };
   }
 
   /** A subtitle stream written out as a file of its own: ASS as it is, any other text format as SubRip. */
@@ -255,6 +283,13 @@ export class MediaService {
   async font(absolutePath: string, stat: FileVersion, index: number): Promise<string> {
     if (!(await this.info(absolutePath, stat)).fonts.some((item) => item.index === index)) throw new AppError(404, "Attachment not found", "NOT_FOUND");
     return this.extract(absolutePath, stat, `font-${index}`, (out) => [`-dump_attachment:t:${index}`, out, "-i", absolutePath]);
+  }
+
+  /** The picture attached to a file, as a JPEG no larger than a screen needs. */
+  async cover(absolutePath: string, stat: FileVersion): Promise<string> {
+    const index = (await this.info(absolutePath, stat)).cover;
+    if (index === null) throw new AppError(404, "Cover not found", "NOT_FOUND");
+    return this.extract(absolutePath, stat, "cover.jpg", (out) => ["-i", absolutePath, "-map", `0:v:${index}`, "-frames:v", "1", "-vf", "scale='min(1200,iw)':-2", "-q:v", "3", "-f", "mjpeg", out]);
   }
 
   private extract(absolutePath: string, stat: FileVersion, name: string, args: (out: string) => string[]): Promise<string> {
@@ -328,6 +363,44 @@ export class MediaService {
       lastAccess: Date.now()
     });
     return { id, hdr: this.sessions.get(id)!.hdr };
+  }
+
+  /**
+   * The sound of a file from `start` seconds in, re-encoded as Opus while it is being sent. Nothing is kept:
+   * ffmpeg writes straight into the response and runs no faster than the player reads, and a seek is a new stream.
+   */
+  async audioStream(actorId: string, absolutePath: string, stat: FileVersion, start: number): Promise<{ stream: Readable; stop: () => void }> {
+    const info = await this.info(absolutePath, stat);
+    if (!info.audioTranscode) throw new AppError(422, "This file cannot be transcoded", "TRANSCODE_UNAVAILABLE");
+    const own = this.audioStreams.get(actorId) ?? new Set<ChildProcess>();
+    this.audioStreams.set(actorId, own);
+    for (const stale of [...own].slice(0, Math.max(0, own.size - AUDIO_STREAMS_PER_ACTOR + 1))) stale.kill("SIGKILL");
+
+    const proc = spawn(
+      this.ffmpeg,
+      [
+        "-nostdin", "-hide_banner", "-loglevel", "error",
+        // Seeking the input, not the output: a stream for the middle of an album starts decoding there.
+        "-ss", String(start),
+        "-i", absolutePath,
+        "-map", "0:a:0", "-vn", "-sn", "-dn",
+        "-c:a", "libopus", "-b:a", `${AUDIO_KBPS}k`, "-ac", "2",
+        "-f", "webm", "pipe:1"
+      ],
+      { stdio: ["ignore", "pipe", "pipe"] }
+    );
+    own.add(proc);
+    let stderr = "";
+    proc.stderr.on("data", (chunk: Buffer) => {
+      stderr = (stderr + chunk.toString()).slice(-2000);
+    });
+    proc.on("error", (error) => logger.error("ffmpeg failed to start", error.message));
+    proc.on("close", (code, signal) => {
+      own.delete(proc);
+      if (own.size === 0 && this.audioStreams.get(actorId) === own) this.audioStreams.delete(actorId);
+      if (code !== 0 && !signal) logger.error(`ffmpeg (opus) exited with code ${code}`, stderr.trim());
+    });
+    return { stream: proc.stdout, stop: () => proc.kill("SIGKILL") };
   }
 
   playlist(actorId: string, id: string): string {
@@ -407,6 +480,7 @@ export class MediaService {
   stop(): void {
     clearInterval(this.ticker);
     for (const session of [...this.sessions.values()]) this.destroy(session);
+    for (const own of this.audioStreams.values()) for (const proc of own) proc.kill("SIGKILL");
   }
 
   private require(actorId: string, id: string): Session {
@@ -632,6 +706,16 @@ export class MediaService {
     }
   }
 
+  /** Whether this ffmpeg build encodes Opus, which is what music is re-encoded to. */
+  private async detectOpus(): Promise<boolean> {
+    try {
+      await execFileAsync(this.ffmpeg, ["-nostdin", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "sine=duration=0.2", "-c:a", "libopus", "-f", "null", "-"], { timeout: 20_000 });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   /** Picks the first tone-mapping chain this ffmpeg build can run. */
   private async detectTonemap(): Promise<Tonemap | null> {
     for (const candidate of TONEMAPS) {
@@ -671,7 +755,7 @@ export class MediaService {
     }
   }
 
-  private async probe(absolutePath: string): Promise<Omit<MediaInfo, "transcode" | "encoder" | "hdrOutput" | "tonemap">> {
+  private async probe(absolutePath: string): Promise<Omit<MediaInfo, "transcode" | "audioTranscode" | "encoder" | "hdrOutput" | "tonemap">> {
     let raw: string;
     try {
       const result = await execFileAsync(this.ffprobe, ["-v", "error", "-print_format", "json", "-show_format", "-show_streams", absolutePath], {
@@ -684,7 +768,9 @@ export class MediaService {
     }
     const data = JSON.parse(raw) as { format?: Record<string, unknown>; streams?: Array<Record<string, any>> };
     const streams = data.streams ?? [];
-    const videoStream = streams.find((stream) => stream.codec_type === "video" && !stream.disposition?.attached_pic);
+    const videoStreams = streams.filter((stream) => stream.codec_type === "video");
+    const videoStream = videoStreams.find((stream) => !stream.disposition?.attached_pic);
+    const cover = videoStreams.findIndex((stream) => stream.disposition?.attached_pic);
     const audioStreams = streams.filter((stream) => stream.codec_type === "audio");
     const subtitleStreams = streams.filter((stream) => stream.codec_type === "subtitle");
     const attachments = streams.filter((stream) => stream.codec_type === "attachment");
@@ -735,6 +821,9 @@ export class MediaService {
       container: String(data.format?.format_name ?? ""),
       bitrate: Number(data.format?.bit_rate) || 0,
       video,
+      // Ogg keeps its comments on the stream rather than on the file.
+      tags: readTags({ ...(audioStreams[0]?.tags as Record<string, unknown> | undefined), ...(data.format?.tags as Record<string, unknown> | undefined) }),
+      cover: cover === -1 ? null : cover,
       subtitles: subtitleStreams.map((stream, index) => {
         const title = String(stream.tags?.title ?? "");
         return {
@@ -767,6 +856,24 @@ export class MediaService {
       qualities
     };
   }
+}
+
+/** The tags a player shows, whatever case and spelling the format gave their names. */
+function readTags(raw: Record<string, unknown>): MediaTags {
+  const named = new Map(Object.entries(raw).map(([name, value]) => [name.toLowerCase(), String(value ?? "").trim()]));
+  const first = (...names: string[]) => names.map((name) => named.get(name)).find(Boolean) ?? "";
+  // ID3 files lyrics under their language: `lyrics-eng`.
+  const lyrics = first("lyrics", "unsyncedlyrics", "syncedlyrics") || ([...named].find(([name]) => name.startsWith("lyrics-"))?.[1] ?? "");
+  return {
+    title: first("title"),
+    artist: first("artist"),
+    album: first("album"),
+    albumArtist: first("album_artist", "albumartist", "album artist"),
+    track: first("track", "tracknumber"),
+    date: first("date", "year", "originaldate"),
+    genre: first("genre"),
+    lyrics: lyrics.length <= MAX_LYRICS_LENGTH ? lyrics : ""
+  };
 }
 
 /** ffprobe writes a rate as a fraction: `24000/1001`, or `0/0` where there is none. */

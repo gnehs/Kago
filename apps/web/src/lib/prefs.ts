@@ -141,6 +141,43 @@ export function setVideoVolume(volume: number, muted: boolean) {
   }
 }
 
+const audioVisualKey = "kago.audioVisual";
+
+/** What music is drawn as while it plays; `off` leaves the screen dark. */
+export type AudioVisualPref = "bars" | "scope" | "ambience" | "off";
+
+/** Someone who has asked for less motion gets a still screen until they pick a picture themselves. */
+export const getAudioVisual = () =>
+  read<AudioVisualPref>(audioVisualKey, ["bars", "scope", "ambience", "off"], getMotion() === "off" || globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "off" : "bars");
+
+export function setAudioVisual(visual: AudioVisualPref) {
+  try {
+    localStorage.setItem(audioVisualKey, visual);
+  } catch {
+    // Private browsing: the choice just lasts for this window.
+  }
+}
+
+const audioPanelKey = "kago.audioPanels";
+
+/** Which of a music window's extras are shown: the list of tracks beside the screen, and the lyrics on it. */
+export function getAudioPanels(): { tracks: boolean; lyrics: boolean } {
+  try {
+    const saved = JSON.parse(localStorage.getItem(audioPanelKey) ?? "{}") as { tracks?: unknown; lyrics?: unknown };
+    return { tracks: saved.tracks !== false, lyrics: saved.lyrics !== false };
+  } catch {
+    return { tracks: true, lyrics: true };
+  }
+}
+
+export function setAudioPanels(panels: { tracks: boolean; lyrics: boolean }) {
+  try {
+    localStorage.setItem(audioPanelKey, JSON.stringify(panels));
+  } catch {
+    // Private browsing: the choice just lasts for this window.
+  }
+}
+
 const imageInfoKey = "kago.imageInfo";
 
 /** Whether picture windows open with their shooting data beside the picture. */

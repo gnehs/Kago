@@ -1,12 +1,13 @@
 import { Download, FileQuestion } from "lucide-react";
-import { downloadUrl, previewUrl } from "@/api/client";
+import { downloadUrl } from "@/api/client";
 import { KagoEmptyState } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { Button } from "@/components/ui/button";
 import { KagoWindow } from "@/features/windows/KagoWindow";
-import { formatSize, hasTextName, isAudioType, isSplatFile, isSqliteFile, isTextFile, isVideoType, kindLabel, MAX_TEXT_BYTES, officeKind } from "@/lib/format";
+import { formatSize, hasTextName, isCueSheet, isMusicFile, isSplatFile, isSqliteFile, isTextFile, isVideoType, kindLabel, MAX_TEXT_BYTES, officeKind } from "@/lib/format";
 import { triggerDownload } from "@/lib/paths";
 import type { PreviewWindow } from "@/stores/workspace";
+import { AudioPreviewWindow } from "./AudioPreview";
 import { FileIcon } from "./FileIcon";
 import { ImagePreviewWindow, isViewableImage } from "./ImagePreview";
 import { OfficePreviewWindow } from "./OfficePreview";
@@ -32,7 +33,7 @@ export function PreviewWindowView({ window }: { window: PreviewWindow }) {
   if (office) return <OfficePreviewWindow window={window} kind={office} />;
   if (isViewableImage(item)) return <ImagePreviewWindow window={window} />;
   if (isSplatFile(item)) return <SplatPreviewWindow window={window} />;
-  const source = previewUrl(rootSlug, item.path);
+  if (isMusicFile(item) || isCueSheet(item)) return <AudioPreviewWindow window={window} />;
   const download = () => triggerDownload(downloadUrl(rootSlug, item.path));
   return (
     <KagoWindow
@@ -45,17 +46,13 @@ export function PreviewWindowView({ window }: { window: PreviewWindow }) {
       }
     >
       <div className="flex min-h-0 flex-1 items-center justify-center bg-elevated">
-        {isAudioType(item.type) ? (
-          <audio src={source} controls />
-        ) : (
-          <KagoEmptyState
-            icon={<FileQuestion />}
-            title={t("This kind of file can’t be previewed")}
-            description={hasTextName(item.name) || item.type.startsWith("text/") ? t("Text files over {size} have to be downloaded to open.", { size: formatSize(MAX_TEXT_BYTES) }) : t("There is no viewer for this kind of file ({kind}). Download it and open it in another app.", { kind: kindLabel(item) })}
-          >
-            <Button onClick={download}>{t("Download")}</Button>
-          </KagoEmptyState>
-        )}
+        <KagoEmptyState
+          icon={<FileQuestion />}
+          title={t("This kind of file can’t be previewed")}
+          description={hasTextName(item.name) || item.type.startsWith("text/") ? t("Text files over {size} have to be downloaded to open.", { size: formatSize(MAX_TEXT_BYTES) }) : t("There is no viewer for this kind of file ({kind}). Download it and open it in another app.", { kind: kindLabel(item) })}
+        >
+          <Button onClick={download}>{t("Download")}</Button>
+        </KagoEmptyState>
       </div>
     </KagoWindow>
   );

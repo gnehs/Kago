@@ -376,7 +376,7 @@ export function VideoPlayer({
         )}
         onFocus={wake}
       >
-        <Slider
+        <PlayerSlider
           label={t("Playback position")}
           value={time}
           max={duration}
@@ -403,7 +403,7 @@ export function VideoPlayer({
           <PlayerButton label={silent ? t("Unmute (M)") : t("Mute (M)")} onClick={() => changeSound(sound.volume || 1, !silent)}>
             <VolumeIcon />
           </PlayerButton>
-          <Slider
+          <PlayerSlider
             label={t("Volume")}
             className="hidden w-16 @sm:block"
             value={silent ? 0 : sound.volume}
@@ -457,7 +457,7 @@ function subtitleScale(frame: { width: number; height: number }, aspect: number)
   return covered > 0 && picture > CONTROLS_HEIGHT * 2 ? (picture - covered) / picture : 1;
 }
 
-function PlayerButton({ className, ...props }: ComponentProps<typeof KagoIconButton>) {
+export function PlayerButton({ className, ...props }: ComponentProps<typeof KagoIconButton>) {
   return <KagoIconButton className={cn("size-7", PLAYER_CONTROL_CLASS, className)} {...props} />;
 }
 
@@ -474,7 +474,7 @@ function bufferedEnd(video: HTMLVideoElement) {
  * A thin track for the playhead and the volume. `onChange` follows the drag; `onCommit` fires once
  * on release. The keyboard reaches both through the player's own shortcuts, so it takes no focus.
  */
-function Slider({
+export function PlayerSlider({
   label,
   value,
   max,

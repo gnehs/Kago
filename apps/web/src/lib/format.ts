@@ -49,6 +49,16 @@ export const isConvertedImage = (item: Pick<FileItem, "kind" | "name">) => item.
 export const isPicture = (item: Pick<FileItem, "kind" | "type" | "name">) => item.kind === "file" && (item.type.startsWith("image/") || isConvertedImage(item));
 export const isAudioType = (type: string) => AUDIO_TYPES.has(type);
 
+// Music a browser does not decode but ffmpeg does. Much of it has no registered type, so the name is what tells.
+const TRANSCODED_AUDIO = new Set("ape wma aif aiff aifc wv tta tak dsf dff mka mpc mp2 ac3 eac3 dts amr au ra caf spx".split(" "));
+
+/** Music the player takes: what the browser plays by itself, and what the server re-encodes for it as it plays. */
+export const isMusicFile = (item: Pick<FileItem, "kind" | "type" | "name">) =>
+  item.kind === "file" && !hasTextName(item.name) && (item.type.startsWith("audio/") || TRANSCODED_AUDIO.has(extensionOf(item.name))) && !["mid", "midi"].includes(extensionOf(item.name));
+
+/** A cue sheet: the list of tracks cut out of an album kept as one long file. It opens in the music player. */
+export const isCueSheet = (item: Pick<FileItem, "kind" | "name">) => item.kind === "file" && extensionOf(item.name) === "cue";
+
 /** The editor holds a file whole; the server refuses to save anything larger. */
 export const MAX_TEXT_BYTES = 2 * 1024 * 1024;
 

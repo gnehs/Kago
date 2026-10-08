@@ -318,6 +318,12 @@ export type MediaInfo = {
   subtitles: Array<{ index: number; codec: string; language: string; title: string; default: boolean; forced: boolean; sdh: boolean }>;
   /** Heights the file can be transcoded to, tallest first. */
   qualities: number[];
+  /** What the file says about itself (ID3, Vorbis comments, MP4 atoms); each empty where it says nothing. */
+  tags: { title: string; artist: string; album: string; albumArtist: string; track: string; date: string; genre: string; lyrics: string };
+  /** Which of the file's video streams is a picture attached to it, such as an album's cover; null without one. */
+  cover: number | null;
+  /** Whether the server can re-encode the file's sound as it plays, for music the browser cannot decode. */
+  audioTranscode: boolean;
   /** What the server encodes with: `software`, or the GPU API in use. */
   encoder: string;
   /** Whether the server can transcode an HDR picture as HDR, for a screen that shows it. */

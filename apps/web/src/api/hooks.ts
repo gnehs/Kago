@@ -1,7 +1,9 @@
 import { keepPreviousData, useMutation, useQueries, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
-import { api } from "./client";
+import { useEffect, useState } from "react";
+import { api, previewUrl } from "./client";
+import { decodeSubtitle } from "../lib/subtitles";
 import { isTrashing, useTrashingStore } from "../stores/trashing";
-import type { Actor, AuditLog, FileList, FileMeta, FileTask, Group, ImageMetadata, MediaInfo, PermissionRule, Root, ShareLink, Shelf, SqlitePage, SqliteTable, StorageInfo, SubtitleList, SyncJob, SyncTrial, Tag, TrashItem, UserAccount, WorkspaceState } from "../types/kago";
+import type { Actor, AuditLog, FileItem, FileList, FileMeta, FileTask, Group, ImageMetadata, MediaInfo, PermissionRule, Root, ShareLink, Shelf, SqlitePage, SqliteTable, StorageInfo, SubtitleList, SyncJob, SyncTrial, Tag, TrashItem, UserAccount, WorkspaceState } from "../types/kago";
 
 export function useSetupStatus() {
   return useQuery({ queryKey: ["auth", "setup"], queryFn: () => api<{ needsSetup: boolean }>("/api/auth/setup") });
@@ -138,10 +140,52 @@ export function useMediaInfo(rootSlug: string, path: string, enabled = true) {
   });
 }
 
+/** How many files are asked about at once when a whole album is. */
+const INFO_WINDOW = 4;
+const mediaInfos = (results: UseQueryResult<MediaInfo>[]) => ({ data: results.map((result) => result.data), settled: results.filter((result) => !result.isPending).length });
+
+/**
+ * What is known about each of several files, in the order asked. They are read a few at a time, in order,
+ * so opening one song of a large folder does not set the server probing all of it at once.
+ */
+export function useMediaInfos(rootSlug: string, paths: string[]) {
+  const [reach, setReach] = useState(INFO_WINDOW);
+  const { data, settled } = useQueries({
+    // Same keys as `useMediaInfo`, so a file asked about either way is asked about once.
+    queries: paths.map((path, index) => ({
+      queryKey: ["media", "info", rootSlug, path],
+      queryFn: () => api<MediaInfo>(`/api/media/info?${new URLSearchParams({ rootSlug, path }).toString()}`),
+      enabled: index < reach,
+      retry: false,
+      staleTime: 60_000
+    })),
+    combine: mediaInfos
+  });
+  useEffect(() => {
+    if (settled + INFO_WINDOW > reach && reach < paths.length) setReach(settled + INFO_WINDOW);
+  }, [settled, reach, paths.length]);
+  return data;
+}
+
 export function useSubtitles(rootSlug: string, path: string) {
   return useQuery({
     queryKey: ["media", "subtitles", rootSlug, path],
     queryFn: () => api<SubtitleList>(`/api/media/subtitles?${new URLSearchParams({ rootSlug, path }).toString()}`),
+    retry: false,
+    staleTime: 60_000
+  });
+}
+
+/** A small text file that goes with a piece of media (a cue sheet, lyrics), read in whatever code page it was saved in. */
+export function useTextFile(rootSlug: string, item: Pick<FileItem, "path" | "mtime"> | undefined) {
+  return useQuery({
+    queryKey: ["fs", "text", rootSlug, item?.path, item?.mtime],
+    queryFn: async () => {
+      const response = await fetch(previewUrl(rootSlug, item!.path), { credentials: "include" });
+      if (!response.ok) throw new Error(`Request failed: ${response.status}`);
+      return decodeSubtitle(await response.arrayBuffer(), "");
+    },
+    enabled: item !== undefined,
     retry: false,
     staleTime: 60_000
   });
