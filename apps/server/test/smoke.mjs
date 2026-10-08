@@ -452,7 +452,11 @@ test("security boundaries reject unsafe requests", async () => {
       maxDownloads: 1
     });
     assert.equal((await app.inject({ method: "GET", url: `/s/${limitedShare.json.token}/download` })).statusCode, 200);
-    const limitedAgain = await app.inject({ method: "GET", url: `/s/${limitedShare.json.token}/download` });
+    // Whoever was counted may look and download again; the limit is on how many people, not how many requests.
+    assert.equal((await app.inject({ method: "GET", url: `/s/${limitedShare.json.token}/preview` })).statusCode, 200);
+    assert.equal((await app.inject({ method: "GET", url: `/s/${limitedShare.json.token}/download` })).statusCode, 200);
+    assert.equal((await admin.get("/api/shares")).json.find((item) => item.id === limitedShare.json.id).download_count, 1);
+    const limitedAgain = await app.inject({ method: "GET", url: `/s/${limitedShare.json.token}/download`, remoteAddress: "203.0.113.9" });
     assert.equal(limitedAgain.statusCode, 410);
     assert.equal(JSON.parse(limitedAgain.payload).code, "SHARE_LIMIT_REACHED");
 

@@ -26,6 +26,11 @@ export const shareSchema = z.object({
 /** How many wrong passwords one address may try for one link, and for all links, before it is made to wait. */
 const SHARE_TRIES = 5;
 const SHARE_TRIES_PER_ADDRESS = 50;
+/** For how long someone who was counted against a link's limit may come back to it without being counted again. */
+export const SHARE_VISIT_SECONDS = 12 * 60 * 60;
+
+/** Who is asking for a link: where from, and the cookie the link's page was given. */
+export type ShareVisitor = { address: string; session?: string };
 
 export class ShareService {
   constructor(
@@ -162,7 +167,8 @@ export class ShareService {
     throw new AppError(403, "Share access denied", "SHARE_ACCESS_DENIED");
   }
 
-  resolveToken(token: string) {
+  /** `visitor` lets someone already counted against the limit go on using a link that has since reached it. */
+  resolveToken(token: string, visitor?: ShareVisitor) {
     const share = row<{
       id: string;
       token_hash: string;
@@ -180,14 +186,37 @@ export class ShareService {
     }>(this.db.prepare("SELECT * FROM share_links WHERE token_hash = ?").get(sha256(token)));
     if (!share || share.disabled) throw new AppError(404, "Share not found", "SHARE_NOT_FOUND");
     if (share.expires_at && share.expires_at < now()) throw new AppError(410, "Share expired", "SHARE_EXPIRED");
-    if (share.max_downloads && share.download_count >= share.max_downloads) {
+    if (share.max_downloads && share.download_count >= share.max_downloads && !(visitor && this.counted(share.id, visitor))) {
       throw new AppError(410, "Share download limit reached", "SHARE_LIMIT_REACHED");
     }
     return share;
   }
 
-  async publicInfo(token: string, accessToken?: string) {
-    const share = this.resolveToken(token);
+  private counted(shareId: string, visitor: ShareVisitor): boolean {
+    return Boolean(this.db.prepare("SELECT 1 FROM share_visits WHERE share_id = ? AND visitor = ? AND seen_at > ?").get(shareId, visitorKey(visitor), now() - SHARE_VISIT_SECONDS));
+  }
+
+  /**
+   * Counts a visitor against the link's limit the first time they are sent the file, and not again for a while:
+   * a player asks for a video in many pieces, and whoever looked at a file may go on to download it.
+   */
+  private count(share: ResolvedShare, visitor: ShareVisitor): void {
+    if (this.counted(share.id, visitor)) return;
+    const ts = now();
+    const updated = this.db
+      .prepare(
+        `UPDATE share_links
+        SET download_count = download_count + 1, updated_at = ?
+        WHERE id = ? AND (max_downloads IS NULL OR download_count < max_downloads)`
+      )
+      .run(ts, share.id);
+    if (updated.changes !== 1) throw new AppError(410, "Share download limit reached", "SHARE_LIMIT_REACHED");
+    this.db.prepare("DELETE FROM share_visits WHERE share_id = ? AND seen_at <= ?").run(share.id, ts - SHARE_VISIT_SECONDS);
+    this.db.prepare("INSERT OR REPLACE INTO share_visits (share_id, visitor, seen_at) VALUES (?, ?, ?)").run(share.id, visitorKey(visitor), ts);
+  }
+
+  async publicInfo(token: string, accessToken?: string, visitor?: ShareVisitor) {
+    const share = this.resolveToken(token, visitor);
     const authenticated = !share.password_hash || accessToken === this.accessTokenForShare(share);
     const base = {
       id: share.id,
@@ -208,8 +237,8 @@ export class ShareService {
     };
   }
 
-  async authenticatePublicShare(token: string, password: string, address = ""): Promise<{ shareId: string; accessToken: string }> {
-    const share = this.resolveToken(token);
+  async authenticatePublicShare(token: string, password: string, address = "", visitor?: ShareVisitor): Promise<{ shareId: string; accessToken: string }> {
+    const share = this.resolveToken(token, visitor);
     if (!share.password_hash) return { shareId: share.id, accessToken: this.accessTokenForShare(share) };
     // A link is handed around, so its password is the one anyone at all may guess at.
     const attempt = this.attempts.begin([
@@ -237,8 +266,8 @@ export class ShareService {
     throw new AppError(401, "Share password required", "SHARE_PASSWORD_REQUIRED");
   }
 
-  async publicDownload(token: string, accessToken?: string) {
-    const share = this.resolveToken(token);
+  async publicDownload(token: string, visitor: ShareVisitor, accessToken?: string) {
+    const share = this.resolveToken(token, visitor);
     this.assertPublicAccess(share, accessToken);
     const mode = (JSON.parse(share.permission_json) as { mode: string }).mode;
     if (mode !== "download") {
@@ -247,14 +276,7 @@ export class ShareService {
     const safe = await this.paths.resolveRootById(share.root_id, share.path);
     await this.assertModeMatchesTarget("download", safe);
     this.requireCreatorPermissions(share, safe);
-    const updated = this.db
-      .prepare(
-        `UPDATE share_links
-        SET download_count = download_count + 1, updated_at = ?
-        WHERE id = ? AND (max_downloads IS NULL OR download_count < max_downloads)`
-      )
-      .run(now(), share.id);
-    if (updated.changes !== 1) throw new AppError(410, "Share download limit reached", "SHARE_LIMIT_REACHED");
+    this.count(share, visitor);
     this.audit.write({
       actorType: "share_link",
       actorId: share.id,
@@ -266,8 +288,8 @@ export class ShareService {
     return safe;
   }
 
-  async publicPreview(token: string, accessToken?: string) {
-    const share = this.resolveToken(token);
+  async publicPreview(token: string, visitor: ShareVisitor, accessToken?: string) {
+    const share = this.resolveToken(token, visitor);
     this.assertPublicAccess(share, accessToken);
     const mode = (JSON.parse(share.permission_json) as { mode: string }).mode;
     if (mode !== "download" && mode !== "view_only") {
@@ -276,6 +298,8 @@ export class ShareService {
     const safe = await this.paths.resolveRootById(share.root_id, share.path);
     await this.assertModeMatchesTarget("view_only", safe);
     this.requireCreatorPermissions(share, safe);
+    // Looking at the file is being sent it, as much as downloading it is.
+    this.count(share, visitor);
     return safe;
   }
 
@@ -353,6 +377,9 @@ type ResolvedShare = {
 type PublicShareLink = Omit<ResolvedShare, "token_hash" | "password_hash"> & {
   has_password: boolean;
 };
+
+/** A cookie alone could be handed around, and an address alone is shared by a whole office: a visitor is the two together. */
+const visitorKey = (visitor: ShareVisitor) => sha256(`share-visit:${visitor.address}:${visitor.session ?? ""}`);
 
 /** What whoever made the link needs on its path, when making it and for as long as it is open. */
 function shareLevel(mode: "view_only" | "download" | "upload_only"): Level {

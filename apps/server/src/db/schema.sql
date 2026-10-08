@@ -167,6 +167,15 @@ CREATE TABLE IF NOT EXISTS share_links (
   FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
 );
 
+-- Who has already been counted against a link's limit, so that looking again does not count again.
+CREATE TABLE IF NOT EXISTS share_visits (
+  share_id TEXT NOT NULL,
+  visitor TEXT NOT NULL,
+  seen_at INTEGER NOT NULL,
+  PRIMARY KEY (share_id, visitor),
+  FOREIGN KEY (share_id) REFERENCES share_links(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS trash_items (
   id TEXT PRIMARY KEY,
   original_root_id TEXT NOT NULL,

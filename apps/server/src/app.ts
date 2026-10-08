@@ -14,6 +14,7 @@ import { AppError, publicError } from "./lib/errors.js";
 import { isPictureFormat } from "./lib/subtitles.js";
 import { nfc } from "./lib/filename.js";
 import { logger } from "./lib/logger.js";
+import { randomToken } from "./lib/crypto.js";
 import { SecretBox } from "./lib/secret-box.js";
 import { sendFile, sendSource } from "./lib/send-file.js";
 import { ensureSshKey } from "./lib/ssh-key.js";
@@ -29,7 +30,7 @@ import { PathService } from "./services/path.service.js";
 import { permissionInputSchema, permissionSetSchema, PermissionService } from "./services/permission.service.js";
 import { folderViewQuerySchema, folderViewSchema, PreferenceService, settingsSchema } from "./services/preference.service.js";
 import { remoteRootPatchSchema, remoteRootSchema, rootPatchSchema, RootService } from "./services/root.service.js";
-import { ShareService, shareSchema } from "./services/share.service.js";
+import { SHARE_VISIT_SECONDS, ShareService, shareSchema, type ShareVisitor } from "./services/share.service.js";
 import { ShelfService } from "./services/shelf.service.js";
 import { StorageService } from "./services/storage.service.js";
 import { syncJobSchema, SyncService } from "./services/sync.service.js";
@@ -921,13 +922,24 @@ function registerApi(app: FastifyInstance, services: Services) {
     if (wantsHtml(request)) {
       return reply.sendFile("index.html");
     }
-    return services.shares.publicInfo(params.token, shareAccessCookie(request, params.token));
+    const visitor = shareVisitor(request, params.token);
+    // The page asks this before it shows or fetches the file, so the visitor has a session by the time they are counted.
+    if (!visitor.session) {
+      reply.setCookie(shareVisitCookieName(params.token), randomToken(), {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: request.protocol === "https",
+        path: `/s/${params.token}`,
+        maxAge: SHARE_VISIT_SECONDS
+      });
+    }
+    return services.shares.publicInfo(params.token, shareAccessCookie(request, params.token), visitor);
   });
 
   app.post("/s/:token/auth", async (request, reply) => {
     const params = z.object({ token: z.string().min(1) }).parse(request.params);
     const body = z.object({ password: z.string().min(1).max(MAX_PASSWORD) }).parse(request.body);
-    const auth = await services.shares.authenticatePublicShare(params.token, body.password, request.ip);
+    const auth = await services.shares.authenticatePublicShare(params.token, body.password, request.ip, shareVisitor(request, params.token));
     reply.setCookie(shareAccessCookieName(params.token), auth.accessToken, {
       httpOnly: true,
       sameSite: "lax",
@@ -940,7 +952,7 @@ function registerApi(app: FastifyInstance, services: Services) {
 
   app.get("/s/:token/download", async (request, reply) => {
     const params = z.object({ token: z.string().min(1) }).parse(request.params);
-    const safe = await services.shares.publicDownload(params.token, shareAccessCookie(request, params.token));
+    const safe = await services.shares.publicDownload(params.token, shareVisitor(request, params.token), shareAccessCookie(request, params.token));
     const stat = await services.storage.stat(safe);
     if (!stat.isFile()) throw new AppError(400, "Path is not a file", "NOT_FILE");
     reply.header("Content-Disposition", contentDisposition("attachment", services.storage.name(safe)));
@@ -949,7 +961,7 @@ function registerApi(app: FastifyInstance, services: Services) {
 
   app.get("/s/:token/preview", async (request, reply) => {
     const params = z.object({ token: z.string().min(1) }).parse(request.params);
-    const safe = await services.shares.publicPreview(params.token, shareAccessCookie(request, params.token));
+    const safe = await services.shares.publicPreview(params.token, shareVisitor(request, params.token), shareAccessCookie(request, params.token));
     const stat = await services.storage.stat(safe);
     if (!stat.isFile()) throw new AppError(400, "Path is not a file", "NOT_FILE");
     const contentType = lookup(safe.logicalPath) || "application/octet-stream";
@@ -981,6 +993,16 @@ function shareAccessCookie(request: FastifyRequest, token: string): string | und
 
 function shareAccessCookieName(token: string): string {
   return `kago_share_${token.slice(0, 16)}`;
+}
+
+function shareVisitCookieName(token: string): string {
+  return `kago_visit_${token.slice(0, 16)}`;
+}
+
+function shareVisitor(request: FastifyRequest, token: string): ShareVisitor {
+  const session = request.cookies[shareVisitCookieName(token)];
+  // The cookie is the visitor's own to write, so only what Kago could have set is taken for one.
+  return { address: request.ip ?? "", session: session && /^[\w-]{20,64}$/.test(session) ? session : undefined };
 }
 
 function wantsHtml(request: FastifyRequest): boolean {
