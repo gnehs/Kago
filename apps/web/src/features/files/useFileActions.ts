@@ -67,6 +67,56 @@ export async function pasteClipboard(queryClient: QueryClient, destination: File
   if (sources.length > 0) await transferFiles(queryClient, "move", sources, destination);
 }
 
+/** Asks for a name and makes a folder of it inside `folder`. Resolves to whether one was made. */
+export function newFolderIn(queryClient: QueryClient, folder: FileRef) {
+  return run(async () => {
+    const name = nfc((await promptText({ title: t("New folder"), defaultValue: t("untitled folder"), confirmLabel: t("Create") })) ?? "");
+    if (!name) return false;
+    await api("/api/fs/mkdir", { method: "POST", body: JSON.stringify({ rootSlug: folder.rootSlug, path: folder.path, name }) });
+    await queryClient.invalidateQueries({ queryKey: ["fs", "list", folder.rootSlug, folder.path] });
+    return true;
+  }, t("Couldn’t create the folder"));
+}
+
+/** Asks for another name for an item. `onRenamed` hears where it is now before any listing is asked for again. */
+export function renameFile(queryClient: QueryClient, item: FileRef & { name: string }, onRenamed?: (path: string) => void) {
+  return run(async () => {
+    const name = nfc((await promptText({ title: t("Rename"), defaultValue: item.name, confirmLabel: t("Rename") })) ?? "");
+    // Confirming the unchanged name still goes through for an NFD file, which rewrites it as NFC.
+    if (!name || (name === item.name && !needsNormalizing(item.path))) return;
+    const renamed = await api<{ path: string }>("/api/fs/rename", { method: "POST", body: JSON.stringify({ rootSlug: item.rootSlug, path: item.path, name }) });
+    onRenamed?.(renamed.path);
+    // The item may sit in a folder opened in place rather than in the window's own.
+    await queryClient.invalidateQueries({ queryKey: ["fs", "list", item.rootSlug] });
+  }, t("Couldn’t rename"));
+}
+
+/** Resolves to the task moving them, or to nothing when it could not be started. */
+export function trashFiles(queryClient: QueryClient, sources: FileRef[]) {
+  return run(async () => {
+    const task = await createTask(queryClient, { type: "delete_to_trash", sources });
+    // The server moves them in the background; here they are gone at once.
+    hideTrashing(task.id, sources);
+    toast(t("Moved {count} item to Trash | Moved {count} items to Trash", { count: sources.length }));
+    return task;
+  });
+}
+
+/** A single file downloads directly; folders and multi-selections are zipped server-side first, outside the user's folders. */
+export function downloadFiles(queryClient: QueryClient, rootSlug: string, items: Array<Pick<FileItem, "path" | "kind">>) {
+  return run(async () => {
+    const [first] = items;
+    if (!first) return;
+    if (items.length === 1 && first.kind === "file") {
+      triggerDownload(downloadUrl(rootSlug, first.path));
+      return;
+    }
+    const task = await createTask(queryClient, { type: "download_zip", sources: items.map((item) => ({ rootSlug, path: item.path })) });
+    pendingDownloads.add(task.id);
+    toast(t("Zipping. The download starts when it’s ready"));
+  });
+}
+
 /** Every file operation a window can start. Long-running ones only enqueue a server task. */
 export function useFileActions(window: FileWindow) {
   const queryClient = useQueryClient();
@@ -79,13 +129,7 @@ export function useFileActions(window: FileWindow) {
 
   return {
     refresh,
-    newFolder: () =>
-      run(async () => {
-        const name = nfc((await promptText({ title: t("New folder"), defaultValue: t("untitled folder"), confirmLabel: t("Create") })) ?? "");
-        if (!name) return;
-        await api("/api/fs/mkdir", { method: "POST", body: JSON.stringify({ rootSlug: window.rootSlug, path: window.logicalPath, name }) });
-        await refresh();
-      }, t("Couldn’t create the folder")),
+    newFolder: () => newFolderIn(queryClient, here()),
     /** Creates the tree's folders, then uploads its files folder by folder in batches the server accepts. */
     upload: (source: UploadTree | Promise<UploadTree>, path = window.logicalPath, rootSlug = window.rootSlug) =>
       run(async () => {
@@ -122,25 +166,10 @@ export function useFileActions(window: FileWindow) {
         if (tree.files.length > 0) toast(folder ? t("Uploaded {count} file to “{folder}” | Uploaded {count} files to “{folder}”", { count: tree.files.length, folder }) : t("Uploaded {count} file | Uploaded {count} files", { count: tree.files.length }));
         else toast(folder ? t("Created {count} folder in “{folder}” | Created {count} folders in “{folder}”", { count: tree.dirs.length, folder }) : t("Created {count} folder | Created {count} folders", { count: tree.dirs.length }));
       }, t("Upload failed")),
-    rename: (item: FileItem) =>
-      run(async () => {
-        const name = nfc((await promptText({ title: t("Rename"), defaultValue: item.name, confirmLabel: t("Rename") })) ?? "");
-        // Confirming the unchanged name still goes through for an NFD file, which rewrites it as NFC.
-        if (!name || (name === item.name && !needsNormalizing(item.path))) return;
-        await api("/api/fs/rename", { method: "POST", body: JSON.stringify({ rootSlug: window.rootSlug, path: item.path, name }) });
-        clearSelection();
-        // The item may sit in a folder opened in place rather than in the window's own.
-        await refreshRoot();
-      }, t("Couldn’t rename")),
-    trash: (paths: string[]) =>
-      run(async () => {
-        const sources = refs(paths);
-        const task = await createTask(queryClient, { type: "delete_to_trash", sources });
-        // The server moves them in the background; here they are gone at once.
-        hideTrashing(task.id, sources);
-        clearSelection();
-        toast(t("Moved {count} item to Trash | Moved {count} items to Trash", { count: paths.length }));
-      }),
+    rename: (item: FileItem) => renameFile(queryClient, { rootSlug: window.rootSlug, path: item.path, name: item.name }, clearSelection),
+    trash: async (paths: string[]) => {
+      if (await trashFiles(queryClient, refs(paths))) clearSelection();
+    },
     compress: (paths: string[]) =>
       run(async () => {
         const choice = await promptCompress({ title: t("Compress to zip"), defaultName: `${window.title || "archive"}.zip` });
@@ -153,19 +182,7 @@ export function useFileActions(window: FileWindow) {
         await startExtract(queryClient, { sources: refs(paths), destination: here() });
         toast(t("Extract task created"));
       }),
-    /** A single file downloads directly; folders and multi-selections are zipped server-side first, outside the user's folders. */
-    download: (items: FileItem[]) =>
-      run(async () => {
-        const [first] = items;
-        if (!first) return;
-        if (items.length === 1 && first.kind === "file") {
-          triggerDownload(downloadUrl(window.rootSlug, first.path));
-          return;
-        }
-        const task = await createTask(queryClient, { type: "download_zip", sources: refs(items.map((item) => item.path)) });
-        pendingDownloads.add(task.id);
-        toast(t("Zipping. The download starts when it’s ready"));
-      }),
+    download: (items: FileItem[]) => downloadFiles(queryClient, window.rootSlug, items),
     addToShelf: (paths: string[]) =>
       run(async () => {
         const shelves = await api<Array<{ id: string }>>("/api/shelves");
