@@ -42,7 +42,8 @@ export default function MarkdownView({ text, rootSlug, path }: { text: string; r
               ) : (
                 <span>{children}</span>
               ),
-            img: ({ src, alt }) => <img src={src} alt={alt ?? ""} loading="lazy" draggable={false} />
+            // A picture kept elsewhere is fetched from there; where the reader came from is not said.
+            img: ({ src, alt }) => <img src={src} alt={alt ?? ""} loading="lazy" draggable={false} referrerPolicy="no-referrer" />
           }}
         >
           {text}

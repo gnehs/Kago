@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { KagoWindow } from "@/features/windows/KagoWindow";
 import { formatSize, type OfficeKind } from "@/lib/format";
 import { triggerDownload } from "@/lib/paths";
+import { checkZip, MAX_UNPACKED_BYTES, type ZipVerdict } from "@/lib/zipCheck";
 import type { PreviewWindow } from "@/stores/workspace";
 import { FileIcon } from "./FileIcon";
 import { t } from "@/lib/i18n";
@@ -33,7 +34,9 @@ export function OfficePreviewWindow({ window, kind }: { window: PreviewWindow; k
     queryFn: async () => {
       const response = await fetch(previewUrl(rootSlug, item.path), { credentials: "include" });
       if (!response.ok) throw new Error(t("Couldn’t read the file"));
-      return response.arrayBuffer();
+      const data = await response.arrayBuffer();
+      // Every format here but the old binary ones is a zip, unpacked whole by its parser.
+      return { data, verdict: await checkZip(data) };
     },
     enabled: !tooLarge,
     staleTime: Infinity,
@@ -41,6 +44,7 @@ export function OfficePreviewWindow({ window, kind }: { window: PreviewWindow; k
     retry: false
   });
   const View = views[kind];
+  const verdict: ZipVerdict = file.data?.verdict ?? "ok";
   const download = () => triggerDownload(downloadUrl(rootSlug, item.path));
 
   return (
@@ -53,12 +57,12 @@ export function OfficePreviewWindow({ window, kind }: { window: PreviewWindow; k
         </KagoIconButton>
       }
     >
-      {tooLarge || unreadable || file.error ? (
+      {tooLarge || unreadable || file.error || verdict !== "ok" ? (
         <KagoEmptyState
           className="min-h-0 flex-1"
           icon={<FileWarning />}
           title={t("Couldn’t preview this file")}
-          description={tooLarge ? t("Files over {size} have to be downloaded to open.", { size: formatSize(MAX_OFFICE_BYTES) }) : file.error ? t("Something went wrong reading the file.") : t("The file may be damaged, password-protected, or in an unsupported format.")}
+          description={tooLarge ? t("Files over {size} have to be downloaded to open.", { size: formatSize(MAX_OFFICE_BYTES) }) : verdict === "too-large" ? t("This file unpacks to more than {size}, which is too much to open here.", { size: formatSize(MAX_UNPACKED_BYTES) }) : file.error ? t("Something went wrong reading the file.") : t("The file may be damaged, password-protected, or in an unsupported format.")}
         >
           <Button onClick={download}>{t("Download")}</Button>
         </KagoEmptyState>
@@ -66,7 +70,7 @@ export function OfficePreviewWindow({ window, kind }: { window: PreviewWindow; k
         <KagoLoading />
       ) : (
         <Suspense fallback={<KagoLoading />}>
-          <View data={file.data} onError={onError} />
+          <View data={file.data.data} onError={onError} />
         </Suspense>
       )}
     </KagoWindow>

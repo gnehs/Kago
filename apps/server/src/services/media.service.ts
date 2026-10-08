@@ -186,6 +186,32 @@ const SUBTITLE_LEAD_SECONDS = 120;
 /** Reading a subtitle stream out means reading through the whole file, which takes a while on a large one. */
 const EXTRACT_TIMEOUT_MS = 180_000;
 const EXTRACT_KEEP = 24;
+/** How many files are looked at, and how many have something taken out of them, at one time; the rest wait their turn. */
+const PROBE_JOBS = 4;
+const EXTRACT_JOBS = 2;
+/** How many may wait before the next is turned away instead: more than a folder of music asks for, less than a flood. */
+const MAX_WAITING_JOBS = 2000;
+const PROBES_KEPT = 1000;
+
+/** Lets `limit` jobs run at once and makes the others wait in line, so a burst of requests is not a burst of processes. */
+function slots(limit: number) {
+  let running = 0;
+  const waiting: Array<() => void> = [];
+  return async <T>(job: () => Promise<T>): Promise<T> => {
+    if (running < limit) running += 1;
+    else if (waiting.length >= MAX_WAITING_JOBS) throw new AppError(503, "The server is busy; try again later", "MEDIA_BUSY");
+    // Whoever finishes hands its slot straight to the next in line, so the count only drops when nobody waits.
+    else await new Promise<void>((resolve) => waiting.push(resolve));
+    try {
+      return await job();
+    } finally {
+      const next = waiting.shift();
+      if (next) next();
+      else running -= 1;
+    }
+  };
+}
+
 /** A picture attached to a file is decoded whole before it is shrunk; one larger than this is left alone. */
 const MAX_COVER_PIXELS = 64_000_000;
 /** No name of a song is this long; a tag that is longer is cut, so a file cannot make its listing arbitrarily large. */
@@ -216,6 +242,10 @@ export class MediaService {
   private readonly audioStreams = new Map<string, Set<ChildProcess>>();
   private readonly sessions = new Map<string, Session>();
   private readonly probes = new Map<string, Omit<MediaInfo, "transcode" | "audioTranscode" | "encoder" | "hdrOutput" | "tonemap">>();
+  private readonly probing = new Map<string, Promise<Omit<MediaInfo, "transcode" | "audioTranscode" | "encoder" | "hdrOutput" | "tonemap">>>();
+  // Anyone who may look at a folder may ask about every file in it; each question is a process of its own.
+  private readonly probeSlots = slots(PROBE_JOBS);
+  private readonly extractSlots = slots(EXTRACT_JOBS);
   private readonly subtitleProbes = new Map<string, Array<{ index: number; language: string }>>();
   private readonly ticker: NodeJS.Timeout;
 
@@ -246,8 +276,14 @@ export class MediaService {
     const key = `${absolutePath}:${stat.mtimeMs}:${stat.size}`;
     let probed = this.probes.get(key);
     if (!probed) {
-      probed = await this.probe(absolutePath);
-      if (this.probes.size >= 200) this.probes.delete(this.probes.keys().next().value!);
+      // Asked about twice at once, a file is still looked at once.
+      let probing = this.probing.get(key);
+      if (!probing) {
+        probing = this.probeSlots(() => this.probe(absolutePath)).finally(() => this.probing.delete(key));
+        this.probing.set(key, probing);
+      }
+      probed = await probing;
+      if (this.probes.size >= PROBES_KEPT) this.probes.delete(this.probes.keys().next().value!);
       this.probes.set(key, probed);
     }
     return { transcode: probed.qualities.length > 0, audioTranscode: this.opus && probed.audio.length > 0, encoder: this.accel.encoder, hdrOutput: this.hdrOutput, tonemap: this.tonemap !== null, ...probed };
@@ -303,7 +339,7 @@ export class MediaService {
     const target = path.join(this.extractDir, `${key}-${name}`);
     let pending = this.extracts.get(target);
     if (!pending) {
-      pending = (async () => {
+      pending = this.extractSlots(async () => {
         await fsp.mkdir(this.extractDir, { recursive: true });
         const partial = `${target}.part`;
         // Dumping an attachment has no output file, which ffmpeg reports as an error after writing it.
@@ -314,7 +350,7 @@ export class MediaService {
           throw new AppError(422, "This stream cannot be read", "MEDIA_UNREADABLE");
         }
         return target;
-      })();
+      });
       this.extracts.set(target, pending);
       pending.catch(() => this.extracts.delete(target));
       if (this.extracts.size > EXTRACT_KEEP) {

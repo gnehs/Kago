@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import { parentPort } from "node:worker_threads";
+import zlib from "node:zlib";
 import AdmZip from "adm-zip";
 
 /** What the worker is asked for: a picture of `source`, written to `target` for ffmpeg to shrink. */
@@ -44,8 +45,10 @@ function extractEmbedded(job: ThumbnailJob): boolean {
     const entry = zip.getEntry(name);
     // A preview picture is small. One that says it unpacks to more is not unpacked to find out.
     if (!entry || entry.header.size > MAX_PICTURE_BYTES) continue;
-    const data = entry.getData();
-    if (!data.length) continue;
+    // What it says is not relied on either: unpacking stops at the same size, and a picture that would pass it is given up on.
+    const packed = entry.getCompressedData();
+    const data = entry.header.method === 8 ? zlib.inflateRawSync(packed, { maxOutputLength: MAX_PICTURE_BYTES }) : entry.header.method === 0 && packed.length <= MAX_PICTURE_BYTES ? packed : null;
+    if (!data?.length) continue;
     fs.writeFileSync(job.target, data);
     return true;
   }
