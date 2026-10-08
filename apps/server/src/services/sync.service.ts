@@ -47,7 +47,23 @@ type SyncJobRow = {
   updated_at: number;
 };
 
+type SyncRun = {
+  task_id: string;
+  started_at: number;
+  finished_at: number | null;
+  status: string;
+  error_message: string | null;
+  dry_run: boolean;
+  scheduled: boolean;
+  /** What a run that was not a trial brought across. */
+  bytes: number;
+  /** What a trial run would have changed. */
+  summary: (SyncSummary & { truncated: boolean }) | null;
+};
+
 const SCHEDULER_INTERVAL_MS = 30_000;
+/** How many of a job's runs are remembered, the last one among them. */
+const KEPT_RUNS = 20;
 
 /** Syncs that are kept: what to bring where, and when. Each run of one is a task like any other. */
 export class SyncService {
@@ -147,8 +163,56 @@ export class SyncService {
     };
   }
 
-  /** A job's new run is the one that counts: what the run before it reported is not kept. */
+  /** The job's last runs, newest first. */
+  runs(actor: Actor, jobId: string): SyncRun[] {
+    const job = this.getForActor(actor, jobId);
+    const last = this.lastRun(job);
+    const earlier = rows<Omit<SyncRun, "dry_run" | "scheduled" | "summary"> & { dry_run: number; scheduled: number; summary_json: string | null }>(
+      this.db
+        .prepare("SELECT task_id, started_at, finished_at, status, error_message, dry_run, scheduled, bytes, summary_json FROM sync_runs WHERE job_id = ? ORDER BY started_at DESC, rowid DESC")
+        .all(job.id)
+    ).map(({ summary_json, ...run }) => ({ ...run, dry_run: Boolean(run.dry_run), scheduled: Boolean(run.scheduled), summary: summary_json ? (JSON.parse(summary_json) as SyncRun["summary"]) : null }));
+    return last ? [last, ...earlier] : earlier;
+  }
+
+  /** The run the job's last task was, read from the task itself for as long as the job points at it. */
+  private lastRun(job: SyncJobRow): SyncRun | null {
+    if (!job.last_task_id) return null;
+    const task = row<{ status: string; error_message: string | null; finished_at: number | null; processed_bytes: number; destination: string | null; auth_snapshot_json: string | null; created_at: number }>(
+      this.db.prepare("SELECT status, error_message, finished_at, processed_bytes, destination, auth_snapshot_json, created_at FROM tasks WHERE id = ?").get(job.last_task_id)
+    );
+    if (!task) return null;
+    const report = row<{ summary_json: string }>(this.db.prepare("SELECT summary_json FROM task_reports WHERE task_id = ?").get(job.last_task_id));
+    const spec = (task.destination ? (JSON.parse(task.destination) as { sync?: { options?: { dryRun?: boolean } } }) : {}).sync;
+    const snapshot = task.auth_snapshot_json ? (JSON.parse(task.auth_snapshot_json) as { scheduled?: boolean }) : {};
+    return {
+      task_id: job.last_task_id,
+      started_at: job.last_run_at ?? task.created_at,
+      finished_at: task.finished_at,
+      status: task.status,
+      error_message: task.error_message,
+      dry_run: Boolean(spec?.options?.dryRun),
+      scheduled: Boolean(snapshot.scheduled),
+      bytes: task.processed_bytes ?? 0,
+      summary: report && task.status === "done" ? (JSON.parse(report.summary_json) as SyncRun["summary"]) : null
+    };
+  }
+
+  /** A job's new run is the one that counts: of the run before it only how it ended is kept, not all it reported. */
   private began(job: SyncJobRow, taskId: string): void {
+    // The task of the last run stays for as long as the job points at it, so this is the last moment it is sure to be there.
+    const last = this.lastRun(job);
+    if (last) {
+      this.db
+        .prepare(
+          `INSERT OR REPLACE INTO sync_runs (task_id, job_id, started_at, finished_at, status, error_message, dry_run, scheduled, bytes, summary_json)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(last.task_id, job.id, last.started_at, last.finished_at, last.status, last.error_message, last.dry_run ? 1 : 0, last.scheduled ? 1 : 0, last.bytes, last.summary ? JSON.stringify(last.summary) : null);
+      this.db
+        .prepare("DELETE FROM sync_runs WHERE job_id = ? AND task_id NOT IN (SELECT task_id FROM sync_runs WHERE job_id = ? ORDER BY started_at DESC, rowid DESC LIMIT ?)")
+        .run(job.id, job.id, KEPT_RUNS - 1);
+    }
     if (job.last_task_id) this.db.prepare("DELETE FROM task_reports WHERE task_id = ?").run(job.last_task_id);
     this.db.prepare("UPDATE sync_jobs SET last_run_at = ?, last_task_id = ? WHERE id = ?").run(now(), taskId, job.id);
   }

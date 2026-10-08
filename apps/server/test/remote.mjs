@@ -280,6 +280,11 @@ test("a remote location behaves like a local one", { skip: remote ? false : "KAG
     assert.equal((await api.get("/api/sync-jobs")).json[0].last_trial, null);
     assert.equal((await api.get(`/api/sync-jobs/${job.json.id}/trial`)).json.code, "SYNC_NO_TRIAL");
     assert.equal((await api.get(`/api/fs/preview?${q("/backup/c.txt")}`)).text, "CCC");
+    // How the runs before the last one ended is remembered, the trial ones with what they would have changed.
+    const runs = (await api.get(`/api/sync-jobs/${job.json.id}/runs`)).json;
+    assert.deepEqual(runs.map((run) => `${run.status} ${run.dry_run}`), ["done false", "done true", "done true", "done false", "done false", "done false"]);
+    assert.deepEqual(runs[1].summary, { copy: 1, delete: 1, mkdir: 0, rmdir: 0, touch: 0, bytes: 4, truncated: false });
+    assert.ok(runs.every((run) => run.finished_at >= run.started_at && !run.scheduled));
 
     // And back again, from the remote to a local folder.
     await mkdir(path.join(dataDir, "local", "restored"));

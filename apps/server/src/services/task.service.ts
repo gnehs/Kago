@@ -13,6 +13,7 @@ import { assertNameAvailable, nfc } from "../lib/filename.js";
 import { id, now } from "../lib/ids.js";
 import { logger } from "../lib/logger.js";
 import { isZipDirectory, isZipSymlink, openZipArchive } from "../lib/zip-archive.js";
+import { openEncryptedZipEntry, readZipCipherHead, zipCipherOf, zipPasswordFits, ZipPasswordError, type ZipCipher } from "../lib/zip-crypto.js";
 import { SecretBox } from "../lib/secret-box.js";
 import { ensureSshKey, sshCommand } from "../lib/ssh-key.js";
 import { zipStream, type ZipEntry, type ZipOptions } from "../lib/zip-stream.js";
@@ -20,6 +21,7 @@ import { RcloneJobStopped } from "../storage/rclone-client.js";
 import { runRclone } from "../storage/rclone-daemon.js";
 import { isRemote, joinFs, REMOTE_TRASH, transferProgress } from "../storage/remote-storage.js";
 import type { EventPublisher } from "../ws/events.js";
+import { ArchivePasswordService } from "./archive-password.service.js";
 import type { AuditService } from "./audit.service.js";
 import type { FsService } from "./fs.service.js";
 import { sharesAreFixed, type PathService, type SafePath } from "./path.service.js";
@@ -67,13 +69,19 @@ export const taskInputSchema = z.object({
     dryRun: z.boolean().optional(),
     /** How hard a `compress` task squeezes, and what it locks the archive with. */
     level: z.enum(["store", "fast", "normal", "best"]).optional(),
+    encryption: z.enum(["aes256", "zipcrypto"]).optional(),
+    /** What a `compress` task locks the archive with, or what an `extract` task tries before the saved ones. */
     password: z.string().min(1).max(1024).optional(),
-    encryption: z.enum(["aes256", "zipcrypto"]).optional()
+    /** Whether an `extract` task keeps the password among the saved ones once it has opened the archive. */
+    remember: z.boolean().optional()
   }).optional()
 });
 
 const zipLevels = { store: 0, fast: 1, normal: 6, best: 9 } as const;
 type CompressOptions = { level?: keyof typeof zipLevels; encryption?: "aes256" | "zipcrypto"; password?: string };
+type ExtractOptions = { password?: string; remember?: boolean };
+/** How many locked entries a password is checked against before anything is written. */
+const maxPasswordProbes = 16;
 
 /** One end of a sync: a folder of a location, or a folder on another machine that rsync reaches over SSH. */
 export const syncEndpointSchema = z.discriminatedUnion("kind", [
@@ -102,6 +110,7 @@ export class TaskService {
   private readonly progressBuffers = new Map<string, ProgressBuffer>();
   private readonly cancelChecks = new Map<string, number>();
   private secretBox: SecretBox | null = null;
+  readonly archivePasswords: ArchivePasswordService;
 
   constructor(
     private readonly db: Db,
@@ -113,7 +122,9 @@ export class TaskService {
     private readonly fsService: FsService,
     private readonly storage: StorageService,
     private readonly preferences: PreferenceService
-  ) {}
+  ) {
+    this.archivePasswords = new ArchivePasswordService(db, () => this.secrets());
+  }
 
   async create(actor: Actor, input: z.infer<typeof taskInputSchema>): Promise<FileTask> {
     if (["copy", "move", "compress", "extract"].includes(input.type) && !input.destination) {
@@ -130,16 +141,20 @@ export class TaskService {
     }
 
     const sources = input.type === "rsync_pull" ? [{ rootSlug: "remote", path: input.remote! }] : input.sources;
-    const { level, password, encryption, ...rsyncOptions } = input.options ?? {};
+    const { level, password, encryption, remember, ...rsyncOptions } = input.options ?? {};
     // The task row is shown to its owner and kept for a week, so the password only ever sits in it sealed.
-    const compressOptions: CompressOptions = { level, ...(password ? { encryption: encryption ?? "aes256", password: this.secrets().seal(password) } : {}) };
+    const sealed = password ? this.secrets().seal(password) : undefined;
+    const archiveOptions: CompressOptions | ExtractOptions =
+      input.type === "compress"
+        ? { level, ...(sealed ? { encryption: encryption ?? "aes256", password: sealed } : {}) }
+        : sealed ? { password: sealed, remember } : {};
     const destination =
       input.type === "rsync_push"
         ? JSON.stringify({ remote: input.remote, options: rsyncOptions })
         : input.type === "download_zip"
           ? JSON.stringify({ fileName: downloadFileName(sources) })
           : input.destination
-            ? JSON.stringify({ ...input.destination, options: input.type === "compress" ? compressOptions : rsyncOptions })
+            ? JSON.stringify({ ...input.destination, options: input.type === "compress" || input.type === "extract" ? archiveOptions : rsyncOptions })
             : null;
 
     await this.assertTaskPermissions(actor, input);
@@ -166,8 +181,7 @@ export class TaskService {
     };
 
     this.insertTask(task);
-    const logged = password ? { ...input, options: { ...input.options, password: "[redacted]" } } : input;
-    this.audit.write({ actorType: "user", actorId: actor.id, action: "create_task", target: logged, result: "success" });
+    this.audit.write({ actorType: "user", actorId: actor.id, action: "create_task", target: withoutPassword(input), result: "success" });
     this.events.publish({ type: "task.created", userId: task.created_by, task });
     return task;
   }
@@ -388,7 +402,7 @@ export class TaskService {
     const input = this.taskInputFromTask(task);
     await this.assertTaskPermissions(actor, input);
     const retryTask = this.cloneTask(actor, task);
-    this.audit.write({ actorType: "user", actorId: actor.id, action: "create_task", target: input, result: "success" });
+    this.audit.write({ actorType: "user", actorId: actor.id, action: "create_task", target: withoutPassword(input), result: "success" });
     this.audit.write({
       actorType: "user",
       actorId: actor.id,
@@ -786,32 +800,30 @@ export class TaskService {
     const sources = JSON.parse(task.sources_json) as Array<{ rootSlug: string; path: string }>;
     const destination = JSON.parse(task.destination ?? "{}") as { rootSlug: string; path: string; options?: CompressOptions };
     const { level, encryption, password } = destination.options ?? {};
-    try {
-      const dest = await this.paths.resolveForCreate(destination.rootSlug, destination.path);
-      this.permissions.require(actor, "edit", dest.root, path.posix.dirname(dest.logicalPath));
-      const folder = await this.paths.resolveExisting(destination.rootSlug, path.posix.dirname(dest.logicalPath));
-      await this.storage.assertNameAvailable(folder, this.storage.name(dest));
-      const zipped = await this.zipSources(task, actor, "view", dest, {
-        level: level ? zipLevels[level] : undefined,
-        encryption,
-        password: password ? this.secrets().open(password) : undefined
-      });
-      this.audit.write({
-        actorType: "user",
-        actorId: actor.id,
-        action: "compress",
-        rootId: dest.root.id,
-        path: dest.logicalPath,
-        target: { taskId: task.id, sources: zipped.sources, level, encryption: password ? encryption : undefined },
-        result: "success"
-      });
-    } finally {
-      // Nothing needs the password once the archive is written, or will never be.
-      if (password) {
-        const kept = JSON.stringify({ ...destination, options: { level, encryption } });
-        this.db.prepare("UPDATE tasks SET destination = ? WHERE id = ?").run(kept, task.id);
-      }
-    }
+    const dest = await this.paths.resolveForCreate(destination.rootSlug, destination.path);
+    this.permissions.require(actor, "edit", dest.root, path.posix.dirname(dest.logicalPath));
+    const folder = await this.paths.resolveExisting(destination.rootSlug, path.posix.dirname(dest.logicalPath));
+    await this.storage.assertNameAvailable(folder, this.storage.name(dest));
+    const zipped = await this.zipSources(task, actor, "view", dest, {
+      level: level ? zipLevels[level] : undefined,
+      encryption,
+      password: password ? this.secrets().open(password) : undefined
+    });
+    this.audit.write({
+      actorType: "user",
+      actorId: actor.id,
+      action: "compress",
+      rootId: dest.root.id,
+      path: dest.logicalPath,
+      target: { taskId: task.id, sources: zipped.sources, level, encryption: password ? encryption : undefined },
+      result: "success"
+    });
+    if (password) this.forgetPassword(task.id, { ...destination, options: { level, encryption } });
+  }
+
+  /** A task that failed keeps its sealed password, so that trying it again does the same thing; one that is done has no more use for it. */
+  private forgetPassword(taskId: string, destination: object): void {
+    this.db.prepare("UPDATE tasks SET destination = ? WHERE id = ?").run(JSON.stringify(destination), taskId);
   }
 
   /** Zips a selection into Kago's own temp dir so a multi-file download leaves nothing behind in the user's folders. */
@@ -1034,22 +1046,25 @@ export class TaskService {
 
   private async runExtract(task: FileTask, actor: Actor): Promise<void> {
     const sources = JSON.parse(task.sources_json) as Array<{ rootSlug: string; path: string }>;
-    const destination = JSON.parse(task.destination ?? "{}") as { rootSlug: string; path: string };
+    const destination = JSON.parse(task.destination ?? "{}") as { rootSlug: string; path: string; options?: ExtractOptions };
     const dest = await this.paths.resolveExisting(destination.rootSlug, destination.path);
     this.permissions.require(actor, "edit", dest.root, dest.logicalPath);
+    // What was typed for this archive goes first, then whatever the person keeps for archives in general.
+    const given = destination.options?.password ? this.secrets().open(destination.options.password) : undefined;
+    const passwords = [...new Set([...(given === undefined ? [] : [given]), ...this.archivePasswords.reveal(actor.id)])];
     let totalFiles = 0;
     let totalBytes = 0;
     let totalEntries = 0;
-    const archives: Array<{ path: string }> = [];
+    const archives: Array<{ path: string; password?: string }> = [];
     for (const source of sources) {
       const safe = await this.paths.resolveExisting(source.rootSlug, source.path);
       this.permissions.require(actor, "view", safe.root, safe.logicalPath);
       // Remote archives are staged to disk by storage.localFile; yauzl reads the local archive by ranges.
       const archivePath = await this.storage.localFile(safe, await this.storage.stat(safe));
       const zip = await openZipArchive(archivePath);
-      let stats: { totalFiles: number; totalBytes: number; totalEntries: number };
+      let stats: { totalFiles: number; totalBytes: number; totalEntries: number; password?: string };
       try {
-        stats = await this.validateExtractEntries(zip);
+        stats = await this.validateExtractEntries(zip, passwords, given !== undefined);
       } catch (error) {
         throw mapZipArchiveError(error);
       } finally {
@@ -1059,7 +1074,7 @@ export class TaskService {
       if (totalEntries > maxExtractEntries) throw new AppError(413, "Zip contains too many entries", "ZIP_ENTRY_LIMIT");
       totalFiles += stats.totalFiles;
       totalBytes += stats.totalBytes;
-      archives.push({ path: archivePath });
+      archives.push({ path: archivePath, password: stats.password });
     }
     await this.updateTotals(task.id, Math.max(totalFiles, 1), totalBytes);
 
@@ -1075,8 +1090,8 @@ export class TaskService {
           await this.progress(task.id, entry.fileName);
           if (isZipSymlink(entry)) throw new AppError(400, "Symlink zip entries are not allowed", "ZIP_SYMLINK_FORBIDDEN");
           const processedBytes = isRemote(dest.root)
-            ? await this.extractEntryRemote(entry, zip, dest, remainingBytes)
-            : await this.extractEntry(entry, zip, dest.absolutePath, storedNames, remainingBytes);
+            ? await this.extractEntryRemote(entry, zip, dest, remainingBytes, archive.password)
+            : await this.extractEntry(entry, zip, dest.absolutePath, storedNames, remainingBytes, archive.password);
           remainingBytes -= processedBytes;
           await this.bumpProcessedBytes(task.id, processedBytes);
           await this.bumpProcessed(task.id);
@@ -1096,18 +1111,32 @@ export class TaskService {
       target: { taskId: task.id, sources: sources.map((source) => ({ rootSlug: source.rootSlug, path: source.path })) },
       result: "success"
     });
+    if (given !== undefined) {
+      if (destination.options?.remember && archives.some((archive) => archive.password === given)) this.archivePasswords.add(actor.id, { password: given, note: "" });
+      this.forgetPassword(task.id, { ...destination, options: {} });
+    }
   }
 
-  private async validateExtractEntries(zip: yauzl.ZipFile): Promise<{ totalFiles: number; totalBytes: number; totalEntries: number }> {
+  /** Also settles which of `passwords` opens the archive, by the few bytes each locked entry is checked with, before anything is written. */
+  private async validateExtractEntries(zip: yauzl.ZipFile, passwords: string[], given: boolean): Promise<{ totalFiles: number; totalBytes: number; totalEntries: number; password?: string }> {
     let totalBytes = 0;
     let totalFiles = 0;
     let totalEntries = 0;
+    let locked = false;
+    const probes: Array<{ entry: yauzl.Entry; cipher: ZipCipher; head: Buffer }> = [];
     for await (const entry of zip.eachEntry()) {
       totalEntries += 1;
       if (totalEntries > maxExtractEntries) throw new AppError(413, "Zip contains too many entries", "ZIP_ENTRY_LIMIT");
       this.safeZipEntrySegments(entry);
       if (isZipSymlink(entry)) throw new AppError(400, "Symlink zip entries are not allowed", "ZIP_SYMLINK_FORBIDDEN");
-      if (!entry.canDecodeFileData()) throw new AppError(400, "Unsupported zip entry", "INVALID_ZIP_ENTRY");
+      if (entry.isEncrypted() && !isZipDirectory(entry)) {
+        const cipher = zipCipherOf(entry);
+        if (!cipher) throw new AppError(400, "Unsupported zip entry", "INVALID_ZIP_ENTRY");
+        locked = true;
+        if (probes.length < maxPasswordProbes) probes.push({ entry, cipher, head: await readZipCipherHead(zip, entry, cipher) });
+      } else if (!entry.isEncrypted() && !entry.canDecodeFileData()) {
+        throw new AppError(400, "Unsupported zip entry", "INVALID_ZIP_ENTRY");
+      }
       if (!isZipDirectory(entry)) {
         if (!Number.isSafeInteger(entry.uncompressedSize) || entry.uncompressedSize < 0) {
           throw new AppError(400, "Invalid zip entry size", "INVALID_ZIP_ENTRY");
@@ -1117,10 +1146,21 @@ export class TaskService {
         if (totalBytes > maxExtractBytes) throw new AppError(413, "Zip is too large to extract", "ZIP_SIZE_LIMIT");
       }
     }
-    return { totalFiles: Math.max(totalFiles, 1), totalBytes, totalEntries };
+    const password = locked ? passwords.find((candidate) => probes.every((probe) => zipPasswordFits(probe.entry, probe.cipher, probe.head, candidate))) : undefined;
+    if (locked && password === undefined) {
+      throw given ? new AppError(400, "Wrong archive password", "ZIP_PASSWORD_WRONG") : new AppError(400, "Archive password required", "ZIP_PASSWORD_REQUIRED");
+    }
+    return { totalFiles: Math.max(totalFiles, 1), totalBytes, totalEntries, password };
   }
 
-  private async extractEntry(entry: yauzl.Entry, zip: yauzl.ZipFile, destinationPath: string, storedNames: StoredNames, remainingBytes: number): Promise<number> {
+  private async openZipEntry(zip: yauzl.ZipFile, entry: yauzl.Entry, password: string | undefined): Promise<Readable> {
+    if (!entry.isEncrypted()) return zip.openReadStreamPromise(entry);
+    const cipher = zipCipherOf(entry);
+    if (!cipher || password === undefined) throw new AppError(400, "Unsupported zip entry", "INVALID_ZIP_ENTRY");
+    return openEncryptedZipEntry(zip, entry, cipher, password);
+  }
+
+  private async extractEntry(entry: yauzl.Entry, zip: yauzl.ZipFile, destinationPath: string, storedNames: StoredNames, remainingBytes: number, password?: string): Promise<number> {
     const segments = this.safeZipEntrySegments(entry);
     const fileName = isZipDirectory(entry) ? undefined : segments.pop()!;
     // Folders merge into the one already there, spelled as it is stored; a file never lands beside its NFC/NFD twin.
@@ -1159,7 +1199,7 @@ export class TaskService {
       }
     });
     try {
-      await pipeline(await zip.openReadStreamPromise(entry), bounded, createWriteStream(target, { flags: "wx", mode: 0o666 }));
+      await pipeline(await this.openZipEntry(zip, entry, password), bounded, createWriteStream(target, { flags: "wx", mode: 0o666 }));
     } catch (error) {
       await fsp.rm(target, { force: true });
       throw error;
@@ -1167,7 +1207,7 @@ export class TaskService {
     return written;
   }
 
-  private async extractEntryRemote(entry: yauzl.Entry, zip: yauzl.ZipFile, dest: SafePath, remainingBytes: number): Promise<number> {
+  private async extractEntryRemote(entry: yauzl.Entry, zip: yauzl.ZipFile, dest: SafePath, remainingBytes: number, password?: string): Promise<number> {
     const segments = this.safeZipEntrySegments(entry);
     const target = path.posix.join(dest.logicalPath, ...segments);
     if (this.storage.remote.isTrash(dest.root, target)) throw new AppError(400, "Unsafe zip entry", "UNSAFE_ZIP_ENTRY");
@@ -1187,7 +1227,7 @@ export class TaskService {
         else done(null, chunk);
       }
     });
-    const input = await zip.openReadStreamPromise(entry);
+    const input = await this.openZipEntry(zip, entry, password);
     const output = new PassThrough();
     const extraction = pipeline(input, bounded, output);
     try {
@@ -1196,7 +1236,12 @@ export class TaskService {
     } catch (error) {
       input.destroy();
       output.destroy();
-      await extraction.catch(() => undefined);
+      const failure = await extraction.then(() => error, (reason: unknown) => reason);
+      // Only at its end is an entry known to have been unlocked with the wrong password; by then it is all there.
+      if (failure instanceof ZipPasswordError) {
+        await this.storage.remote.remove(dest.root, target, false).catch(() => undefined);
+        throw failure;
+      }
       throw error;
     }
     return written;
@@ -1873,7 +1918,13 @@ function taskFailureMessage(error: unknown): string {
   return error instanceof AppError ? error.message : "Task failed";
 }
 
+/** A task's input as the audit log may keep it. */
+function withoutPassword(input: z.infer<typeof taskInputSchema>): z.infer<typeof taskInputSchema> {
+  return input.options?.password ? { ...input, options: { ...input.options, password: "[redacted]" } } : input;
+}
+
 function mapZipArchiveError(error: unknown): unknown {
+  if (error instanceof ZipPasswordError) return new AppError(400, "Wrong archive password", "ZIP_PASSWORD_WRONG");
   if (error instanceof Error && /^(?:absolute path:|invalid relative path:|invalid characters in fileName:)/.test(error.message)) {
     return new AppError(400, "Unsafe zip entry", "UNSAFE_ZIP_ENTRY");
   }

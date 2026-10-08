@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { Transform, pipeline, type Readable } from "node:stream";
 import zlib from "node:zlib";
+import { aesCounterStream, aesKeys, zipCryptoKeys } from "./zip-crypto.js";
 
 export type ZipEntry = {
   /** Path inside the archive, `/`-separated, without a trailing slash. */
@@ -214,30 +215,13 @@ type EntryCipher = { head: Buffer; update(chunk: Buffer): Buffer; final(): Buffe
 /** A salt and a password check go before the data, AES-256 in counter mode over it, and ten bytes of HMAC-SHA1 after. */
 function aesCipher(password: Buffer): EntryCipher {
   const salt = crypto.randomBytes(16);
-  const keys = crypto.pbkdf2Sync(password, salt, 1000, 66, "sha1");
-  // WinZip counts the blocks little-endian from 1, which no built-in CTR does, so the key stream is made here.
-  const block = crypto.createCipheriv("aes-256-ecb", keys.subarray(0, 32), null).setAutoPadding(false);
-  const mac = crypto.createHmac("sha1", keys.subarray(32, 64));
-  let counter = 1;
-  let pad: Buffer = Buffer.alloc(0);
+  const keys = aesKeys(password, salt, 32);
+  const stream = aesCounterStream(keys.key);
+  const mac = crypto.createHmac("sha1", keys.macKey);
   return {
-    head: Buffer.concat([salt, keys.subarray(64, 66)]),
+    head: Buffer.concat([salt, keys.check]),
     update(chunk) {
-      const out = Buffer.allocUnsafe(chunk.length);
-      let at = 0;
-      for (; at < chunk.length && at < pad.length; at += 1) out[at] = chunk[at]! ^ pad[at]!;
-      pad = pad.subarray(at);
-      if (at < chunk.length) {
-        const counters = Buffer.alloc(Math.ceil((chunk.length - at) / 16) * 16);
-        for (let offset = 0; offset < counters.length; offset += 16, counter += 1) {
-          counters.writeUInt32LE(counter >>> 0, offset);
-          counters.writeUInt32LE(Math.floor(counter / 0x100000000), offset + 4);
-        }
-        const stream = block.update(counters);
-        const rest = chunk.length - at;
-        for (let index = 0; index < rest; index += 1) out[at + index] = chunk[at + index]! ^ stream[index]!;
-        pad = stream.subarray(rest);
-      }
+      const out = stream(chunk);
       mac.update(out);
       return out;
     },
@@ -245,35 +229,12 @@ function aesCipher(password: Buffer): EntryCipher {
   };
 }
 
-const crcTable = Uint32Array.from({ length: 256 }, (_, index) => {
-  let value = index;
-  for (let bit = 0; bit < 8; bit += 1) value = value & 1 ? (value >>> 1) ^ 0xedb88320 : value >>> 1;
-  return value >>> 0;
-});
-
 /** The original zip encryption. Its twelve-byte header ends in a byte a reader checks the password by: the time's high byte, since the CRC is not known yet. */
 function zipCryptoCipher(password: Buffer, time: number): EntryCipher {
-  let key0 = 0x12345678;
-  let key1 = 0x23456789;
-  let key2 = 0x34567890;
-  const feed = (byte: number) => {
-    key0 = (crcTable[(key0 ^ byte) & 0xff]! ^ (key0 >>> 8)) >>> 0;
-    key1 = (Math.imul((key1 + (key0 & 0xff)) >>> 0, 134775813) + 1) >>> 0;
-    key2 = (crcTable[(key2 ^ (key1 >>> 24)) & 0xff]! ^ (key2 >>> 8)) >>> 0;
-  };
-  const update = (chunk: Buffer) => {
-    const out = Buffer.allocUnsafe(chunk.length);
-    for (let index = 0; index < chunk.length; index += 1) {
-      const mask = (key2 | 2) & 0xffff;
-      out[index] = chunk[index]! ^ ((Math.imul(mask, mask ^ 1) >>> 8) & 0xff);
-      feed(chunk[index]!);
-    }
-    return out;
-  };
-  for (const byte of password) feed(byte);
+  const keys = zipCryptoKeys(password);
   const head = crypto.randomBytes(12);
   head[11] = time >>> 8;
-  return { head: update(head), update, final: () => Buffer.alloc(0) };
+  return { head: keys.encrypt(head), update: keys.encrypt, final: () => Buffer.alloc(0) };
 }
 
 function endOfDirectory(count: number, size: number, offset: number): Buffer {

@@ -211,6 +211,24 @@ CREATE TABLE IF NOT EXISTS sync_jobs (
   FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
 );
 
+-- How the earlier runs of a sync job ended, kept after their tasks are forgotten.
+CREATE TABLE IF NOT EXISTS sync_runs (
+  task_id TEXT PRIMARY KEY,
+  job_id TEXT NOT NULL,
+  started_at INTEGER NOT NULL,
+  finished_at INTEGER,
+  status TEXT NOT NULL,
+  error_message TEXT,
+  dry_run INTEGER NOT NULL DEFAULT 0,
+  scheduled INTEGER NOT NULL DEFAULT 0,
+  bytes INTEGER NOT NULL DEFAULT 0,
+  summary_json TEXT,
+  FOREIGN KEY (job_id) REFERENCES sync_jobs(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_sync_runs_job_started
+ON sync_runs(job_id, started_at);
+
 CREATE TABLE IF NOT EXISTS user_settings (
   user_id TEXT PRIMARY KEY,
   settings_json TEXT NOT NULL,
@@ -233,3 +251,15 @@ CREATE TABLE IF NOT EXISTS folder_views (
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
   FOREIGN KEY (root_id) REFERENCES roots(id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS archive_passwords (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  sealed TEXT NOT NULL,
+  note TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_archive_passwords_user
+ON archive_passwords(user_id, created_at);

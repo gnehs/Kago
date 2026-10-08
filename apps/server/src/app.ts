@@ -34,6 +34,7 @@ import { ShelfService } from "./services/shelf.service.js";
 import { StorageService } from "./services/storage.service.js";
 import { syncJobSchema, SyncService } from "./services/sync.service.js";
 import { TagService, tagSchema } from "./services/tag.service.js";
+import { archivePasswordSchema } from "./services/archive-password.service.js";
 import { taskInputSchema, TaskService } from "./services/task.service.js";
 import { workspaceSchema, WorkspaceService } from "./services/workspace.service.js";
 import { WorkerManager } from "./workers/worker-manager.js";
@@ -479,6 +480,7 @@ function registerApi(app: FastifyInstance, services: Services) {
     return { ok: true };
   });
   app.get("/api/sync-jobs/:id/trial", async (request) => services.sync.trial(requireActor(request), z.object({ id: z.string() }).parse(request.params).id));
+  app.get("/api/sync-jobs/:id/runs", async (request) => services.sync.runs(requireActor(request), z.object({ id: z.string() }).parse(request.params).id));
   app.post("/api/sync-jobs/:id/run", async (request) => services.sync.run(requireActor(request), z.object({ id: z.string() }).parse(request.params).id));
 
   app.get("/api/workspace", async (request) => {
@@ -495,6 +497,12 @@ function registerApi(app: FastifyInstance, services: Services) {
 
   app.get("/api/settings", async (request) => services.preferences.get(requireActor(request).id));
   app.patch("/api/settings", async (request) => services.preferences.patchSettings(requireActor(request).id, settingsSchema.parse(request.body)));
+  app.get("/api/archive-passwords", async (request) => services.tasks.archivePasswords.list(requireActor(request).id));
+  app.post("/api/archive-passwords", async (request) => services.tasks.archivePasswords.add(requireActor(request).id, archivePasswordSchema.parse(request.body)));
+  app.delete("/api/archive-passwords/:id", async (request) => {
+    const params = z.object({ id: z.string() }).parse(request.params);
+    return services.tasks.archivePasswords.remove(requireActor(request).id, params.id);
+  });
   app.put("/api/folder-views", async (request) => services.preferences.setFolderView(requireActor(request).id, folderViewSchema.parse(request.body)));
   app.delete("/api/folder-views", async (request) => services.preferences.resetFolderView(requireActor(request).id, folderViewQuerySchema.parse(request.query)));
 

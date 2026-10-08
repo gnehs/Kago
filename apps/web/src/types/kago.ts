@@ -36,6 +36,18 @@ export type SyncTrialStats = {
   moreFolders: number;
 };
 export type SyncTrial = SyncTrialSummary & { stats: SyncTrialStats; changes: SyncChange[] };
+/** One run of a sync job: `bytes` is what a real run brought across, `summary` what a trial run would have changed. */
+export type SyncRun = {
+  task_id: string;
+  started_at: number;
+  finished_at: number | null;
+  status: string;
+  error_message: string | null;
+  dry_run: boolean;
+  scheduled: boolean;
+  bytes: number;
+  summary: SyncTrialSummary | null;
+};
 
 export type SyncJob = {
   id: string;

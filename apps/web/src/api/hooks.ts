@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { api, previewUrl } from "./client";
 import { decodeSubtitle } from "../lib/subtitles";
 import { isTrashing, useTrashingStore } from "../stores/trashing";
-import type { Actor, AuditLog, FileItem, FileList, FileMeta, FileTask, Group, ImageMetadata, MediaInfo, PermissionRule, Root, ShareLink, Shelf, SqlitePage, SqliteTable, StorageInfo, SubtitleList, SyncJob, SyncTrial, Tag, TrashItem, UserAccount, WorkspaceState } from "../types/kago";
+import type { Actor, AuditLog, FileItem, FileList, FileMeta, FileTask, Group, ImageMetadata, MediaInfo, PermissionRule, Root, ShareLink, Shelf, SqlitePage, SqliteTable, StorageInfo, SubtitleList, SyncJob, SyncRun, SyncTrial, Tag, TrashItem, UserAccount, WorkspaceState } from "../types/kago";
 
 export function useSetupStatus() {
   return useQuery({ queryKey: ["auth", "setup"], queryFn: () => api<{ needsSetup: boolean }>("/api/auth/setup") });
@@ -42,6 +42,11 @@ export function useSyncJobs() {
 /** What a job's last trial run would have changed; asked for again whenever that run is another one. */
 export function useSyncTrial(job: SyncJob | null) {
   return useQuery({ queryKey: ["sync-trial", job?.id, job?.last_run_at], queryFn: () => api<SyncTrial>(`/api/sync-jobs/${job!.id}/trial`), enabled: job !== null });
+}
+
+/** A job's last runs, asked for again when another one starts and while one is still going. */
+export function useSyncRuns(job: SyncJob | null) {
+  return useQuery({ queryKey: ["sync-runs", job?.id, job?.last_run_at, job?.last_status], queryFn: () => api<SyncRun[]>(`/api/sync-jobs/${job!.id}/runs`), enabled: job !== null });
 }
 
 export function useSshKey(enabled = true) {
