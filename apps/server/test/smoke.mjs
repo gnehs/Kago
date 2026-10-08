@@ -618,6 +618,13 @@ test("download archives stay out of the data dir and running tasks can be cancel
       destination: { rootSlug: "photos", path: "/2026" }
     });
     assert.equal((await waitTask(admin, afterCancel.json.id)).status, "done");
+
+    // Clearing forgets what has ended, along with a download nobody can ask for any more.
+    const listed = (await admin.get("/api/tasks")).json;
+    assert.ok(listed.length >= 4);
+    assert.deepEqual((await admin.delete("/api/tasks")).json, { cleared: listed.length });
+    assert.deepEqual((await admin.get("/api/tasks")).json, []);
+    assert.deepEqual(await readdir(path.join(fixture.appDataDir, "temp", "downloads")), []);
   } finally {
     await app.close();
     await rm(fixture.baseDir, { recursive: true, force: true });

@@ -36,6 +36,8 @@ const progressFlushIntervalMs = 500;
 const progressFlushBytes = 1024 * 1024 * 16;
 const cancelCheckIntervalMs = 300;
 const downloadMaxAgeMs = 24 * 60 * 60 * 1000;
+const finishedStatuses = "'done', 'failed', 'cancelled', 'interrupted'";
+const finishedTaskMaxAgeSeconds = 7 * 24 * 60 * 60;
 
 const fileRefSchema = z.object({
   rootSlug: z.string().min(1),
@@ -222,6 +224,36 @@ export class TaskService {
     return rows<FileTask>(
       this.db.prepare("SELECT * FROM tasks WHERE created_by = ? ORDER BY created_at DESC LIMIT 200").all(actor.id)
     );
+  }
+
+  /** Forgets the finished tasks the actor can see. */
+  async clearFinished(actor: Actor): Promise<{ cleared: number }> {
+    const cleared = await this.forgetFinished(now(), actor.role === "ADMIN" ? undefined : actor.id);
+    this.audit.write({ actorType: "user", actorId: actor.id, action: "tasks_clear", target: { count: cleared }, result: "success" });
+    return { cleared };
+  }
+
+  /** Finished tasks are only history; forget the ones that ended more than a week ago. */
+  pruneFinished(): Promise<number> {
+    return this.forgetFinished(now() - finishedTaskMaxAgeSeconds);
+  }
+
+  private async forgetFinished(endedBy: number, createdBy?: string): Promise<number> {
+    // A sync job reads the outcome of its last run from that task, so that one stays.
+    const finished = `status IN (${finishedStatuses}) AND COALESCE(finished_at, updated_at) <= ? AND id NOT IN (SELECT last_task_id FROM sync_jobs WHERE last_task_id IS NOT NULL)`;
+    const tasks = rows<{ id: string; type: string }>(
+      createdBy
+        ? this.db.prepare(`SELECT id, type FROM tasks WHERE ${finished} AND created_by = ?`).all(endedBy, createdBy)
+        : this.db.prepare(`SELECT id, type FROM tasks WHERE ${finished}`).all(endedBy)
+    );
+    for (const task of tasks) {
+      this.db.prepare("DELETE FROM tasks WHERE id = ?").run(task.id);
+      if (task.type !== "download_zip") continue;
+      // Nothing can ask for the archive once its task is gone.
+      await fsp.rm(this.downloadPath(task.id), { force: true });
+      await fsp.rm(this.downloadManifestPath(task.id), { force: true });
+    }
+    return tasks.length;
   }
 
   listTrash(actor: Actor) {

@@ -69,8 +69,13 @@ port.on("message", (message: { type?: string }) => {
 
 post({ type: "ready" });
 schedule(0);
-void tasks.cleanupExpiredDownloads().catch(() => undefined);
-setInterval(() => void tasks.cleanupExpiredDownloads().catch(() => undefined), 60 * 60 * 1000).unref();
+tidy();
+setInterval(tidy, 60 * 60 * 1000).unref();
+
+function tidy(): void {
+  void tasks.cleanupExpiredDownloads().catch(() => undefined);
+  void tasks.pruneFinished().catch(() => undefined);
+}
 
 function schedule(delayMs: number): void {
   if (stopped) return;

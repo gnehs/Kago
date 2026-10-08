@@ -33,6 +33,7 @@ export const isActiveTask = (task: FileTask) => ["queued", "running", "pausing",
 /** Moving to the Trash looks instant to the user, so it only shows up among the live tasks when it goes wrong. */
 export const isQuietTask = (task: FileTask) => task.type === "delete_to_trash" && (isActiveTask(task) || task.status === "done");
 export const canCancelTask = (task: FileTask) => ["queued", "paused", "running"].includes(task.status);
+export const isFinishedTask = (task: FileTask) => !isActiveTask(task);
 export const canRetryTask = (task: FileTask) => ["failed", "cancelled", "interrupted"].includes(task.status);
 
 export const taskProgressValue = (task: FileTask) => (task.total_bytes > 0 ? task.processed_bytes : task.processed_files);

@@ -761,6 +761,7 @@ function registerApi(app: FastifyInstance, services: Services) {
 
   app.get("/api/tasks", async (request) => services.tasks.list(requireActor(request)));
   app.post("/api/tasks", async (request) => services.tasks.create(requireActor(request), taskInputSchema.parse(request.body)));
+  app.delete("/api/tasks", async (request) => services.tasks.clearFinished(requireActor(request)));
   app.get("/api/tasks/:id", async (request) => {
     const actor = requireActor(request);
     return services.tasks.getForActor(actor, z.object({ id: z.string() }).parse(request.params).id);
