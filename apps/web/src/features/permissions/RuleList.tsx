@@ -4,7 +4,6 @@ import { api } from "@/api/client";
 import { useGroups, useUsers } from "@/api/hooks";
 import { KagoBadge } from "@/components/kago/badge";
 import { KagoIconButton } from "@/components/kago/icon-button";
-import { parseJsonArray } from "@/lib/format";
 import { run } from "@/lib/run";
 import type { PermissionRule } from "@/types/kago";
 import { permissionLabel } from "./permissionUtils";
@@ -17,8 +16,7 @@ export function RuleList({ rules }: { rules: PermissionRule[] }) {
 
   function principalName(rule: PermissionRule) {
     if (rule.principal_type === "user") return users.data?.find((user) => user.id === rule.principal_id)?.email ?? rule.principal_id;
-    if (rule.principal_type === "group") return groups.data?.find((group) => group.id === rule.principal_id)?.name ?? rule.principal_id;
-    return t("Share link");
+    return groups.data?.find((group) => group.id === rule.principal_id)?.name ?? rule.principal_id;
   }
 
   async function remove(ruleId: string) {
@@ -36,11 +34,8 @@ export function RuleList({ rules }: { rules: PermissionRule[] }) {
           <div className="flex min-w-0 flex-1 flex-col gap-1">
             <span className="truncate font-medium">{principalName(rule)}</span>
             <span className="truncate text-xs text-muted">{rule.path_prefix}{rule.recursive ? t(" (with subfolders)") : ""}</span>
-            <div className="flex flex-wrap gap-1">
-              {parseJsonArray(rule.allow_json).map((action) => <KagoBadge key={`allow-${action}`} tone="success">{permissionLabel(action)}</KagoBadge>)}
-              {parseJsonArray(rule.deny_json).map((action) => <KagoBadge key={`deny-${action}`} tone="danger">{t("Deny: {action}", { action: permissionLabel(action) })}</KagoBadge>)}
-            </div>
           </div>
+          <KagoBadge tone={rule.level === "edit" ? "success" : undefined}>{permissionLabel(rule.level)}</KagoBadge>
           <KagoIconButton label={t("Delete rule")} onClick={() => void remove(rule.id)}><Trash2 /></KagoIconButton>
         </li>
       ))}

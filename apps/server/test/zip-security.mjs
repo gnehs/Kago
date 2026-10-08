@@ -33,7 +33,7 @@ test("extract rejects a small stored archive with a forged huge size without wri
   }
 });
 
-test("background ZIPs omit denied descendants and stop serving an artifact after a child permission is revoked", async () => {
+test("background ZIPs omit descendants no rule grants and stop serving an artifact after a child permission is revoked", async () => {
   const fixture = await createFixture("kago-zip-acl.");
   const publicDir = path.join(fixture.dataDir, "photos", "public");
   await mkdir(path.join(publicDir, "private"), { recursive: true });
@@ -49,24 +49,11 @@ test("background ZIPs omit denied descendants and stop serving an artifact after
     const root = (await admin.get("/api/roots")).json.find((item) => item.slug === "photos");
     const user = await admin.post("/api/users", { email: "zip-user@example.test", password: "fake-user-password-123", displayName: "Zip User", role: "USER" });
     assert.equal(user.statusCode, 200);
-    assert.equal((await admin.post("/api/permissions", {
-      principalType: "user",
-      principalId: user.json.id,
-      rootId: root.id,
-      pathPrefix: "/public",
-      allow: ["list", "download"],
-      deny: [],
-      recursive: true
-    })).statusCode, 200);
-    assert.equal((await admin.post("/api/permissions", {
-      principalType: "user",
-      principalId: user.json.id,
-      rootId: root.id,
-      pathPrefix: "/public/private",
-      allow: [],
-      deny: ["download"],
-      recursive: true
-    })).statusCode, 200);
+    const rule = (pathPrefix, recursive) => admin.post("/api/permissions", { principalType: "user", principalId: user.json.id, rootId: root.id, pathPrefix, level: "view", recursive });
+    assert.equal((await rule("/public", false)).statusCode, 200);
+    const visibleRule = await rule("/public/visible.txt", true);
+    assert.equal(visibleRule.statusCode, 200);
+    assert.equal((await rule("/public/visible-link.txt", true)).statusCode, 200);
 
     const member = client(app);
     assert.equal((await member.post("/api/auth/login", { email: "zip-user@example.test", password: "fake-user-password-123" })).statusCode, 200);
@@ -80,15 +67,7 @@ test("background ZIPs omit denied descendants and stop serving an artifact after
     assert.equal(names.includes("public/visible-link.txt"), false);
     assert.equal(names.some((name) => name.includes("private") || name.includes("hidden.txt")), false);
 
-    assert.equal((await admin.post("/api/permissions", {
-      principalType: "user",
-      principalId: user.json.id,
-      rootId: root.id,
-      pathPrefix: "/public/visible.txt",
-      allow: [],
-      deny: ["download"],
-      recursive: true
-    })).statusCode, 200);
+    assert.equal((await admin.delete(`/api/permissions/${visibleRule.json.id}`)).statusCode, 200);
     assert.equal((await member.get(`/api/tasks/${created.json.id}/download`, { accept: "*/*" })).statusCode, 403);
   } finally {
     await app.close();
@@ -168,7 +147,8 @@ function client(app) {
   }
   return {
     get: (url, options = {}) => request("GET", url, undefined, options.accept),
-    post: (url, body) => request("POST", url, body)
+    post: (url, body) => request("POST", url, body),
+    delete: (url) => request("DELETE", url)
   };
 }
 

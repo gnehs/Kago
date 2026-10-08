@@ -104,13 +104,4 @@ export function kindLabel(item: Pick<FileItem, "kind" | "type" | "name">) {
   return extension ? t("{extension} file", { extension: extension.toUpperCase() }) : t("File");
 }
 
-export function parseJsonArray(value: string): string[] {
-  try {
-    const parsed = JSON.parse(value);
-    return Array.isArray(parsed) ? parsed.map(String) : [];
-  } catch {
-    return [];
-  }
-}
-
 export const errorMessage = (error: unknown, fallback = t("Something went wrong")) => (error instanceof Error && error.message ? error.message : fallback);

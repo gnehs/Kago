@@ -190,8 +190,7 @@ test("minimum file-manager demo flow", async () => {
       principalId: group.json.id,
       rootId: root.json.id,
       pathPrefix: "/public",
-      allow: ["list", "read", "download"],
-      deny: [],
+      level: "view",
       recursive: true
     })).statusCode, 200);
 

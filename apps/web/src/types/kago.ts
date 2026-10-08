@@ -233,12 +233,11 @@ export type ShareLink = {
 
 export type PermissionRule = {
   id: string;
-  principal_type: "user" | "group" | "share_link";
+  principal_type: "user" | "group";
   principal_id: string;
   root_id: string;
   path_prefix: string;
-  allow_json: string;
-  deny_json: string;
+  level: "view" | "edit";
   recursive: number;
   created_at: number;
   updated_at: number;

@@ -54,7 +54,7 @@ export class ShelfService {
       for (const item of rawItems) {
         const safe = await this.resolveShelfItem(item.root_slug, item.path);
         if (!safe) continue;
-        if (!this.permissions.can(actor, "list", safe.root, safe.logicalPath).allowed) continue;
+        if (!this.permissions.can(actor, "view", safe.root, safe.logicalPath).allowed) continue;
         items.push(item);
       }
       shelves.push({ ...shelf, items });
@@ -74,7 +74,7 @@ export class ShelfService {
   async addItem(actor: Actor, shelfId: string, rootSlug: string, logicalPath: string) {
     this.requireOwnedShelf(actor, shelfId);
     const safe = await this.paths.resolveExisting(rootSlug, logicalPath);
-    this.permissions.require(actor, "list", safe.root, safe.logicalPath);
+    this.permissions.require(actor, "view", safe.root, safe.logicalPath);
     const stat = await this.storage.stat(safe);
     const item = {
       id: id("shelfitem"),

@@ -22,7 +22,7 @@ import type { EventPublisher } from "../ws/events.js";
 import type { AuditService } from "./audit.service.js";
 import type { FsService } from "./fs.service.js";
 import { sharesAreFixed, type PathService, type SafePath } from "./path.service.js";
-import type { Action, PermissionService } from "./permission.service.js";
+import type { Level, PermissionService } from "./permission.service.js";
 import type { PreferenceService } from "./preference.service.js";
 import type { StorageService } from "./storage.service.js";
 import { byLine, SyncReport } from "./sync-report.js";
@@ -437,7 +437,7 @@ export class TaskService {
     const sources = JSON.parse(task.sources_json) as Array<{ rootSlug: string; path: string }>;
     const destination = JSON.parse(task.destination ?? "{}") as { rootSlug: string; path: string };
     const dest = await this.paths.resolveExisting(destination.rootSlug, destination.path);
-    this.permissions.require(actor, "upload", dest.root, dest.logicalPath);
+    this.permissions.require(actor, "edit", dest.root, dest.logicalPath);
     const resolved: SafePath[] = [];
     for (const source of sources) resolved.push(await this.paths.resolveExisting(source.rootSlug, source.path));
     // Anything with a remote end is carried by rclone, which reaches both sides itself.
@@ -447,8 +447,7 @@ export class TaskService {
     const targetPaths = new Set<string>();
     let totalBytes = 0;
     for (const safeSource of resolved) {
-      if (move) this.requireAny(actor, ["move", "delete"], safeSource.root, safeSource.logicalPath);
-      else this.permissions.require(actor, "read", safeSource.root, safeSource.logicalPath);
+      this.permissions.require(actor, move ? "edit" : "view", safeSource.root, safeSource.logicalPath);
       await assertNoSymlinksDeep(safeSource.absolutePath);
       if (!move) await this.requireReadableTree(actor, safeSource);
       const stats = await collectPathStats(safeSource.absolutePath);
@@ -516,8 +515,7 @@ export class TaskService {
     const names = new Set<string>();
     let totalBytes = 0;
     for (const source of sources) {
-      if (move) this.requireAny(actor, ["move", "delete"], source.root, source.logicalPath);
-      else this.permissions.require(actor, "read", source.root, source.logicalPath);
+      this.permissions.require(actor, move ? "edit" : "view", source.root, source.logicalPath);
       if (source.logicalPath === "/") throw new AppError(400, "Invalid path", "INVALID_PATH");
       if (move) this.assertNotFixed(source);
       this.assertNotFixed(dest, this.storage.name(source));
@@ -595,12 +593,12 @@ export class TaskService {
     if (isRemote(source.root)) {
       if (!(await this.storage.stat(source)).isDirectory()) return;
       for (const entry of await this.storage.remote.walk(source.root, source.logicalPath)) {
-        this.permissions.require(actor, "read", source.root, path.posix.join(source.logicalPath, entry.path));
+        this.permissions.require(actor, "view", source.root, path.posix.join(source.logicalPath, entry.path));
       }
       return;
     }
     const walk = async (absolutePath: string, logicalPath: string): Promise<void> => {
-      this.permissions.require(actor, "read", source.root, logicalPath);
+      this.permissions.require(actor, "view", source.root, logicalPath);
       if (!(await fsp.lstat(absolutePath)).isDirectory()) return;
       for (const child of await fsp.readdir(absolutePath)) await walk(path.join(absolutePath, child), path.posix.join(logicalPath, child));
     };
@@ -633,7 +631,7 @@ export class TaskService {
     let totalBytes = 0;
     for (const source of sources) {
       const safe = await this.paths.resolveExisting(source.rootSlug, source.path);
-      this.permissions.require(actor, "delete", safe.root, safe.logicalPath);
+      this.permissions.require(actor, "edit", safe.root, safe.logicalPath);
       if (isRemote(safe.root)) {
         if (safe.logicalPath === "/") throw new AppError(400, "Invalid path", "INVALID_PATH");
         this.assertNotFixed(safe);
@@ -692,7 +690,7 @@ export class TaskService {
     for (const source of sources) {
       const item = this.getRestorableTrashItem(actor, source.path);
       const safe = await this.paths.resolveRootById(item.original_root_id, path.posix.dirname(item.original_path));
-      this.permissions.require(actor, "upload", safe.root, safe.logicalPath);
+      this.permissions.require(actor, "edit", safe.root, safe.logicalPath);
       if (isRemote(safe.root)) {
         const name = path.posix.basename(item.original_path);
         const trashed = this.storage.remote.isTrashItem(safe.root, item.trash_path) ? await this.storage.remote.stat(safe.root, item.trash_path) : null;
@@ -738,11 +736,10 @@ export class TaskService {
     const sources = JSON.parse(task.sources_json) as Array<{ rootSlug: string; path: string }>;
     const destination = JSON.parse(task.destination ?? "{}") as { rootSlug: string; path: string };
     const dest = await this.paths.resolveForCreate(destination.rootSlug, destination.path);
-    this.permissions.require(actor, "upload", dest.root, path.posix.dirname(dest.logicalPath));
-    this.permissions.require(actor, "compress", dest.root, path.posix.dirname(dest.logicalPath));
+    this.permissions.require(actor, "edit", dest.root, path.posix.dirname(dest.logicalPath));
     const folder = await this.paths.resolveExisting(destination.rootSlug, path.posix.dirname(dest.logicalPath));
     await this.storage.assertNameAvailable(folder, this.storage.name(dest));
-    const zipped = await this.zipSources(task, actor, "read", dest);
+    const zipped = await this.zipSources(task, actor, "view", dest);
     this.audit.write({
       actorType: "user",
       actorId: actor.id,
@@ -758,7 +755,7 @@ export class TaskService {
   private async runDownloadZip(task: FileTask, actor: Actor): Promise<void> {
     const target = this.downloadPath(task.id);
     await fsp.mkdir(path.dirname(target), { recursive: true });
-    const zipped = await this.zipSources(task, actor, "download", target);
+    const zipped = await this.zipSources(task, actor, "view", target);
     try {
       await fsp.writeFile(this.downloadManifestPath(task.id), JSON.stringify(zipped.includedPaths), { flag: "wx", mode: 0o600 });
     } catch (error) {
@@ -775,19 +772,19 @@ export class TaskService {
   }
 
   /** `target` is a file on the server's disk, or the path of the archive in a location. */
-  private async zipSources(task: FileTask, actor: Actor, sourceAction: Action, target: string | SafePath): Promise<ZipSourcesResult> {
+  private async zipSources(task: FileTask, actor: Actor, sourceLevel: Level, target: string | SafePath): Promise<ZipSourcesResult> {
     const sources = JSON.parse(task.sources_json) as Array<{ rootSlug: string; path: string }>;
     const resolved: SafePath[] = [];
     for (const source of sources) {
       const safe = await this.paths.resolveExisting(source.rootSlug, source.path);
-      this.permissions.require(actor, sourceAction, safe.root, safe.logicalPath);
+      this.permissions.require(actor, sourceLevel, safe.root, safe.logicalPath);
       resolved.push(safe);
     }
-    return this.zipSourcesStreamed(task, resolved, target, actor, sourceAction);
+    return this.zipSourcesStreamed(task, resolved, target, actor, sourceLevel);
   }
 
   /** Every node is checked before it enters the archive; file data stays streamed from its source. */
-  private async zipSourcesStreamed(task: FileTask, sources: SafePath[], target: string | SafePath, actor: Actor, sourceAction: Action): Promise<ZipSourcesResult> {
+  private async zipSourcesStreamed(task: FileTask, sources: SafePath[], target: string | SafePath, actor: Actor, sourceLevel: Level): Promise<ZipSourcesResult> {
     const operations: PlannedZipSource[] = [];
     const includedPaths: ZipPathRef[] = [];
     const taken = new Set<string>();
@@ -807,7 +804,7 @@ export class TaskService {
     };
 
     for (const safe of sources) {
-      this.permissions.require(actor, sourceAction, safe.root, safe.logicalPath);
+      this.permissions.require(actor, sourceLevel, safe.root, safe.logicalPath);
       const base = nfc(this.storage.name(safe));
       let name = base;
       for (let copy = 2; taken.has(name); copy += 1) name = `${path.parse(base).name} ${copy}${path.parse(base).ext}`;
@@ -817,7 +814,7 @@ export class TaskService {
       if (isRemote(safe.root)) {
         const rootEntry = await this.storage.stat(safe);
         if (!rootEntry) throw new AppError(404, "Path not found", "PATH_NOT_FOUND");
-        if (this.permissions.can(actor, sourceAction, safe.root, safe.logicalPath).allowed) {
+        if (this.permissions.can(actor, sourceLevel, safe.root, safe.logicalPath).allowed) {
           entries.push(addEntry(safe, safe.logicalPath, name, rootEntry.isDirectory(), rootEntry.isDirectory() ? 0 : rootEntry.size, rootEntry.mtime));
           if (rootEntry.isDirectory()) {
             const denied: string[] = [];
@@ -826,7 +823,7 @@ export class TaskService {
               if (!segments || segments.length === 0) continue;
               const logicalPath = path.posix.join(safe.logicalPath, ...segments);
               if (denied.some((prefix) => logicalPath.startsWith(prefix))) continue;
-              if (!this.permissions.can(actor, sourceAction, safe.root, logicalPath).allowed) {
+              if (!this.permissions.can(actor, sourceLevel, safe.root, logicalPath).allowed) {
                 if (child.directory) denied.push(`${logicalPath}/`);
                 continue;
               }
@@ -845,7 +842,7 @@ export class TaskService {
         const collectLocal = async (absolutePath: string, logicalPath: string, entryName: string): Promise<void> => {
           const stat = await fsp.lstat(absolutePath);
           if (stat.isSymbolicLink() || (!stat.isFile() && !stat.isDirectory())) return;
-          if (!this.permissions.can(actor, sourceAction, safe.root, logicalPath).allowed) return;
+          if (!this.permissions.can(actor, sourceLevel, safe.root, logicalPath).allowed) return;
           const directory = stat.isDirectory();
           entries.push(addEntry(safe, logicalPath, entryName, directory, directory ? 0 : stat.size, stat.mtime, absolutePath));
           if (!directory) return;
@@ -866,11 +863,11 @@ export class TaskService {
       for (const operation of operations) {
         await service.progress(task.id, operation.safe.logicalPath);
         for (const planned of operation.entries) {
-          service.permissions.require(actor, sourceAction, planned.safe.root, planned.logicalPath);
+          service.permissions.require(actor, sourceLevel, planned.safe.root, planned.logicalPath);
           yield {
             ...planned.entry,
             open: async () => {
-              service.permissions.require(actor, sourceAction, planned.safe.root, planned.logicalPath);
+              service.permissions.require(actor, sourceLevel, planned.safe.root, planned.logicalPath);
               let source: Readable;
               if (planned.absolutePath) {
                 const stat = await fsp.lstat(planned.absolutePath);
@@ -937,7 +934,7 @@ export class TaskService {
     }
     for (const included of includedPaths) {
       const safe = await this.paths.resolveExisting(included.rootSlug, included.path);
-      this.permissions.require(actor, "download", safe.root, safe.logicalPath);
+      this.permissions.require(actor, "view", safe.root, safe.logicalPath);
     }
     const sources = JSON.parse(task.sources_json) as Array<{ rootSlug: string; path: string }>;
     const filePath = this.downloadPath(task.id);
@@ -976,15 +973,14 @@ export class TaskService {
     const sources = JSON.parse(task.sources_json) as Array<{ rootSlug: string; path: string }>;
     const destination = JSON.parse(task.destination ?? "{}") as { rootSlug: string; path: string };
     const dest = await this.paths.resolveExisting(destination.rootSlug, destination.path);
-    this.permissions.require(actor, "upload", dest.root, dest.logicalPath);
-    this.permissions.require(actor, "extract", dest.root, dest.logicalPath);
+    this.permissions.require(actor, "edit", dest.root, dest.logicalPath);
     let totalFiles = 0;
     let totalBytes = 0;
     let totalEntries = 0;
     const archives: Array<{ path: string }> = [];
     for (const source of sources) {
       const safe = await this.paths.resolveExisting(source.rootSlug, source.path);
-      this.permissions.require(actor, "read", safe.root, safe.logicalPath);
+      this.permissions.require(actor, "view", safe.root, safe.logicalPath);
       // Remote archives are staged to disk by storage.localFile; yauzl reads the local archive by ranges.
       const archivePath = await this.storage.localFile(safe, await this.storage.stat(safe));
       const zip = await openZipArchive(archivePath);
@@ -1162,8 +1158,7 @@ export class TaskService {
     const destination = JSON.parse(task.destination ?? "{}") as { rootSlug: string; path: string; options?: RsyncOptions };
     if (!remote) throw new AppError(400, "Remote is required", "RSYNC_REMOTE_REQUIRED");
     const dest = await this.paths.resolveExisting(destination.rootSlug, destination.path);
-    this.permissions.require(actor, "upload", dest.root, dest.logicalPath);
-    this.permissions.require(actor, "run_rsync", dest.root, dest.logicalPath);
+    this.permissions.require(actor, "edit", dest.root, dest.logicalPath);
     await this.progress(task.id, remote);
     await runRsync([...rsyncFlags(destination.options), "-e", sshCommand(this.appDataDir), "--", ensureTrailingSlash(remote), ensureTrailingSlash(dest.absolutePath)], () => this.isCancelled(task.id));
     await this.bumpProcessed(task.id);
@@ -1184,8 +1179,7 @@ export class TaskService {
     if (!destination.remote) throw new AppError(400, "Remote is required", "RSYNC_REMOTE_REQUIRED");
     for (const source of sources) {
       const safe = await this.paths.resolveExisting(source.rootSlug, source.path);
-      this.permissions.require(actor, "read", safe.root, safe.logicalPath);
-      this.permissions.require(actor, "run_rsync", safe.root, safe.logicalPath);
+      this.permissions.require(actor, "view", safe.root, safe.logicalPath);
       await this.progress(task.id, safe.logicalPath);
       await runRsync([...rsyncFlags(destination.options), "-e", sshCommand(this.appDataDir), "--", safe.absolutePath, ensureTrailingSlash(destination.remote)], () => this.isCancelled(task.id));
       await this.bumpProcessed(task.id);
@@ -1218,13 +1212,10 @@ export class TaskService {
     const destination = await folder(spec.destination);
     if (!source && !destination) throw new AppError(400, "One side of a sync has to be a location", "SYNC_NEEDS_LOCATION");
     if (source) {
-      this.permissions.require(actor, "read", source.root, source.logicalPath);
-      this.permissions.require(actor, "run_rsync", source.root, source.logicalPath);
+      this.permissions.require(actor, "view", source.root, source.logicalPath);
     }
     if (destination) {
-      this.permissions.require(actor, "upload", destination.root, destination.logicalPath);
-      this.permissions.require(actor, "run_rsync", destination.root, destination.logicalPath);
-      if (spec.options.mode === "mirror") this.permissions.require(actor, "delete", destination.root, destination.logicalPath);
+      this.permissions.require(actor, "edit", destination.root, destination.logicalPath);
     }
     // What lands in the destination would be new shares if it were the top of a whole server.
     if (destination) this.assertNotFixed(destination, "new");
@@ -1367,11 +1358,10 @@ export class TaskService {
     if (input.type === "copy" || input.type === "move") {
       const destination = this.requiredDestination(input);
       const dest = await this.paths.resolveExisting(destination.rootSlug, destination.path);
-      this.permissions.require(actor, "upload", dest.root, dest.logicalPath);
+      this.permissions.require(actor, "edit", dest.root, dest.logicalPath);
       for (const source of input.sources) {
         const safe = await this.paths.resolveExisting(source.rootSlug, source.path);
-        if (input.type === "move") this.requireAny(actor, ["move", "delete"], safe.root, safe.logicalPath);
-        else this.permissions.require(actor, "read", safe.root, safe.logicalPath);
+        this.permissions.require(actor, input.type === "move" ? "edit" : "view", safe.root, safe.logicalPath);
         if (input.type === "move") this.assertNotFixed(safe);
         this.assertNotFixed(dest, this.storage.name(safe));
         if (isRemote(safe.root) || isRemote(dest.root)) assertNotIntoItself(safe, dest);
@@ -1383,7 +1373,7 @@ export class TaskService {
     if (input.type === "delete_to_trash") {
       for (const source of input.sources) {
         const safe = await this.paths.resolveExisting(source.rootSlug, source.path);
-        this.permissions.require(actor, "delete", safe.root, safe.logicalPath);
+        this.permissions.require(actor, "edit", safe.root, safe.logicalPath);
         this.assertNotFixed(safe);
       }
       return;
@@ -1403,11 +1393,10 @@ export class TaskService {
       const dest = await this.paths.resolveForCreate(destination.rootSlug, destination.path);
       const parentLogicalPath = path.posix.dirname(dest.logicalPath);
       const permissionPath = parentLogicalPath === "." ? "/" : parentLogicalPath;
-      this.permissions.require(actor, "upload", dest.root, permissionPath);
-      this.permissions.require(actor, "compress", dest.root, permissionPath);
+      this.permissions.require(actor, "edit", dest.root, permissionPath);
       for (const source of input.sources) {
         const safe = await this.paths.resolveExisting(source.rootSlug, source.path);
-        this.permissions.require(actor, "read", safe.root, safe.logicalPath);
+        this.permissions.require(actor, "view", safe.root, safe.logicalPath);
       }
       return;
     }
@@ -1415,7 +1404,7 @@ export class TaskService {
     if (input.type === "download_zip") {
       for (const source of input.sources) {
         const safe = await this.paths.resolveExisting(source.rootSlug, source.path);
-        this.permissions.require(actor, "download", safe.root, safe.logicalPath);
+        this.permissions.require(actor, "view", safe.root, safe.logicalPath);
       }
       return;
     }
@@ -1423,11 +1412,10 @@ export class TaskService {
     if (input.type === "extract") {
       const destination = this.requiredDestination(input);
       const dest = await this.paths.resolveExisting(destination.rootSlug, destination.path);
-      this.permissions.require(actor, "upload", dest.root, dest.logicalPath);
-      this.permissions.require(actor, "extract", dest.root, dest.logicalPath);
+      this.permissions.require(actor, "edit", dest.root, dest.logicalPath);
       for (const source of input.sources) {
         const safe = await this.paths.resolveExisting(source.rootSlug, source.path);
-        this.permissions.require(actor, "read", safe.root, safe.logicalPath);
+        this.permissions.require(actor, "view", safe.root, safe.logicalPath);
       }
       return;
     }
@@ -1435,8 +1423,7 @@ export class TaskService {
     if (input.type === "rsync_pull") {
       const destination = this.requiredDestination(input);
       const dest = await this.paths.resolveExisting(destination.rootSlug, destination.path);
-      this.permissions.require(actor, "upload", dest.root, dest.logicalPath);
-      this.permissions.require(actor, "run_rsync", dest.root, dest.logicalPath);
+      this.permissions.require(actor, "edit", dest.root, dest.logicalPath);
       assertLocalForRsync(dest.root);
       return;
     }
@@ -1444,8 +1431,7 @@ export class TaskService {
     if (input.type === "rsync_push") {
       for (const source of input.sources) {
         const safe = await this.paths.resolveExisting(source.rootSlug, source.path);
-        this.permissions.require(actor, "read", safe.root, safe.logicalPath);
-        this.permissions.require(actor, "run_rsync", safe.root, safe.logicalPath);
+        this.permissions.require(actor, "view", safe.root, safe.logicalPath);
         assertLocalForRsync(safe.root);
       }
       return;
@@ -1454,7 +1440,7 @@ export class TaskService {
     if (input.type === "thumbnail") {
       for (const source of input.sources) {
         const safe = await this.paths.resolveExisting(source.rootSlug, source.path);
-        this.permissions.require(actor, "read", safe.root, safe.logicalPath);
+        this.permissions.require(actor, "view", safe.root, safe.logicalPath);
       }
     }
   }
@@ -1467,22 +1453,7 @@ export class TaskService {
   private async requireRestorePermission(actor: Actor, item: RestorableTrashItem): Promise<void> {
     const parentPath = path.posix.dirname(item.original_path);
     const safe = await this.paths.resolveRootById(item.original_root_id, parentPath === "." ? "/" : parentPath);
-    this.permissions.require(actor, "upload", safe.root, safe.logicalPath);
-  }
-
-  private requireAny(actor: Actor, actions: Action[], root: Parameters<PermissionService["can"]>[2], logicalPath: string): void {
-    const results = actions.map((action) => ({ action, result: this.permissions.can(actor, action, root, logicalPath) }));
-    if (results.some(({ result }) => result.allowed)) return;
-    this.audit.write({
-      actorType: "user",
-      actorId: actor.id,
-      action: "permission_denied",
-      rootId: root.id,
-      path: logicalPath,
-      target: { actions, reasons: results.map(({ action, result }) => ({ action, reason: result.reason ?? "Forbidden" })) },
-      result: "denied"
-    });
-    throw new AppError(403, results[0]?.result.reason ?? "Forbidden", "FORBIDDEN");
+    this.permissions.require(actor, "edit", safe.root, safe.logicalPath);
   }
 
   private isCancelled(taskId: string): boolean {

@@ -9,7 +9,7 @@ import { isBrowserViewable } from "../lib/viewable.js";
 import type { AuditService } from "./audit.service.js";
 import type { PathService, SafePath } from "./path.service.js";
 import type { StorageService } from "./storage.service.js";
-import type { PermissionService } from "./permission.service.js";
+import type { Level, PermissionService } from "./permission.service.js";
 import type { Actor } from "./types.js";
 import type { EventPublisher } from "../ws/events.js";
 
@@ -42,14 +42,11 @@ export class ShareService {
 
   async create(actor: Actor, input: z.infer<typeof shareSchema>) {
     const safe = await this.paths.resolveExisting(input.rootSlug, input.path);
-    this.permissions.require(actor, "share", safe.root, safe.logicalPath);
     await this.assertModeMatchesTarget(input.mode, safe);
     if (safe.root.readonly && input.mode === "upload_only") {
       throw new AppError(403, "Readonly roots cannot accept upload-only shares", "ROOT_READONLY");
     }
-    for (const action of shareAllowedActions(input.mode)) {
-      this.permissions.require(actor, action, safe.root, safe.logicalPath);
-    }
+    this.permissions.require(actor, shareLevel(input.mode), safe.root, safe.logicalPath);
     const token = randomToken();
     const ts = now();
     const share = {
@@ -88,15 +85,6 @@ export class ShareService {
         share.created_at,
         share.updated_at
       );
-    this.permissions.create({
-      principalType: "share_link",
-      principalId: share.id,
-      rootId: safe.root.id,
-      pathPrefix: safe.logicalPath,
-      allow: shareAllowedActions(input.mode),
-      deny: [],
-      recursive: input.mode === "upload_only"
-    });
     this.audit.write({
       actorType: "user",
       actorId: actor.id,
@@ -133,7 +121,6 @@ export class ShareService {
 
   delete(actor: Actor, shareId: string): void {
     const existing = this.getForActor(actor, shareId);
-    this.db.prepare("DELETE FROM permission_rules WHERE principal_type = 'share_link' AND principal_id = ?").run(shareId);
     this.db.prepare("DELETE FROM share_links WHERE id = ?").run(shareId);
     this.audit.write({
       actorType: "user",
@@ -247,8 +234,6 @@ export class ShareService {
     const safe = await this.paths.resolveRootById(share.root_id, share.path);
     await this.assertModeMatchesTarget("download", safe);
     this.requireCreatorPermissions(share, safe);
-    this.permissions.requireShareLink(share.id, "read", safe.root, safe.logicalPath);
-    this.permissions.requireShareLink(share.id, "download", safe.root, safe.logicalPath);
     const updated = this.db
       .prepare(
         `UPDATE share_links
@@ -278,7 +263,6 @@ export class ShareService {
     const safe = await this.paths.resolveRootById(share.root_id, share.path);
     await this.assertModeMatchesTarget("view_only", safe);
     this.requireCreatorPermissions(share, safe);
-    this.permissions.requireShareLink(share.id, "read", safe.root, safe.logicalPath);
     return safe;
   }
 
@@ -290,7 +274,6 @@ export class ShareService {
     const safe = await this.paths.resolveRootById(share.root_id, share.path);
     await this.assertModeMatchesTarget("upload_only", safe);
     this.requireCreatorPermissions(share, safe);
-    this.permissions.requireShareLink(share.id, "upload", safe.root, safe.logicalPath);
     return { share, safe };
   }
 
@@ -329,9 +312,7 @@ export class ShareService {
       disabled: Boolean(creator.disabled)
     };
     const mode = (JSON.parse(share.permission_json) as { mode: "view_only" | "download" | "upload_only" }).mode;
-    for (const action of shareAllowedActions(mode)) {
-      this.permissions.require(actor, action, safe.root, safe.logicalPath);
-    }
+    this.permissions.require(actor, shareLevel(mode), safe.root, safe.logicalPath);
   }
 
   private publicShare(share: ResolvedShare): PublicShareLink {
@@ -360,8 +341,7 @@ type PublicShareLink = Omit<ResolvedShare, "token_hash" | "password_hash"> & {
   has_password: boolean;
 };
 
-function shareAllowedActions(mode: "view_only" | "download" | "upload_only"): Array<"read" | "download" | "upload"> {
-  if (mode === "view_only") return ["read"];
-  if (mode === "download") return ["download", "read"];
-  return ["upload"];
+/** What whoever made the link needs on its path, when making it and for as long as it is open. */
+function shareLevel(mode: "view_only" | "download" | "upload_only"): Level {
+  return mode === "upload_only" ? "edit" : "view";
 }

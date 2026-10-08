@@ -7,58 +7,29 @@ import { id, now } from "../lib/ids.js";
 import type { AuditService } from "./audit.service.js";
 import type { Actor, Root } from "./types.js";
 
-export const actions = [
-  "list",
-  "read",
-  "download",
-  "upload",
-  "create_folder",
-  "rename",
-  "move",
-  "copy",
-  "delete",
-  "share",
-  "manage_tags",
-  "manage_permissions",
-  "run_rsync",
-  "compress",
-  "extract"
-] as const;
+/** What a rule grants: `view` lists, opens and downloads; `edit` adds every change to what is there. */
+export const levels = ["view", "edit"] as const;
 
-export type Action = (typeof actions)[number];
+export type Level = (typeof levels)[number];
 
 export const permissionInputSchema = z.object({
-  principalType: z.enum(["user", "group", "share_link"]),
+  principalType: z.enum(["user", "group"]),
   principalId: z.string().min(1),
   rootId: z.string().min(1),
   pathPrefix: z.string().min(1).default("/"),
-  allow: z.array(z.enum(actions)).default([]),
-  deny: z.array(z.enum(actions)).default([]),
+  level: z.enum(levels),
   recursive: z.boolean().default(true)
 });
 
 type PermissionRule = {
   id: string;
-  principal_type: "user" | "group" | "share_link";
+  principal_type: "user" | "group";
   principal_id: string;
   root_id: string;
   path_prefix: string;
-  allow_json: string;
-  deny_json: string;
+  level: Level;
   recursive: number;
 };
-
-const readonlyBlocked = new Set<Action>([
-  "upload",
-  "create_folder",
-  "rename",
-  "move",
-  "delete",
-  "manage_tags",
-  "manage_permissions",
-  "compress",
-  "extract"
-]);
 
 export class PermissionService {
   constructor(
@@ -66,95 +37,26 @@ export class PermissionService {
     private readonly audit: AuditService
   ) {}
 
-  can(actor: Actor, action: Action, root: Root, logicalPath: string): { allowed: boolean; reason?: string } {
+  can(actor: Actor, level: Level, root: Root, logicalPath: string): { allowed: boolean; reason?: string } {
     if (actor.disabled) return { allowed: false, reason: "User disabled" };
-    if (root.readonly && readonlyBlocked.has(action)) return { allowed: false, reason: "Root is readonly" };
+    if (root.readonly && level === "edit") return { allowed: false, reason: "Root is readonly" };
     if (actor.role === "ADMIN") return { allowed: true };
 
-    return this.canUserOrGroups(actor.id, action, root, logicalPath);
+    // Rules only grant: the user's own and their groups' add up, and an edit rule covers viewing too.
+    const granted = this.rulesForPrincipals(this.principalsFor(actor.id), root.id).filter((rule) => this.pathMatches(rule, logicalPath));
+    if (granted.some((rule) => rule.level === "edit" || level === "view")) return { allowed: true };
+    return { allowed: false, reason: "No permission" };
   }
 
-  canReachListableDescendant(actor: Actor, root: Root, logicalPath: string): boolean {
+  /** Whether a rule grants something further down, so the folders leading to it can be walked through. */
+  canReachDescendant(actor: Actor, root: Root, logicalPath: string): boolean {
     if (actor.disabled) return false;
     if (actor.role === "ADMIN") return true;
-    const principals = this.principalsFor(actor.id);
-    const rules = this.rulesForPrincipals(principals, root.id);
-    return rules.some((rule) => {
-      if (!isDescendantPath(rule.path_prefix, logicalPath)) return false;
-      return this.canPrincipalSet(principals, "list", root, rule.path_prefix).allowed;
-    });
+    return this.rulesForPrincipals(this.principalsFor(actor.id), root.id).some((rule) => isDescendantPath(rule.path_prefix, logicalPath));
   }
 
-  canShareLink(shareId: string, action: Action, root: Root, logicalPath: string): { allowed: boolean; reason?: string } {
-    if (root.readonly && readonlyBlocked.has(action)) return { allowed: false, reason: "Root is readonly" };
-    return this.canPrincipalSet([{ type: "share_link", id: shareId }], action, root, logicalPath);
-  }
-
-  requireShareLink(shareId: string, action: Action, root: Root, logicalPath: string): void {
-    const result = this.canShareLink(shareId, action, root, logicalPath);
-    if (!result.allowed) {
-      this.audit.write({
-        actorType: "share_link",
-        actorId: shareId,
-        action: "permission_denied",
-        rootId: root.id,
-        path: logicalPath,
-        target: { action, reason: result.reason ?? "Forbidden" },
-        result: "denied"
-      });
-      throw new AppError(403, result.reason ?? "Forbidden", "FORBIDDEN");
-    }
-  }
-
-  private canPrincipalSet(
-    principals: Array<{ type: "user" | "group" | "share_link"; id: string }>,
-    action: Action,
-    root: Root,
-    logicalPath: string
-  ): { allowed: boolean; reason?: string } {
-    const rules = rows<PermissionRule>(
-      this.rulesForPrincipals(principals, root.id)
-    ).filter((rule) => this.pathMatches(rule, logicalPath));
-
-    for (const rule of rules) {
-      if ((JSON.parse(rule.deny_json) as string[]).includes(action)) return { allowed: false, reason: "Denied by a permission rule" };
-    }
-
-    for (const rule of rules) {
-      if ((JSON.parse(rule.allow_json) as string[]).includes(action)) return { allowed: true };
-    }
-
-    return { allowed: false, reason: "No permission" };
-  }
-
-  private canUserOrGroups(userId: string, action: Action, root: Root, logicalPath: string): { allowed: boolean; reason?: string } {
-    const groupPrincipals = this.principalsFor(userId).filter((principal) => principal.type === "group");
-    const rules = [
-      ...this.rulesForPrincipals([{ type: "user", id: userId }], root.id),
-      ...this.rulesForPrincipals(groupPrincipals, root.id)
-    ].filter((rule) => this.pathMatches(rule, logicalPath));
-    // Deny is absolute across user and group rules; when there is no deny, a direct user allow
-    // remains ahead of a group allow because the rules are kept in that order.
-    const result = this.evaluateRules(rules, action);
-    if (result.matched) return result.allowed ? { allowed: true } : { allowed: false, reason: result.reason };
-
-    return { allowed: false, reason: "No permission" };
-  }
-
-  private evaluateRules(rules: PermissionRule[], action: Action): { matched: boolean; allowed: boolean; reason?: string } {
-    for (const rule of rules) {
-      if ((JSON.parse(rule.deny_json) as string[]).includes(action)) return { matched: true, allowed: false, reason: "Denied by a permission rule" };
-    }
-
-    for (const rule of rules) {
-      if ((JSON.parse(rule.allow_json) as string[]).includes(action)) return { matched: true, allowed: true };
-    }
-
-    return { matched: false, allowed: false };
-  }
-
-  require(actor: Actor, action: Action, root: Root, logicalPath: string): void {
-    const result = this.can(actor, action, root, logicalPath);
+  require(actor: Actor, level: Level, root: Root, logicalPath: string): void {
+    const result = this.can(actor, level, root, logicalPath);
     if (!result.allowed) {
       this.audit.write({
         actorType: "user",
@@ -162,7 +64,7 @@ export class PermissionService {
         action: "permission_denied",
         rootId: root.id,
         path: logicalPath,
-        target: { action, reason: result.reason ?? "Forbidden" },
+        target: { level, reason: result.reason ?? "Forbidden" },
         result: "denied"
       });
       throw new AppError(403, result.reason ?? "Forbidden", "FORBIDDEN");
@@ -197,8 +99,7 @@ export class PermissionService {
       principal_id: input.principalId,
       root_id: input.rootId,
       path_prefix: input.pathPrefix,
-      allow_json: JSON.stringify(input.allow),
-      deny_json: JSON.stringify(input.deny),
+      level: input.level,
       recursive: input.recursive ? 1 : 0,
       created_at: ts,
       updated_at: ts
@@ -206,8 +107,8 @@ export class PermissionService {
     this.db
       .prepare(
         `INSERT INTO permission_rules
-        (id, principal_type, principal_id, root_id, path_prefix, allow_json, deny_json, recursive, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        (id, principal_type, principal_id, root_id, path_prefix, level, recursive, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         item.id,
@@ -215,8 +116,7 @@ export class PermissionService {
         item.principal_id,
         item.root_id,
         item.path_prefix,
-        item.allow_json,
-        item.deny_json,
+        item.level,
         item.recursive,
         item.created_at,
         item.updated_at
@@ -256,8 +156,7 @@ export class PermissionService {
         const rulePrefix = nfc(rule.path_prefix);
         if (!isPathWithin(rulePrefix, sourcePrefix)) continue;
 
-        // Keep the original destination rules as well. Permission evaluation checks all matching
-        // denies before allows, so a stale destination allow cannot replace a moved source deny.
+        // The destination's own rules stay as they are: rules only grant, so the two sets add up.
         const suffix = sourcePrefix === "/" ? rulePrefix : rulePrefix.slice(sourcePrefix.length);
         const rebasedPath = suffix
           ? targetPrefix === "/" ? suffix : `${targetPrefix}${suffix}`
@@ -288,7 +187,7 @@ export class PermissionService {
   }
 
   private rulesForPrincipals(
-    principals: Array<{ type: "user" | "group" | "share_link"; id: string }>,
+    principals: Array<{ type: "user" | "group"; id: string }>,
     rootId: string
   ): PermissionRule[] {
     if (principals.length === 0) return [];
@@ -303,13 +202,8 @@ export class PermissionService {
     );
   }
 
-  private assertPrincipalExists(principalType: "user" | "group" | "share_link", principalId: string): void {
-    const table =
-      principalType === "user"
-        ? "users"
-        : principalType === "group"
-          ? "groups"
-          : "share_links";
+  private assertPrincipalExists(principalType: "user" | "group", principalId: string): void {
+    const table = principalType === "user" ? "users" : "groups";
     const existing = row<{ id: string }>(this.db.prepare(`SELECT id FROM ${table} WHERE id = ?`).get(principalId));
     if (!existing) throw new AppError(400, "Permission principal not found", "PRINCIPAL_NOT_FOUND");
   }

@@ -344,8 +344,8 @@ function registerApi(app: FastifyInstance, services: Services) {
     return services.roots
       .listMounted()
       .filter((root) =>
-        services.permissions.can(actor, "list", root, "/").allowed ||
-        services.permissions.canReachListableDescendant(actor, root, "/")
+        services.permissions.can(actor, "view", root, "/").allowed ||
+        services.permissions.canReachDescendant(actor, root, "/")
       )
       .map((root) => services.roots.publicRoot(root));
   });
@@ -767,40 +767,31 @@ function registerApi(app: FastifyInstance, services: Services) {
   });
 
   app.get("/api/permissions", async (request) => {
-    const actor = requireActor(request);
+    requireAdmin(request);
     const query = z.object({
       rootId: z.string().optional(),
       rootSlug: z.string().optional(),
       path: z.string().optional()
     }).parse(request.query);
-    const root = query.rootSlug ? services.roots.getBySlug(query.rootSlug) : query.rootId ? services.roots.getById(query.rootId) : null;
-    const rootId = root?.id;
-    if (!root && actor.role !== "ADMIN") throw new AppError(400, "rootId or rootSlug is required", "ROOT_REQUIRED");
+    const rootId = query.rootSlug ? services.roots.getBySlug(query.rootSlug).id : query.rootId;
     if (query.path && !rootId) throw new AppError(400, "rootId or rootSlug is required for path lookups", "ROOT_REQUIRED");
-    if (root) {
-      const permissionPath = services.paths.normalizeLogicalPath(query.path ?? "/");
-      services.permissions.require(actor, "manage_permissions", root, permissionPath);
-    }
     if (query.path && rootId) return services.permissions.listForPath(rootId, services.paths.normalizeLogicalPath(query.path));
     return services.permissions.list(rootId);
   });
   app.post("/api/permissions", async (request) => {
-    const actor = requireActor(request);
+    const actor = requireAdmin(request);
     const input = permissionInputSchema.parse(request.body);
-    const root = services.roots.getById(input.rootId);
+    services.roots.getById(input.rootId);
     const pathPrefix = services.paths.normalizeLogicalPath(input.pathPrefix);
-    services.permissions.require(actor, "manage_permissions", root, pathPrefix);
     const item = services.permissions.create({ ...input, pathPrefix });
     services.audit.write({ actorType: "user", actorId: actor.id, action: "permission_change", rootId: item.root_id, target: item, result: "success" });
     publishPermissionUpdated(actor, item.principal_type, item.principal_id);
     return item;
   });
   app.delete("/api/permissions/:id", async (request) => {
-    const actor = requireActor(request);
+    const actor = requireAdmin(request);
     const params = z.object({ id: z.string() }).parse(request.params);
     const rule = services.permissions.get(params.id);
-    const root = services.roots.getById(rule.root_id);
-    services.permissions.require(actor, "manage_permissions", root, rule.path_prefix);
     services.permissions.delete(params.id);
     services.audit.write({ actorType: "user", actorId: actor.id, action: "permission_change", target: { ruleId: params.id, deleted: true }, result: "success" });
     publishPermissionUpdated(actor, rule.principal_type, rule.principal_id);

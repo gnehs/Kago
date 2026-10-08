@@ -19,6 +19,7 @@ export function openDb(env: Env, options: { interruptRunningTasks?: boolean } = 
   `);
   db.exec(schema);
   addMissingColumns(db, "roots", { provider: "TEXT NOT NULL DEFAULT 'local'", config: "TEXT" });
+  migratePermissionLevels(db);
   if (options.interruptRunningTasks ?? true) {
     db.prepare(
       "UPDATE tasks SET status = 'interrupted', updated_at = ?, finished_at = ? WHERE status = 'running'"
@@ -39,6 +40,38 @@ function addMissingColumns(db: Db, table: string, columns: Record<string, string
       // The task worker opens the database at the same moment and may have added it first.
       if (!(error instanceof Error && error.message.includes("duplicate column"))) throw error;
     }
+  }
+}
+
+/**
+ * Rules used to allow and deny fifteen separate actions; each now grants one level. A rule that allowed any change
+ * becomes `edit`, one that only allowed looking becomes `view`, and one that allowed nothing is dropped, as are the
+ * rules share links used to carry. Denies have no counterpart: what a rule denied is no longer held back by it.
+ */
+function migratePermissionLevels(db: Db): void {
+  const columns = () => new Set((db.prepare("PRAGMA table_info(permission_rules)").all() as Array<{ name: string }>).map((column) => column.name));
+  if (!columns().has("allow_json")) return;
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    // The task worker opens the database at the same moment and may have migrated it while this waited for the lock.
+    if (columns().has("allow_json")) {
+      addMissingColumns(db, "permission_rules", { level: "TEXT NOT NULL DEFAULT 'view'" });
+      const setLevel = db.prepare("UPDATE permission_rules SET level = ? WHERE id = ?");
+      const remove = db.prepare("DELETE FROM permission_rules WHERE id = ?");
+      const changing = new Set(["upload", "create_folder", "rename", "move", "delete", "manage_tags", "compress", "extract"]);
+      for (const rule of db.prepare("SELECT id, principal_type, allow_json, deny_json FROM permission_rules").all() as Array<{ id: string; principal_type: string; allow_json: string; deny_json: string }>) {
+        const denied = new Set(JSON.parse(rule.deny_json) as string[]);
+        const allowed = (JSON.parse(rule.allow_json) as string[]).filter((action) => !denied.has(action));
+        if (rule.principal_type === "share_link" || allowed.length === 0) remove.run(rule.id);
+        else setLevel.run(allowed.some((action) => changing.has(action)) ? "edit" : "view", rule.id);
+      }
+      db.exec("ALTER TABLE permission_rules DROP COLUMN allow_json");
+      db.exec("ALTER TABLE permission_rules DROP COLUMN deny_json");
+    }
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
   }
 }
 

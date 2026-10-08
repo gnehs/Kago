@@ -12,11 +12,9 @@ import { normalizeLogicalPath } from "@/lib/paths";
 import { run } from "@/lib/run";
 import { toast } from "@/stores/toast";
 import type { Root } from "@/types/kago";
-import { permissionActions, permissionPresets, type PermissionAction } from "./permissionUtils";
+import { permissionLevels, type PermissionLevel } from "./permissionUtils";
 import { RuleList } from "./RuleList";
 import { t } from "@/lib/i18n";
-
-type Decision = "allow" | "deny";
 
 export function PermissionsPage({ roots }: { roots: Root[] }) {
   const queryClient = useQueryClient();
@@ -27,32 +25,25 @@ export function PermissionsPage({ roots }: { roots: Root[] }) {
   const [pathPrefix, setPathPrefix] = useState("/");
   const [principalType, setPrincipalType] = useState<"user" | "group">("group");
   const [principalId, setPrincipalId] = useState("");
-  const [decisions, setDecisions] = useState<Partial<Record<PermissionAction, Decision>>>({ list: "allow", read: "allow", download: "allow" });
+  const [level, setLevel] = useState<PermissionLevel>("view");
   const [recursive, setRecursive] = useState(true);
   const [creating, setCreating] = useState(false);
   const form = useRef<HTMLFormElement>(null);
 
   // The form opens under the rules, which may be a long list: it is brought into view rather than left below the fold.
   useEffect(() => {
-    // It is taller than most windows, so its card is brought to the top: its title and first fields are what must show.
     if (creating) form.current?.closest("section")?.scrollIntoView({ block: "start" });
   }, [creating]);
   const rootName = roots.find((root) => root.id === rootId)?.name ?? "";
   const rules = usePermissions(rootId, Boolean(rootId));
   const normalizedPath = normalizeLogicalPath(pathPrefix);
-  const allow = permissionActions.filter((action) => decisions[action.key] === "allow").map((action) => action.key);
-  const deny = permissionActions.filter((action) => decisions[action.key] === "deny").map((action) => action.key);
-  const canSave = Boolean(rootId && principalId && normalizedPath) && allow.length + deny.length > 0;
-
-  function toggle(action: PermissionAction, decision: Decision) {
-    setDecisions((current) => ({ ...current, [action]: current[action] === decision ? undefined : decision }));
-  }
+  const canSave = Boolean(rootId && principalId && normalizedPath);
 
   async function save(event: React.FormEvent) {
     event.preventDefault();
     if (!canSave) return;
     await run(async () => {
-      await api("/api/permissions", { method: "POST", body: JSON.stringify({ principalType, principalId, rootId, pathPrefix: normalizedPath, allow, deny, recursive }) });
+      await api("/api/permissions", { method: "POST", body: JSON.stringify({ principalType, principalId, rootId, pathPrefix: normalizedPath, level, recursive }) });
       await Promise.all(["permissions", "roots", "fs"].map((key) => queryClient.invalidateQueries({ queryKey: [key] })));
       setCreating(false);
       toast(t("Permission rule added"));
@@ -70,7 +61,7 @@ export function PermissionsPage({ roots }: { roots: Root[] }) {
   return (
     <Page
       title={t("Permissions")}
-      description={t("Anything not explicitly allowed is denied; on the same path, Deny wins over Allow.")}
+      description={t("Nobody but administrators can reach a folder until a rule grants it. When several rules apply, the highest one counts.")}
       actions={
         // The location is the scope of the whole page: the rules listed and the rule being added.
         <Select aria-label={t("Location")} className="w-40" value={rootId} onChange={(event) => setSelectedRootId(event.target.value)}>
@@ -111,41 +102,11 @@ export function PermissionsPage({ roots }: { roots: Root[] }) {
             </Field>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-medium text-muted">{t("Presets")}</span>
-            {permissionPresets.map((preset) => (
-              <Button key={preset.label} onClick={() => setDecisions(Object.fromEntries(preset.allow.map((key) => [key, "allow"])))}>{preset.label}</Button>
-            ))}
-            <Button variant="ghost" onClick={() => setDecisions({})}>{t("Clear")}</Button>
-          </div>
-
-          <table className="w-full border-collapse">
-            <thead>
-              <tr className="text-left text-xs text-muted">
-                <th className="py-1 font-medium">{t("Action")}</th>
-                <th className="w-16 py-1 text-center font-medium">{t("Allow")}</th>
-                <th className="w-16 py-1 text-center font-medium">{t("Deny")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {permissionActions.map((action) => (
-                <tr key={action.key} className="border-t border-line">
-                  <td className="py-1.5">{action.label}</td>
-                  {(["allow", "deny"] as const).map((decision) => (
-                    <td key={decision} className="text-center">
-                      <input
-                        type="checkbox"
-                        className="kago-checkbox"
-                        aria-label={decision === "allow" ? t("Allow: {action}", { action: action.label }) : t("Deny: {action}", { action: action.label })}
-                        checked={decisions[action.key] === decision}
-                        onChange={() => toggle(action.key, decision)}
-                      />
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <Field label={t("Access")} hint={permissionLevels.find((item) => item.key === level)?.description}>
+            <Select value={level} onChange={(event) => setLevel(event.target.value as PermissionLevel)}>
+              {permissionLevels.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
+            </Select>
+          </Field>
 
           <div className="flex items-center justify-between">
             <Checkbox label={t("Include all subfolders")} checked={recursive} onChange={(event) => setRecursive(event.target.checked)} />

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import test from "node:test";
 import { buildApp } from "../dist/app.js";
 
-test("a move carries its deny rules along and a copy refuses a folder with an unreadable file in it", async () => {
+test("a move carries its rules along and a copy refuses a folder with an unreadable file in it", async () => {
   const fixture = await createFixture("kago-move-copy-acl.");
   const publicDir = path.join(fixture.dataDir, "photos", "public");
   await mkdir(path.join(publicDir, "inbox"), { recursive: true });
@@ -22,31 +22,35 @@ test("a move carries its deny rules along and a copy refuses a folder with an un
     const root = (await admin.get("/api/roots")).json.find((item) => item.slug === "photos");
     const user = await admin.post("/api/users", { email: "move-user@example.test", password: "fake-user-password-123", displayName: "Move User", role: "USER" });
     assert.equal(user.statusCode, 200);
-    const rule = (pathPrefix, allow, deny) => admin.post("/api/permissions", { principalType: "user", principalId: user.json.id, rootId: root.id, pathPrefix, allow, deny, recursive: true });
-    assert.equal((await rule("/public", ["list", "read", "move", "upload"], [])).statusCode, 200);
-    assert.equal((await rule("/public/secret.txt", [], ["read"])).statusCode, 200);
-    assert.equal((await rule("/public/folder/private", [], ["read"])).statusCode, 200);
+    const rule = (pathPrefix, level, recursive = true) => admin.post("/api/permissions", { principalType: "user", principalId: user.json.id, rootId: root.id, pathPrefix, level, recursive });
+    assert.equal((await rule("/public/inbox", "edit")).statusCode, 200);
+    assert.equal((await rule("/public/secret.txt", "edit")).statusCode, 200);
+    assert.equal((await rule("/public/folder", "view", false)).statusCode, 200);
+    assert.equal((await rule("/public/folder/visible.txt", "view")).statusCode, 200);
 
     const member = client(app);
     assert.equal((await member.post("/api/auth/login", { email: "move-user@example.test", password: "fake-user-password-123" })).statusCode, 200);
     const preview = (logicalPath) => member.get(`/api/fs/preview?rootSlug=photos&path=${encodeURIComponent(logicalPath)}`, { accept: "*/*" });
-    assert.equal((await preview("/public/secret.txt")).statusCode, 403);
+    assert.equal((await preview("/public/folder/visible.txt")).statusCode, 200);
+    assert.equal((await preview("/public/folder/private/hidden.txt")).statusCode, 403);
 
     const moved = await member.post("/api/tasks", { type: "move", sources: [{ rootSlug: "photos", path: "/public/secret.txt" }], destination: { rootSlug: "photos", path: "/public/inbox" } });
     assert.equal(moved.statusCode, 200);
     assert.equal((await waitTask(member, moved.json.id)).status, "done");
     assert.equal(await readFile(path.join(publicDir, "inbox", "secret.txt"), "utf8"), "moved canary");
-    assert.equal((await preview("/public/inbox/secret.txt")).statusCode, 403);
+    const prefixes = (await admin.get(`/api/permissions?rootId=${root.id}`)).json.map((item) => item.path_prefix);
+    assert.ok(prefixes.includes("/public/inbox/secret.txt"));
+    assert.ok(!prefixes.includes("/public/secret.txt"));
 
     const copied = await member.post("/api/tasks", { type: "copy", sources: [{ rootSlug: "photos", path: "/public/folder" }], destination: { rootSlug: "photos", path: "/public/inbox" } });
     assert.equal(copied.statusCode, 200);
     assert.equal((await waitTask(member, copied.json.id)).status, "failed");
     await assert.rejects(readFile(path.join(publicDir, "inbox", "folder", "private", "hidden.txt")));
 
+    // Viewing a folder is not enough to take it away.
     const movedFolder = await member.post("/api/tasks", { type: "move", sources: [{ rootSlug: "photos", path: "/public/folder" }], destination: { rootSlug: "photos", path: "/public/inbox" } });
-    assert.equal((await waitTask(member, movedFolder.json.id)).status, "done");
-    assert.equal((await preview("/public/inbox/folder/visible.txt")).statusCode, 200);
-    assert.equal((await preview("/public/inbox/folder/private/hidden.txt")).statusCode, 403);
+    assert.ok(movedFolder.statusCode === 403 || (await waitTask(member, movedFolder.json.id)).status === "failed");
+    assert.equal(await readFile(path.join(publicDir, "folder", "visible.txt"), "utf8"), "visible canary");
   } finally {
     await app.close();
     await rm(fixture.baseDir, { recursive: true, force: true });

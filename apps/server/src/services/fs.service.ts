@@ -113,9 +113,9 @@ export class FsService {
 
   async list(actor: Actor, rootSlug: string, logicalPath: string) {
     const safe = await this.paths.resolveExisting(rootSlug, logicalPath);
-    const canListCurrent = this.permissions.can(actor, "list", safe.root, safe.logicalPath).allowed;
-    if (!canListCurrent && !this.permissions.canReachListableDescendant(actor, safe.root, safe.logicalPath)) {
-      this.permissions.require(actor, "list", safe.root, safe.logicalPath);
+    const canListCurrent = this.permissions.can(actor, "view", safe.root, safe.logicalPath).allowed;
+    if (!canListCurrent && !this.permissions.canReachDescendant(actor, safe.root, safe.logicalPath)) {
+      this.permissions.require(actor, "view", safe.root, safe.logicalPath);
     }
     if (this.storage.isRemote(safe)) return this.listRemote(actor, safe);
     const stat = await fsp.stat(safe.absolutePath);
@@ -132,8 +132,8 @@ export class FsService {
           if (itemStat.isSymbolicLink()) return null;
           const itemLogicalPath = path.posix.join(safe.logicalPath, entry.name);
           if (
-            !this.permissions.can(actor, "list", safe.root, itemLogicalPath).allowed &&
-            !this.permissions.canReachListableDescendant(actor, safe.root, itemLogicalPath)
+            !this.permissions.can(actor, "view", safe.root, itemLogicalPath).allowed &&
+            !this.permissions.canReachDescendant(actor, safe.root, itemLogicalPath)
           ) {
             return null;
           }
@@ -163,7 +163,7 @@ export class FsService {
       .filter((entry) => !entry.name.includes("\0"))
       .map((entry) => {
         const itemLogicalPath = path.posix.join(safe.logicalPath, entry.name);
-        if (!this.permissions.can(actor, "list", safe.root, itemLogicalPath).allowed && !this.permissions.canReachListableDescendant(actor, safe.root, itemLogicalPath)) return null;
+        if (!this.permissions.can(actor, "view", safe.root, itemLogicalPath).allowed && !this.permissions.canReachDescendant(actor, safe.root, itemLogicalPath)) return null;
         return {
           name: nfc(entry.name),
           path: itemLogicalPath,
@@ -181,7 +181,7 @@ export class FsService {
 
   async meta(actor: Actor, rootSlug: string, logicalPath: string) {
     const safe = await this.paths.resolveExisting(rootSlug, logicalPath);
-    this.permissions.require(actor, "read", safe.root, safe.logicalPath);
+    this.permissions.require(actor, "view", safe.root, safe.logicalPath);
     if (this.storage.isRemote(safe)) {
       const remote = await this.storage.stat(safe);
       const remoteName = this.storage.name(safe);
@@ -213,7 +213,7 @@ export class FsService {
 
   async setFinderTags(actor: Actor, input: z.infer<typeof finderTagsSchema>) {
     const safe = await this.paths.resolveExisting(input.rootSlug, input.path);
-    this.permissions.require(actor, "manage_tags", safe.root, safe.logicalPath);
+    this.permissions.require(actor, "edit", safe.root, safe.logicalPath);
     // Finder tags are an attribute of a file on disk; a remote has nowhere to keep them.
     if (this.storage.isRemote(safe)) throw new AppError(500, "This location cannot store Finder tags", "FINDER_TAGS_UNSUPPORTED");
     const tags = input.tags.filter((tag, index) => input.tags.findIndex((other) => other.name === tag.name) === index);
@@ -236,7 +236,7 @@ export class FsService {
 
   async download(actor: Actor, rootSlug: string, logicalPath: string) {
     const safe = await this.paths.resolveExisting(rootSlug, logicalPath);
-    this.permissions.require(actor, "download", safe.root, safe.logicalPath);
+    this.permissions.require(actor, "view", safe.root, safe.logicalPath);
     const stat = await this.storage.stat(safe);
     if (!stat.isFile()) throw new AppError(400, "Path is not a file", "NOT_FILE");
     this.audit.write({
@@ -258,7 +258,7 @@ export class FsService {
     const resolved: SafePath[] = [];
     for (const logicalPath of logicalPaths) {
       const safe = await this.paths.resolveExisting(rootSlug, logicalPath);
-      this.permissions.require(actor, "download", safe.root, safe.logicalPath);
+      this.permissions.require(actor, "view", safe.root, safe.logicalPath);
       resolved.push(safe);
     }
     // A folder already brings everything inside it.
@@ -276,7 +276,7 @@ export class FsService {
     const storage = this.storage;
     async function* walkRemote(safe: SafePath, name: string): AsyncGenerator<ZipEntry> {
       const stat = await storage.stat(safe);
-      const allowed = (logicalPath: string) => permissions.can(actor, "download", safe.root, logicalPath).allowed;
+      const allowed = (logicalPath: string) => permissions.can(actor, "view", safe.root, logicalPath).allowed;
       if (!allowed(safe.logicalPath)) return;
       const open = (logicalPath: string) => () => storage.remote.open(safe.root, logicalPath);
       yield { name, open: open(safe.logicalPath), directory: stat.isDirectory(), size: stat.size, mtime: stat.mtime };
@@ -296,7 +296,7 @@ export class FsService {
     async function* walk(absolutePath: string, logicalPath: string, name: string): AsyncGenerator<ZipEntry> {
       const stat = await fsp.lstat(absolutePath);
       if (stat.isSymbolicLink() || (!stat.isFile() && !stat.isDirectory())) return;
-      if (!permissions.can(actor, "download", sources[0]!.root, logicalPath).allowed) return;
+      if (!permissions.can(actor, "view", sources[0]!.root, logicalPath).allowed) return;
       yield { name, open: () => fs.createReadStream(absolutePath), directory: stat.isDirectory(), size: stat.size, mtime: stat.mtime };
       if (!stat.isDirectory()) return;
       for (const child of (await fsp.readdir(absolutePath)).sort()) {
@@ -321,7 +321,7 @@ export class FsService {
 
   async preview(actor: Actor, rootSlug: string, logicalPath: string) {
     const safe = await this.paths.resolveExisting(rootSlug, logicalPath);
-    this.permissions.require(actor, "read", safe.root, safe.logicalPath);
+    this.permissions.require(actor, "view", safe.root, safe.logicalPath);
     const stat = await this.storage.stat(safe);
     if (!stat.isFile()) throw new AppError(400, "Path is not a file", "NOT_FILE");
     return { safe, stat, name: this.storage.name(safe), source: this.storage.source(safe, stat), contentType: lookup(safe.logicalPath) || "application/octet-stream" };
@@ -343,8 +343,7 @@ export class FsService {
   async writeText(actor: Actor, input: z.infer<typeof writeTextSchema>) {
     const safe = await this.paths.resolveExisting(input.rootSlug, input.path);
     // Saving over a file destroys what it held, so it takes the right to remove as well as the right to add.
-    this.permissions.require(actor, "upload", safe.root, safe.logicalPath);
-    this.permissions.require(actor, "delete", safe.root, safe.logicalPath);
+    this.permissions.require(actor, "edit", safe.root, safe.logicalPath);
     const stat = await this.storage.stat(safe);
     if (!stat.isFile()) throw new AppError(400, "Path is not a file", "NOT_FILE");
     if (Buffer.byteLength(input.content) > MAX_TEXT_BYTES) throw new AppError(413, "File is too large to edit", "FILE_TOO_LARGE");
@@ -387,7 +386,7 @@ export class FsService {
         const parsed = parseSubtitleName(videoName, name);
         if (!parsed) return null;
         const itemLogicalPath = path.posix.join(path.posix.dirname(video.safe.logicalPath), name);
-        if (!this.permissions.can(actor, "read", video.safe.root, itemLogicalPath).allowed) return null;
+        if (!this.permissions.can(actor, "view", video.safe.root, itemLogicalPath).allowed) return null;
         const stat = await fsp.lstat(path.join(folder, name));
         if (!stat.isFile()) return null;
         const picture = isPictureFormat(parsed.format);
@@ -396,7 +395,7 @@ export class FsService {
         if (parsed.format === "vobsub") {
           // The index is only a table of contents: the pictures are in the `.sub` of the same name, which is read with it.
           const data = `${name.slice(0, -3)}sub`;
-          if (!names.includes(data) || !this.permissions.can(actor, "read", video.safe.root, path.posix.join(path.posix.dirname(video.safe.logicalPath), data)).allowed) return null;
+          if (!names.includes(data) || !this.permissions.can(actor, "view", video.safe.root, path.posix.join(path.posix.dirname(video.safe.logicalPath), data)).allowed) return null;
         }
         return { path: itemLogicalPath, name: nfc(name), ...parsed, ...(picture ? { absolutePath: path.join(folder, name), stat } : {}) };
       })
@@ -412,7 +411,7 @@ export class FsService {
         const parsed = parseSubtitleName(videoName, entry.name);
         if (!parsed || entry.directory) return null;
         const itemLogicalPath = path.posix.join(folderPath, entry.name);
-        if (!this.permissions.can(actor, "read", video.root, itemLogicalPath).allowed) return null;
+        if (!this.permissions.can(actor, "view", video.root, itemLogicalPath).allowed) return null;
         const picture = isPictureFormat(parsed.format);
         if (!picture && entry.size > MAX_SUBTITLE_BYTES) return null;
         // A DVD index is read together with the file beside it, which a copy fetched on its own does not have.
@@ -426,7 +425,7 @@ export class FsService {
 
   async mkdir(actor: Actor, rootSlug: string, parentPath: string, name: string) {
     const parent = await this.paths.resolveExisting(rootSlug, parentPath);
-    this.permissions.require(actor, "create_folder", parent.root, parent.logicalPath);
+    this.permissions.require(actor, "edit", parent.root, parent.logicalPath);
     const targetLogical = path.posix.join(parent.logicalPath, name);
     const target = await this.paths.resolveForCreate(rootSlug, targetLogical);
     if (this.storage.isRemote(parent)) {
@@ -449,7 +448,7 @@ export class FsService {
 
   async rename(actor: Actor, rootSlug: string, logicalPath: string, name: string) {
     const source = await this.paths.resolveExisting(rootSlug, logicalPath);
-    this.permissions.require(actor, "rename", source.root, source.logicalPath);
+    this.permissions.require(actor, "edit", source.root, source.logicalPath);
     const targetLogical = path.posix.join(path.posix.dirname(source.logicalPath), name);
     const target = await this.paths.resolveForCreate(rootSlug, targetLogical);
     const rebaseRenameState = () => this.permissions.rebasePathRules(
@@ -473,7 +472,7 @@ export class FsService {
     const renameResult = async () => {
       // A rename grant can be independent from read. Avoid reporting a failure after the rename
       // has committed just because the moved path remains unreadable under its preserved ACL.
-      if (this.permissions.can(actor, "read", target.root, target.logicalPath).allowed) {
+      if (this.permissions.can(actor, "view", target.root, target.logicalPath).allowed) {
         return this.meta(actor, rootSlug, target.logicalPath);
       }
       return { rootSlug, path: target.logicalPath, name: nfc(path.posix.basename(target.logicalPath)) };
@@ -542,7 +541,7 @@ export class FsService {
       throw new AppError(400, "Invalid filename", "INVALID_FILENAME");
     }
     const parent = await this.paths.resolveExisting(rootSlug, parentPath);
-    this.permissions.require(actor, "upload", parent.root, parent.logicalPath);
+    this.permissions.require(actor, "edit", parent.root, parent.logicalPath);
     const target = await this.paths.resolveForCreate(rootSlug, path.posix.join(parent.logicalPath, fileName));
     await this.writeNewFile(parent, target, stream);
     this.audit.write({
@@ -605,7 +604,7 @@ export class FsService {
 
   private async prepareThumbnail(actor: Actor, rootSlug: string, logicalPath: string): Promise<Thumbnail | null> {
     const safe = await this.paths.resolveExisting(rootSlug, logicalPath);
-    this.permissions.require(actor, "read", safe.root, safe.logicalPath);
+    this.permissions.require(actor, "view", safe.root, safe.logicalPath);
     const stat = await this.storage.stat(safe);
     if (!stat.isFile() || stat.size === 0) return null;
     this.auditThumbnail(actor, safe.root.id, safe.logicalPath);
@@ -655,7 +654,7 @@ export class FsService {
    */
   async setWallpaper(actor: Actor, rootSlug: string, logicalPath: string): Promise<void> {
     const safe = await this.paths.resolveExisting(rootSlug, logicalPath);
-    this.permissions.require(actor, "read", safe.root, safe.logicalPath);
+    this.permissions.require(actor, "view", safe.root, safe.logicalPath);
     const stat = await this.storage.stat(safe);
     const rendition = renditionKind(safe.logicalPath);
     if (!stat.isFile() || !(rendition || String(lookup(safe.logicalPath)).startsWith("image/"))) throw new AppError(422, "Only a picture can be the desktop background", "NOT_A_PICTURE");

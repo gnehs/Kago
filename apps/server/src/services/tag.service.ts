@@ -44,7 +44,7 @@ export class TagService {
 
   async getFileTags(actor: Actor, rootSlug: string, logicalPath: string) {
     const safe = await this.paths.resolveExisting(rootSlug, logicalPath);
-    this.permissions.require(actor, "read", safe.root, safe.logicalPath);
+    this.permissions.require(actor, "view", safe.root, safe.logicalPath);
     return rows(
       this.db
         .prepare(
@@ -58,7 +58,7 @@ export class TagService {
 
   async setFileTags(actor: Actor, rootSlug: string, logicalPath: string, tagIds: string[]) {
     const safe = await this.paths.resolveExisting(rootSlug, logicalPath);
-    this.permissions.require(actor, "manage_tags", safe.root, safe.logicalPath);
+    this.permissions.require(actor, "edit", safe.root, safe.logicalPath);
     this.db.exec("BEGIN IMMEDIATE");
     try {
       this.db.prepare("DELETE FROM file_tags WHERE root_id = ? AND path = ?").run(safe.root.id, safe.logicalPath);
