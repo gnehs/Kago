@@ -330,6 +330,7 @@ export const zhCN: Dictionary = {
   "Next: {label} (⇧N)": "下一个：{label}（⇧N）",
   "No next video": "没有下一个",
   "The server is busy; try again later": "服务器繁忙，请稍后再试",
+  "Too many attempts; try again later": "尝试次数过多，请稍后再试",
   "Bars": "频谱",
   "Scope": "波形",
   "Ambience": "流光",

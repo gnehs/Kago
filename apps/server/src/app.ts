@@ -44,7 +44,9 @@ import { isRemote, RemoteStorage } from "./storage/remote-storage.js";
 import { EventHub } from "./ws/events.js";
 
 export async function buildApp(env: Env) {
-  const app = Fastify({ logger: false, bodyLimit: 1024 * 1024 * 25 });
+  const proxies = env.trustProxy ?? false;
+  // A number is how many proxies stand in front: that many hops of what they forward are believed, and no more.
+  const app = Fastify({ logger: false, bodyLimit: 1024 * 1024 * 25, trustProxy: typeof proxies === "number" ? (_address: string, hop: number) => hop < proxies : proxies });
   const db = openDb(env);
   const events = new EventHub();
   const audit = new AuditService(db);
@@ -107,6 +109,13 @@ export async function buildApp(env: Env) {
     if (request.headers["x-kago-csrf"] !== "1") {
       throw new AppError(403, "Missing CSRF header", "CSRF_REQUIRED");
     }
+  });
+
+  // Nothing of Kago's is meant to be shown inside another site's page, or taken for a type it was not sent as.
+  app.addHook("onRequest", async (_request, reply) => {
+    reply.header("X-Frame-Options", "SAMEORIGIN");
+    reply.header("X-Content-Type-Options", "nosniff");
+    reply.header("Referrer-Policy", "same-origin");
   });
 
   await auth.ensureInitialAdminFromEnv();
@@ -417,7 +426,8 @@ function registerApi(app: FastifyInstance, services: Services) {
   app.get("/api/internal/blob/:root/:signature/*", async (request, reply) => {
     const params = z.object({ root: z.string(), signature: z.string(), "*": z.string() }).parse(request.params);
     const logicalPath = `/${params["*"]}`;
-    if (!["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(request.ip) || !services.storage.remote.verifyInputUrl(params.root, logicalPath, params.signature)) {
+    // The connection itself is asked where it comes from: what a proxy says about the caller is not what is meant here.
+    if (!["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(request.raw.socket.remoteAddress ?? "") || !services.storage.remote.verifyInputUrl(params.root, logicalPath, params.signature)) {
       throw new AppError(404, "Not found", "NOT_FOUND");
     }
     const safe = await services.paths.resolveRootById(params.root, logicalPath);
@@ -875,7 +885,7 @@ function registerApi(app: FastifyInstance, services: Services) {
   app.post("/s/:token/auth", async (request, reply) => {
     const params = z.object({ token: z.string().min(1) }).parse(request.params);
     const body = z.object({ password: z.string().min(1) }).parse(request.body);
-    const auth = await services.shares.authenticatePublicShare(params.token, body.password);
+    const auth = await services.shares.authenticatePublicShare(params.token, body.password, request.ip);
     reply.setCookie(shareAccessCookieName(params.token), auth.accessToken, {
       httpOnly: true,
       sameSite: "lax",

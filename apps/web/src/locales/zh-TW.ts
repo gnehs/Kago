@@ -330,6 +330,7 @@ export const zhTW: Dictionary = {
   "Next: {label} (⇧N)": "下一部：{label}（⇧N）",
   "No next video": "沒有下一部",
   "The server is busy; try again later": "伺服器忙碌中，請稍後再試",
+  "Too many attempts; try again later": "嘗試次數過多，請稍後再試",
   "Bars": "頻譜",
   "Scope": "波形",
   "Ambience": "流光",

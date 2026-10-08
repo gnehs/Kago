@@ -2,6 +2,7 @@ import { z } from "zod";
 import { lookup } from "mime-types";
 import type { Db } from "../db/db.js";
 import { row, rows } from "../db/db.js";
+import { AttemptLimiter } from "../lib/attempts.js";
 import { hashPassword, randomToken, sha256, verifyPassword } from "../lib/crypto.js";
 import { AppError } from "../lib/errors.js";
 import { id, now } from "../lib/ids.js";
@@ -22,6 +23,10 @@ export const shareSchema = z.object({
   maxDownloads: z.number().int().positive().optional()
 });
 
+/** How many wrong passwords one address may try for one link, and for all links, before it is made to wait. */
+const SHARE_TRIES = 5;
+const SHARE_TRIES_PER_ADDRESS = 50;
+
 export class ShareService {
   constructor(
     private readonly db: Db,
@@ -31,6 +36,8 @@ export class ShareService {
     private readonly events: EventPublisher,
     private readonly storage: StorageService
   ) {}
+
+  private readonly attempts = new AttemptLimiter();
 
   list(actor: Actor) {
     const items =
@@ -201,9 +208,14 @@ export class ShareService {
     };
   }
 
-  async authenticatePublicShare(token: string, password: string): Promise<{ shareId: string; accessToken: string }> {
+  async authenticatePublicShare(token: string, password: string, address = ""): Promise<{ shareId: string; accessToken: string }> {
     const share = this.resolveToken(token);
     if (!share.password_hash) return { shareId: share.id, accessToken: this.accessTokenForShare(share) };
+    // A link is handed around, so its password is the one anyone at all may guess at.
+    const attempt = this.attempts.begin([
+      { key: `share:${address}:${share.id}`, limit: SHARE_TRIES },
+      { key: `share-from:${address}`, limit: SHARE_TRIES_PER_ADDRESS }
+    ]);
     if (!(await verifyPassword(password, share.password_hash))) {
       this.audit.write({
         actorType: "share_link",
@@ -215,6 +227,7 @@ export class ShareService {
       });
       throw new AppError(401, "Invalid share password", "INVALID_SHARE_PASSWORD");
     }
+    attempt.succeeded();
     return { shareId: share.id, accessToken: this.accessTokenForShare(share) };
   }
 

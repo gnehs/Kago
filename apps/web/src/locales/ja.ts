@@ -330,6 +330,7 @@ export const ja: Dictionary = {
   "Next: {label} (⇧N)": "次のビデオ：{label}（⇧N）",
   "No next video": "次のビデオはありません",
   "The server is busy; try again later": "サーバーが混み合っています。しばらくしてからもう一度お試しください",
+  "Too many attempts; try again later": "試行回数が多すぎます。しばらくしてからもう一度お試しください",
   "Bars": "スペクトラム",
   "Scope": "波形",
   "Ambience": "アンビエンス",

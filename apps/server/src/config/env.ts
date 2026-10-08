@@ -11,6 +11,11 @@ export type Env = {
   initialAdminEmail?: string;
   initialAdminPassword?: string;
   nodeEnv: string;
+  /**
+   * Whether, and how far, the `X-Forwarded-*` headers of a reverse proxy are believed: how many proxies stand in
+   * front, or the addresses they connect from. Without it everyone appears to come from the proxy itself.
+   */
+  trustProxy?: boolean | number | string;
 };
 
 export function loadEnv(): Env {
@@ -40,8 +45,17 @@ export function loadEnv(): Env {
     webDistDir: process.env.WEB_DIST_DIR,
     initialAdminEmail: process.env.ADMIN_EMAIL,
     initialAdminPassword: process.env.ADMIN_PASSWORD,
-    nodeEnv
+    nodeEnv,
+    trustProxy: resolveTrustProxy(process.env.TRUST_PROXY)
   };
+}
+
+function resolveTrustProxy(value = ""): boolean | number | string {
+  const setting = value.trim();
+  if (!setting || /^(false|0|no|off)$/i.test(setting)) return false;
+  if (/^(true|yes|on)$/i.test(setting)) return true;
+  // A count of proxies, or the addresses and ranges they connect from.
+  return /^\d+$/.test(setting) ? Number(setting) : setting;
 }
 
 function resolveSessionSecret(appDataDir: string, nodeEnv: string): string {

@@ -4,9 +4,14 @@ import type { Env } from "../config/env.js";
 import type { Db } from "../db/db.js";
 import { row, rows } from "../db/db.js";
 import { hashPassword, randomToken, sha256, verifyPassword } from "../lib/crypto.js";
+import { attemptKeyPart, AttemptLimiter } from "../lib/attempts.js";
 import { AppError } from "../lib/errors.js";
 import { id, now } from "../lib/ids.js";
 import type { Actor, PublicUser, User } from "./types.js";
+
+/** How many wrong passwords one address may try for one account, and for all accounts, before it is made to wait. */
+const LOGIN_TRIES = 5;
+const LOGIN_TRIES_PER_ADDRESS = 50;
 
 export const loginSchema = z.object({
   email: z.string().email(),
@@ -42,6 +47,9 @@ export class AuthService {
     private readonly db: Db,
     private readonly env: Env
   ) {}
+
+  private readonly attempts = new AttemptLimiter();
+  private decoy: Promise<string> | undefined;
 
   async ensureInitialAdminFromEnv(): Promise<void> {
     const count = row<{ count: number }>(this.db.prepare("SELECT COUNT(*) AS count FROM users").get())?.count ?? 0;
@@ -146,10 +154,21 @@ export class AuthService {
   }
 
   async login(request: FastifyRequest, reply: FastifyReply, email: string, password: string): Promise<Actor> {
+    const address = request.ip ?? "";
+    // Counted before the password is looked at: checking one is the costly part, and is what a guesser wants done for free.
+    const attempt = this.attempts.begin([
+      { key: `login:${address}:${attemptKeyPart(email.toLowerCase())}`, limit: LOGIN_TRIES },
+      { key: `login-from:${address}`, limit: LOGIN_TRIES_PER_ADDRESS }
+    ]);
     const user = row<User>(this.db.prepare("SELECT * FROM users WHERE email = ?").get(email.toLowerCase()));
-    if (!user || user.disabled || !(await verifyPassword(password, user.password_hash))) {
+    // An address without an account is checked against a password all the same, so how long the answer takes
+    // does not tell which addresses have one.
+    const usable = user && !user.disabled ? user : undefined;
+    const matches = await verifyPassword(password, usable?.password_hash ?? (await (this.decoy ??= hashPassword(randomToken()))));
+    if (!usable || !matches) {
       throw new AppError(401, "Invalid email or password", "INVALID_LOGIN");
     }
+    attempt.succeeded();
 
     const token = randomToken();
     const ts = now();
@@ -157,7 +176,7 @@ export class AuthService {
       .prepare(
         "INSERT INTO sessions (id, user_id, token_hash, expires_at, created_at, last_seen_at) VALUES (?, ?, ?, ?, ?, ?)"
       )
-      .run(id("sess"), user.id, sha256(token), ts + 60 * 60 * 24 * 30, ts, ts);
+      .run(id("sess"), usable.id, sha256(token), ts + 60 * 60 * 24 * 30, ts, ts);
 
     reply.setCookie("kago_session", token, {
       httpOnly: true,
@@ -167,7 +186,7 @@ export class AuthService {
       maxAge: 60 * 60 * 24 * 30
     });
 
-    return this.actorFromUser(user);
+    return this.actorFromUser(usable);
   }
 
   logout(request: FastifyRequest, reply: FastifyReply): void {
