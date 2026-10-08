@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { taskDownloadUrl } from "@/api/client";
+import { askForArchivePassword, pendingExtracts } from "@/features/files/ArchivePassword";
 import { pendingDownloads } from "@/features/files/useFileActions";
 import { taskErrorLabel, taskTypeLabel } from "@/features/tasks/taskUtils";
 import { triggerDownload } from "@/lib/paths";
@@ -34,8 +35,13 @@ export function useRealtime(userId: string, onRemoteWorkspaceChange: () => void)
       const label = task ? taskTypeLabel(task) : t("Task");
       if (type === "task.failed") {
         pendingDownloads.delete(taskId);
+        // A locked archive is asked about rather than reported.
+        if (askForArchivePassword(queryClient, taskId, error)) return;
         toast(t("{task} failed: {reason}", { task: label, reason: taskErrorLabel(error ?? "Task failed") }), "error");
-      } else if (pendingDownloads.delete(taskId)) {
+        return;
+      }
+      pendingExtracts.delete(taskId);
+      if (pendingDownloads.delete(taskId)) {
         triggerDownload(taskDownloadUrl(taskId));
       } else if (task && announcedTypes.includes(task.type)) {
         toast(t("{task} finished", { task: label }));

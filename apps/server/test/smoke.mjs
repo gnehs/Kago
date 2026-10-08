@@ -685,6 +685,49 @@ test("compress tasks take a compression level and a password", async () => {
     assert.equal(inflateRawSync(sealed.map((byte, index) => byte ^ stream[index])).toString(), text);
     assert.equal(locked.includes(Buffer.from("kago kago")), false);
 
+    // Locked archives open with a password given for the task, or with one of those the person keeps.
+    let folders = 0;
+    const extract = async (name, options) => {
+      const folder = `out-${(folders += 1)}`;
+      assert.equal((await admin.post("/api/fs/mkdir", { rootSlug: "photos", path: "/2026", name: folder })).statusCode, 200);
+      const task = await admin.post("/api/tasks", { type: "extract", sources: [{ rootSlug: "photos", path: `/2026/${name}.zip` }], destination: { rootSlug: "photos", path: `/2026/${folder}` }, options });
+      assert.equal(task.statusCode, 200);
+      assert.equal(JSON.stringify(task.json).includes(password), false);
+      return { task: await waitTask(admin, task.json.id), read: () => readFile(path.join(fixture.dataDir, "photos", "2026", folder, "long.txt"), "utf8") };
+    };
+    for (const name of ["locked", "legacy"]) {
+      const closed = await extract(name);
+      assert.equal(closed.task.status, "failed");
+      assert.equal(closed.task.error_message, "Archive password required");
+      await assert.rejects(closed.read());
+      assert.equal((await extract(name, { password: "wrong" })).task.error_message, "Wrong archive password");
+      const opened = await extract(name, { password });
+      assert.equal(opened.task.status, "done", opened.task.error_message);
+      assert.equal(await opened.read(), text);
+      assert.equal("password" in JSON.parse(opened.task.destination).options, false);
+    }
+    assert.deepEqual((await admin.get("/api/archive-passwords")).json, []);
+    assert.equal((await admin.post("/api/archive-passwords", { password: "not this one", note: "old" })).statusCode, 200);
+    assert.equal((await extract("locked")).task.error_message, "Archive password required");
+    assert.equal((await extract("locked", { password, remember: true })).task.status, "done");
+    const kept = (await admin.get("/api/archive-passwords")).json;
+    assert.deepEqual(kept.map((item) => item.note), ["old", ""]);
+    assert.equal(JSON.stringify(kept).includes(password), false);
+    const unasked = await extract("legacy");
+    assert.equal(unasked.task.status, "done", unasked.task.error_message);
+    assert.equal(await unasked.read(), text);
+    assert.equal((await admin.delete(`/api/archive-passwords/${kept[1].id}`)).json.length, 1);
+    assert.equal((await extract("locked")).task.error_message, "Archive password required");
+
+    // A locked archive that failed is locked the same way when it is tried again.
+    await writeFile(path.join(fixture.dataDir, "photos", "2026", "taken.zip"), "in the way");
+    const blocked = await admin.post("/api/tasks", { type: "compress", sources: [{ rootSlug: "photos", path: "/public/long.txt" }], destination: { rootSlug: "photos", path: "/2026/taken.zip" }, options: { password } });
+    assert.equal((await waitTask(admin, blocked.json.id)).status, "failed");
+    await rm(path.join(fixture.dataDir, "photos", "2026", "taken.zip"));
+    const again = await admin.post(`/api/tasks/${blocked.json.id}/retry`);
+    assert.equal((await waitTask(admin, again.json.id)).status, "done");
+    assert.equal((await readFile(path.join(fixture.dataDir, "photos", "2026", "taken.zip"))).readUInt16LE(8), 99);
+
     const logs = new DatabaseSync(path.join(fixture.appDataDir, "app.db"), { readOnly: true });
     try {
       assert.equal(logs.prepare("SELECT COUNT(*) AS n FROM audit_logs WHERE target_json LIKE ?").get(`%${password}%`).n, 0);

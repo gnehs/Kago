@@ -263,6 +263,7 @@ export type FileTask = {
   processed_files: number;
   total_bytes: number;
   processed_bytes: number;
+  sources_json: string;
   destination: string | null;
   current_path: string | null;
   error_message: string | null;

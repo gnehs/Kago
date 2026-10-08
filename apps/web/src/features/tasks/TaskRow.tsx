@@ -2,6 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { api, downloadUrl, taskDownloadUrl } from "@/api/client";
 import { KagoBadge } from "@/components/kago/badge";
 import { Button } from "@/components/ui/button";
+import { extractWithPassword, lockedExtract } from "@/features/files/ArchivePassword";
 import { triggerDownload } from "@/lib/paths";
 import { run } from "@/lib/run";
 import type { FileTask } from "@/types/kago";
@@ -12,6 +13,7 @@ export function TaskRow({ task }: { task: FileTask }) {
   const queryClient = useQueryClient();
   const status = taskStatus(task);
   const download = compressDownloadTarget(task);
+  const locked = lockedExtract(task);
   const downloadHref = download ? downloadUrl(download.rootSlug, download.path) : hasTaskDownload(task) ? taskDownloadUrl(task.id) : null;
 
   async function act(verb: "cancel" | "pause" | "resume" | "retry") {
@@ -35,6 +37,7 @@ export function TaskRow({ task }: { task: FileTask }) {
           {task.status === "queued" ? <Button onClick={() => void act("pause")}>{t("Pause")}</Button> : null}
           {task.status === "paused" ? <Button onClick={() => void act("resume")}>{t("Resume")}</Button> : null}
           {canCancelTask(task) ? <Button onClick={() => void act("cancel")}>{t("Cancel")}</Button> : null}
+          {locked ? <Button variant="default" onClick={() => void extractWithPassword(queryClient, locked, task.error_message ?? "")}>{t("Enter password")}</Button> : null}
           {canRetryTask(task) ? <Button onClick={() => void act("retry")}>{t("Retry")}</Button> : null}
         </div>
       ) : null}

@@ -9,6 +9,7 @@ import { toast } from "@/stores/toast";
 import { hideTrashing } from "@/stores/trashing";
 import { isUploadCancelled, uploadForm, uploadLabel } from "@/stores/uploads";
 import { folderTitle, useWorkspaceStore } from "@/stores/workspace";
+import { startExtract } from "./ArchivePassword";
 import { promptCompress } from "./CompressDialog";
 import type { FileItem, FileTask, FileWindow } from "@/types/kago";
 import { t } from "@/lib/i18n";
@@ -149,7 +150,7 @@ export function useFileActions(window: FileWindow) {
       }),
     extract: (paths: string[]) =>
       run(async () => {
-        await createTask(queryClient, { type: "extract", sources: refs(paths), destination: here() });
+        await startExtract(queryClient, { sources: refs(paths), destination: here() });
         toast(t("Extract task created"));
       }),
     /** A single file downloads directly; folders and multi-selections are zipped server-side first, outside the user's folders. */

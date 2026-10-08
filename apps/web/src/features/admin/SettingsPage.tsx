@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Columns3, LayoutGrid, List, Monitor, Moon, PanelLeft, PanelRight, Sparkles, Sun, ZapOff } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Columns3, KeyRound, LayoutGrid, List, Monitor, Moon, PanelLeft, PanelRight, Sparkles, Sun, ZapOff } from "lucide-react";
 import { api, ApiError } from "@/api/client";
 import { KagoAvatar } from "@/components/kago/avatar";
 import { KagoBadge } from "@/components/kago/badge";
@@ -8,6 +9,7 @@ import { Field, Input, Select } from "@/components/ui/input";
 import { firstDirection, sortColumns } from "@/features/files/FileList";
 import { BASE_VIEW } from "@/features/files/folderView";
 import { Card, Page, SettingRow } from "@/features/workspace/Page";
+import { formatUnixDate } from "@/lib/format";
 import { localeNames, setLocale, t } from "@/lib/i18n";
 import { getLocalePref, getMotion, getTheme, getWindowControls, setMotion, setTheme, setWindowControls, type LocalePref, type MotionPref, type ThemePref, type WindowControlsPref } from "@/lib/prefs";
 import { run } from "@/lib/run";
@@ -137,8 +139,60 @@ export function SettingsPage({ user }: { user: Actor }) {
           </SettingRow>
         </div>
       </Card>
+      <ArchivePasswords />
       <AccountSettings user={user} />
     </Page>
+  );
+}
+
+type ArchivePassword = { id: string; note: string; createdAt: number };
+
+/** The passwords tried on a locked archive before its own is asked for. What is saved is not shown again, so each goes by its note. */
+function ArchivePasswords() {
+  const queryClient = useQueryClient();
+  const saved = useQuery({ queryKey: ["archive-passwords"], queryFn: () => api<ArchivePassword[]>("/api/archive-passwords") });
+  const [password, setPassword] = useState("");
+  const [note, setNote] = useState("");
+  const adopt = (list: ArchivePassword[]) => queryClient.setQueryData(["archive-passwords"], list);
+
+  async function add(event: React.FormEvent) {
+    event.preventDefault();
+    if (!password) return;
+    await run(async () => {
+      adopt(await api<ArchivePassword[]>("/api/archive-passwords", { method: "POST", body: JSON.stringify({ password, note }) }));
+      setPassword("");
+      setNote("");
+    }, t("Couldn’t save the password"));
+  }
+
+  return (
+    <Card title={t("Archive passwords")} description={t("Tried on a locked archive before you are asked for its password. A saved password is not shown again.")}>
+      <div className="flex flex-col gap-4">
+        {saved.data?.length ? (
+          <ul className="m-0 flex list-none flex-col divide-y divide-line p-0">
+            {saved.data.map((item) => (
+              <li key={item.id} className="flex items-center gap-3 py-2 first:pt-0 [&>.lucide]:size-4 [&>.lucide]:text-muted">
+                <KeyRound />
+                <div className="flex min-w-0 flex-1 flex-col">
+                  <span className={item.note ? "truncate font-medium" : "truncate text-muted"}>{item.note || t("No note")}</span>
+                  <span className="text-xs text-muted">{t("Added {date}", { date: formatUnixDate(item.createdAt) })}</span>
+                </div>
+                <Button variant="outline" onClick={() => void run(async () => adopt(await api<ArchivePassword[]>(`/api/archive-passwords/${item.id}`, { method: "DELETE" })))}>{t("Remove")}</Button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        <form className="grid grid-cols-2 items-end gap-3" onSubmit={add}>
+          <Field label={t("Password")}>
+            <Input type="password" autoComplete="off" value={password} onChange={(event) => setPassword(event.target.value)} />
+          </Field>
+          <Field label={t("Note")}>
+            <Input autoComplete="off" maxLength={80} value={note} placeholder={t("What it is for")} onChange={(event) => setNote(event.target.value)} />
+          </Field>
+          <div className="col-span-2 flex justify-end"><Button type="submit" variant="default" disabled={!password}>{t("Add password")}</Button></div>
+        </form>
+      </div>
+    </Card>
   );
 }
 

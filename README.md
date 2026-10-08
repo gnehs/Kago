@@ -25,7 +25,7 @@
 - **Video player**: the window follows the video's aspect ratio, and you can go full screen, picture in picture, or play in a new tab. When a folder holds several videos, you can jump straight to the previous or next one.
 - **Share links**: downloadable, view-only, or a drop box that lets other people upload files to you. Every link can have an expiry date, a password and a download limit.
 - **Multiple users and permissions**: users and groups, with View and Edit permissions set down to a single folder. Everything that happens is kept in the audit log.
-- **Background tasks**: copying, moving, compressing and extracting all run on the server and carry on after you close the browser. Compressing lets you pick how hard to squeeze and set a password (AES-256 or ZipCrypto).
+- **Background tasks**: copying, moving, compressing and extracting all run on the server and carry on after you close the browser. Compressing lets you pick how hard to squeeze and set a password (AES-256 or ZipCrypto); extracting a locked zip first tries the passwords saved in Settings, and only asks when none opens it.
 - **Uploads of any size**: drop files or whole folders to upload them. They are streamed straight to disk, with progress, speed and time remaining.
 - **Remote locations**: folders on SMB, SFTP, WebDAV and FTP can be added as locations and browsed, played and shared just like local ones. The container needs no extra privileges.
 - **Sync**: sync folders between locations, or with another machine over rsync, by hand or on a schedule.
