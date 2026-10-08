@@ -48,7 +48,7 @@ export function SplatPreviewWindow({ window }: { window: PreviewWindow }) {
           title={t("Couldn’t preview this file")}
           description={error === "not-splat" ? t("This PLY file isn’t a Gaussian splat. Download it and open it in another app.") : t("The file may be damaged, or in an unsupported format.")}
         >
-          <Button onClick={download}>{t("Download")}</Button>
+          <Button variant="default" onClick={download}>{t("Download")}</Button>
         </KagoEmptyState>
       ) : (
         <div className="relative flex min-h-0 flex-1 flex-col bg-black">

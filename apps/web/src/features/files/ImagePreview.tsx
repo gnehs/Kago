@@ -543,7 +543,7 @@ function Slide({
       {state === "failed" ? (
         current ? (
           <KagoEmptyState icon={<ImageOff />} title={t("Couldn’t show this image")} description={t("The file may be damaged, or the server couldn’t convert it. Download it and open it in another app.")}>
-            <Button onClick={onDownload}>{t("Download")}</Button>
+            <Button variant="default" onClick={onDownload}>{t("Download")}</Button>
           </KagoEmptyState>
         ) : null
       ) : (

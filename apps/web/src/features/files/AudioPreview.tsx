@@ -504,7 +504,7 @@ export function AudioPreviewWindow({ window }: { window: PreviewWindow }) {
         <KagoLoading />
       ) : tracks.length === 0 ? (
         <KagoEmptyState className="min-h-0 flex-1" icon={<FileWarning />} title={t("Couldn’t open this cue sheet")} description={t("The audio it points to is not in this folder, or is in a format the browser can’t play.")}>
-          <Button onClick={download}>{t("Download")}</Button>
+          <Button variant="default" onClick={download}>{t("Download")}</Button>
         </KagoEmptyState>
       ) : (
         <div className="@container flex min-h-0 flex-1" onKeyDown={onKeyDown}>

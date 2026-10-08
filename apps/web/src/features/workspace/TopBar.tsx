@@ -148,7 +148,7 @@ function TaskStatus() {
               >
                 {t("See all tasks")}
               </Button>
-              {tasks.data?.some(isFinishedTask) ? (
+              {all.some(isFinishedTask) ? (
                 <Button variant="ghost" className="flex-1" onClick={() => void clear()}>
                   {t("Clear finished")}
                 </Button>

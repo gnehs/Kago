@@ -51,7 +51,7 @@ export function PreviewWindowView({ window }: { window: PreviewWindow }) {
           title={t("This kind of file can’t be previewed")}
           description={hasTextName(item.name) || item.type.startsWith("text/") ? t("Text files over {size} have to be downloaded to open.", { size: formatSize(MAX_TEXT_BYTES) }) : t("There is no viewer for this kind of file ({kind}). Download it and open it in another app.", { kind: kindLabel(item) })}
         >
-          <Button onClick={download}>{t("Download")}</Button>
+          <Button variant="default" onClick={download}>{t("Download")}</Button>
         </KagoEmptyState>
       </div>
     </KagoWindow>

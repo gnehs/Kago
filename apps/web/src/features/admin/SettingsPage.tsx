@@ -177,7 +177,7 @@ function ArchivePasswords() {
                   <span className={item.note ? "truncate font-medium" : "truncate text-muted"}>{item.note || t("No note")}</span>
                   <span className="text-xs text-muted">{t("Added {date}", { date: formatUnixDate(item.createdAt) })}</span>
                 </div>
-                <Button variant="outline" onClick={() => void run(async () => adopt(await api<ArchivePassword[]>(`/api/archive-passwords/${item.id}`, { method: "DELETE" })))}>{t("Remove")}</Button>
+                <Button variant="destructive" onClick={() => void run(async () => adopt(await api<ArchivePassword[]>(`/api/archive-passwords/${item.id}`, { method: "DELETE" })))}>{t("Remove")}</Button>
               </li>
             ))}
           </ul>

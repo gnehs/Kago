@@ -44,7 +44,7 @@ export function TrashPage() {
   return (
     <Page
       description={trash.data?.length ? t("{count} item, which can be put back where it was. | {count} items, which can be put back where they were.", { count: trash.data.length }) : t("Deleted items wait here, and can be put back where they were.")}
-      actions={trash.data?.length ? <Button variant="destructive" onClick={() => void empty()}>{t("Empty Trash")}</Button> : null}
+      actions={trash.data?.length ? <Button variant="destructive-primary" onClick={() => void empty()}>{t("Empty Trash")}</Button> : null}
     >
       {trash.isLoading ? <KagoLoading /> : null}
       {trash.data?.length === 0 ? <KagoEmptyState icon={<Trash2 />} title={t("The Trash is empty")} /> : null}

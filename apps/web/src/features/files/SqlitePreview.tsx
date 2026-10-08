@@ -49,7 +49,7 @@ export function SqlitePreviewWindow({ window }: { window: PreviewWindow }) {
         <KagoLoading />
       ) : overview.error ? (
         <KagoEmptyState className="min-h-0 flex-1" icon={<Database />} title={t("Couldn’t open the database")} description={errorMessage(overview.error, t("Please try again later."))}>
-          <Button onClick={download}>{t("Download")}</Button>
+          <Button variant="default" onClick={download}>{t("Download")}</Button>
         </KagoEmptyState>
       ) : !table ? (
         <KagoEmptyState className="min-h-0 flex-1" icon={<Database />} title={t("This database has no tables")} />

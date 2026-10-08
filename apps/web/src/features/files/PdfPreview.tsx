@@ -36,7 +36,7 @@ export function PdfPreviewWindow({ window }: { window: PreviewWindow }) {
     >
       {unreadable ? (
         <KagoEmptyState className="min-h-0 flex-1" icon={<FileWarning />} title={t("Couldn’t preview this file")} description={t("The file may be damaged or password-protected.")}>
-          <Button onClick={download}>{t("Download")}</Button>
+          <Button variant="default" onClick={download}>{t("Download")}</Button>
         </KagoEmptyState>
       ) : (
         <Suspense fallback={<KagoLoading />}>

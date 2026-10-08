@@ -64,7 +64,7 @@ export function OfficePreviewWindow({ window, kind }: { window: PreviewWindow; k
           title={t("Couldn’t preview this file")}
           description={tooLarge ? t("Files over {size} have to be downloaded to open.", { size: formatSize(MAX_OFFICE_BYTES) }) : verdict === "too-large" ? t("This file unpacks to more than {size}, which is too much to open here.", { size: formatSize(MAX_UNPACKED_BYTES) }) : file.error ? t("Something went wrong reading the file.") : t("The file may be damaged, password-protected, or in an unsupported format.")}
         >
-          <Button onClick={download}>{t("Download")}</Button>
+          <Button variant="default" onClick={download}>{t("Download")}</Button>
         </KagoEmptyState>
       ) : !file.data ? (
         <KagoLoading />
