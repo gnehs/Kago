@@ -14,8 +14,8 @@ export function KagoContextMenu({ menu, children, className, ...props }: Omit<Co
         {children}
       </ContextMenu.Trigger>
       <ContextMenu.Portal>
-        <ContextMenu.Positioner className="z-[800] outline-none">
-          <ContextMenu.Popup className="kago-glass kago-pop min-w-44 cursor-default rounded-lg p-1 outline-none select-none">{menu}</ContextMenu.Popup>
+        <ContextMenu.Positioner collisionPadding={8} className="z-[800] outline-none">
+          <ContextMenu.Popup className="kago-glass kago-pop max-h-(--available-height) min-w-44 cursor-default overflow-y-auto overscroll-contain rounded-lg p-1 outline-none select-none">{menu}</ContextMenu.Popup>
         </ContextMenu.Positioner>
       </ContextMenu.Portal>
     </ContextMenu.Root>
@@ -60,8 +60,8 @@ export function KagoDropdownMenu({
         {children}
       </Menu.Trigger>
       <Menu.Portal container={container ?? undefined}>
-        <Menu.Positioner side={side} sideOffset={4} align={align} className="z-[800] outline-none">
-          <Menu.Popup className="kago-glass kago-pop min-w-44 cursor-default rounded-lg p-1 outline-none select-none">{menu}</Menu.Popup>
+        <Menu.Positioner side={side} sideOffset={4} align={align} collisionPadding={8} className="z-[800] outline-none">
+          <Menu.Popup className="kago-glass kago-pop max-h-(--available-height) min-w-44 cursor-default overflow-y-auto overscroll-contain rounded-lg p-1 outline-none select-none">{menu}</Menu.Popup>
         </Menu.Positioner>
       </Menu.Portal>
     </Menu.Root>
