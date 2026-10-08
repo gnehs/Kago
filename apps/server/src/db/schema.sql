@@ -192,6 +192,8 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   created_at INTEGER NOT NULL
 );
 
+CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at);
+
 CREATE TABLE IF NOT EXISTS sync_jobs (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,

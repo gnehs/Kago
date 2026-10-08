@@ -18,7 +18,7 @@ export const shareSchema = z.object({
   rootSlug: z.string().min(1),
   path: z.string().min(1),
   mode: z.enum(["view_only", "download", "upload_only"]),
-  password: z.string().min(8).optional(),
+  password: z.string().min(8).max(1024).optional(),
   expiresAt: z.number().int().optional(),
   maxDownloads: z.number().int().positive().optional()
 });

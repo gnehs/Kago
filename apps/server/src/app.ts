@@ -20,7 +20,7 @@ import { ensureSshKey } from "./lib/ssh-key.js";
 import { zipStream } from "./lib/zip-stream.js";
 import { isBrowserViewable } from "./lib/viewable.js";
 import { AuditService } from "./services/audit.service.js";
-import { AuthService, changePasswordSchema, createUserSchema, loginSchema, patchUserSchema, resetPasswordSchema, setupAdminSchema } from "./services/auth.service.js";
+import { AuthService, MAX_PASSWORD, changePasswordSchema, createUserSchema, loginSchema, patchUserSchema, resetPasswordSchema, setupAdminSchema } from "./services/auth.service.js";
 import { FsService, finderTagsSchema, fsQuerySchema, maxUploadFiles, mkdirSchema, renameSchema, sqliteRowsSchema, writeTextSchema, zipQuerySchema } from "./services/fs.service.js";
 import { ImageService } from "./services/image.service.js";
 import { createGroupSchema, GroupService } from "./services/group.service.js";
@@ -171,9 +171,13 @@ export async function buildApp(env: Env) {
       },
       () => undefined
     );
-  const pruningPictures = setInterval(prunePictures, 24 * 60 * 60 * 1000);
+  const pruningPictures = setInterval(() => {
+    prunePictures();
+    audit.prune();
+  }, 24 * 60 * 60 * 1000);
   pruningPictures.unref();
   prunePictures();
+  audit.prune();
   return app;
 }
 
@@ -278,7 +282,7 @@ function registerApi(app: FastifyInstance, services: Services) {
       services.audit.write({ actorType: "user", actorId: actor.id, action: "login_success", result: "success" });
       return { user: actor };
     } catch (error) {
-      services.audit.write({ actorType: "system", action: "login_failed", target: { email: input.email }, result: "failure" });
+      services.audit.write({ actorType: "system", action: "login_failed", target: { email: input.email }, result: "failure", ip: request.ip, userAgent: request.headers["user-agent"] });
       throw error;
     }
   });
@@ -884,7 +888,7 @@ function registerApi(app: FastifyInstance, services: Services) {
 
   app.post("/s/:token/auth", async (request, reply) => {
     const params = z.object({ token: z.string().min(1) }).parse(request.params);
-    const body = z.object({ password: z.string().min(1) }).parse(request.body);
+    const body = z.object({ password: z.string().min(1).max(MAX_PASSWORD) }).parse(request.body);
     const auth = await services.shares.authenticatePublicShare(params.token, body.password, request.ip);
     reply.setCookie(shareAccessCookieName(params.token), auth.accessToken, {
       httpOnly: true,

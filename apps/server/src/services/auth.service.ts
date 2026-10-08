@@ -13,14 +13,18 @@ import type { Actor, PublicUser, User } from "./types.js";
 const LOGIN_TRIES = 5;
 const LOGIN_TRIES_PER_ADDRESS = 50;
 
+/** No address or password is this long; one that is was written to be costly to handle. */
+const MAX_EMAIL = 320;
+export const MAX_PASSWORD = 1024;
+
 export const loginSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(1)
+  email: z.string().email().max(MAX_EMAIL),
+  password: z.string().min(1).max(MAX_PASSWORD)
 });
 
 export const createUserSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(8),
+  email: z.string().email().max(MAX_EMAIL),
+  password: z.string().min(8).max(MAX_PASSWORD),
   displayName: z.string().min(1).max(120),
   role: z.enum(["ADMIN", "USER", "GUEST"]).default("USER")
 });
@@ -36,11 +40,11 @@ export const patchUserSchema = z.object({
 });
 
 export const changePasswordSchema = z.object({
-  currentPassword: z.string().min(1),
-  newPassword: z.string().min(8)
+  currentPassword: z.string().min(1).max(MAX_PASSWORD),
+  newPassword: z.string().min(8).max(MAX_PASSWORD)
 });
 
-export const resetPasswordSchema = z.object({ password: z.string().min(8) });
+export const resetPasswordSchema = z.object({ password: z.string().min(8).max(MAX_PASSWORD) });
 
 export class AuthService {
   constructor(
@@ -70,11 +74,12 @@ export class AuthService {
 
   async setupAdmin(request: FastifyRequest, reply: FastifyReply, input: z.infer<typeof setupAdminSchema>): Promise<Actor> {
     if (!this.needsSetup()) throw new AppError(409, "Kago is already initialized", "SETUP_ALREADY_DONE");
-    await this.createUser({ ...input, role: "ADMIN" });
+    await this.createUser({ ...input, role: "ADMIN" }, true);
     return this.login(request, reply, input.email, input.password);
   }
 
-  async createUser(input: z.infer<typeof createUserSchema>): Promise<PublicUser> {
+  /** `first` makes the user only where there is none yet: of two people setting Kago up at once, one is its administrator. */
+  async createUser(input: z.infer<typeof createUserSchema>, first = false): Promise<PublicUser> {
     const ts = now();
     const user: User = {
       id: id("user"),
@@ -86,6 +91,8 @@ export class AuthService {
       created_at: ts,
       updated_at: ts
     };
+    // Asked again here, after the wait for the password to be hashed, with nothing between the question and the insert.
+    if (first && !this.needsSetup()) throw new AppError(409, "Kago is already initialized", "SETUP_ALREADY_DONE");
     this.db
       .prepare(
         `INSERT INTO users
@@ -140,9 +147,12 @@ export class AuthService {
 
   /** Changes the caller's own password after re-checking the current one. */
   async changePassword(request: FastifyRequest, actor: Actor, input: z.infer<typeof changePasswordSchema>): Promise<void> {
+    // Whoever holds a session that is not theirs does not get to find the password out by trying.
+    const attempt = this.attempts.begin([{ key: `password:${actor.id}`, limit: LOGIN_TRIES }]);
     if (!(await verifyPassword(input.currentPassword, this.getUser(actor.id).password_hash))) {
       throw new AppError(403, "Current password is incorrect", "INVALID_CURRENT_PASSWORD");
     }
+    attempt.succeeded();
     await this.setPassword(request, actor.id, input.newPassword);
   }
 
@@ -172,6 +182,8 @@ export class AuthService {
 
     const token = randomToken();
     const ts = now();
+    // Sessions that have run out are of no use to anyone; signing in is as good a moment as any to clear them.
+    this.db.prepare("DELETE FROM sessions WHERE expires_at <= ?").run(ts);
     this.db
       .prepare(
         "INSERT INTO sessions (id, user_id, token_hash, expires_at, created_at, last_seen_at) VALUES (?, ?, ?, ?, ?, ?)"
