@@ -175,12 +175,20 @@ function contentDisposition(kind: "attachment" | "inline", rawFileName: string):
   return `${kind}; filename="${fallback}"; filename*=UTF-8''${encodeURIComponent(fileName)}`;
 }
 
+/**
+ * Anything that is, or was made out of, someone's file is sent as inert content: an SVG holds scripts, and one opened
+ * at its own address would run them as the application. The page still shows it in an `<img>`, where nothing runs.
+ */
+function sandboxContent(reply: FastifyReply): void {
+  reply.header("X-Content-Type-Options", "nosniff");
+  reply.header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'none'; sandbox");
+}
+
 /** Raw user files must never run scripts with the application's origin when opened directly. */
 function protectFilePreview(reply: FastifyReply, contentType: string, fileName: string): void {
   // Fetch-based code and office viewers can still read attachments; direct navigation downloads active documents.
   reply.header("Content-Disposition", contentDisposition(isBrowserViewable(contentType) ? "inline" : "attachment", fileName));
-  reply.header("X-Content-Type-Options", "nosniff");
-  reply.header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'none'; sandbox");
+  sandboxContent(reply);
 }
 
 function resolveWebDist(env: Env): string {
@@ -456,6 +464,7 @@ function registerApi(app: FastifyInstance, services: Services) {
     if (!stat) throw new AppError(404, "No desktop background is set", "NO_WALLPAPER");
     // The address names the time it was set, so a new one is never answered from the browser's cache.
     reply.header("Cache-Control", "private, max-age=31536000, immutable");
+    sandboxContent(reply);
     return sendFile(request, reply, file, stat, "image/avif");
   });
   app.post("/api/wallpaper", async (request) => {
@@ -515,6 +524,7 @@ function registerApi(app: FastifyInstance, services: Services) {
     const file = await services.fsService.localFile(requireActor(request), query.rootSlug, query.path);
     const rendition = await services.images.rendition(file.localPath, file.stat);
     reply.header("Cache-Control", "private, max-age=86400");
+    sandboxContent(reply);
     return sendFile(request, reply, rendition, await fs.promises.stat(rendition), "image/jpeg");
   });
   app.get("/api/fs/exif", async (request) => {
@@ -528,6 +538,8 @@ function registerApi(app: FastifyInstance, services: Services) {
     const thumbnail = await services.fsService.thumbnail(actor, query.rootSlug, query.path);
     reply.header("Content-Type", thumbnail.contentType);
     reply.header("Cache-Control", "private, max-age=86400");
+    // A picture ffmpeg could not draw is sent as the file itself, and that file may be an SVG.
+    sandboxContent(reply);
     if ("data" in thumbnail) return thumbnail.data;
     reply.header("Content-Length", String(thumbnail.size));
     return fs.createReadStream(thumbnail.path);
@@ -610,6 +622,7 @@ function registerApi(app: FastifyInstance, services: Services) {
     const file = await services.fsService.media(actor, query.rootSlug, query.path);
     const subtitle = await services.media.subtitle(file.input, file.stat, query.index);
     reply.header("Cache-Control", "private, max-age=3600");
+    sandboxContent(reply);
     return sendFile(request, reply, subtitle.file, await fs.promises.stat(subtitle.file), "text/plain; charset=utf-8");
   });
   app.get("/api/media/attachment", async (request, reply) => {
@@ -618,6 +631,7 @@ function registerApi(app: FastifyInstance, services: Services) {
     const file = await services.fsService.media(actor, query.rootSlug, query.path);
     const font = await services.media.font(file.input, file.stat, query.index);
     reply.header("Cache-Control", "private, max-age=3600");
+    sandboxContent(reply);
     return sendFile(request, reply, font, await fs.promises.stat(font), "application/octet-stream");
   });
   app.get("/api/media/cover", async (request, reply) => {
@@ -626,7 +640,7 @@ function registerApi(app: FastifyInstance, services: Services) {
     const file = await services.fsService.media(actor, query.rootSlug, query.path);
     const cover = await services.media.cover(file.input, file.stat);
     reply.header("Cache-Control", "private, max-age=3600");
-    reply.header("X-Content-Type-Options", "nosniff");
+    sandboxContent(reply);
     return sendFile(request, reply, cover, await fs.promises.stat(cover), "image/jpeg");
   });
   app.get("/api/media/audio", async (request, reply) => {
@@ -639,7 +653,7 @@ function registerApi(app: FastifyInstance, services: Services) {
     // One that left while the file was still being looked at will never be heard from again.
     if (request.raw.socket.destroyed || reply.raw.destroyed) audio.stop();
     reply.header("Content-Type", "audio/webm");
-    reply.header("X-Content-Type-Options", "nosniff");
+    sandboxContent(reply);
     reply.header("Cache-Control", "no-store");
     return reply.send(audio.stream);
   });
