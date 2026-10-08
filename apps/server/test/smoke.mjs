@@ -194,6 +194,15 @@ test("minimum file-manager demo flow", async () => {
       recursive: true
     })).statusCode, 200);
 
+    // The permissions page ticks one principal at one path: each tick replaces the rule there, and no tick leaves none.
+    const tick = (level) => admin.put("/api/permissions", { principalType: "user", principalId: reader.json.id, rootId: root.json.id, pathPrefix: "/ticked", level });
+    const ticked = async () => (await admin.get(`/api/permissions?rootId=${root.json.id}`)).json.filter((item) => item.path_prefix === "/ticked").map((item) => item.level);
+    assert.equal((await tick("view")).json.rule.level, "view");
+    assert.equal((await tick("edit")).json.rule.level, "edit");
+    assert.deepEqual(await ticked(), ["edit"]);
+    assert.equal((await tick(null)).json.rule, null);
+    assert.deepEqual(await ticked(), []);
+
     const copyTask = await admin.post("/api/tasks", {
       type: "copy",
       sources: [{ rootSlug: "photos", path: "/2026/demo.txt" }],

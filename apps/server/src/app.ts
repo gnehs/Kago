@@ -26,7 +26,7 @@ import { ImageService } from "./services/image.service.js";
 import { createGroupSchema, GroupService } from "./services/group.service.js";
 import { MediaService, mediaAudioSchema, mediaSessionSchema, mediaStreamSchema } from "./services/media.service.js";
 import { PathService } from "./services/path.service.js";
-import { permissionInputSchema, PermissionService } from "./services/permission.service.js";
+import { permissionInputSchema, permissionSetSchema, PermissionService } from "./services/permission.service.js";
 import { folderViewQuerySchema, folderViewSchema, PreferenceService, settingsSchema } from "./services/preference.service.js";
 import { remoteRootPatchSchema, remoteRootSchema, rootPatchSchema, RootService } from "./services/root.service.js";
 import { ShareService, shareSchema } from "./services/share.service.js";
@@ -824,6 +824,16 @@ function registerApi(app: FastifyInstance, services: Services) {
     services.audit.write({ actorType: "user", actorId: actor.id, action: "permission_change", rootId: item.root_id, target: item, result: "success" });
     publishPermissionUpdated(actor, item.principal_type, item.principal_id);
     return item;
+  });
+  app.put("/api/permissions", async (request) => {
+    const actor = requireAdmin(request);
+    const input = permissionSetSchema.parse(request.body);
+    services.roots.getById(input.rootId);
+    const pathPrefix = services.paths.normalizeLogicalPath(input.pathPrefix);
+    const item = services.permissions.set({ ...input, pathPrefix });
+    services.audit.write({ actorType: "user", actorId: actor.id, action: "permission_change", rootId: input.rootId, path: pathPrefix, target: item ?? { principalType: input.principalType, principalId: input.principalId, deleted: true }, result: "success" });
+    publishPermissionUpdated(actor, input.principalType, input.principalId);
+    return { rule: item };
   });
   app.delete("/api/permissions/:id", async (request) => {
     const actor = requireAdmin(request);

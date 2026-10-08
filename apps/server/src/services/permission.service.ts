@@ -21,6 +21,15 @@ export const permissionInputSchema = z.object({
   recursive: z.boolean().default(true)
 });
 
+/** What one user or group gets at one path; `level: null` leaves them with nothing there. */
+export const permissionSetSchema = z.object({
+  principalType: z.enum(["user", "group"]),
+  principalId: z.string().min(1),
+  rootId: z.string().min(1),
+  pathPrefix: z.string().min(1).default("/"),
+  level: z.enum(levels).nullable()
+});
+
 type PermissionRule = {
   id: string;
   principal_type: "user" | "group";
@@ -122,6 +131,29 @@ export class PermissionService {
         item.updated_at
       );
     return item;
+  }
+
+  /** Replace whatever the principal has at exactly this path with one rule, or with none. */
+  set(input: z.infer<typeof permissionSetSchema>) {
+    this.assertPrincipalExists(input.principalType, input.principalId);
+    const target = nfc(input.pathPrefix);
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const existing = rows<PermissionRule>(
+        this.db
+          .prepare("SELECT * FROM permission_rules WHERE principal_type = ? AND principal_id = ? AND root_id = ?")
+          .all(input.principalType, input.principalId, input.rootId)
+      ).filter((rule) => nfc(rule.path_prefix) === target);
+      for (const rule of existing) this.delete(rule.id);
+      // A rule that was kept to its own folder stays that way; a new one covers what is under it.
+      const recursive = existing.length === 0 || existing.some((rule) => rule.recursive);
+      const item = input.level ? this.create({ ...input, level: input.level, recursive }) : null;
+      this.db.exec("COMMIT");
+      return item;
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
   }
 
   delete(ruleId: string): void {
