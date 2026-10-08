@@ -174,6 +174,7 @@ export const zhTW: Dictionary = {
   "{count} file | {count} files": "{count} 個檔案",
   ", ": "、",
   "Open in new window": "在新視窗開啟",
+  "Play": "播放",
   "Play in new tab": "在新分頁中播放",
   "Download {count} item | Download {count} items": "下載 {count} 個項目",
   "Download": "下載",

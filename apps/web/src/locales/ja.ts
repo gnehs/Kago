@@ -174,6 +174,7 @@ export const ja: Dictionary = {
   "{count} file | {count} files": "{count} 個のファイル",
   ", ": "、",
   "Open in new window": "新しいウィンドウで開く",
+  "Play": "再生",
   "Play in new tab": "新しいタブで再生",
   "Download {count} item | Download {count} items": "{count} 項目をダウンロード",
   "Download": "ダウンロード",

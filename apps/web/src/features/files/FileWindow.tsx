@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Archive, ArchiveRestore, ClipboardPaste, Copy, Download, ExternalLink, Folder, FolderOpen, FolderPlus, FolderUp, Inbox, Info, PanelTop, Pencil, Plus, RefreshCw, Scissors, SquareArrowOutUpRight, Trash2, Upload, Wallpaper } from "lucide-react";
+import { Archive, ArchiveRestore, ClipboardPaste, Copy, Download, ExternalLink, Folder, FolderOpen, FolderPlus, FolderUp, Inbox, Info, PanelTop, Pencil, Play, Plus, RefreshCw, Scissors, SquareArrowOutUpRight, Trash2, Upload, Wallpaper } from "lucide-react";
 import { useFileList, useFolderContents } from "@/api/hooks";
 import { KagoBadge } from "@/components/kago/badge";
 import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
@@ -8,7 +8,7 @@ import { KagoContextMenu, KagoMenuItem, KagoMenuSeparator } from "@/components/k
 import { Button } from "@/components/ui/button";
 import { KagoWindow } from "@/features/windows/KagoWindow";
 import { OPEN_ITEM_EVENT } from "@/features/workspace/useShortcuts";
-import { formatSize, isPicture, isVideoType } from "@/lib/format";
+import { formatSize, isCueSheet, isMusicFile, isPicture, isVideoType } from "@/lib/format";
 import { nfc, parentPath } from "@/lib/paths";
 import { run } from "@/lib/run";
 import { droppedTree, flatTree, pickedFolderTree } from "@/lib/uploadTree";
@@ -338,9 +338,11 @@ export function FileWindowView({ window: frame, roots, isAdmin }: { window: File
     const paths = targets.map((item) => item.path);
     const single = targets.length === 1 ? targets[0]! : null;
     const count = targets.length;
+    // Video and music open in a player, so the menu says what opening them does.
+    const playable = single?.kind === "file" && (isVideoType(single.type) || isMusicFile(single) || isCueSheet(single));
     return targets.length > 0 ? (
       <>
-        {single ? <KagoMenuItem icon={<FolderOpen />} shortcut="↩" onClick={() => openItem(single)}>{t("Open")}</KagoMenuItem> : null}
+        {single ? <KagoMenuItem icon={playable ? <Play /> : <FolderOpen />} shortcut="↩" onClick={() => openItem(single)}>{playable ? t("Play") : t("Open")}</KagoMenuItem> : null}
         {single?.kind === "folder" ? <KagoMenuItem icon={<PanelTop />} onClick={() => openItem(single, "tab")}>{t("Open in new tab")}</KagoMenuItem> : null}
         {single?.kind === "folder" ? <KagoMenuItem icon={<ExternalLink />} onClick={() => openItem(single, "window")}>{t("Open in new window")}</KagoMenuItem> : null}
         {single?.kind === "file" && isVideoType(single.type) ? (

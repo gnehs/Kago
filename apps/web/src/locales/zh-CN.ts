@@ -174,6 +174,7 @@ export const zhCN: Dictionary = {
   "{count} file | {count} files": "{count} 个文件",
   ", ": "、",
   "Open in new window": "在新窗口打开",
+  "Play": "播放",
   "Play in new tab": "在新标签页中播放",
   "Download {count} item | Download {count} items": "下载 {count} 个项目",
   "Download": "下载",
