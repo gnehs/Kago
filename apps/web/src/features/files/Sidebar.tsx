@@ -4,6 +4,7 @@ import { useFileList } from "@/api/hooks";
 import { KagoContextMenu, KagoMenuItem } from "@/components/kago/menu";
 import { locationTone } from "@/features/workspace/DesktopIcons";
 import { nfc, parentPath } from "@/lib/paths";
+import { usePointerDrag } from "@/lib/usePointerDrag";
 import { cn } from "@/lib/utils";
 import { folderKey } from "@/stores/settings";
 import { folderTitle, useWorkspaceStore } from "@/stores/workspace";
@@ -16,6 +17,8 @@ const FOLDER = { kind: "folder", type: "", name: "" } as const;
 const INDENT = 14;
 /** A folder of thousands of folders is not drawn whole in the tree; the rest are reached through the list beside it. */
 const MAX_CHILDREN = 300;
+const MIN_WIDTH = 144;
+const MAX_WIDTH = 420;
 
 /** How long a drag rests on a closed folder before it opens, to let the drop go further in. */
 const SPRING_MS = 700;
@@ -55,6 +58,11 @@ export function Sidebar({
   onDragTarget: () => void;
   onDropInto: (event: React.DragEvent, folder: FileRef) => void;
 }) {
+  const width = useWorkspaceStore((state) => Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, state.sidebar.width ?? 192)));
+  const resizeHandlers = usePointerDrag(
+    () => width,
+    (origin, dx) => useWorkspaceStore.getState().updateSidebar({ width: Math.round(Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, origin + dx))) })
+  );
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const readonly = useMemo(() => new Set(roots.filter((root) => root.readonly).map((root) => root.slug)), [roots]);
@@ -109,19 +117,22 @@ export function Sidebar({
   ];
 
   return (
-    <nav aria-label={t("Folders")} className="hidden w-48 shrink-0 flex-col overflow-y-auto border-r border-line bg-elevated p-1.5 select-none @lg/body:flex">
-      {sections.map((section, index) =>
-        section.roots.length === 0 ? null : (
-          <div key={section.label} className={cn("flex flex-col", index > 0 && "mt-2")}>
-            <span className="px-2 pt-0.5 pb-1 text-xs font-medium text-faint">{section.label}</span>
-            <div role="tree" aria-label={section.label} className="flex flex-col gap-px">
-              {section.roots.map((root) => (
-                <Node key={root.slug} tree={tree} rootSlug={root.slug} path="/" label={root.name} depth={0} />
-              ))}
+    <nav aria-label={t("Folders")} className="relative hidden max-w-[50%] shrink-0 border-r border-line bg-elevated select-none @lg/body:flex" style={{ width }}>
+      <div className="absolute inset-y-0 -right-1 z-10 w-2 cursor-ew-resize touch-none" {...resizeHandlers} />
+      <div className="flex min-w-0 flex-1 flex-col overflow-y-auto p-1.5">
+        {sections.map((section, index) =>
+          section.roots.length === 0 ? null : (
+            <div key={section.label} className={cn("flex flex-col", index > 0 && "mt-2")}>
+              <span className="px-2 pt-0.5 pb-1 text-xs font-medium text-faint">{section.label}</span>
+              <div role="tree" aria-label={section.label} className="flex flex-col gap-px">
+                {section.roots.map((root) => (
+                  <Node key={root.slug} tree={tree} rootSlug={root.slug} path="/" label={root.name} depth={0} />
+                ))}
+              </div>
             </div>
-          </div>
-        )
-      )}
+          )
+        )}
+      </div>
     </nav>
   );
 }

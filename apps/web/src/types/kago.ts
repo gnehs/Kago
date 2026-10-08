@@ -139,7 +139,7 @@ export type AccountPreferences = { settings: AccountSettings; folderViews: Folde
 export type WorkspaceState = {
   activeWindowId: string | null;
   windows: FileWindow[];
-  sidebar: { collapsed?: boolean };
+  sidebar: { collapsed?: boolean; width?: number };
   inspector: { open?: boolean; width?: number };
   shelf: { collapsed?: boolean; x?: number; y?: number };
 };
