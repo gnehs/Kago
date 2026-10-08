@@ -83,6 +83,10 @@
   --kago-primary-to: #1557dc;
   --kago-primary-ring: #1a52c4;
   --kago-primary-glow: rgb(47 111 237 / 0.45);
+  --kago-destructive-from: #f0685b;
+  --kago-destructive-to: #c5221a;
+  --kago-destructive-ring: #a61b14;
+  --kago-destructive-glow: rgb(217 45 32 / 0.4);
   --kago-selection: linear-gradient(#4f8df7, #2a66e6);
   --kago-paper-from: #ffffff;
   --kago-paper-to: #eceef2;
@@ -166,6 +170,10 @@
   --kago-primary-to: #2059d8;
   --kago-primary-ring: #0f2f7a;
   --kago-primary-glow: rgb(60 120 245 / 0.4);
+  --kago-destructive-from: #f0685b;
+  --kago-destructive-to: #c5221a;
+  --kago-destructive-ring: #5c0f0a;
+  --kago-destructive-glow: rgb(240 80 65 / 0.35);
   --kago-selection: linear-gradient(#4a86f2, #2a5fd6);
   --kago-paper-from: #f4f5f7;
   --kago-paper-to: #d3d7dd;
@@ -426,13 +434,14 @@
 
   /* The one action a surface is for: lit glass in the accent colour. */
   .kago-primary {
+    --kago-primary-shade: #081e5a;
     color: #ffffff;
-    text-shadow: 0 1px 1px rgb(8 30 90 / 0.45);
+    text-shadow: 0 1px 1px color-mix(in srgb, var(--kago-primary-shade) 45%, transparent);
     background: linear-gradient(rgb(255 255 255 / 0.22), transparent 55%), linear-gradient(var(--kago-primary-from), var(--kago-primary-to));
     box-shadow:
       0 0 0 0.5px var(--kago-primary-ring),
       0 0.5px 0 0.5px var(--kago-primary-ring),
-      0 1px 2.5px rgb(8 30 90 / 0.35),
+      0 1px 2.5px color-mix(in srgb, var(--kago-primary-shade) 35%, transparent),
       0 3px 8px -2px var(--kago-primary-glow),
       inset 0 0.5px 0 rgb(255 255 255 / 0.7),
       inset 0 0 0 1px rgb(255 255 255 / 0.14);
@@ -446,7 +455,16 @@
     filter: brightness(0.9);
     box-shadow:
       0 0 0 0.5px var(--kago-primary-ring),
-      inset 0 1px 3px rgb(8 30 90 / 0.5);
+      inset 0 1px 3px color-mix(in srgb, var(--kago-primary-shade) 50%, transparent);
+  }
+
+  /* The same glass in red, when the one action is one that can't be taken back. */
+  .kago-primary.kago-destructive {
+    --kago-primary-from: var(--kago-destructive-from);
+    --kago-primary-to: var(--kago-destructive-to);
+    --kago-primary-ring: var(--kago-destructive-ring);
+    --kago-primary-glow: var(--kago-destructive-glow);
+    --kago-primary-shade: #5a0a06;
   }
 
   /* With nothing to act on yet, the glass goes out: a blank plate, flat on the surface, with its label greyed. */

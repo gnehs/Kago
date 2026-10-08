@@ -56,7 +56,7 @@ export function KagoDialogHost() {
         ) : null}
         <div className="flex justify-end gap-2 pt-1">
           <Button onClick={() => settleDialog(null)}>{t("Cancel")}</Button>
-          <Button type="submit" variant={request.destructive ? "destructive" : "default"} disabled={!canSubmit} autoFocus={!request.input}>
+          <Button type="submit" variant={request.destructive ? "destructive-primary" : "default"} disabled={!canSubmit} autoFocus={!request.input}>
             {request.confirmLabel ?? t("OK")}
           </Button>
         </div>

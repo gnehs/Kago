@@ -10,7 +10,8 @@ export const buttonVariants = cva(
         default: "kago-primary disabled:opacity-100",
         outline: "kago-raised text-ink",
         ghost: "kago-flat text-muted hover:text-ink",
-        destructive: "kago-raised text-danger"
+        destructive: "kago-raised text-danger",
+        "destructive-primary": "kago-primary kago-destructive disabled:opacity-100"
       },
       size: {
         default: "h-(--kago-control-h) px-3",
