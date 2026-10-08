@@ -112,10 +112,12 @@ export async function buildApp(env: Env) {
   });
 
   // Nothing of Kago's is meant to be shown inside another site's page, or taken for a type it was not sent as.
-  app.addHook("onRequest", async (_request, reply) => {
+  app.addHook("onRequest", async (request, reply) => {
     reply.header("X-Frame-Options", "SAMEORIGIN");
     reply.header("X-Content-Type-Options", "nosniff");
     reply.header("Referrer-Policy", "same-origin");
+    // The page itself; a response that carries someone's file replaces this with a stricter one of its own.
+    reply.header("Content-Security-Policy", pagePolicy(request.headers.host));
   });
 
   await auth.ensureInitialAdminFromEnv();
@@ -179,6 +181,31 @@ export async function buildApp(env: Env) {
   prunePictures();
   audit.prune();
   return app;
+}
+
+/**
+ * What the interface may load and run. Its own scripts only, never ones written into the page or built from a
+ * string, so markup that found its way into the page through some file's contents has nothing to run with.
+ * WebAssembly and workers made from blobs are what the PDF, subtitle, video and 3D viewers are built on; styles
+ * are set inline by every one of them. Pictures may come from anywhere, as a Markdown file may link to them.
+ */
+function pagePolicy(host: string | undefined): string {
+  // Older Safari does not take `'self'` to cover the WebSocket of the same host.
+  const sockets = host && /^[\w.\-:[\]]+$/.test(host) ? ` ws://${host} wss://${host}` : "";
+  return [
+    "default-src 'self'",
+    "script-src 'self' 'wasm-unsafe-eval' blob:",
+    "worker-src 'self' blob:",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob: http: https:",
+    "media-src 'self' blob: data:",
+    "font-src 'self' data: blob:",
+    `connect-src 'self' blob: data:${sockets}`,
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'self'"
+  ].join("; ");
 }
 
 /** Header values must be latin1, so non-ASCII names travel in the RFC 5987 `filename*` form. */
