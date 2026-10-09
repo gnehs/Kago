@@ -273,6 +273,7 @@ export const zhCN: Dictionary = {
   "Zoom out (−)": "缩小（−）",
   "Zoom in (+)": "放大（+）",
   "Fit to window (0)": "适应窗口（0）",
+  "Preparing the full-resolution image…": "高分辨率图片准备中…",
   "Couldn’t show this image": "无法显示这张图像",
   "The file may be damaged, or the server couldn’t convert it. Download it and open it in another app.": "文件可能已损坏，或服务器无法转换，请下载后用其他程序打开。",
   "Photo info": "拍摄信息",

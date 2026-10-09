@@ -273,6 +273,7 @@ export const zhTW: Dictionary = {
   "Zoom out (−)": "縮小（−）",
   "Zoom in (+)": "放大（+）",
   "Fit to window (0)": "符合視窗（0）",
+  "Preparing the full-resolution image…": "高解析度圖片準備中…",
   "Couldn’t show this image": "無法顯示這張影像",
   "The file may be damaged, or the server couldn’t convert it. Download it and open it in another app.": "檔案可能已損毀，或伺服器無法轉換，請下載後用其他程式開啟。",
   "Photo info": "拍攝資訊",

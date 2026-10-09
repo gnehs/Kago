@@ -273,6 +273,7 @@ export const ja: Dictionary = {
   "Zoom out (−)": "縮小（−）",
   "Zoom in (+)": "拡大（+）",
   "Fit to window (0)": "ウィンドウに合わせる（0）",
+  "Preparing the full-resolution image…": "高解像度の画像を準備中…",
   "Couldn’t show this image": "この画像を表示できません",
   "The file may be damaged, or the server couldn’t convert it. Download it and open it in another app.": "ファイルが壊れているか、サーバーで変換できませんでした。ダウンロードしてほかのアプリで開いてください。",
   "Photo info": "撮影情報",

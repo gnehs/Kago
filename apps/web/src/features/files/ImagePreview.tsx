@@ -1,6 +1,6 @@
 import { ChevronLeft, ChevronRight, Download, ImageOff, Info, Scan, ZoomIn, ZoomOut } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { downloadUrl, imageUrl, previewUrl } from "@/api/client";
+import { downloadUrl, imageUrl, previewUrl, thumbnailUrl } from "@/api/client";
 import { useFileList, useImageMetadata } from "@/api/hooks";
 import { KagoEmptyState, KagoLoading, KagoSpinner } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
@@ -26,6 +26,8 @@ type View = { z: number; x: number; y: number };
 type Size = { w: number; h: number };
 type Point = { x: number; y: number };
 type Timer = ReturnType<typeof setTimeout>;
+/** What of a picture is on show: the thumbnail its icon has, a medium copy, or the picture itself. */
+type Stage = "small" | "medium" | "full";
 
 /** The picture as it fits the window: `z` is relative to that, `x` and `y` move its centre off the window's. */
 const FIT: View = { z: 1, x: 0, y: 0 };
@@ -45,6 +47,34 @@ const clamp = (value: number, min: number, max: number) => Math.min(max, Math.ma
 export const sourceOf = (rootSlug: string, item: FileItem) => (isImageType(item.type) ? previewUrl(rootSlug, item.path) : `${imageUrl(rootSlug, item.path)}&v=${Math.round(item.mtime)}`);
 // Keyed by the file as it is now: one replaced on disk is read, or converted, again.
 const keyOf = (item: FileItem) => `${item.path}:${item.mtime}`;
+
+/** A file smaller than this is there before a thumbnail of it would be. */
+const STAGED_BYTES = 1024 * 1024;
+/** The longer side of the server's medium thumbnail; a picture no larger than that has no use for one. */
+const MEDIUM_EDGE = 2048;
+/** A picture that has not arrived in this long is on a slow line, where a medium copy is worth the server's while to draw. */
+const SLOW_MS = 400;
+/** How long a thumbnail is held back for the picture to say how large it is, before it is shown as if the picture filled the window. */
+const SIZE_GRACE_MS = 200;
+
+/**
+ * Pictures shown in steps, each taking the place of the last: those the server converts first, and files large
+ * enough to take a while. A vector drawing is sharp at any size, and its thumbnail is the drawing itself.
+ * The step in the middle is only taken on a slow line: on a fast one the picture is there before it could be drawn.
+ */
+const isStaged = (item: FileItem) => !isImageType(item.type) || (item.size > STAGED_BYTES && item.type !== "image/svg+xml");
+
+/** A picture as it fits the window. It is not enlarged to fill it, unless only a smaller copy says what shape it has. */
+function fitted(size: Size, box: Size, enlarge = false): Size {
+  const scale = Math.min(enlarge ? Infinity : 1, box.w / size.w, box.h / size.h);
+  return { w: size.w * scale, h: size.h * scale };
+}
+
+/** Whether a copy has the shape of the picture, give or take the rounding of its pixels. One that was not turned the way the camera was held has not. */
+const sameShape = (copy: Size, picture: Size) => Math.abs(copy.w * picture.h - copy.h * picture.w) <= 2 * Math.max(picture.w, picture.h);
+
+/** Once a loaded picture can be painted: what it takes the place of must not give way to a blank. */
+const decoded = (image: HTMLImageElement) => image.decode().catch(() => undefined);
 
 /** Safari reports a trackpad pinch as gesture events of its own instead of as a wheel. */
 type GestureEvent = Event & { scale: number; clientX: number; clientY: number };
@@ -66,6 +96,9 @@ export function ImagePreviewWindow({ window }: { window: PreviewWindow }) {
   const stage = useRef<HTMLDivElement>(null);
   const [box, setBox] = useState<Size>({ w: 0, h: 0 });
   const [sizes, setSizes] = useState<Record<string, Size>>({});
+  const [stages, setStages] = useState<Record<string, Stage | null>>({});
+  /** Whether a picture has kept this window waiting. From then on its neighbours are fetched as medium copies, not whole. */
+  const [slow, setSlow] = useState(false);
   const [view, setView] = useState(FIT);
   // Gestures arrive faster than renders, so they read and write the view here; the state only draws it.
   const viewRef = useRef(view);
@@ -447,6 +480,7 @@ export function ImagePreviewWindow({ window }: { window: PreviewWindow }) {
 
   const download = () => triggerDownload(downloadUrl(rootSlug, item.path));
   const zoomed = view.z > 1.001;
+  const onShow = stages[keyOf(item)];
   const slides = [previous ? { entry: previous, index: -1 } : null, { entry: item, index: 0 }, next ? { entry: next, index: 1 } : null].filter((slide) => slide !== null);
 
   return (
@@ -477,12 +511,19 @@ export function ImagePreviewWindow({ window }: { window: PreviewWindow }) {
           {slides.map(({ entry, index }) => (
             <Slide
               key={keyOf(entry)}
-              name={entry.name}
-              source={sourceOf(rootSlug, entry)}
+              rootSlug={rootSlug}
+              entry={entry}
               current={index === 0}
+              box={box}
+              natural={sizes[keyOf(entry)]}
+              slow={slow}
+              // On a fast line the pictures to either side are read whole too, once the one on show has arrived.
+              ahead={!slow && stages[keyOf(item)] === "full"}
               style={{ transform: `translate3d(${index * span + shift}px, 0, 0)`, transition: animated ? `transform ${slideMs}ms ${EASE}` : undefined }}
               imageStyle={index === 0 ? { transform: `translate3d(${view.x}px, ${view.y}px, 0) scale(${view.z})`, transition: animated ? ZOOM_TRANSITION : undefined } : undefined}
               onSize={(size) => setSizes((known) => ({ ...known, [keyOf(entry)]: size }))}
+              onSlow={() => setSlow(true)}
+              onStage={(stage) => setStages((known) => (known[keyOf(entry)] === stage ? known : { ...known, [keyOf(entry)]: stage }))}
               onDownload={download}
             />
           ))}
@@ -504,6 +545,13 @@ export function ImagePreviewWindow({ window }: { window: PreviewWindow }) {
           </>
         ) : null}
         <span className="mr-auto" />
+        {/* Said only while a smaller copy stands in for the picture, and not at all when that is over in a moment. */}
+        {onShow === "small" || onShow === "medium" ? (
+          <span className="kago-wait flex min-w-0 items-center gap-1.5 px-1">
+            <KagoSpinner className="size-3 shrink-0" />
+            <span className="truncate">{t("Preparing the full-resolution image…")}</span>
+          </span>
+        ) : null}
         {fit > 0 ? <span className="px-1 tabular-nums">{Math.round(fit * view.z * 100)}%</span> : null}
         <KagoIconButton label={t("Zoom out (−)")} className="size-6" disabled={!zoomed} onClick={() => zoomStep(1 / STEP)}>
           <ZoomOut />
@@ -519,25 +567,122 @@ export function ImagePreviewWindow({ window }: { window: PreviewWindow }) {
   );
 }
 
-/** One picture of the row a swipe drags along. HEIF and camera RAW take a moment the first time: the server converts them. */
+/**
+ * One picture of the row a swipe drags along. A large one arrives in steps: the thumbnail its icon already showed,
+ * on a slow line a medium copy that is sharp across the window, then the file itself. HEIF and camera RAW take a
+ * moment the first time: the server converts them.
+ */
 function Slide({
-  name,
-  source,
+  rootSlug,
+  entry,
   current,
+  box,
+  natural,
+  slow,
+  ahead,
   style,
   imageStyle,
   onSize,
+  onSlow,
+  onStage,
   onDownload
 }: {
-  name: string;
-  source: string;
+  rootSlug: string;
+  entry: FileItem;
   current: boolean;
+  box: Size;
+  /** How large the picture is, once that is known. */
+  natural?: Size;
+  slow: boolean;
+  /** Whether to read the file whole before it is the picture on show. */
+  ahead: boolean;
   style: React.CSSProperties;
   imageStyle?: React.CSSProperties;
   onSize: (size: Size) => void;
+  onSlow: () => void;
+  onStage: (stage: Stage | null) => void;
   onDownload: () => void;
 }) {
+  const staged = isStaged(entry);
   const [state, setState] = useState<"loading" | "loaded" | "failed">("loading");
+  /** The copies that have arrived, at the size they came in; null for one that never will. */
+  const [copies, setCopies] = useState<{ small?: Size | null; medium?: Size | null }>({});
+  const [patient, setPatient] = useState(true);
+  const original = useRef<HTMLImageElement>(null);
+
+  const usable = (copy: Size | null | undefined) => (copy && (!natural || sameShape(copy, natural)) ? copy : undefined);
+  const small = usable(copies.small);
+  const medium = usable(copies.medium);
+  // Until the picture says how large it is, a copy can only be laid out as if it filled the window.
+  const shape = natural ?? (patient ? undefined : (medium ?? small));
+  const frame = shape ? fitted(shape, box, !natural) : { w: 0, h: 0 };
+  const stage: Stage | null = state === "failed" ? null : state === "loaded" ? "full" : medium ? "medium" : small ? "small" : null;
+  const shown = staged && frame.w === 0 ? null : stage;
+  // Until it is wanted whole, the file is only read far enough to learn the picture's size.
+  const wantsFull = current || ahead || !natural || state === "loaded";
+  const wantsMedium = slow && state === "loading" && copies.medium !== null && natural !== undefined && Math.max(natural.w, natural.h) > MEDIUM_EDGE;
+  const wantsSmall = state === "loading" && !medium && copies.small !== null;
+  const sizeKnown = natural !== undefined;
+
+  useEffect(() => {
+    const timer = globalThis.setTimeout(() => setPatient(false), SIZE_GRACE_MS);
+    return () => globalThis.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!staged || !current || state !== "loading") return;
+    const timer = globalThis.setTimeout(onSlow, SLOW_MS);
+    return () => globalThis.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [staged, current, state]);
+
+  // The browser knows how large a picture is from its first bytes, long before the last has arrived.
+  useEffect(() => {
+    if (!staged || sizeKnown) return;
+    const timer = globalThis.setInterval(() => {
+      const image = original.current;
+      if (image && image.naturalWidth > 0 && image.naturalHeight > 0) onSize({ w: image.naturalWidth, h: image.naturalHeight });
+    }, 30);
+    return () => globalThis.clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [staged, sizeKnown]);
+
+  useEffect(() => {
+    const image = original.current;
+    // Taken off the page half read, it would go on arriving for nobody.
+    return () => {
+      if (image && !image.isConnected && !image.complete) image.removeAttribute("src");
+    };
+  }, [wantsFull]);
+
+  useEffect(() => {
+    onStage(shown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shown]);
+
+  const layer = (visible: boolean) => `absolute inset-0 size-full ${visible ? "" : "opacity-0"}`;
+  const copy = (name: "small" | "medium") => (
+    <img
+      alt=""
+      src={`${thumbnailUrl(rootSlug, entry.path, name === "medium" ? name : undefined)}&v=${Math.round(entry.mtime)}`}
+      draggable={false}
+      className={layer(shown === name)}
+      onLoad={(event) => {
+        const image = event.currentTarget;
+        void decoded(image).then(() => setCopies((known) => ({ ...known, [name]: { w: image.naturalWidth, h: image.naturalHeight } })));
+      }}
+      onError={() => setCopies((known) => ({ ...known, [name]: null }))}
+    />
+  );
+  const onLoad = (event: React.SyntheticEvent<HTMLImageElement>) => {
+    const image = event.currentTarget;
+    void decoded(image).then(() => {
+      // A vector drawing may not say how large it is; what it was laid out at will do.
+      onSize(image.naturalWidth > 0 && image.naturalHeight > 0 ? { w: image.naturalWidth, h: image.naturalHeight } : { w: image.offsetWidth, h: image.offsetHeight });
+      setState("loaded");
+    });
+  };
+
   return (
     <div className="absolute inset-0 flex items-center justify-center" style={style} aria-hidden={!current}>
       {state === "failed" ? (
@@ -548,22 +693,17 @@ function Slide({
         ) : null
       ) : (
         <>
-          {state === "loading" && current ? <KagoSpinner className="absolute size-5" /> : null}
-          <img
-            alt={name}
-            src={source}
-            draggable={false}
-            decoding="async"
-            className="relative max-h-full max-w-full object-contain"
-            style={imageStyle}
-            onLoad={(event) => {
-              const image = event.currentTarget;
-              setState("loaded");
-              // A vector drawing may not say how large it is; what it was laid out at will do.
-              onSize(image.naturalWidth > 0 && image.naturalHeight > 0 ? { w: image.naturalWidth, h: image.naturalHeight } : { w: image.offsetWidth, h: image.offsetHeight });
-            }}
-            onError={() => setState("failed")}
-          />
+          {current && !shown ? <KagoSpinner className="absolute size-5" /> : null}
+          {staged ? (
+            // The copies lie one over another in a box the size the picture will be, so nothing moves as each arrives.
+            <div className="relative shrink-0" style={{ width: frame.w, height: frame.h, ...imageStyle }}>
+              {wantsSmall ? copy("small") : null}
+              {wantsMedium ? copy("medium") : null}
+              {wantsFull ? <img ref={original} alt={entry.name} src={sourceOf(rootSlug, entry)} draggable={false} decoding="async" className={layer(shown === "full")} onLoad={onLoad} onError={() => setState("failed")} /> : null}
+            </div>
+          ) : (
+            <img alt={entry.name} src={sourceOf(rootSlug, entry)} draggable={false} decoding="async" className="relative max-h-full max-w-full object-contain" style={imageStyle} onLoad={onLoad} onError={() => setState("failed")} />
+          )}
         </>
       )}
     </div>

@@ -46,8 +46,9 @@ export function zipDownloadUrl(rootSlug: string, paths: string[]) {
 
 export const taskDownloadUrl = (taskId: string) => `/api/tasks/${encodeURIComponent(taskId)}/download`;
 
-export const thumbnailUrl = (rootSlug: string, path: string) =>
-  `/api/fs/thumbnail?${new URLSearchParams({ rootSlug, path }).toString()}`;
+/** The small picture a file's icon shows, or the `medium` one a picture's viewer shows while the picture itself is on its way. */
+export const thumbnailUrl = (rootSlug: string, path: string, size?: "medium") =>
+  `/api/fs/thumbnail?${new URLSearchParams({ rootSlug, path, ...(size ? { size } : {}) }).toString()}`;
 
 /** A JPEG the server makes from a picture the browser cannot decode. */
 export const imageUrl = (rootSlug: string, path: string) => `/api/fs/image?${new URLSearchParams({ rootSlug, path }).toString()}`;

@@ -109,6 +109,9 @@ test("minimum file-manager demo flow", async () => {
     assert.match(String(thumbnail.headers["content-type"]), /text\/plain/);
     assert.equal(thumbnail.payload, "uploaded");
     assert.equal((await admin.get("/api/fs/thumbnail?rootSlug=photos&path=/public")).statusCode, 404);
+    // The medium one is a picture or nothing: a file that is not one has none, whatever its small one falls back on.
+    assert.equal((await admin.get("/api/fs/thumbnail?rootSlug=photos&path=/public/uploaded.txt&size=medium")).statusCode, 404);
+    assert.equal((await admin.get("/api/fs/thumbnail?rootSlug=photos&path=/public/uploaded.txt&size=huge")).statusCode, 400);
 
     // Only a picture can become the desktop background, and without one there is nothing to show or to take away.
     assert.equal((await admin.get("/api/wallpaper")).statusCode, 404);
