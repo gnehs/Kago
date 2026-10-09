@@ -46,7 +46,6 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=sha
 
       - name: Build and push
         uses: docker/build-push-action@v7
@@ -60,3 +59,21 @@ jobs:
             KAGO_COMMIT=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  cleanup:
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: docker-cleanup
+    permissions:
+      packages: write
+    steps:
+      - name: Delete everything but latest and version tags
+        uses: dataaxiom/ghcr-cleanup-action@v1
+        with:
+          package: kago
+          delete-tags: sha-*
+          delete-untagged: true
+          # Leaves alone what a build on another ref is still pushing.
+          older-than: 1 hour

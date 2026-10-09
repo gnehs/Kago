@@ -247,7 +247,7 @@ docker stop kago && docker rm kago
 
 Compose 則是 `docker compose pull && docker compose up -d`。所有狀態都在 `/app-data`，重建容器不會遺失資料。
 
-每次 push 到 `main` 都會發布 `latest` 與 `sha-<commit>`；推送 `v*` tag 時另外發布對應的版本號，想固定版本可以改用這些 tag。
+每次 push 到 `main` 都會發布 `latest`；推送 `v*` tag 時發布對應的版本號，想固定版本可以改用版本號。
 
 ## 常見問題
 

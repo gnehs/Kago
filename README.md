@@ -247,7 +247,7 @@ docker stop kago && docker rm kago
 
 With Compose it is `docker compose pull && docker compose up -d`. All state lives in `/app-data`, so recreating the container loses nothing.
 
-Every push to `main` publishes `latest` and `sha-<commit>`; pushing a `v*` tag also publishes the matching version number. Use those tags if you want to pin a version.
+Every push to `main` publishes `latest`; pushing a `v*` tag publishes the matching version number. Use a version number if you want to pin a version.
 
 ## FAQ
 
