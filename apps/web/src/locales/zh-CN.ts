@@ -257,7 +257,6 @@ export const zhCN: Dictionary = {
   "Move to Trash": "移到回收站",
   "Upload folder": "上传文件夹",
   "Paste {count} item | Paste {count} items": "粘贴 {count} 个项目",
-  "Paste": "粘贴",
   "Open this folder in a new window (⌥N)": "在新窗口打开此文件夹（⌥N）",
   "Refresh": "刷新",
   "No matching items": "没有符合的项目",

@@ -257,7 +257,6 @@ export const zhTW: Dictionary = {
   "Move to Trash": "移到垃圾桶",
   "Upload folder": "上傳資料夾",
   "Paste {count} item | Paste {count} items": "貼上 {count} 個項目",
-  "Paste": "貼上",
   "Open this folder in a new window (⌥N)": "在新視窗開啟此資料夾（⌥N）",
   "Refresh": "重新整理",
   "No matching items": "沒有符合的項目",

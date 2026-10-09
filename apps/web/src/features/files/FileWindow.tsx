@@ -381,10 +381,15 @@ export function FileWindowView({ window: frame, roots, isAdmin }: { window: File
       </>
     ) : (
       <>
+        {clip ? (
+          <>
+            <KagoMenuItem icon={<ClipboardPaste />} shortcut="⌘V" disabled={readonly} onClick={() => void actions.paste()}>{t("Paste {count} item | Paste {count} items", { count: clip.items.length })}</KagoMenuItem>
+            <KagoMenuSeparator />
+          </>
+        ) : null}
         <KagoMenuItem icon={<FolderPlus />} disabled={readonly} onClick={() => void actions.newFolder()}>{t("New folder")}</KagoMenuItem>
         <KagoMenuItem icon={<Upload />} disabled={readonly} onClick={() => uploadInput.current?.click()}>{t("Upload files")}</KagoMenuItem>
         <KagoMenuItem icon={<FolderUp />} disabled={readonly} onClick={() => folderInput.current?.click()}>{t("Upload folder")}</KagoMenuItem>
-        <KagoMenuItem icon={<ClipboardPaste />} shortcut="⌘V" disabled={readonly || !clip} onClick={() => void actions.paste()}>{clip ? t("Paste {count} item | Paste {count} items", { count: clip.items.length }) : t("Paste")}</KagoMenuItem>
         <KagoMenuSeparator />
         <KagoMenuItem icon={<PanelTop />} shortcut="⌥T" onClick={() => store().openTab(win.id, win)}>{t("New tab")}</KagoMenuItem>
         <KagoMenuItem icon={<ExternalLink />} onClick={() => store().openWindow({ rootSlug: win.rootSlug, logicalPath: win.logicalPath, title: win.title })}>{t("Open this folder in a new window (⌥N)")}</KagoMenuItem>

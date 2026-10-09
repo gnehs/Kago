@@ -257,7 +257,6 @@ export const ja: Dictionary = {
   "Move to Trash": "ゴミ箱に入れる",
   "Upload folder": "フォルダをアップロード",
   "Paste {count} item | Paste {count} items": "{count} 項目をペースト",
-  "Paste": "ペースト",
   "Open this folder in a new window (⌥N)": "このフォルダを新しいウィンドウで開く（⌥N）",
   "Refresh": "再読み込み",
   "No matching items": "一致する項目がありません",

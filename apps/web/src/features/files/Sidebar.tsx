@@ -181,7 +181,7 @@ function Node({ tree, rootSlug, path, label, depth, locked }: { tree: Tree; root
             <KagoMenuItem icon={<ExternalLink />} onClick={() => store().openWindow({ rootSlug, logicalPath: path, title: folderTitle(rootSlug, path) })}>{t("Open in new window")}</KagoMenuItem>
             <KagoMenuSeparator />
             <KagoMenuItem icon={<FolderPlus />} disabled={readonly} onClick={() => void newFolderIn(queryClient, here).then((made) => made && tree.expand(key))}>{t("New folder")}</KagoMenuItem>
-            <KagoMenuItem icon={<ClipboardPaste />} disabled={readonly || tree.clipCount === 0} onClick={() => void pasteClipboard(queryClient, here)}>{tree.clipCount > 0 ? t("Paste {count} item | Paste {count} items", { count: tree.clipCount }) : t("Paste")}</KagoMenuItem>
+            {tree.clipCount > 0 ? <KagoMenuItem icon={<ClipboardPaste />} disabled={readonly} onClick={() => void pasteClipboard(queryClient, here)}>{t("Paste {count} item | Paste {count} items", { count: tree.clipCount })}</KagoMenuItem> : null}
             {path === "/" ? null : (
               <>
                 <KagoMenuSeparator />
