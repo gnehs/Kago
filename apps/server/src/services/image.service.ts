@@ -42,6 +42,36 @@ export type ImageMetadata = {
   colorSpace?: string;
   software?: string;
   gps?: { latitude: number; longitude: number; altitude?: number };
+  filmRecipe?: FilmRecipe;
+};
+
+/** The picture settings a Fujifilm camera developed the frame with, which its photographers trade as recipes. */
+export type FilmRecipe = {
+  /** Named as the camera's menu names it. */
+  simulation?: string;
+  grainRoughness?: string;
+  grainSize?: string;
+  colorChrome?: string;
+  colorChromeBlue?: string;
+  /** In the steps the menu counts in. */
+  whiteBalanceShift?: { red: number; blue: number };
+  /** Kelvin, when the white balance was set as a temperature. */
+  colorTemperature?: number;
+  /** A percentage: 100, 200 or 400. */
+  dynamicRange?: number;
+  dynamicRangeAuto?: boolean;
+  dRangePriority?: string;
+  dRangePriorityAuto?: boolean;
+  highlight?: number;
+  shadow?: number;
+  color?: number;
+  sharpness?: number;
+  noiseReduction?: number;
+  clarity?: number;
+  /** Warm above zero, cool below. */
+  monochromeWarmCool?: number;
+  /** Green above zero, magenta below. */
+  monochromeMagentaGreen?: number;
 };
 
 /** How a picture the browser cannot decode is turned into one it can; null for a file that needs no such help. */
@@ -134,9 +164,52 @@ export class ImageService {
       height: number(tags.ImageHeight),
       colorSpace: text(tags.ColorSpace),
       software: text(tags.Software),
-      gps: latitude !== undefined && longitude !== undefined && (latitude !== 0 || longitude !== 0) ? { latitude, longitude, altitude: number(tags.GPSAltitude) } : undefined
+      gps: latitude !== undefined && longitude !== undefined && (latitude !== 0 || longitude !== 0) ? { latitude, longitude, altitude: number(tags.GPSAltitude) } : undefined,
+      filmRecipe: /fujifilm/i.test(make ?? "") ? await this.filmRecipe(absolutePath) : undefined
     };
-    return Object.fromEntries(Object.entries(metadata).filter(([, value]) => value !== undefined)) as ImageMetadata;
+    return defined(metadata);
+  }
+
+  /**
+   * Read on their own, because several of these share a name with a standard tag that says less
+   * ("Hard" for a sharpness of +2) and a read of everything keeps only one of the two.
+   */
+  private async filmRecipe(absolutePath: string): Promise<FilmRecipe | undefined> {
+    const tags = (await this.tool().readRaw(absolutePath, { readArgs: ["-FujiFilm:all"] }).catch(() => ({}))) as Record<string, unknown>;
+    const text = (value: unknown) => (typeof value === "string" || typeof value === "number" ? String(value) : undefined);
+    // "+1 (medium hard)", or the bare number for a setting exiftool has no words for.
+    const step = (value: unknown) => {
+      const match = /^[+-]?\d+(\.\d+)?/.exec(text(value) ?? "");
+      return match ? Number(match[0]) : undefined;
+    };
+    const shift = /^Red ([+-]?\d+), Blue ([+-]?\d+)$/.exec(text(tags.WhiteBalanceFineTune) ?? "")?.slice(1).map(Number);
+    // Newer bodies write twenty to the step, older ones the step itself, which never reaches twenty.
+    const scale = shift?.every((value) => value % 20 === 0) ? 20 : 1;
+    const manualRange = text(tags.DynamicRangeSetting) === "Manual";
+    const priority = text(tags.DRangePriority);
+    const recipe = defined<FilmRecipe>({
+      simulation: filmSimulation(text(tags.FilmMode), text(tags.Saturation)),
+      grainRoughness: text(tags.GrainEffectRoughness),
+      grainSize: text(tags.GrainEffectSize),
+      colorChrome: text(tags.ColorChromeEffect),
+      colorChromeBlue: text(tags.ColorChromeFXBlue),
+      whiteBalanceShift: shift ? { red: shift[0]! / scale, blue: shift[1]! / scale } : undefined,
+      colorTemperature: step(tags.ColorTemperature),
+      // The older bodies name their three ranges in the setting itself: "Wide2 (400%)".
+      dynamicRange: step(manualRange ? tags.DevelopmentDynamicRange : tags.AutoDynamicRange) ?? step(/(\d+)%/.exec(text(tags.DynamicRangeSetting) ?? "")?.[1]),
+      dynamicRangeAuto: text(tags.DynamicRangeSetting) === "Auto" || undefined,
+      dRangePriority: text(priority === "Auto" ? tags.DRangePriorityAuto : tags.DRangePriorityFixed),
+      dRangePriorityAuto: priority === "Auto" || undefined,
+      highlight: step(tags.HighlightTone),
+      shadow: step(tags.ShadowTone),
+      color: step(tags.Saturation),
+      sharpness: step(tags.Sharpness),
+      noiseReduction: step(tags.NoiseReduction),
+      clarity: step(tags.Clarity),
+      monochromeWarmCool: step(tags.BWAdjustment),
+      monochromeMagentaGreen: step(tags.BWMagentaGreen)
+    });
+    return Object.keys(recipe).length > 0 ? recipe : undefined;
   }
 
   async stop(): Promise<void> {
@@ -211,4 +284,31 @@ export class ImageService {
 
 const sips = (source: string, target: string): [string, string[]] => ["sips", ["-Z", String(MAX_EDGE), "-s", "format", "jpeg", "-s", "formatOptions", "88", source, "--out", target]];
 
+const defined = <T extends object>(value: T) => Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as T;
+
 const rawValue = (value: unknown) => (typeof value === "string" ? value : typeof value === "object" && value !== null && "rawValue" in value ? String(value.rawValue) : undefined);
+
+// exiftool's names for these are older than the cameras' menus.
+const FILM_SIMULATIONS: Record<string, string> = {
+  "F0/Standard (Provia)": "PROVIA/Standard",
+  "F1b/Studio Portrait Smooth Skin Tone (Astia)": "ASTIA/Soft",
+  "F2/Fujichrome (Velvia)": "Velvia/Vivid",
+  "F4/Velvia": "Velvia",
+  "Pro Neg. Std": "PRO Neg. Std",
+  "Pro Neg. Hi": "PRO Neg. Hi",
+  Eterna: "ETERNA/Cinema",
+  "Classic Negative": "Classic Neg.",
+  "Bleach Bypass": "ETERNA Bleach Bypass",
+  "Nostalgic Neg": "Nostalgic Neg.",
+  "Reala ACE": "REALA ACE"
+};
+const MONOCHROME_SIMULATIONS: Record<string, string> = { "None (B&W)": "Monochrome", "B&W": "Monochrome", Acros: "ACROS" };
+const MONOCHROME_FILTERS: Record<string, string> = { Red: "R", Yellow: "Ye", Green: "G" };
+
+/** A colour simulation is written as the film mode; a monochrome one is written where the saturation would be, filter and all. */
+function filmSimulation(filmMode: string | undefined, saturation: string | undefined): string | undefined {
+  if (saturation === "B&W Sepia") return "Sepia";
+  const monochrome = /^(None \(B&W\)|B&W|Acros)(?: (Red|Yellow|Green) Filter)?$/.exec(saturation ?? "");
+  if (monochrome) return MONOCHROME_SIMULATIONS[monochrome[1]!]! + (monochrome[2] ? `+${MONOCHROME_FILTERS[monochrome[2]]}` : "");
+  return filmMode ? FILM_SIMULATIONS[filmMode] ?? filmMode : undefined;
+}

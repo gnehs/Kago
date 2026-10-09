@@ -14,7 +14,7 @@ import { formatDate, formatSize, isPicture, isVideoType, kindLabel } from "@/lib
 import { displayPath } from "@/lib/paths";
 import { usePointerDrag } from "@/lib/usePointerDrag";
 import { useWorkspaceStore } from "@/stores/workspace";
-import type { FileWindow, ImageMetadata } from "@/types/kago";
+import type { FilmRecipe, FileWindow, ImageMetadata } from "@/types/kago";
 import { FileThumbnail } from "./FileThumbnail";
 import { videoInfoGroups } from "./videoInfo";
 import { t } from "@/lib/i18n";
@@ -149,6 +149,9 @@ const WHITE_BALANCE: Record<string, string> = { Auto: t("Auto"), Manual: t("Manu
 const METERING: Record<string, string> = { "Multi-segment": t("Multi-segment"), "Center-weighted average": t("Center-weighted"), Spot: t("Spot"), Average: t("Average"), Partial: t("Partial") };
 const PROGRAM: Record<string, string> = { Manual: t("Manual"), "Program AE": t("Program"), "Aperture-priority AE": t("Aperture priority"), "Shutter speed priority AE": t("Shutter priority"), Portrait: t("Portrait"), Landscape: t("Landscape") };
 
+const LEVEL: Record<string, string> = { Off: t("Off"), Weak: t("Weak"), Strong: t("Strong"), Small: t("Small"), Large: t("Large") };
+
+const signed = (value: number) => (value > 0 ? `+${value}` : String(value));
 const trimLength = (value: string) => value.replace(/\.0+(?= ?mm)/, "");
 
 /** What the camera recorded about a picture, in the order a photographer asks for it. */
@@ -161,29 +164,67 @@ export function PhotoDetails({ photo }: { photo: ImageMetadata }) {
   const pixels = photo.width && photo.height ? t("{width} × {height} ({megapixels} MP)", { width: photo.width, height: photo.height, megapixels: ((photo.width * photo.height) / 1e6).toFixed(1) }) : "";
   const gps = photo.gps;
   return (
-    <Section title={t("Photo info")}>
+    <>
+      <Section title={t("Photo info")}>
+        <dl className="m-0 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5">
+          {photo.camera ? <Detail label={t("Camera")}>{photo.camera}</Detail> : null}
+          {photo.lens ? <Detail label={t("Lens")}>{photo.lens}</Detail> : null}
+          {photo.takenAt ? <Detail label={t("Taken")}>{photo.takenAt}{photo.timeZone ? <span className="text-faint"> {photo.timeZone}</span> : null}</Detail> : null}
+          {exposure ? <Detail label={t("Exposure")}>{exposure}</Detail> : null}
+          {focal ? <Detail label={t("Focal length")}>{focal}</Detail> : null}
+          {compensation ? <Detail label={t("Exposure compensation")}>{compensation}</Detail> : null}
+          {program ? <Detail label={t("Exposure mode")}>{program}</Detail> : null}
+          {photo.meteringMode ? <Detail label={t("Metering")}>{METERING[photo.meteringMode] ?? photo.meteringMode}</Detail> : null}
+          {photo.whiteBalance ? <Detail label={t("White balance")}>{WHITE_BALANCE[photo.whiteBalance] ?? photo.whiteBalance}</Detail> : null}
+          {flash ? <Detail label={t("Flash")}>{flash}</Detail> : null}
+          {pixels ? <Detail label={t("Dimensions")}>{pixels}</Detail> : null}
+          {photo.colorSpace ? <Detail label={t("Color space")}>{photo.colorSpace}</Detail> : null}
+          {photo.software ? <Detail label={t("Software")}>{photo.software}</Detail> : null}
+          {gps ? (
+            <Detail label={t("Location##GPS")}>
+              <a className="text-accent underline underline-offset-2" href={`https://www.openstreetmap.org/?mlat=${gps.latitude}&mlon=${gps.longitude}#map=15/${gps.latitude}/${gps.longitude}`} target="_blank" rel="noreferrer">
+                {gps.latitude.toFixed(5)}, {gps.longitude.toFixed(5)}
+              </a>
+              {gps.altitude !== undefined ? <span className="text-faint"> · {t("{meters} m altitude", { meters: Math.round(gps.altitude) })}</span> : null}
+            </Detail>
+          ) : null}
+        </dl>
+      </Section>
+      {photo.filmRecipe ? <FilmRecipeDetails recipe={photo.filmRecipe} /> : null}
+    </>
+  );
+}
+
+/** The settings behind a Fujifilm picture's look, in the order the camera's menu lists them. */
+function FilmRecipeDetails({ recipe }: { recipe: FilmRecipe }) {
+  const level = (value: string) => LEVEL[value] ?? value;
+  const auto = (on?: boolean) => (on ? t(" (auto)") : "");
+  // The size says nothing once the grain is off, and older bodies have no size to set.
+  const grain = recipe.grainRoughness ? [recipe.grainRoughness, ...(recipe.grainRoughness !== "Off" && recipe.grainSize && recipe.grainSize !== "Off" ? [recipe.grainSize] : [])].map(level).join(" · ") : "";
+  const shift = recipe.whiteBalanceShift;
+  const priority = recipe.dRangePriority ? level(recipe.dRangePriority) + auto(recipe.dRangePriorityAuto) : recipe.dRangePriorityAuto ? t("Auto") : "";
+  const monochrome = [recipe.monochromeWarmCool !== undefined ? `WC ${signed(recipe.monochromeWarmCool)}` : "", recipe.monochromeMagentaGreen !== undefined ? `MG ${signed(recipe.monochromeMagentaGreen)}` : ""].filter(Boolean).join(" · ");
+  const steps: Array<[string, number | undefined]> = [
+    [t("Highlights"), recipe.highlight],
+    [t("Shadows"), recipe.shadow],
+    [t("Color##film"), recipe.color],
+    [t("Sharpness"), recipe.sharpness],
+    [t("Noise reduction"), recipe.noiseReduction],
+    [t("Clarity"), recipe.clarity]
+  ];
+  return (
+    <Section title={t("Film recipe")}>
       <dl className="m-0 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5">
-        {photo.camera ? <Detail label={t("Camera")}>{photo.camera}</Detail> : null}
-        {photo.lens ? <Detail label={t("Lens")}>{photo.lens}</Detail> : null}
-        {photo.takenAt ? <Detail label={t("Taken")}>{photo.takenAt}{photo.timeZone ? <span className="text-faint"> {photo.timeZone}</span> : null}</Detail> : null}
-        {exposure ? <Detail label={t("Exposure")}>{exposure}</Detail> : null}
-        {focal ? <Detail label={t("Focal length")}>{focal}</Detail> : null}
-        {compensation ? <Detail label={t("Exposure compensation")}>{compensation}</Detail> : null}
-        {program ? <Detail label={t("Exposure mode")}>{program}</Detail> : null}
-        {photo.meteringMode ? <Detail label={t("Metering")}>{METERING[photo.meteringMode] ?? photo.meteringMode}</Detail> : null}
-        {photo.whiteBalance ? <Detail label={t("White balance")}>{WHITE_BALANCE[photo.whiteBalance] ?? photo.whiteBalance}</Detail> : null}
-        {flash ? <Detail label={t("Flash")}>{flash}</Detail> : null}
-        {pixels ? <Detail label={t("Dimensions")}>{pixels}</Detail> : null}
-        {photo.colorSpace ? <Detail label={t("Color space")}>{photo.colorSpace}</Detail> : null}
-        {photo.software ? <Detail label={t("Software")}>{photo.software}</Detail> : null}
-        {gps ? (
-          <Detail label={t("Location##GPS")}>
-            <a className="text-accent underline underline-offset-2" href={`https://www.openstreetmap.org/?mlat=${gps.latitude}&mlon=${gps.longitude}#map=15/${gps.latitude}/${gps.longitude}`} target="_blank" rel="noreferrer">
-              {gps.latitude.toFixed(5)}, {gps.longitude.toFixed(5)}
-            </a>
-            {gps.altitude !== undefined ? <span className="text-faint"> · {t("{meters} m altitude", { meters: Math.round(gps.altitude) })}</span> : null}
-          </Detail>
-        ) : null}
+        {recipe.simulation ? <Detail label={t("Film simulation")}>{recipe.simulation}</Detail> : null}
+        {monochrome ? <Detail label={t("Monochromatic color")}>{monochrome}</Detail> : null}
+        {grain ? <Detail label={t("Grain effect")}>{grain}</Detail> : null}
+        {recipe.colorChrome ? <Detail label={t("Color Chrome effect")}>{level(recipe.colorChrome)}</Detail> : null}
+        {recipe.colorChromeBlue ? <Detail label={t("Color Chrome FX Blue")}>{level(recipe.colorChromeBlue)}</Detail> : null}
+        {recipe.colorTemperature ? <Detail label={t("Color temperature")}>{recipe.colorTemperature} K</Detail> : null}
+        {shift ? <Detail label={t("White balance shift")}>R {signed(shift.red)} · B {signed(shift.blue)}</Detail> : null}
+        {recipe.dynamicRange ? <Detail label={t("Dynamic range")}>DR{recipe.dynamicRange}{auto(recipe.dynamicRangeAuto)}</Detail> : null}
+        {priority ? <Detail label={t("D-Range priority")}>{priority}</Detail> : null}
+        {steps.map(([label, value]) => (value !== undefined ? <Detail key={label} label={label}>{signed(value)}</Detail> : null))}
       </dl>
     </Section>
   );

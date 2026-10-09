@@ -248,6 +248,30 @@ export type ImageMetadata = {
   colorSpace?: string;
   software?: string;
   gps?: { latitude: number; longitude: number; altitude?: number };
+  filmRecipe?: FilmRecipe;
+};
+
+/** The picture settings a Fujifilm camera developed the frame with. */
+export type FilmRecipe = {
+  simulation?: string;
+  grainRoughness?: string;
+  grainSize?: string;
+  colorChrome?: string;
+  colorChromeBlue?: string;
+  whiteBalanceShift?: { red: number; blue: number };
+  colorTemperature?: number;
+  dynamicRange?: number;
+  dynamicRangeAuto?: boolean;
+  dRangePriority?: string;
+  dRangePriorityAuto?: boolean;
+  highlight?: number;
+  shadow?: number;
+  color?: number;
+  sharpness?: number;
+  noiseReduction?: number;
+  clarity?: number;
+  monochromeWarmCool?: number;
+  monochromeMagentaGreen?: number;
 };
 
 export type FileMeta = {
