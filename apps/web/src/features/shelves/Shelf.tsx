@@ -4,10 +4,10 @@ import { Archive, ArrowDownToLine, ChevronDown, ChevronUp, Copy, Ellipsis, Folde
 import { api, thumbnailUrl } from "@/api/client";
 import { useFileList, useRoots, useShelves } from "@/api/hooks";
 import { KagoIconButton } from "@/components/kago/icon-button";
-import { KagoDropdownMenu, KagoMenuItem, KagoMenuSeparator } from "@/components/kago/menu";
+import { KagoDropdownMenu, KagoMenuItem, KagoMenuNote, KagoMenuSeparator } from "@/components/kago/menu";
 import { setDragDownload, setDragPreview } from "@/features/files/dragOut";
-import { FileTile } from "@/features/files/FileIcon";
-import { extensionOf, kindOfExtension, thumbnailKind, type FileKind } from "@/features/files/fileKind";
+import { FileTile } from "@/components/kago/file-icon";
+import { extensionOf, kindOfExtension, thumbnailKind, type FileKind } from "@/lib/fileKind";
 import { KAGO_DRAG_TYPE, readDraggedFiles } from "@/features/files/useFileActions";
 import { displayPath, ensureZipName, joinLogicalPath } from "@/lib/paths";
 import { run } from "@/lib/run";
@@ -158,9 +158,9 @@ export function Shelf() {
       label={t("More actions")}
       menu={
         <>
-          <div className="max-w-60 truncate px-2 py-1 text-xs text-muted">
+          <KagoMenuNote className="max-w-60 truncate">
             {active ? (activeList.data?.readonly ? t("The current window is read-only") : t("Send to “{title}”", { title: active.title })) : t("Pick a file window as the destination first")}
-          </div>
+          </KagoMenuNote>
           <KagoMenuItem icon={<Copy />} disabled={!canSend} onClick={() => void send("copy")}>{t("Copy")}</KagoMenuItem>
           <KagoMenuItem icon={<FolderInput />} disabled={!canSend} onClick={() => void send("move")}>{t("Move")}</KagoMenuItem>
           <KagoMenuItem icon={<Archive />} disabled={!canSend} onClick={() => void send("compress")}>{t("Compress")}</KagoMenuItem>

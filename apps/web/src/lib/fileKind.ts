@@ -86,3 +86,7 @@ export function thumbnailKind(item: Pick<FileItem, "kind" | "type" | "name" | "s
   if (hasTextName(item.name) || item.type.startsWith("text/")) return "text";
   return PREVIEWED_DOCUMENTS.has(extensionOf(item.name)) ? "page" : null;
 }
+
+export function isArchive(item: Pick<FileItem, "kind" | "name">) {
+  return item.kind === "file" && item.name.toLowerCase().endsWith(".zip");
+}

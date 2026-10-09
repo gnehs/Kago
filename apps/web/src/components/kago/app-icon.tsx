@@ -53,6 +53,13 @@ const TEXTURES = {
   )
 };
 
+/** Which of the eight location colours a location wears. It follows from the slug, so it stays the same everywhere and every time. */
+export function locationTone(slug: string) {
+  let sum = 0;
+  for (const character of slug) sum += character.codePointAt(0)!;
+  return (sum % 8) + 1;
+}
+
 /**
  * An app icon: a tile of one colour with a surface of its own, holding a white glyph that has thickness.
  * The colour is `currentColor`; the glyph is drawn on a 24px field with no fill of its own,

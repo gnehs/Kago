@@ -1,10 +1,10 @@
-import { AudioLines, Check, Download, FileWarning, ListMusic, MicVocal, Pause, Play, SkipBack, SkipForward, Volume1, Volume2, VolumeX } from "lucide-react";
+import { AudioLines, Download, FileWarning, ListMusic, MicVocal, Pause, Play, SkipBack, SkipForward, Volume1, Volume2, VolumeX } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { audioStreamUrl, downloadUrl, embeddedCoverUrl, previewUrl } from "@/api/client";
 import { useFileList, useMediaInfo, useMediaInfos, useTextFile } from "@/api/hooks";
 import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
-import { KagoDropdownMenu, KagoMenuItem, KagoMenuSeparator } from "@/components/kago/menu";
+import { KagoDropdownMenu, KagoMenuCheckItem, KagoMenuSeparator } from "@/components/kago/menu";
 import { Button } from "@/components/ui/button";
 import { KagoWindow } from "@/components/kago/window";
 import { parseCue, type CueSheet } from "@/lib/cue";
@@ -17,9 +17,9 @@ import { cn } from "@/lib/utils";
 import { useWorkspaceStore, type PreviewWindow } from "@/stores/workspace";
 import type { FileItem, MediaInfo } from "@/types/kago";
 import { useAudioVisual, VISUAL_STYLES, type VisualStyle } from "./audioVisuals";
-import { FileIcon } from "./FileIcon";
+import { FileIcon } from "@/components/kago/file-icon";
 import { isViewableImage, sourceOf } from "./ImagePreview";
-import { extensionOf } from "./fileKind";
+import { extensionOf } from "@/lib/fileKind";
 import { PLAYER_CONTROL_CLASS, PlayerButton, PlayerSlider } from "./VideoPlayer";
 
 const SEEK_STEP = 5;
@@ -566,14 +566,14 @@ export function AudioPreviewWindow({ window }: { window: PreviewWindow }) {
                   menu={
                     <>
                       {VISUAL_STYLES.map((style) => (
-                        <CheckItem key={style} checked={visual === style} onClick={() => pickVisual(style)}>
+                        <KagoMenuCheckItem key={style} checked={visual === style} onClick={() => pickVisual(style)}>
                           {visualLabel(style)}
-                        </CheckItem>
+                        </KagoMenuCheckItem>
                       ))}
                       <KagoMenuSeparator />
-                      <CheckItem checked={visual === "off"} onClick={() => pickVisual("off")}>
+                      <KagoMenuCheckItem checked={visual === "off"} onClick={() => pickVisual("off")}>
                         {t("Off")}
-                      </CheckItem>
+                      </KagoMenuCheckItem>
                     </>
                   }
                 >
@@ -597,14 +597,6 @@ export function AudioPreviewWindow({ window }: { window: PreviewWindow }) {
         </div>
       )}
     </KagoWindow>
-  );
-}
-
-function CheckItem({ checked, onClick, children }: { checked: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <KagoMenuItem icon={checked ? <Check /> : <span className="size-4" />} onClick={onClick}>
-      {children}
-    </KagoMenuItem>
   );
 }
 

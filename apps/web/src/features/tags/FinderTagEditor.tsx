@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { X } from "lucide-react";
 import { api } from "@/api/client";
+import { KagoChip, KagoChips } from "@/components/kago/chip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { run } from "@/lib/run";
@@ -54,19 +54,18 @@ export function FinderTagEditor({ rootSlug, path, tags, readonly }: { rootSlug: 
   return (
     <div className="flex flex-col gap-2">
       {tags.length > 0 ? (
-        <ul className="m-0 flex list-none flex-wrap gap-1 p-0">
+        <KagoChips>
           {tags.map((tag) => (
-            <li key={tag.name} className={cn("flex h-6 items-center gap-1.5 rounded-full bg-hover pl-2", readonly ? "pr-2" : "pr-1")}>
-              <span className={cn("size-2 rounded-full", tag.color ? finderTagColorClass[tag.color] : "border border-line-strong")} />
+            <KagoChip
+              key={tag.name}
+              dot={<span className={cn("size-2 rounded-full", tag.color ? finderTagColorClass[tag.color] : "border border-line-strong")} />}
+              removeLabel={t("Remove Finder tag {name}", { name: tag.name })}
+              onRemove={readonly ? undefined : () => void save(tags.filter((item) => item.name !== tag.name), t("Couldn’t remove the Finder tag"))}
+            >
               {tag.name}
-              {readonly ? null : (
-                <button aria-label={t("Remove Finder tag {name}", { name: tag.name })} className="rounded-full p-0.5 text-muted hover:text-ink" onClick={() => void save(tags.filter((item) => item.name !== tag.name), t("Couldn’t remove the Finder tag"))}>
-                  <X className="size-3" />
-                </button>
-              )}
-            </li>
+            </KagoChip>
           ))}
-        </ul>
+        </KagoChips>
       ) : null}
       {readonly ? null : (
         <form className="flex flex-col gap-2" onSubmit={add}>

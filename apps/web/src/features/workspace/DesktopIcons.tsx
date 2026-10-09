@@ -6,7 +6,7 @@ import { useExternalApps } from "@/api/hooks";
 import { KagoAppIcon } from "@/components/kago/app-icon";
 import { KagoContextMenu, KagoMenuItem, KagoMenuSeparator } from "@/components/kago/menu";
 import { editExternalApp } from "@/features/apps/ExternalAppDialog";
-import { ExternalAppIcon } from "@/features/apps/ExternalAppIcon";
+import { ExternalAppIcon } from "@/components/kago/external-app-icon";
 import { appHref, openExternalApp, openInNewTab, removeExternalApp } from "@/features/apps/externalApps";
 import { cn, copyText } from "@/lib/utils";
 import { useWorkspaceStore } from "@/stores/workspace";
@@ -117,13 +117,6 @@ export function DesktopIcons({ roots, isAdmin }: { roots: Root[]; isAdmin: boole
       )}
     </div>
   );
-}
-
-/** Which of the eight location colours a location wears. It follows from the slug, so it stays the same everywhere and every time. */
-export function locationTone(slug: string) {
-  let sum = 0;
-  for (const character of slug) sum += character.codePointAt(0)!;
-  return (sum % 8) + 1;
 }
 
 /** What each tile holds, on a 24px field. Nothing here has a colour: the tile paints it. */

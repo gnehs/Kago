@@ -1,9 +1,9 @@
-import { AudioLines, Captions, CaptionsOff, Check, Download, Info, X } from "lucide-react";
+import { AudioLines, Captions, CaptionsOff, Download, Info, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, downloadUrl, previewUrl } from "@/api/client";
 import { useFileList, useMediaInfo, useSubtitles } from "@/api/hooks";
 import { KagoIconButton } from "@/components/kago/icon-button";
-import { KagoDropdownMenu, KagoMenuItem, KagoMenuSeparator } from "@/components/kago/menu";
+import { KagoDropdownMenu, KagoMenuCheckItem, KagoMenuHeading, KagoMenuNote, KagoMenuSeparator } from "@/components/kago/menu";
 import { KagoWindow } from "@/components/kago/window";
 import { isVideoType } from "@/lib/format";
 import { parentPath, triggerDownload } from "@/lib/paths";
@@ -12,7 +12,7 @@ import { languageLabel, pickSubtitle, subtitleLabel } from "@/lib/subtitles";
 import { toast } from "@/stores/toast";
 import { useWorkspaceStore, type PreviewWindow } from "@/stores/workspace";
 import type { FileItem, MediaInfo, SubtitleTrack } from "@/types/kago";
-import { FileIcon } from "./FileIcon";
+import { FileIcon } from "@/components/kago/file-icon";
 import { useSubtitleRenderer } from "./useSubtitleRenderer";
 import { chromaSampling, videoInfoGroups, type VideoInfoGroup } from "./videoInfo";
 import { PLAYER_CONTROL_CLASS, VideoPlayer } from "./VideoPlayer";
@@ -295,17 +295,17 @@ export function VideoPreview({
         menu={
           <>
             {canDirect && !directFailed ? (
-              <CheckItem checked={height === null} hint={t("No transcoding")} onClick={() => pick("direct")}>{t("Original file")}</CheckItem>
+              <KagoMenuCheckItem checked={height === null} hint={t("No transcoding")} onClick={() => pick("direct")}>{t("Original file")}</KagoMenuCheckItem>
             ) : null}
             {qualities.map((quality) => (
-              <CheckItem key={quality} checked={height === quality} hint={BITRATE_HINT[quality]} onClick={() => pick(quality)}>
+              <KagoMenuCheckItem key={quality} checked={height === quality} hint={BITRATE_HINT[quality]} onClick={() => pick(quality)}>
                 {quality}p
-              </CheckItem>
+              </KagoMenuCheckItem>
             ))}
             <KagoMenuSeparator />
-            <div className="px-2 py-1 text-xs text-muted">{t("Transcoding: {encoder}", { encoder: ENCODER_LABEL[media?.encoder ?? ""] ?? "CPU" })}</div>
+            <KagoMenuNote>{t("Transcoding: {encoder}", { encoder: ENCODER_LABEL[media?.encoder ?? ""] ?? "CPU" })}</KagoMenuNote>
             {sourceHdr && screenHdr && media?.tonemap ? (
-              <CheckItem
+              <KagoMenuCheckItem
                 checked={hdrWanted}
                 onClick={() => {
                   recoveries.current = 0;
@@ -314,10 +314,10 @@ export function VideoPreview({
                 }}
               >
                 {t("HDR output")}
-              </CheckItem>
+              </KagoMenuCheckItem>
             ) : null}
             {hdr && sourceHdr === "pq" ? (
-              <CheckItem
+              <KagoMenuCheckItem
                 checked={liftWanted}
                 onClick={() => {
                   recoveries.current = 0;
@@ -326,9 +326,9 @@ export function VideoPreview({
                 }}
               >
                 {t("Brighten HDR")}
-              </CheckItem>
+              </KagoMenuCheckItem>
             ) : null}
-            {sourceHdr ? <div className="px-2 pb-1 text-xs text-muted">{hdrNote(height === null, hdr, screenHdr, hdrWanted, Boolean(media?.tonemap))}</div> : null}
+            {sourceHdr ? <KagoMenuNote className="pt-0">{hdrNote(height === null, hdr, screenHdr, hdrWanted, Boolean(media?.tonemap))}</KagoMenuNote> : null}
           </>
         }
       >
@@ -350,22 +350,22 @@ export function VideoPreview({
             <>
               {subtitles.length > 0 ? (
                 <>
-                  <MenuHeading>{t("Subtitles")}</MenuHeading>
-                  <CheckItem checked={subtitle === null} onClick={() => pickTrack(null)}>{t("Off")}</CheckItem>
+                  <KagoMenuHeading>{t("Subtitles")}</KagoMenuHeading>
+                  <KagoMenuCheckItem checked={subtitle === null} onClick={() => pickTrack(null)}>{t("Off")}</KagoMenuCheckItem>
                   {subtitles.map((track) => (
-                    <CheckItem key={track.id} checked={subtitle?.id === track.id} hint={track.embedded ? t("Embedded {format}", { format: SUBTITLE_FORMAT_LABEL[track.format] || t("image subtitles") }) : SUBTITLE_FORMAT_LABEL[track.format]} onClick={() => pickTrack(track)}>
+                    <KagoMenuCheckItem key={track.id} checked={subtitle?.id === track.id} hint={track.embedded ? t("Embedded {format}", { format: SUBTITLE_FORMAT_LABEL[track.format] || t("image subtitles") }) : SUBTITLE_FORMAT_LABEL[track.format]} onClick={() => pickTrack(track)}>
                       {subtitleLabel(track)}
-                    </CheckItem>
+                    </KagoMenuCheckItem>
                   ))}
                 </>
               ) : null}
-              {subtitleList && subtitleList.unsupported > 0 ? <div className="px-2 py-1 text-xs text-muted">{t("{count} more subtitle can’t be shown | {count} more subtitles can’t be shown",{ count: subtitleList.unsupported })}</div> : null}
+              {subtitleList && subtitleList.unsupported > 0 ? <KagoMenuNote>{t("{count} more subtitle can’t be shown | {count} more subtitles can’t be shown",{ count: subtitleList.unsupported })}</KagoMenuNote> : null}
               {audioTracks.length > 1 ? (
                 <>
                   {subtitles.length > 0 ? <KagoMenuSeparator /> : null}
-                  <MenuHeading>{t("Audio tracks")}</MenuHeading>
+                  <KagoMenuHeading>{t("Audio tracks")}</KagoMenuHeading>
                   {audioTracks.map((track, index) => (
-                    <CheckItem
+                    <KagoMenuCheckItem
                       key={index}
                       checked={(height === null ? 0 : audioIndex) === index}
                       hint={[track.codec.toUpperCase(), track.channels > 0 ? `${track.channels}ch` : ""].filter(Boolean).join(" ")}
@@ -375,7 +375,7 @@ export function VideoPreview({
                       }}
                     >
                       {[languageLabel(track.language), track.title].filter(Boolean).join(" · ") || t("Audio track {number}", { number: index + 1 })}
-                    </CheckItem>
+                    </KagoMenuCheckItem>
                   ))}
                 </>
               ) : null}
@@ -444,19 +444,6 @@ function VideoInfoPanel({ groups, onClose }: { groups: VideoInfoGroup[]; onClose
         ))}
       </div>
     </aside>
-  );
-}
-
-function MenuHeading({ children }: { children: React.ReactNode }) {
-  return <div className="px-2 pt-1 pb-0.5 text-xs text-muted">{children}</div>;
-}
-
-function CheckItem({ checked, hint, onClick, children }: { checked: boolean; hint?: string; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <KagoMenuItem icon={checked ? <Check /> : <span className="size-4" />} onClick={onClick}>
-      <span className="flex-1">{children}</span>
-      {hint ? <span className="pl-4 text-xs opacity-60">{hint}</span> : null}
-    </KagoMenuItem>
   );
 }
 

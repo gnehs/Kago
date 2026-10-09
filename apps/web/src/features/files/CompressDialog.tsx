@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { create } from "zustand";
-import { KagoDialog } from "@/components/kago/dialog";
+import { KagoDialog, KagoDialogActions } from "@/components/kago/dialog";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/input";
 import { KagoPasswordInput } from "@/components/kago/password-input";
@@ -93,10 +93,10 @@ export function CompressDialogHost() {
             </Field>
           </>
         ) : null}
-        <div className="flex justify-end gap-2 pt-1">
+        <KagoDialogActions>
           <Button onClick={() => settle(null)}>{t("Cancel")}</Button>
           <Button type="submit" variant="default" disabled={!canSubmit}>{t("Compress")}</Button>
-        </div>
+        </KagoDialogActions>
       </form>
     </KagoDialog>
   );

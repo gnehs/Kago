@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 import { Link2, X } from "lucide-react";
 import { useFileMeta, useImageMetadata, useMediaInfo, usePathPermissions, useRoots, useShares } from "@/api/hooks";
 import { KagoBadge } from "@/components/kago/badge";
+import { Detail, DetailList, DetailSection } from "@/components/kago/details";
 import { KagoLoading } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { Button } from "@/components/ui/button";
@@ -74,28 +75,28 @@ export function Inspector({ window: activeWindow, isAdmin }: { window: FileWindo
             {selectedCount > 1 ? <KagoBadge>{t("{count} selected, showing the last one", { count: selectedCount })}</KagoBadge> : null}
           </div>
 
-          <Section title={t("General")}>
-            <dl className="m-0 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5">
+          <DetailSection title={t("General")}>
+            <DetailList>
               <Detail label={t("Modified")}>{formatDate(meta.data.mtime)}</Detail>
               <Detail label={t("Location")}><span title={`${rootSlug}:${path}`}>{displayPath(root?.name ?? rootSlug, path)}</span></Detail>
               {readonly ? <Detail label={t("Access")}>{t("Read-only")}</Detail> : null}
-            </dl>
-          </Section>
+            </DetailList>
+          </DetailSection>
 
           {photo && Object.keys(photo).length > 0 ? <PhotoDetails photo={photo} /> : null}
 
           {video
             ? videoInfoGroups(video).map((group) => (
-                <Section key={group.title} title={group.title}>
-                  <dl className="m-0 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5">
+                <DetailSection key={group.title} title={group.title}>
+                  <DetailList>
                     {group.rows.map((row, index) => <Detail key={index} label={row.label}>{row.value}</Detail>)}
-                  </dl>
-                </Section>
+                  </DetailList>
+                </DetailSection>
               ))
             : null}
 
           {/* Two kinds of tag, one place: where each is kept is what tells them apart. */}
-          <Section title={t("Tags")}>
+          <DetailSection title={t("Tags")}>
             {/* Finder tags are kept on the file itself, which only a folder on the server's own disk can do. */}
             {(readonly && !meta.data.finderTags?.length) || (root && root.provider !== "local") ? null : (
               <TagGroup label="Finder" hint={t("Stored on the file, visible in Finder too")}>
@@ -105,9 +106,9 @@ export function Inspector({ window: activeWindow, isAdmin }: { window: FileWindo
             <TagGroup label="Kago" hint={t("Kept in Kago only")}>
               <TagEditor rootSlug={rootSlug} path={path} />
             </TagGroup>
-          </Section>
+          </DetailSection>
 
-          <Section title={t("Share links")}>
+          <DetailSection title={t("Share links")}>
             {pathShares.length > 0 ? (
               <ul className="m-0 mb-3 flex list-none flex-col gap-1.5 p-0">
                 {pathShares.map((share) => (
@@ -130,13 +131,13 @@ export function Inspector({ window: activeWindow, isAdmin }: { window: FileWindo
               </>
             )}
             {pathShares.length > 0 ? <Button className="mt-2 w-full" onClick={() => store().openApp("shares")}>{t("Manage all shares")}</Button> : null}
-          </Section>
+          </DetailSection>
 
           {isAdmin ? (
-            <Section title={t("Permission rules")}>
+            <DetailSection title={t("Permission rules")}>
               {permissions.data?.length ? <RuleList rules={permissions.data} /> : <span className="text-faint">{t("No rules apply to this path")}</span>}
               <Button className="mt-2 w-full" onClick={() => store().openApp("settings", "permissions")}>{t("Manage permissions")}</Button>
-            </Section>
+            </DetailSection>
           ) : null}
         </div>
       )}
@@ -165,8 +166,8 @@ export function PhotoDetails({ photo }: { photo: ImageMetadata }) {
   const gps = photo.gps;
   return (
     <>
-      <Section title={t("Photo info")}>
-        <dl className="m-0 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5">
+      <DetailSection title={t("Photo info")}>
+        <DetailList>
           {photo.camera ? <Detail label={t("Camera")}>{photo.camera}</Detail> : null}
           {photo.lens ? <Detail label={t("Lens")}>{photo.lens}</Detail> : null}
           {photo.takenAt ? <Detail label={t("Taken")}>{photo.takenAt}{photo.timeZone ? <span className="text-faint"> {photo.timeZone}</span> : null}</Detail> : null}
@@ -188,8 +189,8 @@ export function PhotoDetails({ photo }: { photo: ImageMetadata }) {
               {gps.altitude !== undefined ? <span className="text-faint"> · {t("{meters} m altitude", { meters: Math.round(gps.altitude) })}</span> : null}
             </Detail>
           ) : null}
-        </dl>
-      </Section>
+        </DetailList>
+      </DetailSection>
       {photo.filmRecipe ? <FilmRecipeDetails recipe={photo.filmRecipe} /> : null}
     </>
   );
@@ -213,8 +214,8 @@ function FilmRecipeDetails({ recipe }: { recipe: FilmRecipe }) {
     [t("Clarity"), recipe.clarity]
   ];
   return (
-    <Section title={t("Film recipe")}>
-      <dl className="m-0 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5">
+    <DetailSection title={t("Film recipe")}>
+      <DetailList>
         {recipe.simulation ? <Detail label={t("Film simulation")}>{recipe.simulation}</Detail> : null}
         {monochrome ? <Detail label={t("Monochromatic color")}>{monochrome}</Detail> : null}
         {grain ? <Detail label={t("Grain effect")}>{grain}</Detail> : null}
@@ -225,17 +226,8 @@ function FilmRecipeDetails({ recipe }: { recipe: FilmRecipe }) {
         {recipe.dynamicRange ? <Detail label={t("Dynamic range")}>DR{recipe.dynamicRange}{auto(recipe.dynamicRangeAuto)}</Detail> : null}
         {priority ? <Detail label={t("D-Range priority")}>{priority}</Detail> : null}
         {steps.map(([label, value]) => (value !== undefined ? <Detail key={label} label={label}>{signed(value)}</Detail> : null))}
-      </dl>
-    </Section>
-  );
-}
-
-export function Section({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <section className="border-t border-line p-4">
-      <h3 className="m-0 mb-2.5 font-semibold">{title}</h3>
-      {children}
-    </section>
+      </DetailList>
+    </DetailSection>
   );
 }
 
@@ -248,14 +240,5 @@ function TagGroup({ label, hint, children }: { label: string; hint: string; chil
       </div>
       {children}
     </div>
-  );
-}
-
-export function Detail({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <>
-      <dt className="text-muted">{label}</dt>
-      <dd className="m-0 min-w-0 break-words">{children}</dd>
-    </>
   );
 }

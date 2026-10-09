@@ -10,7 +10,7 @@ import { setFolderView } from "@/stores/settings";
 import { useWorkspaceStore } from "@/stores/workspace";
 import type { FileItem, FolderView, FolderWindow } from "@/types/kago";
 import { setDragDownload, setDragPreview } from "./dragOut";
-import { FileIcon } from "./FileIcon";
+import { FileIcon } from "@/components/kago/file-icon";
 import { FileThumbnail } from "./FileThumbnail";
 import { GRID_SIZES, LIST_HEADER_HEIGHT, revealIndex, useFileLayout, useVisibleRange, type FileLayout, type FileTree } from "./fileLayout";
 import { KAGO_DRAG_TYPE } from "./useFileActions";

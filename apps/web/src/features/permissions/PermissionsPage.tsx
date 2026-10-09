@@ -6,7 +6,7 @@ import { useGroups, usePermissions, useUsers } from "@/api/hooks";
 import { KagoEmptyState } from "@/components/kago/empty-state";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/input";
-import { Card, Page } from "@/components/kago/page";
+import { Card, Page, RowList } from "@/components/kago/page";
 import { normalizeLogicalPath } from "@/lib/paths";
 import { run } from "@/lib/run";
 import type { PermissionRule, Root } from "@/types/kago";
@@ -132,10 +132,10 @@ export function PermissionsPage({ roots }: { roots: Root[] }) {
             <span>{t("View")}</span>
             <span>{t("Edit")}</span>
           </div>
-          <ul className="m-0 flex list-none flex-col divide-y divide-line p-0">
+          <RowList bare>
             {groupRows.map(row)}
             {userRows.map(row)}
-          </ul>
+          </RowList>
         </div>
       </Card>
     </Page>

@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/input";
 import { KagoPasswordInput } from "@/components/kago/password-input";
 import { roleLabels } from "@/features/admin/UsersPage";
-import { Card, Page, SettingRow } from "@/components/kago/page";
+import { Card, Page, Row, RowList, SettingRow } from "@/components/kago/page";
 import { t } from "@/lib/i18n";
 import { run } from "@/lib/run";
 import { confirmAction } from "@/stores/dialogs";
@@ -86,18 +86,13 @@ export function AccountPage({ user }: { user: Actor }) {
         <Card title={t("Single sign-on")}>
           <div className="flex flex-col gap-3">
             {identities.length > 0 ? (
-              <ul className="m-0 flex list-none flex-col divide-y divide-line p-0">
+              <RowList bare>
                 {identities.map((identity) => (
-                  <li key={identity.id} className="flex items-center gap-3 py-2 first:pt-0 [&>.lucide]:size-4 [&>.lucide]:text-muted">
-                    <Fingerprint />
-                    <div className="flex min-w-0 flex-1 flex-col">
-                      <span className="truncate font-medium">{issuerName(identity.issuer)}</span>
-                      <span className="truncate text-xs text-muted">{identity.email ?? identity.displayName ?? identity.subject}</span>
-                    </div>
+                  <Row key={identity.id} icon={<Fingerprint />} title={issuerName(identity.issuer)} subtitle={identity.email ?? identity.displayName ?? identity.subject}>
                     <Button variant="destructive" onClick={() => void unlink(identity)}>{t("Unlink")}</Button>
-                  </li>
+                  </Row>
                 ))}
-              </ul>
+              </RowList>
             ) : null}
             {sso ? (
               <div className="flex items-center justify-between gap-3">

@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Popover } from "@base-ui/react/popover";
 import { CircleUserRound, ListChecks, LogOut, Search, Settings } from "lucide-react";
 import { api } from "@/api/client";
 import { useRoots, useTasks } from "@/api/hooks";
 import { avatarUrl, KagoAvatar } from "@/components/kago/avatar";
 import { KagoEmptyState, KagoSpinner } from "@/components/kago/empty-state";
 import { KagoDropdownMenu, KagoMenuItem, KagoMenuSeparator } from "@/components/kago/menu";
+import { KagoPopover } from "@/components/kago/popover";
 import { KagoTooltip } from "@/components/kago/tooltip";
 import { Button } from "@/components/ui/button";
 import { BrandMark } from "@/components/kago/brand-mark";
@@ -16,8 +16,8 @@ import { isActiveTask, isFinishedTask, isQuietTask } from "@/features/tasks/task
 import { useClearFinishedTasks } from "@/features/tasks/useClearFinishedTasks";
 import { displayPath } from "@/lib/paths";
 import { cn } from "@/lib/utils";
-import { ExternalAppGlyph } from "@/features/apps/ExternalAppIcon";
-import { FileIcon } from "@/features/files/FileIcon";
+import { ExternalAppGlyph } from "@/components/kago/external-app-icon";
+import { FileIcon } from "@/components/kago/file-icon";
 import { appIcons } from "@/features/windows/AppWindow";
 import { minimizeWindows, useWorkspaceStore, type WindowFrame } from "@/stores/workspace";
 import type { Actor } from "@/types/kago";
@@ -149,54 +149,49 @@ function TaskStatus() {
   const label = activeCount > 0 ? t("{count} task in progress | {count} tasks in progress", { count: activeCount }) : t("Tasks");
 
   return (
-    <Popover.Root open={open} onOpenChange={setOpen}>
-      <KagoTooltip label={label} disabled={open}>
-        <Popover.Trigger
-          aria-label={label}
-          className={cn(
-            "flex size-7 shrink-0 items-center justify-center kago-flat rounded-md text-muted outline-none hover:text-ink focus-visible:ring-2 focus-visible:ring-accent/50",
-            activeCount > 0 && "text-accent hover:text-accent"
+    <KagoPopover
+      label={label}
+      open={open}
+      onOpenChange={setOpen}
+      className={cn("size-7", activeCount > 0 && "text-accent hover:text-accent")}
+      // It hangs a little below the bar rather than from its edge, and keeps off the side of the screen.
+      sideOffset={10}
+      // Nothing is ruled across the glass: a line drawn on it is lighter than what shows through and reads as a scratch. The tasks lie on a sheet of their own, and space sets the rest apart.
+      panelClassName="flex w-80 flex-col gap-2"
+      panel={
+        <>
+          <header className="flex h-6 shrink-0 items-center gap-2 px-1.5">
+            <h2 className="m-0 min-w-0 flex-1 truncate font-semibold">{t("Tasks")}</h2>
+            {activeCount > 0 ? <span className="shrink-0 text-xs text-muted">{label}</span> : null}
+          </header>
+          {visible.length === 0 ? (
+            <KagoEmptyState className="px-4 pt-2 pb-4" icon={<ListChecks />} title={t("No tasks right now")} />
+          ) : (
+            <div className="kago-card flex max-h-96 flex-col divide-y divide-line overflow-y-auto rounded-md px-3">
+              {visible.map((task) => <TaskRow key={task.id} task={task} />)}
+            </div>
           )}
-        >
-          {activeCount > 0 ? <KagoSpinner className="text-accent" /> : <ListChecks />}
-        </Popover.Trigger>
-      </KagoTooltip>
-      <Popover.Portal>
-        {/* It hangs a little below the bar rather than from its edge, and keeps off the side of the screen. */}
-        <Popover.Positioner sideOffset={10} align="end" collisionPadding={8} className="z-[700]">
-          {/* Nothing is ruled across the glass: a line drawn on it is lighter than what shows through and reads as a scratch. The tasks lie on a sheet of their own, and space sets the rest apart. */}
-          <Popover.Popup className="kago-glass kago-pop flex w-80 max-w-[calc(100vw-16px)] flex-col gap-2 rounded-lg p-2 outline-none">
-            <header className="flex h-6 shrink-0 items-center gap-2 px-1.5">
-              <h2 className="m-0 min-w-0 flex-1 truncate font-semibold">{t("Tasks")}</h2>
-              {activeCount > 0 ? <span className="shrink-0 text-xs text-muted">{label}</span> : null}
-            </header>
-            {visible.length === 0 ? (
-              <KagoEmptyState className="px-4 pt-2 pb-4" icon={<ListChecks />} title={t("No tasks right now")} />
-            ) : (
-              <div className="kago-card flex max-h-96 flex-col divide-y divide-line overflow-y-auto rounded-md px-3">
-                {visible.map((task) => <TaskRow key={task.id} task={task} />)}
-              </div>
-            )}
-            {/* What can be pressed is a button, raised like any other; a line of text here read as one more remark. */}
-            <footer className="flex shrink-0 gap-2">
-              <Button
-                className="min-w-0 flex-1"
-                onClick={() => {
-                  setOpen(false);
-                  useWorkspaceStore.getState().openApp("tasks");
-                }}
-              >
-                {t("See all tasks")}
+          {/* What can be pressed is a button, raised like any other; a line of text here read as one more remark. */}
+          <footer className="flex shrink-0 gap-2">
+            <Button
+              className="min-w-0 flex-1"
+              onClick={() => {
+                setOpen(false);
+                useWorkspaceStore.getState().openApp("tasks");
+              }}
+            >
+              {t("See all tasks")}
+            </Button>
+            {all.some(isFinishedTask) ? (
+              <Button className="min-w-0 flex-1" onClick={() => void clear()}>
+                {t("Clear finished")}
               </Button>
-              {all.some(isFinishedTask) ? (
-                <Button className="min-w-0 flex-1" onClick={() => void clear()}>
-                  {t("Clear finished")}
-                </Button>
-              ) : null}
-            </footer>
-          </Popover.Popup>
-        </Popover.Positioner>
-      </Popover.Portal>
-    </Popover.Root>
+            ) : null}
+          </footer>
+        </>
+      }
+    >
+      {activeCount > 0 ? <KagoSpinner className="text-accent" /> : <ListChecks />}
+    </KagoPopover>
   );
 }

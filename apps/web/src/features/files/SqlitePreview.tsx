@@ -11,7 +11,8 @@ import { triggerDownload } from "@/lib/paths";
 import { cn } from "@/lib/utils";
 import type { PreviewWindow } from "@/stores/workspace";
 import type { SqliteCell, SqliteTable } from "@/types/kago";
-import { FileIcon } from "./FileIcon";
+import { FileIcon } from "@/components/kago/file-icon";
+import { KagoStatusBar } from "@/components/kago/status-bar";
 import { locale, t } from "@/lib/i18n";
 
 const PAGE_SIZE = 100;
@@ -121,7 +122,7 @@ function SqliteRows({ rootSlug, path, table, offset, onOffset }: { rootSlug: str
         )}
         {query.isPending ? <KagoLoading /> : page?.rows.length === 0 ? <KagoEmptyState title={offset > 0 ? t("No more rows") : t("This table is empty")} /> : null}
       </div>
-      <footer className="flex h-7 shrink-0 items-center gap-1 border-t border-line bg-elevated px-3 text-muted">
+      <KagoStatusBar>
         <span className="mr-auto tabular-nums">
           {page ? rangeLabel(page) : ""}
         </span>
@@ -131,7 +132,7 @@ function SqliteRows({ rootSlug, path, table, offset, onOffset }: { rootSlug: str
         <KagoIconButton label={t("Forward")} className="size-6" disabled={!page?.hasMore} onClick={() => onOffset(offset + PAGE_SIZE)}>
           <ChevronRight />
         </KagoIconButton>
-      </footer>
+      </KagoStatusBar>
     </div>
   );
 }

@@ -20,6 +20,11 @@ export function KagoDialog({ open, onClose, title, className, children }: { open
   );
 }
 
+/** The buttons at the foot of a dialog, at its far end: the way out first, what the dialog is for last. */
+export function KagoDialogActions({ children }: { children: ReactNode }) {
+  return <div className="flex justify-end gap-2 pt-1">{children}</div>;
+}
+
 /** Renders the prompt/confirm dialogs requested through `promptText` and `confirmAction`. */
 export function KagoDialogHost() {
   const pending = useDialogStore((state) => state.request);
@@ -54,12 +59,12 @@ export function KagoDialogHost() {
         {request.input ? (
           <Input ref={input} autoFocus value={value} placeholder={request.input.placeholder} onChange={(event) => setValue(event.target.value)} />
         ) : null}
-        <div className="flex justify-end gap-2 pt-1">
+        <KagoDialogActions>
           <Button onClick={() => settleDialog(null)}>{t("Cancel")}</Button>
           <Button type="submit" variant={request.destructive ? "destructive-primary" : "default"} disabled={!canSubmit} autoFocus={!request.input}>
             {request.confirmLabel ?? t("OK")}
           </Button>
-        </div>
+        </KagoDialogActions>
       </form>
     </KagoDialog>
   );

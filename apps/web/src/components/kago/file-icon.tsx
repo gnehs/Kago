@@ -1,11 +1,7 @@
 import { useId, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import type { FileItem } from "@/types/kago";
-import { extensionOf, fileKind, KIND_TONES, type FileKind } from "./fileKind";
-
-export function isArchive(item: Pick<FileItem, "kind" | "name">) {
-  return item.kind === "file" && item.name.toLowerCase().endsWith(".zip");
-}
+import { extensionOf, fileKind, KIND_TONES, type FileKind } from "@/lib/fileKind";
 
 type IconItem = Pick<FileItem, "kind" | "type" | "name">;
 

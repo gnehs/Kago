@@ -8,7 +8,7 @@ import { formatSize, hasTextName, isCueSheet, isMusicFile, isSplatFile, isSqlite
 import { triggerDownload } from "@/lib/paths";
 import type { PreviewWindow } from "@/stores/workspace";
 import { AudioPreviewWindow } from "./AudioPreview";
-import { FileIcon } from "./FileIcon";
+import { FileIcon } from "@/components/kago/file-icon";
 import { ImagePreviewWindow, isViewableImage } from "./ImagePreview";
 import { OfficePreviewWindow } from "./OfficePreview";
 import { PdfPreviewWindow } from "./PdfPreview";

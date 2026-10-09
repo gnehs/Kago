@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 import { KagoWindow } from "@/components/kago/window";
 import { triggerDownload } from "@/lib/paths";
 import type { PreviewWindow } from "@/stores/workspace";
-import { FileIcon } from "./FileIcon";
+import { FileIcon } from "@/components/kago/file-icon";
+import { KagoStatusBar } from "@/components/kago/status-bar";
 import type { SplatError, SplatViewHandle, SplatViewState } from "./SplatView";
 import { t } from "@/lib/i18n";
 
@@ -64,7 +65,7 @@ export function SplatPreviewWindow({ window }: { window: PreviewWindow }) {
         </div>
       )}
       {error ? null : (
-        <footer className="flex h-7 shrink-0 items-center gap-1 border-t border-line bg-elevated px-3 text-muted">
+        <KagoStatusBar>
           <span className="mr-auto truncate tabular-nums">{hint(state)}</span>
           <KagoIconButton label={t("Orbit (1)")} className="size-6" disabled={!state.loaded} active={state.mode === "orbit"} onClick={() => view.current?.setMode("orbit")}>
             <Rotate3d />
@@ -81,7 +82,7 @@ export function SplatPreviewWindow({ window }: { window: PreviewWindow }) {
           <KagoIconButton label={t("Reset camera (R)")} className="-mr-1.5 size-6" disabled={!state.loaded} onClick={() => view.current?.reset()}>
             <RotateCcw />
           </KagoIconButton>
-        </footer>
+        </KagoStatusBar>
       )}
     </KagoWindow>
   );

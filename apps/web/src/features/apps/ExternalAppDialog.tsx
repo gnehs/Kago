@@ -4,7 +4,7 @@ import { ChevronRight, TriangleAlert, Upload } from "lucide-react";
 import { create } from "zustand";
 import { api, libraryIconUrl } from "@/api/client";
 import { useFrameProbe, useIconSuggestions } from "@/api/hooks";
-import { KagoDialog } from "@/components/kago/dialog";
+import { KagoDialog, KagoDialogActions } from "@/components/kago/dialog";
 import { KagoTooltip } from "@/components/kago/tooltip";
 import { Button } from "@/components/ui/button";
 import { Checkbox, Field, Input, Select } from "@/components/ui/input";
@@ -14,7 +14,7 @@ import { run } from "@/lib/run";
 import { cn } from "@/lib/utils";
 import { toast } from "@/stores/toast";
 import type { ExternalApp, LibraryIcon } from "@/types/kago";
-import { ExternalAppIcon } from "./ExternalAppIcon";
+import { ExternalAppIcon } from "@/components/kago/external-app-icon";
 import { blockedAsMixedContent } from "./externalApps";
 
 /** The shortcut whose form is open: one that is there, or one about to be added. */
@@ -262,10 +262,10 @@ function AppForm({ app, isAdmin }: { app: ExternalApp | null; isAdmin: boolean }
           </div>
         ) : null}
       </div>
-      <div className="flex justify-end gap-2 pt-1">
+      <KagoDialogActions>
         <Button onClick={close}>{t("Cancel")}</Button>
         <Button type="submit" variant="default" disabled={!canSubmit}>{app ? t("Save") : t("Add app")}</Button>
-      </div>
+      </KagoDialogActions>
     </form>
   );
 }

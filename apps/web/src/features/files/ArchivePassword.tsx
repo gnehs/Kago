@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { QueryClient } from "@tanstack/react-query";
 import { create } from "zustand";
 import { api } from "@/api/client";
-import { KagoDialog } from "@/components/kago/dialog";
+import { KagoDialog, KagoDialogActions } from "@/components/kago/dialog";
 import { Button } from "@/components/ui/button";
 import { Checkbox, Field } from "@/components/ui/input";
 import { KagoPasswordInput } from "@/components/kago/password-input";
@@ -100,10 +100,10 @@ export function ArchivePasswordDialogHost() {
           <KagoPasswordInput autoFocus autoComplete="off" value={password} onChange={(event) => setPassword(event.target.value)} />
         </Field>
         <Checkbox label={t("Remember this password for other archives")} checked={remember} onChange={(event) => setRemember(event.target.checked)} />
-        <div className="flex justify-end gap-2 pt-1">
+        <KagoDialogActions>
           <Button onClick={() => settle(null)}>{t("Cancel")}</Button>
           <Button type="submit" variant="default" disabled={!password}>{t("Extract")}</Button>
-        </div>
+        </KagoDialogActions>
       </form>
     </KagoDialog>
   );

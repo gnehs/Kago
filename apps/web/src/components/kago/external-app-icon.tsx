@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { Globe } from "lucide-react";
-import { KagoAppIcon, KagoAppImage, KagoShortcutMark } from "@/components/kago/app-icon";
-import { locationTone } from "@/features/workspace/DesktopIcons";
+import { KagoAppIcon, KagoAppImage, KagoShortcutMark, locationTone } from "./app-icon";
 import { cn } from "@/lib/utils";
 
 /** What a shortcut without a picture of its own wears: the globe, for somewhere out on the network. */

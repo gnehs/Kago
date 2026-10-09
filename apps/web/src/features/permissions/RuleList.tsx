@@ -4,6 +4,7 @@ import { api } from "@/api/client";
 import { useGroups, useUsers } from "@/api/hooks";
 import { KagoBadge } from "@/components/kago/badge";
 import { KagoIconButton } from "@/components/kago/icon-button";
+import { RowList } from "@/components/kago/page";
 import { run } from "@/lib/run";
 import type { PermissionRule } from "@/types/kago";
 import { permissionLabel } from "./permissionUtils";
@@ -27,7 +28,7 @@ export function RuleList({ rules }: { rules: PermissionRule[] }) {
   }
 
   return (
-    <ul className="m-0 flex list-none flex-col divide-y divide-line p-0">
+    <RowList bare>
       {rules.map((rule) => (
         <li key={rule.id} className="flex items-start gap-2.5 py-2.5">
           {rule.principal_type === "group" ? <UsersRound className="mt-0.5 text-muted" /> : <UserRound className="mt-0.5 text-muted" />}
@@ -39,6 +40,6 @@ export function RuleList({ rules }: { rules: PermissionRule[] }) {
           <KagoIconButton label={t("Delete rule")} onClick={() => void remove(rule.id)}><Trash2 /></KagoIconButton>
         </li>
       ))}
-    </ul>
+    </RowList>
   );
 }

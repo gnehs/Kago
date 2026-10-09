@@ -10,7 +10,7 @@ import { formatSize, type OfficeKind } from "@/lib/format";
 import { triggerDownload } from "@/lib/paths";
 import { checkZip, MAX_UNPACKED_BYTES, type ZipVerdict } from "@/lib/zipCheck";
 import type { PreviewWindow } from "@/stores/workspace";
-import { FileIcon } from "./FileIcon";
+import { FileIcon } from "@/components/kago/file-icon";
 import { t } from "@/lib/i18n";
 
 // Each format's parser is its own download, made by whoever opens a file of that kind.

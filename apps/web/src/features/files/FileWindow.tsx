@@ -4,10 +4,11 @@ import { useFileList, useFolderContents } from "@/api/hooks";
 import { KagoBadge } from "@/components/kago/badge";
 import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
-import { KagoContextMenu, KagoMenuButton, KagoMenuItem, KagoMenuSeparator } from "@/components/kago/menu";
+import { KagoContextMenu, KagoMenuButton, KagoMenuItem, KagoMenuNote, KagoMenuSeparator } from "@/components/kago/menu";
 import { chooseAvatar } from "@/features/auth/AvatarDialog";
 import { KagoWindow } from "@/components/kago/window";
 import { OPEN_ITEM_EVENT } from "@/features/workspace/useShortcuts";
+import { isArchive } from "@/lib/fileKind";
 import { formatSize, isCueSheet, isMusicFile, isPicture, isVideoType } from "@/lib/format";
 import { nfc, parentPath } from "@/lib/paths";
 import { run } from "@/lib/run";
@@ -19,7 +20,7 @@ import { setWallpaper } from "@/stores/settings";
 import { toast } from "@/stores/toast";
 import { folderTitle, useWorkspaceStore } from "@/stores/workspace";
 import type { FileItem, FileWindow, FolderView, FolderWindow, Root } from "@/types/kago";
-import { FileIcon, isArchive } from "./FileIcon";
+import { FileIcon } from "@/components/kago/file-icon";
 import { fileViews, indexesInArea, revealIndex, useFileLayout, type FileTree } from "./fileLayout";
 import { FileColumns, FileList, type FileColumn } from "./FileList";
 import { FileToolbar } from "./FileToolbar";
@@ -511,9 +512,9 @@ export function FileWindowView({ window: frame, roots, isAdmin }: { window: File
               items[(at + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length]?.focus();
             }}
           >
-            <span className="max-w-60 truncate px-2 py-1 text-xs text-muted">
+            <KagoMenuNote className="max-w-60 truncate">
               {t("{count} item | {count} items", { count: dropChoice.sources.length })}{dropChoice.destination.path === win.logicalPath && dropChoice.destination.rootSlug === win.rootSlug ? "" : ` → ${folderTitle(dropChoice.destination.rootSlug, dropChoice.destination.path)}`}
-            </span>
+            </KagoMenuNote>
             {(["copy", "move"] as const).map((type) => (
               <KagoMenuButton
                 key={type}

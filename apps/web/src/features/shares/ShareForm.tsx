@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Check, Copy } from "lucide-react";
 import { api } from "@/api/client";
+import { KagoCopyButton } from "@/components/kago/copy-field";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/input";
 import { KagoPasswordInput } from "@/components/kago/password-input";
 import { normalizeLogicalPath } from "@/lib/paths";
 import { run } from "@/lib/run";
-import { cn, copyText } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import type { Root } from "@/types/kago";
 import { shareModes, type ShareMode } from "./shareUtils";
 import { t } from "@/lib/i18n";
@@ -25,7 +25,6 @@ export function ShareForm({ target, roots = [], compact }: { target?: { rootSlug
   const [expiresDays, setExpiresDays] = useState("");
   const [maxDownloads, setMaxDownloads] = useState("");
   const [shareUrl, setShareUrl] = useState("");
-  const [copied, setCopied] = useState(false);
   const location = target ?? { rootSlug: rootSlug || roots[0]?.slug || "", path: normalizeLogicalPath(path) ?? "" };
   const passwordInvalid = password.length > 0 && password.length < 8;
   const canSubmit = Boolean(location.rootSlug && location.path) && !passwordInvalid;
@@ -48,15 +47,9 @@ export function ShareForm({ target, roots = [], compact }: { target?: { rootSlug
       });
       // The token is only returned once; the server stores just its hash.
       setShareUrl(`${globalThis.location.origin}/s/${share.token}`);
-      setCopied(false);
       setPassword("");
       await queryClient.invalidateQueries({ queryKey: ["shares"] });
     }, t("Couldn’t create the share"));
-  }
-
-  async function copy() {
-    await copyText(shareUrl);
-    setCopied(true);
   }
 
   return (
@@ -93,7 +86,7 @@ export function ShareForm({ target, roots = [], compact }: { target?: { rootSlug
       {shareUrl ? (
         <div className="col-span-full flex gap-2">
           <Input readOnly value={shareUrl} aria-label={t("Share link")} onFocus={(event) => event.target.select()} />
-          <Button onClick={() => void copy()}>{copied ? <Check /> : <Copy />}{copied ? t("Copied") : t("Copy")}</Button>
+          <KagoCopyButton text={shareUrl} />
         </div>
       ) : null}
     </form>

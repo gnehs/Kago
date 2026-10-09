@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 import { KagoWindow } from "@/components/kago/window";
 import { triggerDownload } from "@/lib/paths";
 import type { PreviewWindow } from "@/stores/workspace";
-import { FileIcon } from "./FileIcon";
+import { FileIcon } from "@/components/kago/file-icon";
+import { KagoStatusBar } from "@/components/kago/status-bar";
 import type { PdfViewHandle, PdfViewState } from "./PdfView";
 import { t } from "@/lib/i18n";
 
@@ -45,7 +46,7 @@ export function PdfPreviewWindow({ window }: { window: PreviewWindow }) {
         </Suspense>
       )}
       {state.pages > 0 && !unreadable ? (
-        <footer className="flex h-7 shrink-0 items-center gap-1 border-t border-line bg-elevated px-3 text-muted">
+        <KagoStatusBar>
           <span className="mr-auto tabular-nums">
             {t("Page {page} of {pages}", { page: state.page, pages: state.pages })}
           </span>
@@ -59,7 +60,7 @@ export function PdfPreviewWindow({ window }: { window: PreviewWindow }) {
           <KagoIconButton label={t("Fit to width")} className="size-6" active={state.fitted} onClick={() => view.current?.fit()}>
             <MoveHorizontal />
           </KagoIconButton>
-        </footer>
+        </KagoStatusBar>
       ) : null}
     </KagoWindow>
   );

@@ -3,7 +3,7 @@ import { Dialog } from "@base-ui/react/dialog";
 import { CircleUserRound, Clock, Fingerprint, Folder, HardDrive, KeyRound, LayoutGrid, RefreshCw, ScrollText, Search, UserRound, UsersRound } from "lucide-react";
 import { useExternalApps } from "@/api/hooks";
 import { KagoKbd } from "@/components/kago/kbd";
-import { ExternalAppGlyph } from "@/features/apps/ExternalAppIcon";
+import { ExternalAppGlyph } from "@/components/kago/external-app-icon";
 import { appHost, openExternalApp } from "@/features/apps/externalApps";
 import { appIcons } from "@/features/windows/AppWindow";
 import { baseName, displayPath, nfc, normalizeLogicalPath } from "@/lib/paths";

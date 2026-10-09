@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { X } from "lucide-react";
 import { api } from "@/api/client";
 import { useFileTags } from "@/api/hooks";
+import { KagoChip, KagoChips } from "@/components/kago/chip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { run } from "@/lib/run";
@@ -34,17 +34,18 @@ export function TagEditor({ rootSlug, path }: { rootSlug: string; path: string }
   return (
     <div className="flex flex-col gap-2">
       {current.length > 0 ? (
-        <ul className="m-0 flex list-none flex-wrap gap-1 p-0">
+        <KagoChips>
           {current.map((tag) => (
-            <li key={tag.id} className="flex h-6 items-center gap-1 rounded-full bg-hover pr-1 pl-2">
-              <span className="size-2 rounded-full bg-accent" style={tag.color ? { background: tag.color } : undefined} />
+            <KagoChip
+              key={tag.id}
+              dot={<span className="size-2 rounded-full bg-accent" style={tag.color ? { background: tag.color } : undefined} />}
+              removeLabel={t("Remove tag {name}", { name: tag.name })}
+              onRemove={() => void run(() => save(current.filter((item) => item.id !== tag.id).map((item) => item.id)))}
+            >
               {tag.name}
-              <button aria-label={t("Remove tag {name}", { name: tag.name })} className="rounded-full p-0.5 text-muted hover:text-ink" onClick={() => void run(() => save(current.filter((item) => item.id !== tag.id).map((item) => item.id)))}>
-                <X className="size-3" />
-              </button>
-            </li>
+            </KagoChip>
           ))}
-        </ul>
+        </KagoChips>
       ) : null}
       <form className="flex gap-2" onSubmit={add}>
         <Input placeholder={t("Add tag")} value={name} onChange={(event) => setName(event.target.value)} />

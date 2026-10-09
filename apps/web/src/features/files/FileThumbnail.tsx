@@ -3,8 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { thumbnailUrl } from "@/api/client";
 import type { FileItem } from "@/types/kago";
 import { cn } from "@/lib/utils";
-import { FileTile } from "./FileIcon";
-import { extensionOf, fileKind, KIND_TONES, thumbnailKind } from "./fileKind";
+import { FileTile } from "@/components/kago/file-icon";
+import { extensionOf, fileKind, KIND_TONES, thumbnailKind } from "@/lib/fileKind";
 
 /**
  * A file at the size of a tile, showing what is in it where that can be drawn small:

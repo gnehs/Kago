@@ -2,6 +2,7 @@ import { ChevronLeft, ChevronRight, Download, ImageOff, Info, Scan, ZoomIn, Zoom
 import { useEffect, useMemo, useRef, useState } from "react";
 import { downloadUrl, imageUrl, previewUrl, thumbnailUrl } from "@/api/client";
 import { useFileList, useImageMetadata } from "@/api/hooks";
+import { Detail, DetailList, DetailSection } from "@/components/kago/details";
 import { KagoEmptyState, KagoLoading, KagoSpinner } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { Button } from "@/components/ui/button";
@@ -12,8 +13,9 @@ import { getImageInfoOpen, setImageInfoOpen } from "@/lib/prefs";
 import { isEditableTarget, isInteractiveTarget } from "@/lib/usePointerDrag";
 import { useWorkspaceStore, type PreviewWindow } from "@/stores/workspace";
 import type { FileItem } from "@/types/kago";
-import { FileIcon } from "./FileIcon";
-import { Detail, PhotoDetails, Section } from "./Inspector";
+import { FileIcon } from "@/components/kago/file-icon";
+import { KagoStatusBar } from "@/components/kago/status-bar";
+import { PhotoDetails } from "./Inspector";
 import { t } from "@/lib/i18n";
 
 /** Pictures with a viewer: what the browser decodes, and what the server converts for it. */
@@ -530,7 +532,7 @@ export function ImagePreviewWindow({ window }: { window: PreviewWindow }) {
         </div>
         {infoOpen ? <ImageInfo rootSlug={rootSlug} item={item} natural={isImageType(item.type) ? natural : undefined} /> : null}
       </div>
-      <footer className="flex h-7 shrink-0 items-center gap-1 border-t border-line bg-elevated px-3 text-muted">
+      <KagoStatusBar>
         {pictures.length > 1 && position >= 0 ? (
           <>
             <KagoIconButton label={t("Previous (←)")} className="-ml-1.5 size-6" disabled={!previous} onClick={() => show(previous)}>
@@ -562,7 +564,7 @@ export function ImagePreviewWindow({ window }: { window: PreviewWindow }) {
         <KagoIconButton label={t("Fit to window (0)")} className="-mr-1.5 size-6" active={!zoomed} onClick={resetZoom}>
           <Scan />
         </KagoIconButton>
-      </footer>
+      </KagoStatusBar>
     </KagoWindow>
   );
 }
@@ -716,24 +718,24 @@ function ImageInfo({ rootSlug, item, natural }: { rootSlug: string; item: FileIt
   const hasPhoto = Boolean(photo.data && Object.keys(photo.data).length > 0);
   return (
     <aside className="w-64 max-w-[60%] shrink-0 overflow-y-auto border-l border-line bg-surface [&>section:first-child]:border-t-0" aria-label={t("Photo info")}>
-      <Section title={t("General")}>
-        <dl className="m-0 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5">
+      <DetailSection title={t("General")}>
+        <DetailList>
           <Detail label={t("Name")}>{item.name}</Detail>
           <Detail label={t("Kind")}>{kindLabel(item)}</Detail>
           <Detail label={t("Size")}>{formatSize(item.size)}</Detail>
           <Detail label={t("Modified")}>{formatDate(item.mtime)}</Detail>
           {/* The camera's own figures are listed below when it left any. */}
           {natural && !photo.data?.width ? <Detail label={t("Dimensions")}>{natural.w} × {natural.h}</Detail> : null}
-        </dl>
-      </Section>
+        </DetailList>
+      </DetailSection>
       {photo.isLoading ? (
         <KagoLoading />
       ) : hasPhoto ? (
         <PhotoDetails photo={photo.data!} />
       ) : (
-        <Section title={t("Photo info")}>
+        <DetailSection title={t("Photo info")}>
           <span className="text-faint">{t("This image has no photo info")}</span>
-        </Section>
+        </DetailSection>
       )}
     </aside>
   );

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { read, utils, type WorkBook } from "xlsx";
 import { KagoEmptyState } from "@/components/kago/empty-state";
+import { KagoStatusBar } from "@/components/kago/status-bar";
 import { cn } from "@/lib/utils";
 import { locale, t } from "@/lib/i18n";
 
@@ -74,7 +75,7 @@ export default function SheetView({ data, onError }: { data: ArrayBuffer; onErro
           </table>
         )}
       </div>
-      <footer className="flex h-7 shrink-0 items-center gap-1 border-t border-line bg-elevated px-1.5 text-muted">
+      <KagoStatusBar className="px-1.5">
         <div role="tablist" aria-label={t("Sheets")} className="flex min-w-0 flex-1 gap-px overflow-x-auto">
           {names.map((sheet, index) => (
             <button
@@ -90,7 +91,7 @@ export default function SheetView({ data, onError }: { data: ArrayBuffer; onErro
           ))}
         </div>
         {grid.clipped ? <span className="shrink-0 px-1.5">{t("Showing only the first {rows} rows and {columns} columns", { rows: count.format(MAX_ROWS), columns: MAX_COLUMNS })}</span> : null}
-      </footer>
+      </KagoStatusBar>
     </div>
   );
 }

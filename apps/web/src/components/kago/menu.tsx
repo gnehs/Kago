@@ -1,6 +1,7 @@
 import { useState, type ComponentProps, type ReactNode } from "react";
 import { ContextMenu } from "@base-ui/react/context-menu";
 import { Menu } from "@base-ui/react/menu";
+import { Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { KagoTooltip } from "./tooltip";
 
@@ -104,6 +105,16 @@ export function KagoMenuItem({ icon, shortcut, destructive, className, children,
   );
 }
 
+/** A row that is on or off, or the chosen one of a few: ticked where its icon would stand. `hint` says a little more at the far end. */
+export function KagoMenuCheckItem({ checked, hint, children, ...props }: Omit<ComponentProps<typeof KagoMenuItem>, "icon"> & { checked: boolean; hint?: string }) {
+  return (
+    <KagoMenuItem icon={checked ? <Check /> : <span className="size-4" />} {...props}>
+      <span className="flex-1">{children}</span>
+      {hint ? <span className="pl-4 text-xs opacity-60">{hint}</span> : null}
+    </KagoMenuItem>
+  );
+}
+
 /**
  * The same row as a button of its own, for the few menus that are not opened from a button or a right click
  * (the choice shown where something was dropped). It is lit while it holds the focus, and the pointer moves the
@@ -120,4 +131,14 @@ export function KagoMenuButton({ icon, className, children, ...props }: Componen
 
 export function KagoMenuSeparator() {
   return <ContextMenu.Separator className="mx-1 my-1 h-px bg-line" />;
+}
+
+/** Names the rows under it, in a menu that holds more than one kind of thing. */
+export function KagoMenuHeading({ children }: { children: ReactNode }) {
+  return <div className="px-2 pt-1 pb-0.5 text-xs text-muted">{children}</div>;
+}
+
+/** A remark among the rows: what the menu acts on, or why a row is not there. */
+export function KagoMenuNote({ className, children }: { className?: string; children: ReactNode }) {
+  return <div className={cn("px-2 py-1 text-xs text-muted", className)}>{children}</div>;
 }

@@ -7,7 +7,7 @@ import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
 import { KagoTooltip } from "@/components/kago/tooltip";
 import { KagoVirtualList } from "@/components/kago/virtual-list";
 import { Button } from "@/components/ui/button";
-import { kindOfExtension, type FileKind } from "@/features/files/fileKind";
+import { kindOfExtension, type FileKind } from "@/lib/fileKind";
 import { formatSize } from "@/lib/format";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";

@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Page, Row, RowList } from "@/components/kago/page";
 import { t } from "@/lib/i18n";
 import { editExternalApp } from "./ExternalAppDialog";
-import { ExternalAppIcon } from "./ExternalAppIcon";
+import { ExternalAppIcon } from "@/components/kago/external-app-icon";
 import { removeExternalApp } from "./externalApps";
 
 /** The shortcuts on one's desktop to other services: one's own, and the ones an administrator put on everyone's. */

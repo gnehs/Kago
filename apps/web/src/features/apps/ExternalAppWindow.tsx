@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { KagoWindow } from "@/components/kago/window";
 import { t } from "@/lib/i18n";
 import type { ExternalWindow } from "@/stores/workspace";
-import { ExternalAppGlyph } from "./ExternalAppIcon";
+import { ExternalAppGlyph } from "@/components/kago/external-app-icon";
 import { blockedAsMixedContent, openInNewTab } from "./externalApps";
 
 /**

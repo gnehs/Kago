@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ZoomIn, ZoomOut } from "lucide-react";
 import { create } from "zustand";
-import { KagoDialog } from "@/components/kago/dialog";
+import { KagoDialog, KagoDialogActions } from "@/components/kago/dialog";
 import { KagoSlider } from "@/components/kago/slider";
 import { Button } from "@/components/ui/button";
 import { sourceOf } from "@/features/files/ImagePreview";
@@ -249,10 +249,10 @@ function AvatarCropper({ request }: { request: AvatarRequest }) {
           </div>
         </>
       )}
-      <div className="flex justify-end gap-2 pt-1">
+      <KagoDialogActions>
         <Button onClick={close}>{t("Cancel")}</Button>
         <Button type="submit" variant="default" disabled={saving || !(picture || failed)}>{saving ? t("Saving…") : t("Save")}</Button>
-      </div>
+      </KagoDialogActions>
     </form>
   );
 }

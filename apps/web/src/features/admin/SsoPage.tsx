@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Check, Copy, Plus, X } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import { api } from "@/api/client";
 import { useGroups, useSsoConfig } from "@/api/hooks";
+import { KagoCopyField } from "@/components/kago/copy-field";
 import { KagoLoading } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { Button } from "@/components/ui/button";
@@ -11,7 +12,6 @@ import { KagoPasswordInput } from "@/components/kago/password-input";
 import { Card, Page, SettingRow } from "@/components/kago/page";
 import { t } from "@/lib/i18n";
 import { run } from "@/lib/run";
-import { copyText } from "@/lib/utils";
 import { toast } from "@/stores/toast";
 import type { SsoConfig } from "@/types/kago";
 import { roleLabels } from "./UsersPage";
@@ -42,7 +42,6 @@ export function SsoPage() {
   // Never sent back by the server: empty means the one already kept stays.
   const [secret, setSecret] = useState("");
   const [forgetSecret, setForgetSecret] = useState(false);
-  const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -119,13 +118,7 @@ export function SsoPage() {
             {redirectUri ? (
               <div className="col-span-2 flex flex-col gap-1.5">
                 <span className="text-xs text-muted">{t("Register this redirect URI with the provider:")}</span>
-                <div className="flex items-center gap-2">
-                  <code className="kago-well min-w-0 flex-1 truncate rounded-md px-2.5 py-1.5 text-xs">{redirectUri}</code>
-                  <Button onClick={() => void copyText(redirectUri).then(() => setCopied(true))}>
-                    {copied ? <Check /> : <Copy />}
-                    {copied ? t("Copied") : t("Copy")}
-                  </Button>
-                </div>
+                <KagoCopyField value={redirectUri} />
               </div>
             ) : null}
           </div>

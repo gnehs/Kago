@@ -7,7 +7,7 @@ import { Field, Input, Select } from "@/components/ui/input";
 import { KagoPasswordInput } from "@/components/kago/password-input";
 import { firstDirection, sortColumns } from "@/features/files/FileList";
 import { BASE_VIEW } from "@/features/files/folderView";
-import { Card, Page, SettingRow } from "@/components/kago/page";
+import { Card, Page, Row, RowList, SettingRow } from "@/components/kago/page";
 import { KagoSegmented } from "@/components/kago/segmented";
 import { formatUnixDate } from "@/lib/format";
 import { localeNames, setLocale, t } from "@/lib/i18n";
@@ -146,18 +146,13 @@ function ArchivePasswords() {
     <Card title={t("Archive passwords")} description={t("Tried on a locked archive before you are asked for its password. A saved password is not shown again.")}>
       <div className="flex flex-col gap-4">
         {saved.data?.length ? (
-          <ul className="m-0 flex list-none flex-col divide-y divide-line p-0">
+          <RowList bare>
             {saved.data.map((item) => (
-              <li key={item.id} className="flex items-center gap-3 py-2 first:pt-0 [&>.lucide]:size-4 [&>.lucide]:text-muted">
-                <KeyRound />
-                <div className="flex min-w-0 flex-1 flex-col">
-                  <span className={item.note ? "truncate font-medium" : "truncate text-muted"}>{item.note || t("No note")}</span>
-                  <span className="text-xs text-muted">{t("Added {date}", { date: formatUnixDate(item.createdAt) })}</span>
-                </div>
+              <Row key={item.id} icon={<KeyRound />} title={item.note || <span className="font-normal text-muted">{t("No note")}</span>} subtitle={t("Added {date}", { date: formatUnixDate(item.createdAt) })}>
                 <Button variant="destructive" onClick={() => void run(async () => adopt(await api<ArchivePassword[]>(`/api/archive-passwords/${item.id}`, { method: "DELETE" })))}>{t("Remove")}</Button>
-              </li>
+              </Row>
             ))}
-          </ul>
+          </RowList>
         ) : null}
         <form className="grid grid-cols-2 items-end gap-3" onSubmit={add}>
           <Field label={t("Password")}>

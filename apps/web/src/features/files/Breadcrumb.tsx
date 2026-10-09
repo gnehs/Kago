@@ -7,7 +7,7 @@ import { nfc, normalizeLogicalPath } from "@/lib/paths";
 import { cn } from "@/lib/utils";
 import { toast } from "@/stores/toast";
 import type { FileWindow } from "@/types/kago";
-import { FileIcon } from "./FileIcon";
+import { FileIcon } from "@/components/kago/file-icon";
 import { t } from "@/lib/i18n";
 
 const FOLDER = { kind: "folder", type: "", name: "" } as const;

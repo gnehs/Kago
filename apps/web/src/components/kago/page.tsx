@@ -71,9 +71,9 @@ export function SettingRow({ label, description, children }: { label: string; de
   );
 }
 
-/** Bordered list whose rows are separated by hairlines. */
-export function RowList({ children }: { children: ReactNode }) {
-  return <ul className="m-0 flex list-none flex-col divide-y divide-line kago-card rounded-lg border border-line p-0">{children}</ul>;
+/** Bordered list whose rows are separated by hairlines. Inside a card it is `bare`: the card is already its frame, and its rows keep to the card's own edges. */
+export function RowList({ bare, children }: { bare?: boolean; children: ReactNode }) {
+  return <ul data-bare={bare ? "" : undefined} className={cn("group/rows m-0 flex list-none flex-col divide-y divide-line p-0", !bare && "kago-card rounded-lg border border-line")}>{children}</ul>;
 }
 
 /**
@@ -84,7 +84,7 @@ export function RowList({ children }: { children: ReactNode }) {
  */
 export function Row({ icon, title, subtitle, children }: { icon?: ReactNode; title: ReactNode; subtitle?: ReactNode; children?: ReactNode }) {
   return (
-    <li className="flex min-h-12 items-center gap-3 px-4 py-2 [&>.lucide]:text-muted">
+    <li className="flex min-h-12 items-center gap-3 px-4 py-2 group-data-bare/rows:min-h-0 group-data-bare/rows:px-0 group-data-bare/rows:first:pt-0 [&>.lucide]:text-muted group-data-bare/rows:[&>.lucide]:size-4">
       {icon}
       <div className="flex min-w-0 flex-1 flex-col">
         <span className="truncate font-medium">{title}</span>

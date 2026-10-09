@@ -14,7 +14,7 @@ import { toast } from "@/stores/toast";
 import { guardWindowClose, useWorkspaceStore, type PreviewWindow } from "@/stores/workspace";
 import type { FileMeta } from "@/types/kago";
 import type { CodeEditorHandle } from "./CodeEditor";
-import { FileIcon } from "./FileIcon";
+import { FileIcon } from "@/components/kago/file-icon";
 import { t } from "@/lib/i18n";
 
 // CodeMirror is only downloaded by someone who opens a text file.

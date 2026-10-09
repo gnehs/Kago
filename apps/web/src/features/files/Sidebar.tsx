@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { ChevronRight, ClipboardPaste, Copy, Download, ExternalLink, FolderOpen, FolderPlus, HardDrive, PanelTop, Pencil, Scissors, Server, Trash2 } from "lucide-react";
 import { useFileList } from "@/api/hooks";
+import { locationTone } from "@/components/kago/app-icon";
 import { KagoContextMenu, KagoMenuItem, KagoMenuSeparator } from "@/components/kago/menu";
-import { locationTone } from "@/features/workspace/DesktopIcons";
 import { nfc, parentPath } from "@/lib/paths";
 import { usePointerDrag } from "@/lib/usePointerDrag";
 import { cn } from "@/lib/utils";
@@ -11,7 +11,7 @@ import { folderKey } from "@/stores/settings";
 import { folderTitle, useWorkspaceStore } from "@/stores/workspace";
 import { useClipboardStore, type FileRef } from "@/stores/clipboard";
 import type { FileWindow, Root } from "@/types/kago";
-import { FileIcon } from "./FileIcon";
+import { FileIcon } from "@/components/kago/file-icon";
 import { downloadFiles, newFolderIn, pasteClipboard, renameFile, setClipboard, trashFiles } from "./useFileActions";
 import { t } from "@/lib/i18n";
 
