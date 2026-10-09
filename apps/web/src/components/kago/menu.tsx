@@ -80,7 +80,7 @@ export function KagoMenuItem({ icon, shortcut, destructive, className, children,
     >
       {icon}
       {children}
-      {shortcut ? <kbd className="ml-auto pl-6 font-sans text-xs tracking-wide opacity-55">{shortcut}</kbd> : null}
+      {shortcut ? <kbd className="ml-auto pl-6 font-mono text-xs tracking-wide opacity-55">{shortcut}</kbd> : null}
     </ContextMenu.Item>
   );
 }
