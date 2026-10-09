@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ExternalLink, Globe, RotateCw, ShieldAlert } from "lucide-react";
+import { ExternalLink, RotateCw, ShieldAlert } from "lucide-react";
 import { useFrameProbe } from "@/api/hooks";
 import { KagoEmptyState } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { KagoWindow } from "@/features/windows/KagoWindow";
 import { t } from "@/lib/i18n";
 import type { ExternalWindow } from "@/stores/workspace";
+import { ExternalAppGlyph } from "./ExternalAppIcon";
 import { blockedAsMixedContent, openInNewTab } from "./externalApps";
 
 /**
@@ -29,7 +30,7 @@ export function ExternalAppWindow({ window }: { window: ExternalWindow }) {
       window={window}
       // The service goes on running while its window is put away: music keeps playing, and nothing has to sign in again.
       keepMounted
-      icon={<Globe className="text-muted" />}
+      icon={<ExternalAppGlyph icon={app.icon} className="text-muted" />}
       titleExtra={
         <>
           {mixed || refused ? null : <KagoIconButton label={t("Reload")} className="size-6" onClick={() => setLoad((count) => count + 1)}><RotateCw /></KagoIconButton>}

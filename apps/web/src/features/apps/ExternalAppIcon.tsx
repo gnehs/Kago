@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Globe } from "lucide-react";
 import { KagoAppIcon, KagoAppImage } from "@/components/kago/app-icon";
 import { locationTone } from "@/features/workspace/DesktopIcons";
 import { cn } from "@/lib/utils";
@@ -23,4 +24,14 @@ export function ExternalAppIcon({ name, icon, className }: { name: string; icon:
       {picture ? <KagoAppImage src={picture} onError={() => setFailed(picture)} /> : GLOBE}
     </span>
   );
+}
+
+/**
+ * A shortcut's icon at the size of a line of text, where a tile would be a smudge: the picture as it is, the way a
+ * browser's tab shows a site's. Without one it is the globe that stands for any place on the network.
+ */
+export function ExternalAppGlyph({ icon, className }: { icon: string | null; className?: string }) {
+  const [failed, setFailed] = useState<string | null>(null);
+  if (!icon || failed === icon) return <Globe className={className} />;
+  return <img src={icon} alt="" draggable={false} className={cn("size-4 shrink-0 object-contain", className)} onError={() => setFailed(icon)} />;
 }

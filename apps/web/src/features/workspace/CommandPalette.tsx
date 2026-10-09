@@ -1,7 +1,8 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { Dialog } from "@base-ui/react/dialog";
-import { Clock, Fingerprint, Folder, Globe, HardDrive, KeyRound, LayoutGrid, RefreshCw, ScrollText, Search, UserRound, UsersRound } from "lucide-react";
+import { Clock, Fingerprint, Folder, HardDrive, KeyRound, LayoutGrid, RefreshCw, ScrollText, Search, UserRound, UsersRound } from "lucide-react";
 import { useExternalApps } from "@/api/hooks";
+import { ExternalAppGlyph } from "@/features/apps/ExternalAppIcon";
 import { appHost, openExternalApp } from "@/features/apps/externalApps";
 import { appIcons } from "@/features/windows/AppWindow";
 import { baseName, displayPath, nfc, normalizeLogicalPath } from "@/lib/paths";
@@ -66,7 +67,7 @@ function suggestions(query: string, roots: Root[], activeRootSlug: string | unde
   // The other services on the desktop are places to go as well; they open in a tab of their own.
   for (const item of externalApps) {
     if (lower && !item.name.toLowerCase().includes(lower)) continue;
-    results.set(`external:${item.id}`, { key: `external:${item.id}`, label: item.name, hint: appHost(item), icon: <Globe />, open: () => openExternalApp(item) });
+    results.set(`external:${item.id}`, { key: `external:${item.id}`, label: item.name, hint: appHost(item), icon: <ExternalAppGlyph icon={item.icon} />, open: () => openExternalApp(item) });
   }
   for (const item of apps) {
     if ((item.adminOnly && !isAdmin) || (lower && !item.label.toLowerCase().includes(lower))) continue;

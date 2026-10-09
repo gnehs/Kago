@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Popover } from "@base-ui/react/popover";
-import { Globe, ListChecks, LogOut, Search, Settings } from "lucide-react";
+import { ListChecks, LogOut, Search, Settings } from "lucide-react";
 import { api } from "@/api/client";
 import { useRoots, useTasks } from "@/api/hooks";
 import { KagoSpinner } from "@/components/kago/empty-state";
@@ -14,6 +14,7 @@ import { isActiveTask, isFinishedTask, isQuietTask } from "@/features/tasks/task
 import { useClearFinishedTasks } from "@/features/tasks/useClearFinishedTasks";
 import { displayPath } from "@/lib/paths";
 import { cn } from "@/lib/utils";
+import { ExternalAppGlyph } from "@/features/apps/ExternalAppIcon";
 import { FileIcon } from "@/features/files/FileIcon";
 import { appIcons } from "@/features/windows/AppWindow";
 import { minimizeWindows, useWorkspaceStore, type WindowFrame } from "@/stores/workspace";
@@ -84,7 +85,7 @@ export function TopBar({ user, onOpenPalette }: { user: Actor; onOpenPalette: ()
             )}
             onClick={() => activate(window)}
           >
-            {"app" in window ? (window.app === "external" ? <Globe /> : appIcons[window.app]) : "preview" in window ? <FileIcon item={window.preview.item} /> : <FileIcon item={{ kind: "folder", type: "", name: "" }} />}
+            {"app" in window ? (window.app === "external" ? <ExternalAppGlyph icon={window.external.icon} /> : appIcons[window.app]) : "preview" in window ? <FileIcon item={window.preview.item} /> : <FileIcon item={{ kind: "folder", type: "", name: "" }} />}
             <span className="truncate">{window.title}</span>
           </button>
         ))}
