@@ -10,21 +10,21 @@ import type { FileTask } from "@/types/kago";
 import { canCancelTask, canRetryTask, compressDownloadTarget, hasTaskDownload, isActiveTask, taskErrorLabel, taskProgressLabel, taskProgressMax, taskProgressValue, taskStatus, taskTypeLabel } from "./taskUtils";
 import { t } from "@/lib/i18n";
 
-/** The colour of a state, along the row's leading edge and on the plate at its far end. */
+/** The colour of a state, on the plate at the row's far end. */
 const tones = {
-  neutral: "border-l-(--kago-text-faint) text-muted",
-  accent: "border-l-accent text-accent",
-  success: "border-l-success text-success",
-  warning: "border-l-warning text-warning",
-  danger: "border-l-danger text-danger"
+  neutral: "text-muted",
+  accent: "text-accent",
+  success: "text-success",
+  warning: "text-warning",
+  danger: "text-danger"
 };
 
 /** What the plate at the end of a row holds once there is no figure to show: a glyph for how the task stands. */
 const glyphs: Record<string, React.ReactNode> = { queued: <Clock />, paused: <Pause />, done: <Check />, failed: <X />, interrupted: <X />, cancelled: <Ban /> };
 
 /**
- * A task, as a slab of its own: the colour of its state runs down the leading edge, and the far end is a plate
- * in that colour holding how far along it is, as a figure with its unit beside it, or a glyph once it has stopped.
+ * A task, as a slab of its own: the far end is a plate in the colour of its state, holding how far along it is,
+ * as a figure with its unit beside it, or a glyph once it has stopped.
  * The state is in words as well, at the head of the line under the name, except while the figure is counting.
  */
 export function TaskRow({ task }: { task: FileTask }) {
@@ -45,7 +45,7 @@ export function TaskRow({ task }: { task: FileTask }) {
   const detail = task.error_message ? taskErrorLabel(task.error_message) : taskProgressLabel(task);
 
   return (
-    <div className={cn("kago-card flex shrink-0 overflow-hidden rounded-md border border-l-[3px] border-line", tones[status.tone])}>
+    <div className={cn("kago-card flex shrink-0 overflow-hidden rounded-md border border-line", tones[status.tone])}>
       <div className="flex min-w-0 flex-1 flex-col gap-1.5 px-3 py-2.5 text-ink">
         <strong className="truncate font-medium">{taskTypeLabel(task)}</strong>
         {isActiveTask(task) ? <progress value={taskProgressValue(task)} max={taskProgressMax(task)} /> : null}
