@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readdir, readFile, rm } from "node:fs/promises";
+import http from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { buildApp } from "../dist/app.js";
+import { FrameProbe, framingVerdict, mayBeAsked, probeFraming } from "../src/lib/frame-probe.ts";
 import { readIcon, ICON_MAX_BYTES } from "../src/lib/icon-image.ts";
 import { fetchPublic, isPublicAddress } from "../src/lib/public-fetch.ts";
 import { sanitizeSvg } from "../src/lib/svg-sanitize.ts";
@@ -183,6 +185,106 @@ test("library icons come only from the libraries' own lists, and are cleaned lik
   await assert.rejects(offline.icon("dashboard-icons", "jellyfin"), (error) => error.code === "ICON_NOT_FOUND");
 });
 
+test("a service's headers are read the way a browser frames by them", () => {
+  const kago = "https://kago.example.test";
+  const service = "https://jellyfin.example.test";
+  const verdict = (headers, page = kago, target = service) => framingVerdict(headers, target, page);
+  assert.equal(verdict({}), "allowed");
+  assert.equal(verdict({ "x-frame-options": "DENY" }), "blocked");
+  assert.equal(verdict({ "x-frame-options": "SAMEORIGIN" }), "blocked");
+  assert.equal(verdict({ "x-frame-options": "sameorigin" }, service), "allowed");
+  assert.equal(verdict({ "x-frame-options": "SAMEORIGIN, DENY" }, service), "blocked");
+  // No browser honours this form any more, so it holds nothing back.
+  assert.equal(verdict({ "x-frame-options": "ALLOW-FROM https://elsewhere.example.test" }), "allowed");
+  assert.equal(verdict({ "content-security-policy": "default-src 'self'" }), "allowed");
+  assert.equal(verdict({ "content-security-policy": "default-src 'self'; frame-ancestors 'none'" }), "blocked");
+  assert.equal(verdict({ "content-security-policy": "frame-ancestors 'self'" }), "blocked");
+  assert.equal(verdict({ "content-security-policy": "frame-ancestors 'self'" }, service), "allowed");
+  assert.equal(verdict({ "content-security-policy": "FRAME-ANCESTORS *" }), "allowed");
+  assert.equal(verdict({ "content-security-policy": "frame-ancestors https:" }), "allowed");
+  assert.equal(verdict({ "content-security-policy": "frame-ancestors https:" }, "http://kago.example.test"), "blocked");
+  assert.equal(verdict({ "content-security-policy": "frame-ancestors 'self' https://kago.example.test" }), "allowed");
+  assert.equal(verdict({ "content-security-policy": "frame-ancestors https://*.example.test" }), "allowed");
+  assert.equal(verdict({ "content-security-policy": "frame-ancestors https://*.example.test" }, "https://example.test"), "blocked");
+  assert.equal(verdict({ "content-security-policy": "frame-ancestors kago.example.test" }), "allowed");
+  assert.equal(verdict({ "content-security-policy": "frame-ancestors https://kago.example.test:8443" }), "blocked");
+  assert.equal(verdict({ "content-security-policy": "frame-ancestors https://kago.example.test:8443" }, "https://kago.example.test:8443"), "allowed");
+  assert.equal(verdict({ "content-security-policy": "frame-ancestors https://kago.example.test.evil.example" }), "blocked");
+  // With a list of ancestors the older header is not looked at, and every policy that has a list must agree.
+  assert.equal(verdict({ "content-security-policy": "frame-ancestors *", "x-frame-options": "DENY" }), "allowed");
+  assert.equal(verdict({ "content-security-policy": ["frame-ancestors *", "frame-ancestors 'none'"] }), "blocked");
+  assert.equal(verdict({ "content-security-policy": "frame-ancestors *, frame-ancestors 'none'" }), "blocked");
+  // A policy that only reports holds nothing back.
+  assert.equal(verdict({ "content-security-policy-report-only": "frame-ancestors 'none'" }), "allowed");
+  assert.equal(verdict({ "x-frame-options": "DENY" }, "not an origin"), "unknown");
+});
+
+test("a service is asked whether it may be framed, and nothing else", async (t) => {
+  const seen = [];
+  const serve = (handler) =>
+    new Promise((resolve) => {
+      const server = http.createServer((request, response) => {
+        seen.push(`${request.method} ${request.headers.host}${request.url}`);
+        handler(request, response);
+      });
+      server.listen(0, "127.0.0.1", () => resolve(server));
+      t.after(() => server.close());
+    });
+  const address = (server, pathName = "/") => `http://127.0.0.1:${server.address().port}${pathName}`;
+  const refusing = await serve((request, response) => response.writeHead(200, { "x-frame-options": "DENY" }).end("secret body"));
+  const open = await serve((request, response) => response.writeHead(200).end("open"));
+  const listing = await serve((request, response) => response.writeHead(403, { "content-security-policy": "frame-ancestors https://kago.example.test" }).end());
+  const redirecting = await serve((request, response) => {
+    if (request.url === "/") response.writeHead(302, { location: "/web/" }).end();
+    else if (request.url === "/web/") response.writeHead(307, { location: address(refusing, "/login") }).end();
+    else if (request.url === "/loop") response.writeHead(302, { location: "/loop" }).end();
+    else if (request.url === "/away") response.writeHead(302, { location: "file:///etc/passwd" }).end();
+    // Never answered: the question is given up on.
+    else if (request.url === "/slow") request.resume();
+  });
+  const kago = "https://kago.example.test";
+  const here = { allow: () => true, timeoutMs: 300 };
+
+  assert.equal(await probeFraming(address(refusing), kago, here), "blocked");
+  assert.equal(await probeFraming(address(open), kago, here), "allowed");
+  // Whatever the page at the address turns out to be, its headers still say who may frame it.
+  assert.equal(await probeFraming(address(listing), kago, here), "allowed");
+  assert.equal(await probeFraming(address(listing), "https://elsewhere.example.test", here), "blocked");
+  // It is the page a redirect ends at whose answer counts.
+  seen.length = 0;
+  assert.equal(await probeFraming(address(redirecting), kago, here), "blocked");
+  assert.deepEqual(seen.map((line) => line.split(" ")[0]), ["GET", "GET", "GET"]);
+  assert.ok(seen[2].endsWith("/login"));
+  for (const pathName of ["/loop", "/away", "/slow"]) assert.equal(await probeFraming(address(redirecting, pathName), kago, here), "unknown", pathName);
+  assert.equal(await probeFraming("http://127.0.0.1:9/", kago, here), "unknown");
+
+  // Left to itself it never asks this machine, nor where a cloud keeps its keys, whether named in numbers, by name or by a redirect.
+  for (const address of ["127.0.0.1", "127.9.9.9", "::1", "0.0.0.0", "169.254.169.254", "fe80::1", "::ffff:127.0.0.1", "::ffff:169.254.169.254", "224.0.0.1", "nonsense"]) assert.equal(mayBeAsked(address), false, address);
+  for (const address of ["192.168.1.10", "10.0.0.5", "172.16.3.4", "100.64.0.9", "fd12::1", "1.1.1.1", "198.18.1.42"]) assert.equal(mayBeAsked(address), true, address);
+  seen.length = 0;
+  for (const target of [address(refusing), `http://localhost:${refusing.address().port}/`, `http://[::1]:${refusing.address().port}/`, "http://169.254.169.254/latest/meta-data/", "ftp://127.0.0.1/", "not an address"]) {
+    assert.equal(await probeFraming(target, kago, { timeoutMs: 300 }), "unknown", target);
+  }
+  const outward = await serve((request, response) => response.writeHead(302, { location: "http://169.254.169.254/latest/meta-data/" }).end());
+  assert.equal(await probeFraming(address(outward), kago, { allow: (ip) => ip === "127.0.0.1" && seen.length === 0, timeoutMs: 300 }), "unknown");
+  assert.deepEqual(seen.length, 1);
+
+  // Each person gets only so many questions a minute; the same one asked again is not asked of the service again.
+  let asked = 0;
+  const probe = new FrameProbe(async () => {
+    asked += 1;
+    return "blocked";
+  });
+  assert.equal(await probe.ask("alice", "http://nas.local/", kago), "blocked");
+  assert.equal(await probe.ask("bob", "http://nas.local/", kago), "blocked");
+  assert.equal(asked, 1);
+  const answers = await Promise.all(Array.from({ length: 40 }, (_, index) => probe.ask("alice", `http://nas.local:${8000 + index}/`, kago)));
+  assert.equal(answers.filter((answer) => answer === "blocked").length, 29);
+  assert.equal(answers.filter((answer) => answer === "unknown").length, 11);
+  assert.equal(asked, 30);
+  assert.equal(await probe.ask("bob", "http://nas.local:9999/", kago), "blocked");
+});
+
 test("a shortcut is its maker's own unless an administrator shares it", async () => {
   const fixture = await createFixture();
   const app = await buildApp({ port: 0, dataDir: fixture.dataDir, appDataDir: fixture.appDataDir, sessionSecret: "external-apps-test-session-secret", nodeEnv: "test" });
@@ -205,6 +307,12 @@ test("a shortcut is its maker's own unless an administrator shares it", async ()
     assert.equal((await stranger.post("/api/external-apps", { name: "X", url: "http://nas.local" })).statusCode, 401);
     assert.equal((await stranger.get("/api/app-icons?q=jellyfin")).statusCode, 401);
     assert.equal((await stranger.get("/api/app-icons/dashboard-icons/jellyfin")).statusCode, 401);
+    assert.equal((await stranger.post("/api/external-apps/probe", { url: "http://nas.local:8096" })).statusCode, 401);
+    // Asking whether a service may be framed takes a web address, and this machine is never the one asked.
+    assert.equal((await alice.post("/api/external-apps/probe", { url: "file:///etc/passwd" })).statusCode, 400);
+    assert.equal((await alice.post("/api/external-apps/probe", { url: "http://user:secret@nas.local" })).statusCode, 400);
+    assert.deepEqual((await alice.post("/api/external-apps/probe", { url: "http://127.0.0.1:1/" })).json, { verdict: "unknown" });
+    assert.deepEqual((await alice.post("/api/external-apps/probe", { url: "http://169.254.169.254/latest/meta-data/" })).json, { verdict: "unknown" });
 
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"><script>alert(1)</script><path d="M0 0h4"/></svg>`;
     const mine = await alice.post("/api/external-apps", { name: "Jellyfin", url: "http://nas.local:8096/web/", icon: { kind: "upload", data: base64(svg) } });

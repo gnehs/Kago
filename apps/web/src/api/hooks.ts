@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { api, previewUrl } from "./client";
 import { decodeSubtitle } from "../lib/subtitles";
 import { isTrashing, useTrashingStore } from "../stores/trashing";
-import type { Actor, AuditLog, ExternalApp, FileItem, FileList, FileMeta, FileTask, Group, ImageMetadata, LibraryIcon, MediaInfo, PermissionRule, Root, ShareLink, Shelf, SqlitePage, SsoConfig, SsoIdentity, SsoInfo, SqliteTable, StorageInfo, SubtitleList, SyncJob, SyncRun, SyncTrial, Tag, TrashItem, UserAccount, WorkspaceState } from "../types/kago";
+import type { Actor, AuditLog, ExternalApp, FileItem, FileList, FileMeta, FileTask, FrameVerdict, Group, ImageMetadata, LibraryIcon, MediaInfo, PermissionRule, Root, ShareLink, Shelf, SqlitePage, SsoConfig, SsoIdentity, SsoInfo, SqliteTable, StorageInfo, SubtitleList, SyncJob, SyncRun, SyncTrial, Tag, TrashItem, UserAccount, WorkspaceState } from "../types/kago";
 
 export function useSetupStatus() {
   return useQuery({ queryKey: ["auth", "setup"], queryFn: () => api<{ needsSetup: boolean; oidc: SsoInfo | null }>("/api/auth/setup") });
@@ -255,6 +255,17 @@ export function useIconSuggestions(name: string) {
     staleTime: 5 * 60_000,
     // The suggestions for what was typed so far stay while the next ones are looked up.
     placeholderData: keepPreviousData
+  });
+}
+
+/** Whether the service at an address lets itself be shown inside Kago. The server asks the service; this only says what it heard. */
+export function useFrameProbe(url: string, enabled = true) {
+  return useQuery({
+    queryKey: ["frame-probe", url],
+    queryFn: () => api<{ verdict: FrameVerdict }>("/api/external-apps/probe", { method: "POST", body: JSON.stringify({ url }) }),
+    enabled: enabled && /^https?:\/\/[^/]/i.test(url),
+    retry: false,
+    staleTime: 60_000
   });
 }
 

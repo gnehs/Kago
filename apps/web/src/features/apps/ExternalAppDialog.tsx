@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Upload } from "lucide-react";
 import { create } from "zustand";
 import { api, libraryIconUrl } from "@/api/client";
-import { useIconSuggestions } from "@/api/hooks";
+import { useFrameProbe, useIconSuggestions } from "@/api/hooks";
 import { KagoDialog } from "@/components/kago/dialog";
 import { KagoTooltip } from "@/components/kago/tooltip";
 import { Button } from "@/components/ui/button";
@@ -96,6 +96,17 @@ function AppForm({ app, isAdmin }: { app: ExternalApp | null; isAdmin: boolean }
     choose({ kind: "upload", file, preview: URL.createObjectURL(file) });
   }
 
+  // Whether the service lets itself be framed is asked of the service, once the address has stopped changing.
+  const address = url.trim() ? withScheme(url.trim()) : "";
+  const [asked, setAsked] = useState(address);
+  useEffect(() => {
+    const timer = setTimeout(() => setAsked(address), 400);
+    return () => clearTimeout(timer);
+  }, [address]);
+  const mixed = blockedAsMixedContent({ url: address });
+  const probe = useFrameProbe(asked, embed && !mixed);
+  const verdict = asked === address ? probe.data?.verdict : undefined;
+
   const preview = choice.kind === "keep" ? app?.icon ?? null : choice.kind === "library" ? libraryIconUrl(choice.icon.source, choice.icon.name) : choice.kind === "upload" ? choice.preview : null;
   const canSubmit = name.trim().length > 0 && url.trim().length > 0 && !busy;
 
@@ -141,11 +152,17 @@ function AppForm({ app, isAdmin }: { app: ExternalApp | null; isAdmin: boolean }
             <option value="window">{t("A window in Kago")}</option>
           </Select>
         </Field>
-        {/* Whether a service lets itself be framed is the service's to say, and cannot be asked ahead of time; what the browser will refuse outright can. */}
-        {!embed ? null : blockedAsMixedContent({ url: withScheme(url.trim()) }) ? (
+        {/* Whether a service lets itself be framed is the service's to say. What it says is told here, before a blank window does. */}
+        {!embed ? null : mixed ? (
           <span className="text-xs text-warning">{t("Kago is served over HTTPS and this address is not, so the browser refuses to show it inside Kago. Use an https:// address, or a new tab.")}</span>
+        ) : verdict === "blocked" ? (
+          <span className="text-xs text-warning">{t("This service is set up to refuse being shown inside another page, so the window would stay blank. Use a new tab, or change the service’s own settings (X-Frame-Options, frame-ancestors).")}</span>
+        ) : verdict === "allowed" ? (
+          <span className="text-xs text-faint">{t("This service allows being shown inside another page. Some still can’t keep you signed in there; if that happens, switch back to a new tab.")}</span>
+        ) : verdict === "unknown" ? (
+          <span className="text-xs text-faint">{t("The server couldn’t reach this address to check whether it allows being shown inside another page. If the window stays blank, switch back to a new tab.")}</span>
         ) : (
-          <span className="text-xs text-faint">{t("This may not work: many services refuse to be shown inside another page, and some can’t keep you signed in there. If the window stays blank, switch back to a new tab.")}</span>
+          <span className="text-xs text-faint">{address ? t("Checking whether this service allows being shown inside another page…") : t("This may not work: many services refuse to be shown inside another page, and some can’t keep you signed in there. If the window stays blank, switch back to a new tab.")}</span>
         )}
       </div>
       <div className="flex flex-col gap-1.5">

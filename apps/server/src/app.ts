@@ -17,6 +17,7 @@ import { logger } from "./lib/logger.js";
 import { randomToken } from "./lib/crypto.js";
 import { SecretBox } from "./lib/secret-box.js";
 import { sendFile, sendSource } from "./lib/send-file.js";
+import { FrameProbe } from "./lib/frame-probe.js";
 import { ICON_TYPES } from "./lib/icon-image.js";
 import { ensureSshKey } from "./lib/ssh-key.js";
 import { zipStream } from "./lib/zip-stream.js";
@@ -25,7 +26,7 @@ import { AuditService } from "./services/audit.service.js";
 import { AuthService, MAX_PASSWORD, changePasswordSchema, createUserSchema, loginSchema, patchUserSchema, resetPasswordSchema, setupAdminSchema } from "./services/auth.service.js";
 import { FsService, finderTagsSchema, fsQuerySchema, maxUploadFiles, mkdirSchema, renameSchema, sqliteRowsSchema, writeTextSchema, zipQuerySchema } from "./services/fs.service.js";
 import { ImageService } from "./services/image.service.js";
-import { externalAppSchema, ExternalAppService } from "./services/external-app.service.js";
+import { appUrl, externalAppSchema, ExternalAppService } from "./services/external-app.service.js";
 import { createGroupSchema, GroupService } from "./services/group.service.js";
 import { IconLibraryService } from "./services/icon-library.service.js";
 import { MediaService, mediaAudioSchema, mediaSessionSchema, mediaStreamSchema } from "./services/media.service.js";
@@ -141,7 +142,7 @@ export async function buildApp(env: Env) {
     }
   }
   await remotes.start();
-  registerApi(app, { auth, audit, roots, paths, permissions, fsService, workspace, preferences, tasks, shelves, tags, shares, groups, oidc, media, images, apps, iconLibrary, events, db, storage, remotes, sync, env });
+  registerApi(app, { auth, audit, roots, paths, permissions, fsService, workspace, preferences, tasks, shelves, tags, shares, groups, oidc, media, images, apps, iconLibrary, frameProbe: new FrameProbe(), events, db, storage, remotes, sync, env });
 
   app.get("/ws", {
     websocket: true,
@@ -303,6 +304,7 @@ type Services = {
   images: ImageService;
   apps: ExternalAppService;
   iconLibrary: IconLibraryService;
+  frameProbe: FrameProbe;
   events: EventHub;
   db: ReturnType<typeof openDb>;
   storage: StorageService;
@@ -667,6 +669,13 @@ function registerApi(app: FastifyInstance, services: Services) {
     // An icon may be an SVG. It was rewritten when it was taken in, and is still sent as something that cannot run.
     sandboxContent(reply);
     return sendFile(request, reply, icon.file, stat, icon.contentType);
+  });
+  // Whether a service lets itself be shown inside Kago, asked of the service itself before a blank window says so.
+  // The page the question is for is named by the browser, not by the request's own say-so.
+  app.post("/api/external-apps/probe", async (request) => {
+    const actor = requireActor(request);
+    const body = z.object({ url: z.string().trim().min(1).max(2048) }).parse(request.body);
+    return { verdict: await services.frameProbe.ask(actor.id, appUrl(body.url), String(request.headers.origin ?? "")) };
   });
   // A shortcut that is shown inside Kago is shown through this page: a frame around the service and nothing else.
   app.get("/api/external-apps/:id/frame", async (request, reply) => {
