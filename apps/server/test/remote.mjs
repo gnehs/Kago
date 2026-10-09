@@ -3,8 +3,7 @@
 //   KAGO_TEST_REMOTE='{"type":"smb","base":"share","params":{"host":"nas","user":"kago","pass":"..."}}' pnpm test:remote
 //
 // KAGO_TEST_SERVER takes the same without `base`, for the test of a whole SMB server added as one location.
-// The folder `base` names is filled with test files and left clean. With KAGO_TEST_RSYNC='user@host:/path'
-// (a machine that already trusts the key printed by GET /api/storage/ssh-key) the rsync side of sync is run too.
+// The folder `base` names is filled with test files and left clean.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtemp, mkdir, readFile, readdir, rm, utimes, writeFile } from "node:fs/promises";
@@ -234,7 +233,6 @@ test("a remote location behaves like a local one", { skip: remote ? false : "KAG
     const source = { kind: "location", rootSlug: "local", path: "/source" };
     const destination = { kind: "location", rootSlug: slug, path: "/backup" };
     assert.equal((await api.post("/api/sync-jobs", { name: "overlap", source, destination: { kind: "location", rootSlug: "local", path: "/source/deep" } })).json.code, "SYNC_OVERLAP");
-    assert.equal((await api.post("/api/sync-jobs", { name: "rsync to remote", source: { kind: "rsync", remote: "user@example.com:/x" }, destination })).json.code, "RSYNC_LOCAL_ONLY");
     const job = await api.post("/api/sync-jobs", { name: "Backup", source, destination, schedule: { kind: "daily", time: "03:00" } });
     assert.equal(job.status, 200, job.text);
     assert.ok(job.json.next_run_at > Date.now() / 1000);
@@ -292,21 +290,6 @@ test("a remote location behaves like a local one", { skip: remote ? false : "KAG
     const back = await api.post("/api/sync-jobs", { name: "Restore", source: destination, destination: { kind: "location", rootSlug: "local", path: "/restored" } });
     assert.equal((await runJob(back.json.id)).status, "done");
     assert.deepEqual((await readdir(path.join(dataDir, "local", "restored"), { recursive: true })).sort(), ["c.txt", "deep", "deep/b.txt"]);
-
-    if (process.env.KAGO_TEST_RSYNC) {
-      const key = await api.get("/api/storage/ssh-key");
-      assert.match(key.json.publicKey, /^ssh-ed25519 /);
-      const pushed = await api.post("/api/sync-jobs", { name: "Push", source, destination: { kind: "rsync", remote: process.env.KAGO_TEST_RSYNC }, options: { mode: "mirror" } });
-      assert.equal(pushed.status, 200, pushed.text);
-      assert.equal((await runJob(pushed.json.id)).status, "done");
-      await mkdir(path.join(dataDir, "local", "pulled"));
-      const pulled = await api.post("/api/sync-jobs", { name: "Pull", source: { kind: "rsync", remote: process.env.KAGO_TEST_RSYNC }, destination: { kind: "location", rootSlug: "local", path: "/pulled" } });
-      assert.equal((await runJob(pulled.json.id)).status, "done");
-      assert.deepEqual((await readdir(path.join(dataDir, "local", "pulled"), { recursive: true })).sort(), ["c.txt", "deep", "deep/b.txt"]);
-      // rsync names every change as it makes it, so its run is counted in full.
-      assert.deepEqual((await api.get(`/api/sync-jobs/${pulled.json.id}/runs`)).json[0].summary, { copy: 2, delete: 0, mkdir: 1, rmdir: 0, touch: 0, bytes: 5, truncated: true });
-      assert.equal((await api.get("/api/sync-jobs")).json.find((item) => item.id === pulled.json.id).last_trial, null);
-    }
 
     assert.equal((await api.delete(`/api/sync-jobs/${back.json.id}`)).status, 200);
 

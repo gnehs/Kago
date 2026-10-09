@@ -20,6 +20,7 @@ export function openDb(env: Env, options: { interruptRunningTasks?: boolean } = 
   db.exec(schema);
   addMissingColumns(db, "roots", { provider: "TEXT NOT NULL DEFAULT 'local'", config: "TEXT" });
   migratePermissionLevels(db);
+  dropRsync(db);
   if (options.interruptRunningTasks ?? true) {
     db.prepare(
       "UPDATE tasks SET status = 'interrupted', updated_at = ?, finished_at = ? WHERE status = 'running'"
@@ -73,6 +74,15 @@ function migratePermissionLevels(db: Db): void {
     db.exec("ROLLBACK");
     throw error;
   }
+}
+
+/** Syncs could once reach another machine over rsync. The jobs that did, and the tasks that ran them, can no longer run and are dropped. */
+function dropRsync(db: Db): void {
+  db.exec(`
+    DELETE FROM sync_jobs WHERE json_extract(source_json, '$.kind') = 'rsync' OR json_extract(destination_json, '$.kind') = 'rsync';
+    DELETE FROM tasks WHERE type IN ('rsync_pull', 'rsync_push')
+      OR (type = 'sync' AND 'rsync' IN (json_extract(destination, '$.sync.source.kind'), json_extract(destination, '$.sync.destination.kind')));
+  `);
 }
 
 export function row<T>(value: unknown): T | null {

@@ -28,7 +28,7 @@
 - **Background tasks**: copying, moving, compressing and extracting all run on the server and carry on after you close the browser. Compressing lets you pick how hard to squeeze and set a password (AES-256 or ZipCrypto); extracting a locked zip first tries the passwords saved in Settings, and only asks when none opens it.
 - **Uploads of any size**: drop files or whole folders to upload them. They are streamed straight to disk, with progress, speed and time remaining.
 - **Remote locations**: folders on SMB, SFTP, WebDAV and FTP can be added as locations and browsed, played and shared just like local ones. The container needs no extra privileges.
-- **Sync**: sync folders between locations, or with another machine over rsync, by hand or on a schedule.
+- **Sync**: sync folders between locations, by hand or on a schedule.
 - **macOS Finder tags**: the colored tags you set on your Mac can be both read and changed.
 - **Trash**: deleted files go to the Trash first and can be restored.
 - **Languages**: the interface comes in English, 繁體中文, 简体中文 and 日本語. It follows the browser language by default and can be switched in Settings → General.
@@ -104,16 +104,14 @@ Folders that aren't on this machine can be locations too. In Settings → Locati
 - Items deleted in a remote location are moved to a `.kago-trash` folder at the root of that remote (one per share when the location is a whole server), and can still be restored or emptied from the Trash. Kago never lists this folder.
 - Features that need the whole file (thumbnails of PDFs and documents, camera RAW, shooting info, SQLite previews, extraction) first fetch it to `/app-data/temp/remote`, up to 4 GB per file, and clear it after 12 hours without use. Videos are read as they play and are never downloaded in full.
 - Finder tags live in a file's extended attributes, which remote locations don't have. A same-named `.idx` + `.sub` subtitle pair isn't listed in remote locations either. Kago's own tags are not affected.
-- SFTP can use a password, or tick "Sign in with Kago's SSH key" and add the public key shown in the form to the other side's `~/.ssh/authorized_keys`.
+- SFTP can use a password, or tick "Sign in with Kago's SSH key" and add the public key shown in the form to the other side's `~/.ssh/authorized_keys`. The key is Kago's own (`/app-data/ssh/id_ed25519`, generated the first time it is needed).
 
 ### Sync
 
 Settings → Sync stores sync jobs: bring the contents of one folder to another, by hand, or automatically at an interval, every day or every week. Each run is a task, so its progress, cancellation and result are in the task list, and it is recorded in the audit log.
 
-- The two sides can be any two locations (local or remote), or a local location and a folder on another machine (`user@host:/path`, rsync over SSH).
+- The two sides can be any two locations, local or remote. To sync with another machine, add it as a remote location first.
 - "Copy new and changed files" never deletes anything at the destination. "Make the destination identical" deletes what the source no longer has, and needs permission to delete at the destination. When in doubt, tick "Trial run" first; it only reports what would change.
-- Only administrators can sync with another machine: the key is the server's own, so whoever may use it reaches everything it opens.
-- rsync signs in with Kago's own SSH key (`/app-data/ssh/id_ed25519`, generated the first time it is needed). The form shows the public key; add it to the other side's `~/.ssh/authorized_keys`. The host key is recorded on the first connection, and a connection is refused later if the key doesn't match.
 - Creating and running a sync needs permission to sync the folders at both ends. A scheduled sync runs as the person who created it; when that person is disabled or loses permission, the run is skipped and noted in the audit log.
 - Schedules follow the server's time zone, which you can set with the `TZ` environment variable (for example `TZ=Asia/Taipei`).
 

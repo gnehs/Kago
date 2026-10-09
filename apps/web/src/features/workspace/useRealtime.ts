@@ -12,7 +12,7 @@ import type { FileTask } from "@/types/kago";
 import { t } from "@/lib/i18n";
 
 /** Task types whose completion is worth announcing; the rest finish quietly. */
-const announcedTypes = ["copy", "move", "compress", "extract", "restore_trash", "rsync_pull", "rsync_push", "sync"];
+const announcedTypes = ["copy", "move", "compress", "extract", "restore_trash", "sync"];
 
 /**
  * Listens for server events. The socket only tells us what to refetch; SQLite stays the

@@ -8,12 +8,12 @@ import { KagoEmptyState } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { Button } from "@/components/ui/button";
 import { Checkbox, Field, Input, Select } from "@/components/ui/input";
-import { SshKeyNote } from "@/features/sync/SshKeyNote";
 import { Card, Page, Row, RowList, Section } from "@/features/workspace/Page";
 import { run } from "@/lib/run";
 import { confirmAction } from "@/stores/dialogs";
 import { toast } from "@/stores/toast";
 import type { RemoteField, RemoteProvider, RemoteRoot, Root } from "@/types/kago";
+import { SshKeyNote } from "./SshKeyNote";
 import { t } from "@/lib/i18n";
 
 /** The server names each field in English; this is how the interface words them. */

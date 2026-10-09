@@ -24,7 +24,7 @@ const rcloneActions: Record<string, SyncChange["action"]> = {
   "update modification time": "touch"
 };
 
-/** What a run of a sync did, or a trial run would have done, gathered from what rclone or rsync said as it went. */
+/** What a run of a sync did, or a trial run would have done, gathered from what rclone said as it went. */
 export class SyncReport {
   readonly summary: SyncSummary = { copy: 0, delete: 0, mkdir: 0, rmdir: 0, touch: 0, bytes: 0 };
   readonly changes: SyncChange[] = [];
@@ -94,34 +94,4 @@ export class SyncReport {
     this.summary.delete = stats.deletes ?? 0;
     this.summary.rmdir = stats.deletedDirs ?? 0;
   }
-
-  /** One line of rsync's `--out-format=%i %l %n`: `>f+++++++++ 4 deep/b.txt`, `cd+++++++++ 4096 deep/`, `*deleting   0 old/`. */
-  addRsyncLine(line: string): void {
-    // rsync 3 pads the word to the width of the other lines and gives a size; the one macOS ships does neither.
-    const deleted = /^\*deleting {3}\d+ (.+)$/.exec(line) ?? /^\*deleting (.+)$/.exec(line);
-    if (deleted) {
-      const name = deleted[1]!;
-      if (name.endsWith("/")) this.add({ action: "rmdir", path: name.slice(0, -1) });
-      else this.add({ action: "delete", path: name });
-      return;
-    }
-    const match = /^([<>ch.])([fdLDS])(\S*) (\d+) (.+)$/.exec(line);
-    if (!match) return;
-    const [, how, kind, flags, size, name] = match as unknown as [string, string, string, string, string, string];
-    if (name === "./") return;
-    if (kind === "d") {
-      if (how === "c") this.add({ action: "mkdir", path: name.replace(/\/$/, "") });
-    } else if (how !== ".") this.add({ action: "copy", path: name, size: kind === "f" ? Number(size) : 0 });
-    else if (flags.includes("t")) this.add({ action: "touch", path: name });
-  }
-}
-
-/** Hands on whole lines out of text that arrives in pieces. */
-export function byLine(onLine: (line: string) => void): (text: string) => void {
-  let rest = "";
-  return (text) => {
-    const lines = `${rest}${text}`.split(/\r?\n/);
-    rest = lines.pop() ?? "";
-    for (const line of lines) if (line) onLine(line);
-  };
 }

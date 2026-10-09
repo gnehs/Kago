@@ -18,7 +18,6 @@ import { confirmAction } from "@/stores/dialogs";
 import { toast } from "@/stores/toast";
 import type { Actor, FileTask, Root, SyncEndpoint, SyncJob, SyncSchedule } from "@/types/kago";
 import { RunsDialog } from "./RunsDialog";
-import { SshKeyNote } from "./SshKeyNote";
 import { describeTrial, TrialDialog } from "./TrialDialog";
 import { t } from "@/lib/i18n";
 
@@ -40,8 +39,7 @@ export function SyncPage({ roots, user }: { roots: Root[]; user: Actor }) {
   const [trialOf, setTrialOf] = useState<string | null>(null);
   const [runsOf, setRunsOf] = useState<string | null>(null);
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["sync-jobs"] });
-  const describeEndpoint = (endpoint: SyncEndpoint) =>
-    endpoint.kind === "rsync" ? endpoint.remote : displayPath(roots.find((root) => root.slug === endpoint.rootSlug)?.name ?? endpoint.rootSlug, endpoint.path);
+  const describeEndpoint = (endpoint: SyncEndpoint) => displayPath(roots.find((root) => root.slug === endpoint.rootSlug)?.name ?? endpoint.rootSlug, endpoint.path);
 
   async function start(job: SyncJob) {
     await run(async () => {
@@ -64,12 +62,12 @@ export function SyncPage({ roots, user }: { roots: Root[]; user: Actor }) {
   return (
     <Page
       title={t("Sync")}
-      description={t("Keep a folder the same as another: between locations, or with another machine over rsync.")}
+      description={t("Keep a folder of one location the same as a folder of another.")}
       actions={jobs.data?.length && !editing ? addButton : null}
     >
       {editing ? (
         <Card title={editing === true ? t("Add sync") : t("Edit {name}", { name: editing.name })} action={<KagoIconButton label={t("Close")} onClick={() => setEditing(null)}><X /></KagoIconButton>}>
-          <SyncForm key={editing === true ? "new" : editing.id} roots={roots} admin={user.role === "ADMIN"} job={editing === true ? null : editing} onSaved={async () => { setEditing(null); await refresh(); }} />
+          <SyncForm key={editing === true ? "new" : editing.id} roots={roots} job={editing === true ? null : editing} onSaved={async () => { setEditing(null); await refresh(); }} />
         </Card>
       ) : null}
       {jobs.isLoading ? <KagoLoading /> : null}
@@ -132,23 +130,16 @@ export function SyncPage({ roots, user }: { roots: Root[]; user: Actor }) {
   );
 }
 
-type EndpointDraft = { kind: "location" | "rsync"; rootSlug: string; path: string; remote: string; port: string };
+type EndpointDraft = { rootSlug: string; path: string };
 
-const draftOf = (endpoint: SyncEndpoint | undefined, roots: Root[]): EndpointDraft =>
-  endpoint?.kind === "rsync"
-    ? { kind: "rsync", rootSlug: roots[0]?.slug ?? "", path: "/", remote: endpoint.remote, port: endpoint.port ? String(endpoint.port) : "" }
-    : { kind: "location", rootSlug: endpoint?.rootSlug ?? roots[0]?.slug ?? "", path: endpoint?.path ?? "/", remote: "", port: "" };
+const draftOf = (endpoint: SyncEndpoint | undefined, roots: Root[]): EndpointDraft => ({ rootSlug: endpoint?.rootSlug ?? roots[0]?.slug ?? "", path: endpoint?.path ?? "/" });
 
 function endpointOf(draft: EndpointDraft): SyncEndpoint | null {
-  if (draft.kind === "rsync") {
-    const port = Number(draft.port);
-    return draft.remote.trim() ? { kind: "rsync", remote: draft.remote.trim(), ...(port > 0 ? { port } : {}) } : null;
-  }
   const path = normalizeLogicalPath(draft.path);
   return draft.rootSlug && path ? { kind: "location", rootSlug: draft.rootSlug, path } : null;
 }
 
-function SyncForm({ roots, admin, job, onSaved }: { roots: Root[]; admin: boolean; job: SyncJob | null; onSaved: () => Promise<void> }) {
+function SyncForm({ roots, job, onSaved }: { roots: Root[]; job: SyncJob | null; onSaved: () => Promise<void> }) {
   const [name, setName] = useState(job?.name ?? "");
   const [source, setSource] = useState(() => draftOf(job?.source, roots));
   // A new sync starts out between two different locations when there are two.
@@ -167,9 +158,7 @@ function SyncForm({ roots, admin, job, onSaved }: { roots: Root[]; admin: boolea
   const schedule: SyncSchedule | null = when === "manual" ? null : when === "interval" ? { kind: "interval", minutes } : when === "daily" ? { kind: "daily", time } : { kind: "weekly", weekday, time };
   const from = endpointOf(source);
   const to = endpointOf(destination);
-  // rsync reaches one other machine from this one; it does not join two of them.
-  const twoMachines = source.kind === "rsync" && destination.kind === "rsync";
-  const canSubmit = name.trim().length > 0 && from !== null && to !== null && !twoMachines && (when !== "interval" || (Number.isInteger(minutes) && minutes >= 5));
+  const canSubmit = name.trim().length > 0 && from !== null && to !== null && (when !== "interval" || (Number.isInteger(minutes) && minutes >= 5));
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -185,10 +174,8 @@ function SyncForm({ roots, admin, job, onSaved }: { roots: Root[]; admin: boolea
   return (
     <form className="grid grid-cols-2 gap-3" onSubmit={submit}>
       <Field label={t("Name")} className="col-span-2"><Input autoFocus value={name} onChange={(event) => setName(event.target.value)} /></Field>
-      <EndpointFields label={t("From")} roots={roots} admin={admin} draft={source} onChange={setSource} />
-      <EndpointFields label={t("To")} roots={roots} admin={admin} draft={destination} onChange={setDestination} />
-      {twoMachines ? <p className="col-span-2 m-0 text-xs text-danger">{t("One side of a sync has to be a location")}</p> : null}
-      {source.kind === "rsync" || destination.kind === "rsync" ? <SshKeyNote className="col-span-2" /> : null}
+      <EndpointFields label={t("From")} roots={roots} draft={source} onChange={setSource} />
+      <EndpointFields label={t("To")} roots={roots} draft={destination} onChange={setDestination} />
       <Field label={t("What to do")} hint={mode === "mirror" ? t("Whatever the source no longer has is deleted from the destination.") : t("Nothing is ever deleted from the destination.")}>
         <Select value={mode} onChange={(event) => setMode(event.target.value as "copy" | "mirror")}>
           <option value="copy">{t("Copy new and changed files")}</option>
@@ -235,29 +222,16 @@ function SyncForm({ roots, admin, job, onSaved }: { roots: Root[]; admin: boolea
   );
 }
 
-/** One end of a sync: a folder of a location, or a folder on another machine. */
-function EndpointFields({ label, roots, admin, draft, onChange }: { label: string; roots: Root[]; admin: boolean; draft: EndpointDraft; onChange: (draft: EndpointDraft) => void }) {
-  const local = roots.filter((root) => root.provider === "local");
+/** One end of a sync: a folder of a location. */
+function EndpointFields({ label, roots, draft, onChange }: { label: string; roots: Root[]; draft: EndpointDraft; onChange: (draft: EndpointDraft) => void }) {
   return (
     <fieldset className="col-span-2 m-0 grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-3 border-0 p-0">
       <Field label={label}>
-        <Select
-          value={draft.kind === "rsync" ? "rsync" : draft.rootSlug}
-          onChange={(event) => onChange(event.target.value === "rsync" ? { ...draft, kind: "rsync" } : { ...draft, kind: "location", rootSlug: event.target.value })}
-        >
+        <Select value={draft.rootSlug} onChange={(event) => onChange({ ...draft, rootSlug: event.target.value })}>
           {roots.map((root) => <option key={root.id} value={root.slug}>{root.name}</option>)}
-          {/* rsync works from a folder on the server's own disk, so it is offered only when there is one, and signs in with the server's own key, so only to administrators. */}
-          {local.length > 0 && (admin || draft.kind === "rsync") ? <option value="rsync">{t("Another machine (rsync over SSH)")}</option> : null}
         </Select>
       </Field>
-      {draft.kind === "rsync" ? (
-        <div className="grid grid-cols-[minmax(0,1fr)_5rem] gap-3">
-          <Field label={t("Address")}><Input value={draft.remote} placeholder="user@example.com:/home/user/files" onChange={(event) => onChange({ ...draft, remote: event.target.value })} /></Field>
-          <Field label={t("Port")}><Input inputMode="numeric" value={draft.port} placeholder="22" onChange={(event) => onChange({ ...draft, port: event.target.value })} /></Field>
-        </div>
-      ) : (
-        <Field label={t("Path")}><Input value={draft.path} placeholder="/" onChange={(event) => onChange({ ...draft, path: event.target.value })} /></Field>
-      )}
+      <Field label={t("Path")}><Input value={draft.path} placeholder="/" onChange={(event) => onChange({ ...draft, path: event.target.value })} /></Field>
     </fieldset>
   );
 }

@@ -1,42 +1,36 @@
-import { execFile } from "node:child_process";
+import { createPrivateKey, createPublicKey, generateKeyPairSync } from "node:crypto";
 import fs from "node:fs";
-import fsp from "node:fs/promises";
 import path from "node:path";
-import { promisify } from "node:util";
-import { AppError } from "./errors.js";
-
-const execFileAsync = promisify(execFile);
 
 export const sshKeyPath = (appDataDir: string) => path.join(appDataDir, "ssh", "id_ed25519");
 
 /**
- * The key Kago signs in to other machines with, for rsync and SFTP. It is made the first time it is asked for;
+ * The key Kago signs in to SFTP locations with. It is made the first time it is asked for;
  * only its public half ever leaves the server, to be added to the other machine's `authorized_keys`.
  */
 export async function ensureSshKey(appDataDir: string): Promise<{ keyPath: string; publicKey: string }> {
   const keyPath = sshKeyPath(appDataDir);
   if (!fs.existsSync(keyPath)) {
-    await fsp.mkdir(path.dirname(keyPath), { recursive: true, mode: 0o700 });
-    try {
-      await execFileAsync("ssh-keygen", ["-q", "-t", "ed25519", "-N", "", "-C", "kago", "-f", keyPath]);
-    } catch {
-      // Lost a race with another request, or there is no ssh-keygen to make one with.
-      if (!fs.existsSync(keyPath)) throw new AppError(500, "An SSH key could not be created", "SSH_KEY_UNAVAILABLE");
-    }
+    fs.mkdirSync(path.dirname(keyPath), { recursive: true, mode: 0o700 });
+    // Nothing is awaited between looking and writing, so two requests at once still end up with the one key.
+    fs.writeFileSync(keyPath, generateKeyPairSync("ed25519").privateKey.export({ type: "pkcs8", format: "pem" }), { mode: 0o600 });
   }
-  return { keyPath, publicKey: (await fsp.readFile(`${keyPath}.pub`, "utf8")).trim() };
+  return { keyPath, publicKey: publicKeyOf(keyPath) };
 }
 
-/** How rsync is told to reach the other machine: Kago's key only, never a prompt, and hosts remembered once seen. */
-export function sshCommand(appDataDir: string, port?: number): string {
-  const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
-  return [
-    "ssh",
-    "-i", quote(sshKeyPath(appDataDir)),
-    "-o", "BatchMode=yes",
-    "-o", "IdentitiesOnly=yes",
-    "-o", "StrictHostKeyChecking=accept-new",
-    "-o", quote(`UserKnownHostsFile=${path.join(appDataDir, "ssh", "known_hosts")}`),
-    ...(port ? ["-p", String(port)] : [])
-  ].join(" ");
+/** The line that goes into `authorized_keys`: the kind of key, then that and the key itself as SSH writes them down. */
+function publicKeyOf(keyPath: string): string {
+  let point: Buffer;
+  try {
+    point = Buffer.from(createPublicKey(createPrivateKey(fs.readFileSync(keyPath))).export({ format: "jwk" }).x!, "base64url");
+  } catch {
+    // A key from when Kago had ssh-keygen make it is in OpenSSH's own format, which Node does not read; its public half lies beside it.
+    return fs.readFileSync(`${keyPath}.pub`, "utf8").trim();
+  }
+  const field = (value: Buffer) => {
+    const length = Buffer.alloc(4);
+    length.writeUInt32BE(value.length);
+    return Buffer.concat([length, value]);
+  };
+  return `ssh-ed25519 ${Buffer.concat([field(Buffer.from("ssh-ed25519")), field(point)]).toString("base64")} kago`;
 }

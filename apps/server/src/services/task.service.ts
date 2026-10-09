@@ -1,7 +1,6 @@
 import { constants as fsConstants, createReadStream, createWriteStream } from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
-import { execFile, spawn } from "node:child_process";
 import { PassThrough, Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import yauzl from "yauzl";
@@ -15,7 +14,6 @@ import { logger } from "../lib/logger.js";
 import { isZipDirectory, isZipSymlink, openZipArchive } from "../lib/zip-archive.js";
 import { openEncryptedZipEntry, readZipCipherHead, zipCipherOf, zipPasswordFits, ZipPasswordError, type ZipCipher } from "../lib/zip-crypto.js";
 import { SecretBox } from "../lib/secret-box.js";
-import { ensureSshKey, sshCommand } from "../lib/ssh-key.js";
 import { zipStream, type ZipEntry, type ZipOptions } from "../lib/zip-stream.js";
 import { RcloneJobStopped } from "../storage/rclone-client.js";
 import { runRclone } from "../storage/rclone-daemon.js";
@@ -28,8 +26,8 @@ import { sharesAreFixed, type PathService, type SafePath } from "./path.service.
 import type { Level, PermissionService } from "./permission.service.js";
 import type { PreferenceService } from "./preference.service.js";
 import type { StorageService } from "./storage.service.js";
-import { byLine, SyncReport } from "./sync-report.js";
-import type { Actor, FileTask, Root } from "./types.js";
+import { SyncReport } from "./sync-report.js";
+import type { Actor, FileTask } from "./types.js";
 
 const maxExtractEntries = 10_000;
 const maxExtractBytes = 1024 * 1024 * 1024 * 2;
@@ -56,17 +54,11 @@ export const taskInputSchema = z.object({
     "compress",
     "download_zip",
     "extract",
-    "rsync_pull",
-    "rsync_push",
     "thumbnail"
   ]),
   sources: z.array(fileRefSchema).default([]),
   destination: fileRefSchema.optional(),
-  remote: z.string().min(1).max(1024).refine(isSafeRsyncRemote, "Invalid rsync remote").optional(),
   options: z.object({
-    archive: z.boolean().optional(),
-    delete: z.boolean().optional(),
-    dryRun: z.boolean().optional(),
     /** How hard a `compress` task squeezes, and what it locks the archive with. */
     level: z.enum(["store", "fast", "normal", "best"]).optional(),
     encryption: z.enum(["aes256", "zipcrypto"]).optional(),
@@ -83,11 +75,8 @@ type ExtractOptions = { password?: string; remember?: boolean };
 /** How many locked entries a password is checked against before anything is written. */
 const maxPasswordProbes = 16;
 
-/** One end of a sync: a folder of a location, or a folder on another machine that rsync reaches over SSH. */
-export const syncEndpointSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("location"), rootSlug: z.string().min(1), path: z.string().min(1) }),
-  z.object({ kind: z.literal("rsync"), remote: z.string().min(1).max(1024).refine(isSafeRsyncRemote, "Invalid rsync remote"), port: z.number().int().min(1).max(65535).optional() })
-]);
+/** One end of a sync: a folder of a location. */
+export const syncEndpointSchema = z.object({ kind: z.literal("location"), rootSlug: z.string().min(1), path: z.string().min(1) });
 
 export const syncOptionsSchema = z.object({
   /** `mirror` also removes from the destination what the source no longer has. */
@@ -130,18 +119,12 @@ export class TaskService {
     if (["copy", "move", "compress", "extract"].includes(input.type) && !input.destination) {
       throw new AppError(400, "Destination required", "DESTINATION_REQUIRED");
     }
-    if (["copy", "move", "delete_to_trash", "restore_trash", "compress", "download_zip", "extract", "thumbnail"].includes(input.type) && input.sources.length === 0) {
+    if (input.sources.length === 0) {
       throw new AppError(400, "Sources required", "SOURCES_REQUIRED");
     }
-    if (input.type === "rsync_pull" && (!input.remote || !input.destination)) {
-      throw new AppError(400, "Remote and destination are required", "RSYNC_INPUT_REQUIRED");
-    }
-    if (input.type === "rsync_push" && (!input.remote || input.sources.length === 0)) {
-      throw new AppError(400, "Remote and sources are required", "RSYNC_INPUT_REQUIRED");
-    }
 
-    const sources = input.type === "rsync_pull" ? [{ rootSlug: "remote", path: input.remote! }] : input.sources;
-    const { level, password, encryption, remember, ...rsyncOptions } = input.options ?? {};
+    const { sources } = input;
+    const { level, password, encryption, remember } = input.options ?? {};
     // The task row is shown to its owner and kept for a week, so the password only ever sits in it sealed.
     const sealed = password ? this.secrets().seal(password) : undefined;
     const archiveOptions: CompressOptions | ExtractOptions =
@@ -149,13 +132,11 @@ export class TaskService {
         ? { level, ...(sealed ? { encryption: encryption ?? "aes256", password: sealed } : {}) }
         : sealed ? { password: sealed, remember } : {};
     const destination =
-      input.type === "rsync_push"
-        ? JSON.stringify({ remote: input.remote, options: rsyncOptions })
-        : input.type === "download_zip"
-          ? JSON.stringify({ fileName: downloadFileName(sources) })
-          : input.destination
-            ? JSON.stringify({ ...input.destination, options: input.type === "compress" || input.type === "extract" ? archiveOptions : rsyncOptions })
-            : null;
+      input.type === "download_zip"
+        ? JSON.stringify({ fileName: downloadFileName(sources) })
+        : input.destination
+          ? JSON.stringify({ ...input.destination, options: input.type === "compress" || input.type === "extract" ? archiveOptions : {} })
+          : null;
 
     await this.assertTaskPermissions(actor, input);
 
@@ -200,7 +181,7 @@ export class TaskService {
       type: "sync",
       status: "queued",
       created_by: actor.id,
-      sources_json: JSON.stringify([spec.source.kind === "location" ? { rootSlug: spec.source.rootSlug, path: spec.source.path } : { rootSlug: "remote", path: spec.source.remote }]),
+      sources_json: JSON.stringify([{ rootSlug: spec.source.rootSlug, path: spec.source.path }]),
       destination: JSON.stringify({ sync: spec }),
       total_files: 1,
       processed_files: 0,
@@ -472,8 +453,6 @@ export class TaskService {
       else if (task.type === "compress") await this.runCompress(task, actor);
       else if (task.type === "download_zip") await this.runDownloadZip(task, actor);
       else if (task.type === "extract") await this.runExtract(task, actor);
-      else if (task.type === "rsync_pull") await this.runRsyncPull(task, actor);
-      else if (task.type === "rsync_push") await this.runRsyncPush(task, actor);
       else if (task.type === "thumbnail") await this.runThumbnail(task, actor);
       else if (task.type === "sync") await this.runSync(task, actor);
       if (this.finish(task.id, "done")) this.events.publish({ type: "task.done", userId: task.created_by, taskId: task.id });
@@ -1260,82 +1239,27 @@ export class TaskService {
     return segments;
   }
 
-  private async runRsyncPull(task: FileTask, actor: Actor): Promise<void> {
-    const sources = JSON.parse(task.sources_json) as Array<{ rootSlug: string; path: string }>;
-    const remote = sources[0]?.path;
-    const destination = JSON.parse(task.destination ?? "{}") as { rootSlug: string; path: string; options?: RsyncOptions };
-    if (!remote) throw new AppError(400, "Remote is required", "RSYNC_REMOTE_REQUIRED");
-    requireAdminForRsync(actor);
-    const dest = await this.paths.resolveExisting(destination.rootSlug, destination.path);
-    this.permissions.require(actor, "edit", dest.root, dest.logicalPath);
-    await this.progress(task.id, remote);
-    await runRsync([...rsyncFlags(destination.options), "-e", sshCommand(this.appDataDir), "--", ensureTrailingSlash(remote), ensureTrailingSlash(dest.absolutePath)], () => this.isCancelled(task.id));
-    await this.bumpProcessed(task.id);
-    this.audit.write({
-      actorType: "user",
-      actorId: actor.id,
-      action: "rsync_pull",
-      rootId: dest.root.id,
-      path: dest.logicalPath,
-      target: { taskId: task.id },
-      result: "success"
-    });
-  }
-
-  private async runRsyncPush(task: FileTask, actor: Actor): Promise<void> {
-    const sources = JSON.parse(task.sources_json) as Array<{ rootSlug: string; path: string }>;
-    const destination = JSON.parse(task.destination ?? "{}") as { remote: string; options?: RsyncOptions };
-    if (!destination.remote) throw new AppError(400, "Remote is required", "RSYNC_REMOTE_REQUIRED");
-    requireAdminForRsync(actor);
-    for (const source of sources) {
-      const safe = await this.paths.resolveExisting(source.rootSlug, source.path);
-      this.permissions.require(actor, "view", safe.root, safe.logicalPath);
-      await this.requireReadableTree(actor, safe);
-      await this.progress(task.id, safe.logicalPath);
-      await runRsync([...rsyncFlags(destination.options), "-e", sshCommand(this.appDataDir), "--", safe.absolutePath, ensureTrailingSlash(destination.remote)], () => this.isCancelled(task.id));
-      await this.bumpProcessed(task.id);
-      this.audit.write({
-        actorType: "user",
-        actorId: actor.id,
-        action: "rsync_push",
-        rootId: safe.root.id,
-        path: safe.logicalPath,
-        target: { taskId: task.id },
-        result: "success"
-      });
-    }
-  }
-
   /** Whether the actor may run this sync as things stand. */
   async assertSync(actor: Actor, spec: SyncSpec): Promise<void> {
     await this.assertSyncPermissions(actor, spec);
   }
 
-  /** Checks both ends of a sync and returns the ones that are folders of a location. */
-  private async assertSyncPermissions(actor: Actor, spec: SyncSpec): Promise<{ source: SafePath | null; destination: SafePath | null }> {
-    const folder = async (endpoint: SyncEndpoint): Promise<SafePath | null> => {
-      if (endpoint.kind !== "location") return null;
+  /** Checks both ends of a sync and returns the folders they are. */
+  private async assertSyncPermissions(actor: Actor, spec: SyncSpec): Promise<{ source: SafePath; destination: SafePath }> {
+    const folder = async (endpoint: SyncEndpoint): Promise<SafePath> => {
       const safe = await this.paths.resolveExisting(endpoint.rootSlug, endpoint.path);
       if (!(await this.storage.stat(safe)).isDirectory()) throw new AppError(400, "Path is not a folder", "NOT_FOLDER");
       return safe;
     };
-    if (spec.source.kind === "rsync" || spec.destination.kind === "rsync") requireAdminForRsync(actor);
     const source = await folder(spec.source);
     const destination = await folder(spec.destination);
-    if (!source && !destination) throw new AppError(400, "One side of a sync has to be a location", "SYNC_NEEDS_LOCATION");
-    if (source) {
-      this.permissions.require(actor, "view", source.root, source.logicalPath);
-      // Like a copy, a sync lands where the rules of its source no longer reach.
-      await this.requireReadableTree(actor, source);
-    }
-    if (destination) {
-      this.permissions.require(actor, "edit", destination.root, destination.logicalPath);
-    }
+    this.permissions.require(actor, "view", source.root, source.logicalPath);
+    // Like a copy, a sync lands where the rules of its source no longer reach.
+    await this.requireReadableTree(actor, source);
+    this.permissions.require(actor, "edit", destination.root, destination.logicalPath);
     // What lands in the destination would be new shares if it were the top of a whole server.
-    if (destination) this.assertNotFixed(destination, "new");
-    // rsync works on the server's own disk; a remote location is rclone's to reach.
-    if (!source || !destination) assertLocalForRsync((source ?? destination)!.root);
-    if (source && destination && source.root.id === destination.root.id) {
+    this.assertNotFixed(destination, "new");
+    if (source.root.id === destination.root.id) {
       const inside = (outer: string, inner: string) => outer === "/" || inner === outer || inner.startsWith(`${outer}/`);
       if (inside(source.logicalPath, destination.logicalPath) || inside(destination.logicalPath, source.logicalPath)) {
         throw new AppError(400, "The source and the destination overlap", "SYNC_OVERLAP");
@@ -1355,103 +1279,65 @@ export class TaskService {
     const trial = spec.options.dryRun;
     const report = trial ? new SyncReport() : new SyncReport(0);
 
-    if (source && destination) {
-      const from = this.rcloneAddress(source);
-      const to = this.rcloneAddress(destination);
-      let total = 0;
-      // Where times cannot be kept, a file of the same size is taken to have changed when the source's is the newer.
-      const byAge = isRemote(destination.root) && (await this.storage.remote.keepsNoTimes(destination.root));
-      // A remote location's trash is Kago's own business at either end.
-      const excluded = [`/${REMOTE_TRASH}/**`, `/*/${REMOTE_TRASH}/**`];
-      try {
-        if (trial) {
-          await runRclone(
-            this.appDataDir,
-            [
-              mirror ? "sync" : "copy",
-              "--dry-run",
-              "--create-empty-src-dirs",
-              ...(byAge ? ["--update", "--use-server-modtime"] : []),
-              ...excluded.flatMap((rule) => ["--exclude", rule]),
-              "--",
-              joinFs(from.fs, from.remote),
-              joinFs(to.fs, to.remote)
-            ],
-            (entry) => report.addRcloneLog(entry),
-            stopped
-          );
-        } else {
-          await this.storage.remote.client.runJob(
-            mirror ? "sync/sync" : "sync/copy",
-            {
-              srcFs: joinFs(from.fs, from.remote),
-              dstFs: joinFs(to.fs, to.remote),
-              createEmptySrcDirs: true,
-              _config: byAge ? { UpdateOlder: true, UseServerModTime: true } : {},
-              _filter: { ExcludeRule: excluded }
-            },
-            (stats) => {
-              if (stats.totalBytes > total) {
-                total = stats.totalBytes;
-                this.setTotalBytes(task.id, total);
-              }
-              onBytes(stats);
-              // The last of these is the whole of the job.
-              report.countRcloneStats(stats);
-            },
-            stopped
-          );
-        }
-      } catch (error) {
-        if (error instanceof RcloneJobStopped) throw new TaskCancelledError();
-        throw transferFailure(error);
-      }
-    } else {
-      const remote = (spec.source.kind === "rsync" ? spec.source : spec.destination) as Extract<SyncEndpoint, { kind: "rsync" }>;
-      const local = ensureTrailingSlash((source ?? destination)!.absolutePath);
-      // The key is the one the form showed; a job made some other way still finds one to offer.
-      await ensureSshKey(this.appDataDir).catch(() => undefined);
-      const progress = !trial && (await rsyncReportsProgress());
-      let reported = 0;
-      const onLine = byLine((line) => report.addRsyncLine(line));
-      await runRsync(
-        [
-          "-a",
-          ...(mirror ? ["--delete"] : []),
-          ...(trial ? ["--dry-run"] : []),
-          "--out-format=%i %l %n",
-          ...(progress ? ["--info=progress2", "--no-inc-recursive"] : []),
-          "-e",
-          sshCommand(this.appDataDir, remote.port),
-          "--",
-          ...(source ? [local, ensureTrailingSlash(remote.remote)] : [ensureTrailingSlash(remote.remote), local])
-        ],
-        stopped,
-        (text) => {
-          // Each change is a line of its own; the progress is written over and over on a line that starts with a return.
-          onLine(text);
-          if (!progress) return;
-          // "  1,234,567  45%  1.20MB/s  0:00:03": the bytes sent so far.
-          for (const match of text.matchAll(/(?:^|[\r\n])\s*([\d,]+)\s+\d+%/g)) {
-            const bytes = Number(match[1]!.replaceAll(",", ""));
-            if (bytes > reported) {
-              this.countBytes(task.id, bytes - reported);
-              reported = bytes;
+    const from = this.rcloneAddress(source);
+    const to = this.rcloneAddress(destination);
+    let total = 0;
+    // Where times cannot be kept, a file of the same size is taken to have changed when the source's is the newer.
+    const byAge = isRemote(destination.root) && (await this.storage.remote.keepsNoTimes(destination.root));
+    // A remote location's trash is Kago's own business at either end.
+    const excluded = [`/${REMOTE_TRASH}/**`, `/*/${REMOTE_TRASH}/**`];
+    try {
+      if (trial) {
+        await runRclone(
+          this.appDataDir,
+          [
+            mirror ? "sync" : "copy",
+            "--dry-run",
+            "--create-empty-src-dirs",
+            ...(byAge ? ["--update", "--use-server-modtime"] : []),
+            ...excluded.flatMap((rule) => ["--exclude", rule]),
+            "--",
+            joinFs(from.fs, from.remote),
+            joinFs(to.fs, to.remote)
+          ],
+          (entry) => report.addRcloneLog(entry),
+          stopped
+        );
+      } else {
+        await this.storage.remote.client.runJob(
+          mirror ? "sync/sync" : "sync/copy",
+          {
+            srcFs: joinFs(from.fs, from.remote),
+            dstFs: joinFs(to.fs, to.remote),
+            createEmptySrcDirs: true,
+            _config: byAge ? { UpdateOlder: true, UseServerModTime: true } : {},
+            _filter: { ExcludeRule: excluded }
+          },
+          (stats) => {
+            if (stats.totalBytes > total) {
+              total = stats.totalBytes;
+              this.setTotalBytes(task.id, total);
             }
-          }
-        }
-      );
+            onBytes(stats);
+            // The last of these is the whole of the job.
+            report.countRcloneStats(stats);
+          },
+          stopped
+        );
+      }
+    } catch (error) {
+      if (error instanceof RcloneJobStopped) throw new TaskCancelledError();
+      throw transferFailure(error);
     }
     this.db
       .prepare("INSERT OR REPLACE INTO task_reports (task_id, summary_json, stats_json, changes_json) VALUES (?, ?, ?, ?)")
       .run(task.id, JSON.stringify({ ...report.summary, truncated: report.truncated }), JSON.stringify(report.stats()), JSON.stringify(report.changes));
-    const location = (destination ?? source)!;
     this.audit.write({
       actorType: "user",
       actorId: actor.id,
       action: "sync",
-      rootId: location.root.id,
-      path: location.logicalPath,
+      rootId: destination.root.id,
+      path: destination.logicalPath,
       target: { taskId: task.id, jobId: spec.jobId, mode: spec.options.mode, dryRun: spec.options.dryRun },
       result: "success"
     });
@@ -1534,26 +1420,6 @@ export class TaskService {
       for (const source of input.sources) {
         const safe = await this.paths.resolveExisting(source.rootSlug, source.path);
         this.permissions.require(actor, "view", safe.root, safe.logicalPath);
-      }
-      return;
-    }
-
-    if (input.type === "rsync_pull") {
-      requireAdminForRsync(actor);
-      const destination = this.requiredDestination(input);
-      const dest = await this.paths.resolveExisting(destination.rootSlug, destination.path);
-      this.permissions.require(actor, "edit", dest.root, dest.logicalPath);
-      assertLocalForRsync(dest.root);
-      return;
-    }
-
-    if (input.type === "rsync_push") {
-      requireAdminForRsync(actor);
-      for (const source of input.sources) {
-        const safe = await this.paths.resolveExisting(source.rootSlug, source.path);
-        this.permissions.require(actor, "view", safe.root, safe.logicalPath);
-        assertLocalForRsync(safe.root);
-        await this.requireReadableTree(actor, safe);
       }
       return;
     }
@@ -1749,25 +1615,8 @@ export class TaskService {
   private taskInputFromTask(task: FileTask): z.infer<typeof taskInputSchema> {
     const sources = JSON.parse(task.sources_json) as Array<{ rootSlug: string; path: string }>;
     const destination = task.destination
-      ? JSON.parse(task.destination) as { rootSlug?: string; path?: string; remote?: string; options?: RsyncOptions }
+      ? JSON.parse(task.destination) as { rootSlug?: string; path?: string; options?: CompressOptions | ExtractOptions }
       : undefined;
-    if (task.type === "rsync_pull") {
-      return taskInputSchema.parse({
-        type: task.type,
-        sources: [],
-        remote: sources[0]?.path,
-        destination: destination?.rootSlug && destination.path ? { rootSlug: destination.rootSlug, path: destination.path } : undefined,
-        options: destination?.options
-      });
-    }
-    if (task.type === "rsync_push") {
-      return taskInputSchema.parse({
-        type: task.type,
-        sources,
-        remote: destination?.remote,
-        options: destination?.options
-      });
-    }
     return taskInputSchema.parse({
       type: task.type,
       sources,
@@ -1776,12 +1625,6 @@ export class TaskService {
     });
   }
 }
-
-type RsyncOptions = {
-  archive?: boolean;
-  delete?: boolean;
-  dryRun?: boolean;
-};
 
 type RestorableTrashItem = {
   id: string;
@@ -1802,29 +1645,6 @@ type ProgressBuffer = {
   lastFlushAt: number;
 };
 
-function rsyncFlags(options: RsyncOptions = {}): string[] {
-  return [
-    options.archive === false ? "-r" : "-a",
-    ...(options.delete ? ["--delete"] : []),
-    ...(options.dryRun ? ["--dry-run"] : [])
-  ];
-}
-
-function ensureTrailingSlash(value: string): string {
-  return value.endsWith("/") ? value : `${value}/`;
-}
-
-function isSafeRsyncRemote(value: string): boolean {
-  if (!value || value.includes("\0") || /[\s;&|`$<>]/.test(value)) return false;
-  if (value.startsWith("-") || value.startsWith("/") || value.startsWith(".")) return false;
-  if (value.includes("::")) return false;
-  const match = value.match(/^(?:[A-Za-z0-9._-]+@)?[A-Za-z0-9](?:[A-Za-z0-9.-]{0,253}[A-Za-z0-9])?:(.+)$/);
-  if (!match) return false;
-  const remotePath = match[1] ?? "";
-  if (!remotePath || remotePath.startsWith("-")) return false;
-  return /^[A-Za-z0-9._~+/@:%=-]+$/.test(remotePath);
-}
-
 function syncSpecOf(task: FileTask): SyncSpec {
   const spec = (JSON.parse(task.destination ?? "{}") as { sync?: SyncSpec }).sync;
   if (!spec) throw new AppError(400, "Invalid sync task", "INVALID_SYNC_TASK");
@@ -1839,64 +1659,11 @@ function assertNotIntoItself(source: SafePath, dest: SafePath): void {
   }
 }
 
-/** rsync signs in to other machines with the server's one key, so whoever may use it reaches all that the key opens. */
-function requireAdminForRsync(actor: Actor): void {
-  if (actor.role !== "ADMIN") throw new AppError(403, "Only an administrator can sync with another machine", "ADMIN_REQUIRED");
-}
-
-function assertLocalForRsync(root: Root): void {
-  if (isRemote(root)) throw new AppError(400, "rsync needs a folder on this server", "RSYNC_LOCAL_ONLY");
-}
-
 /** rclone's reasons are for the log; the task says only that the transfer failed, unless Kago itself refused it. */
 function transferFailure(error: unknown): unknown {
   if (error instanceof AppError || error instanceof TaskCancelledError) return error;
   logger.warn("transfer failed", error instanceof Error ? error.message : String(error));
   return new AppError(502, "The transfer failed", "TRANSFER_FAILED");
-}
-
-let rsyncProgress: Promise<boolean> | undefined;
-
-/** Whether this rsync can report the bytes of a whole run; the one macOS ships cannot. */
-function rsyncReportsProgress(): Promise<boolean> {
-  rsyncProgress ??= new Promise((resolve) => {
-    execFile("rsync", ["--version"], (error, stdout) => {
-      const version = /version (\d+)\.(\d+)/.exec(error ? "" : stdout);
-      resolve(Boolean(version && (Number(version[1]) > 3 || (Number(version[1]) === 3 && Number(version[2]) >= 1))));
-    });
-  });
-  return rsyncProgress;
-}
-
-function runRsync(args: string[], isCancelled: () => boolean, onOutput?: (text: string) => void): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const child = spawn("rsync", args, { stdio: ["ignore", "pipe", "pipe"] });
-    child.stdout.on("data", (chunk: Buffer) => onOutput?.(chunk.toString("utf8")));
-    let cancelled = false;
-    const watcher = setInterval(() => {
-      if (!isCancelled()) return;
-      cancelled = true;
-      child.kill();
-    }, 500);
-    // The last of what rsync complained of goes to the log: the task itself only says that it failed.
-    let complaint = "";
-    child.stderr.on("data", (chunk: Buffer) => {
-      complaint = `${complaint}${chunk.toString("utf8")}`.slice(-2000);
-    });
-    child.on("error", (error) => {
-      clearInterval(watcher);
-      reject(error);
-    });
-    child.on("close", (code) => {
-      clearInterval(watcher);
-      if (cancelled) reject(new TaskCancelledError());
-      else if (code === 0) resolve();
-      else {
-        logger.warn(`rsync exited with ${code}`, complaint.trim());
-        reject(new AppError(500, "rsync failed", "RSYNC_FAILED"));
-      }
-    });
-  });
 }
 
 /** Per-folder index of on-disk names by their NFC form, kept current while one task writes into those folders. */

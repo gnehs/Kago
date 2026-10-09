@@ -23,7 +23,7 @@ export type RemoteProvider = { type: string; label: string; fields: RemoteField[
 export type RemoteRoot = Root & { remote: { type: string; base: string; params: Record<string, string>; secrets: string[] } };
 export type StorageInfo = { available: boolean; providers: RemoteProvider[]; roots: RemoteRoot[] };
 
-export type SyncEndpoint = { kind: "location"; rootSlug: string; path: string } | { kind: "rsync"; remote: string; port?: number };
+export type SyncEndpoint = { kind: "location"; rootSlug: string; path: string };
 export type SyncSchedule = { kind: "interval"; minutes: number } | { kind: "daily"; time: string } | { kind: "weekly"; weekday: number; time: string };
 export type SyncChange = { action: "copy" | "delete" | "mkdir" | "rmdir" | "touch"; path: string; size?: number };
 /** How much a run changed, or a trial run would have; `truncated` when it names fewer changes than it counted. */

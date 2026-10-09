@@ -64,12 +64,15 @@ test("a move carries its rules along and a copy refuses a folder with an unreada
     const sync = (source, destination) => member.post("/api/sync-jobs", { name: "Sync", source, destination });
     assert.equal((await sync({ kind: "location", rootSlug: "photos", path: "/public/folder" }, { kind: "location", rootSlug: "photos", path: "/public/inbox" })).statusCode, 403);
 
-    // The server's SSH key is the administrator's to use.
-    assert.equal((await sync({ kind: "location", rootSlug: "photos", path: "/public/inbox" }, { kind: "rsync", remote: "user@example.test:/backup" })).statusCode, 403);
-    assert.equal((await member.post("/api/tasks", { type: "rsync_push", sources: [{ rootSlug: "photos", path: "/public/inbox" }], remote: "user@example.test:/backup" })).statusCode, 403);
-    assert.equal((await member.post("/api/tasks", { type: "rsync_pull", remote: "user@example.test:/backup", destination: { rootSlug: "photos", path: "/public/inbox" } })).statusCode, 403);
+    // A sync joins two locations and nothing else.
+    assert.equal((await admin.post("/api/sync-jobs", { name: "Backup", source: { kind: "location", rootSlug: "photos", path: "/public/inbox" }, destination: { kind: "rsync", remote: "user@example.test:/backup" } })).statusCode, 400);
+    assert.equal((await admin.post("/api/tasks", { type: "rsync_push", sources: [{ rootSlug: "photos", path: "/public/inbox" }], remote: "user@example.test:/backup" })).statusCode, 400);
+
+    // The server's SSH key is the administrator's to use, and stays the same key once made.
     assert.equal((await member.get("/api/storage/ssh-key")).statusCode, 403);
-    assert.equal((await admin.post("/api/sync-jobs", { name: "Backup", source: { kind: "location", rootSlug: "photos", path: "/public/inbox" }, destination: { kind: "rsync", remote: "user@example.test:/backup" } })).statusCode, 200);
+    const key = (await admin.get("/api/storage/ssh-key")).json.publicKey;
+    assert.match(key, /^ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI[A-Za-z0-9+/]{43} kago$/);
+    assert.equal((await admin.get("/api/storage/ssh-key")).json.publicKey, key);
   } finally {
     await app.close();
     await rm(fixture.baseDir, { recursive: true, force: true });

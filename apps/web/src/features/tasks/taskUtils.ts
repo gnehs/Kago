@@ -10,8 +10,6 @@ const typeLabels: Record<string, string> = {
   extract: t("Extract"),
   delete_to_trash: t("Move to Trash"),
   restore_trash: t("Restore from Trash"),
-  rsync_pull: t("rsync pull"),
-  rsync_push: t("rsync push"),
   thumbnail: t("Thumbnails"),
   sync: t("Sync")
 };
