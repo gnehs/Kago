@@ -1,6 +1,6 @@
 import { CircleAlert, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { formatDuration, formatSize } from "@/lib/format";
+import { formatDuration, formatPercent, formatSize, formatWholeSize } from "@/lib/format";
 import { useToastStore } from "@/stores/toast";
 import { useUploadStore, type Upload } from "@/stores/uploads";
 import { t } from "@/lib/i18n";
@@ -64,7 +64,7 @@ function Count({ title, speed, value, max, details, close }: { title: string; sp
       <progress className="mr-1.5 w-auto" value={value} max={Math.max(max, 1)} />
       <div className="mr-1.5 flex items-baseline gap-2 text-xs text-muted tabular-nums">
         <span className="min-w-0 flex-1 truncate">{details}</span>
-        <span className="shrink-0">{max > 0 ? Math.min(100, Math.floor((value / max) * 100)) : 0}%</span>
+        <span className="shrink-0">{formatPercent(value, max)}%</span>
       </div>
     </>
   );
@@ -76,7 +76,7 @@ function UploadCard({ upload }: { upload: Upload }) {
   const details = sent
     ? t("Processing…")
     : [
-        `${formatSize(upload.loaded)} / ${formatSize(upload.total)}`,
+        `${formatWholeSize(upload.loaded)} / ${formatWholeSize(upload.total)}`,
         upload.speed > 0 ? `${formatSize(upload.speed)}/s` : null,
         upload.speed > 0 ? t("{duration} left", { duration: formatDuration((upload.total - upload.loaded) / upload.speed) }) : null
       ].filter(Boolean).join(" · ");

@@ -1,4 +1,4 @@
-import { formatSize } from "@/lib/format";
+import { formatSize, formatWholeSize } from "@/lib/format";
 import type { FileTask } from "@/types/kago";
 import { t } from "@/lib/i18n";
 
@@ -42,7 +42,7 @@ export const tasksProgress = (tasks: FileTask[]) => (tasks.length > 0 ? tasks.re
 
 export function taskProgressLabel(task: FileTask) {
   const files = t("{done}/{total} items", { done: task.processed_files, total: Math.max(task.total_files, 1) });
-  return task.total_bytes > 0 ? `${formatSize(task.processed_bytes)} / ${formatSize(task.total_bytes)} · ${files}` : files;
+  return task.total_bytes > 0 ? `${formatWholeSize(task.processed_bytes)} / ${formatWholeSize(task.total_bytes)} · ${files}` : files;
 }
 
 /** How fast a running task is going, once that can be told and while it is going at all. */

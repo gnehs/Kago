@@ -3,6 +3,7 @@ import { Ban, Check, Clock, Pause, X } from "lucide-react";
 import { api, downloadUrl, taskDownloadUrl } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { extractWithPassword, lockedExtract } from "@/features/files/ArchivePassword";
+import { formatPercent } from "@/lib/format";
 import { triggerDownload } from "@/lib/paths";
 import { run } from "@/lib/run";
 import { cn } from "@/lib/utils";
@@ -44,6 +45,7 @@ export function TaskRow({ task }: { task: FileTask }) {
   const counting = task.status === "running" || task.status === "pausing";
   const detail = task.error_message ? taskErrorLabel(task.error_message) : taskProgressLabel(task);
   const speed = taskSpeedLabel(task);
+  const [percent, tenth] = formatPercent(taskProgressValue(task), taskProgressMax(task)).split(".");
 
   return (
     <div className={cn("kago-card flex shrink-0 overflow-hidden rounded-md border border-line", tones[status.tone])}>
@@ -68,8 +70,8 @@ export function TaskRow({ task }: { task: FileTask }) {
       <div aria-hidden className="kago-cap flex w-14 shrink-0 items-center justify-center [&>.lucide]:size-[18px] [&>.lucide]:stroke-[2.2]">
         {counting ? (
           <span className="flex items-baseline font-semibold tabular-nums">
-            <span className="text-lg leading-none">{Math.floor((taskProgressValue(task) / taskProgressMax(task)) * 100)}</span>
-            <span className="ml-px text-[10px]">%</span>
+            <span className="text-lg leading-none">{percent}</span>
+            <span className="ml-px text-[10px]">{tenth ? `.${tenth}` : ""}%</span>
           </span>
         ) : (
           glyphs[task.status]

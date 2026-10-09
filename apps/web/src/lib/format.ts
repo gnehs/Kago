@@ -8,6 +8,20 @@ export function formatSize(size: number) {
   return `${(size / 1024 ** 3).toFixed(2)} GB`;
 }
 
+/** A size to the nearest whole unit, for a count that moves too fast for its decimals to be read. */
+export function formatWholeSize(size: number) {
+  if (size < 1024) return `${Math.round(size)} B`;
+  if (size < 1024 ** 2) return `${Math.round(size / 1024)} KB`;
+  if (size < 1024 ** 3) return `${Math.round(size / 1024 ** 2)} MB`;
+  return `${Math.round(size / 1024 ** 3)} GB`;
+}
+
+/** How far along a count is, to a tenth of a percent and rounded down, so it reads 100 only once all of it is done. */
+export function formatPercent(value: number, max: number) {
+  const percent = max > 0 ? Math.floor((value / max) * 1000) / 10 : 0;
+  return percent >= 100 ? "100" : percent.toFixed(1);
+}
+
 /** Rounded so a countdown reads calmly: seconds under a minute, then minutes, then hours and minutes. */
 export function formatDuration(seconds: number) {
   const total = Math.max(1, Math.round(seconds));
