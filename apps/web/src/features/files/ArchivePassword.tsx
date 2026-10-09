@@ -6,6 +6,7 @@ import { KagoDialog, KagoDialogActions } from "@/components/kago/dialog";
 import { Button } from "@/components/ui/button";
 import { Checkbox, Field } from "@/components/ui/input";
 import { KagoPasswordInput } from "@/components/kago/password-input";
+import { followTask } from "@/features/tasks/taskToast";
 import { t } from "@/lib/i18n";
 import { run } from "@/lib/run";
 import type { FileRef } from "@/stores/clipboard";
@@ -50,6 +51,7 @@ export function lockedExtract(task: FileTask): ExtractRequest | null {
 export async function startExtract(queryClient: QueryClient, request: ExtractRequest, options?: PasswordChoice) {
   const task = await api<FileTask>("/api/tasks", { method: "POST", body: JSON.stringify({ type: "extract", ...request, options }) });
   pendingExtracts.set(task.id, request);
+  followTask(task);
   await queryClient.invalidateQueries({ queryKey: ["tasks"] });
   return task;
 }

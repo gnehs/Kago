@@ -15,10 +15,10 @@ import { useCompact } from "@/lib/useCompact";
 import { isInteractiveTarget, usePointerDrag } from "@/lib/usePointerDrag";
 import { cn } from "@/lib/utils";
 import { promptCompress, type CompressChoice } from "@/features/files/CompressDialog";
-import { toast } from "@/stores/toast";
+import { followTask } from "@/features/tasks/taskToast";
 import { getCanvasSize, useWorkspaceStore } from "@/stores/workspace";
 import { t } from "@/lib/i18n";
-import type { Shelf as ShelfData } from "@/types/kago";
+import type { FileTask, Shelf as ShelfData } from "@/types/kago";
 
 type ShelfItem = ShelfData["items"][number];
 
@@ -127,9 +127,8 @@ export function Shelf() {
       options = choice.options;
     }
     await run(async () => {
-      await api(`/api/shelves/${shelfId}/tasks`, { method: "POST", body: JSON.stringify({ type, destination: { rootSlug: active.rootSlug, path }, options }) });
+      followTask(await api<FileTask>(`/api/shelves/${shelfId}/tasks`, { method: "POST", body: JSON.stringify({ type, destination: { rootSlug: active.rootSlug, path }, options }) }));
       await queryClient.invalidateQueries({ queryKey: ["tasks"] });
-      toast(t("Task created"));
     });
   }
 

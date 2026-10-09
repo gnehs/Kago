@@ -6,6 +6,7 @@ import { ExternalAppDialogHost } from "@/features/apps/ExternalAppDialog";
 import { ExternalAppWindow } from "@/features/apps/ExternalAppWindow";
 import { FileWindowView } from "@/features/files/FileWindow";
 import { Shelf } from "@/features/shelves/Shelf";
+import { useTaskToasts } from "@/features/tasks/taskToast";
 import { PreviewWindowView } from "@/features/files/PreviewWindow";
 import { AppWindowView } from "@/features/windows/AppWindow";
 import { loadSettings, useSettingsStore, wallpaperUrl } from "@/stores/settings";
@@ -46,6 +47,7 @@ export function Workspace({ user }: { user: Actor }) {
   }, [frontTitle]);
 
   useRealtime(user.id, sync.onRemoteChange);
+  useTaskToasts();
   useShortcuts({ enabled: !paletteOpen, onOpenPalette: openPalette });
 
   // Reserved /_kago/* URLs open the matching app window, then hand the URL back to the desktop.

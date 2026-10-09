@@ -3,16 +3,13 @@ import { useQueryClient } from "@tanstack/react-query";
 import { taskDownloadUrl } from "@/api/client";
 import { askForArchivePassword, pendingExtracts } from "@/features/files/ArchivePassword";
 import { pendingDownloads } from "@/features/files/useFileActions";
-import { taskErrorLabel, taskTypeLabel } from "@/features/tasks/taskUtils";
+import { announcedTypes, settleTask, taskFailed, taskFinished } from "@/features/tasks/taskToast";
+import { taskTypeLabel } from "@/features/tasks/taskUtils";
 import { triggerDownload } from "@/lib/paths";
 import { loadSettings } from "@/stores/settings";
-import { toast } from "@/stores/toast";
 import { showTrashing, useTrashingStore } from "@/stores/trashing";
 import type { FileTask } from "@/types/kago";
 import { t } from "@/lib/i18n";
-
-/** Task types whose completion is worth announcing; the rest finish quietly. */
-const announcedTypes = ["copy", "move", "compress", "extract", "restore_trash", "sync"];
 
 /**
  * Listens for server events. The socket only tells us what to refetch; SQLite stays the
@@ -29,23 +26,25 @@ export function useRealtime(userId: string, onRemoteWorkspaceChange: () => void)
     let reconnectTimer: number | undefined;
     let socket: WebSocket | null = null;
 
-    /** Tasks run on the server, so their outcome has to be announced or it goes unnoticed. */
+    /**
+     * Tasks run on the server, so their outcome has to be announced or it goes unnoticed.
+     * It is said in the notification that was counting the task, if this tab had one up.
+     */
     function announceTask(type: string, taskId: string, error?: string) {
       const task = queryClient.getQueryData<FileTask[]>(["tasks"])?.find((item) => item.id === taskId);
       const label = task ? taskTypeLabel(task) : t("Task");
       if (type === "task.failed") {
         pendingDownloads.delete(taskId);
         // A locked archive is asked about rather than reported.
-        if (askForArchivePassword(queryClient, taskId, error)) return;
-        toast(t("{task} failed: {reason}", { task: label, reason: taskErrorLabel(error ?? "Task failed") }), "error");
+        if (askForArchivePassword(queryClient, taskId, error)) settleTask(taskId);
+        else settleTask(taskId, taskFailed(label, error), "error");
         return;
       }
       pendingExtracts.delete(taskId);
       if (pendingDownloads.delete(taskId)) {
         triggerDownload(taskDownloadUrl(taskId));
-      } else if (task && announcedTypes.includes(task.type)) {
-        toast(t("{task} finished", { task: label }));
-      }
+        settleTask(taskId);
+      } else settleTask(taskId, task && announcedTypes.includes(task.type) ? taskFinished(label) : undefined);
     }
 
     function handleMessage(event: MessageEvent) {

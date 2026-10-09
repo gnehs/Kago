@@ -6,12 +6,14 @@ import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
 import { Button } from "@/components/ui/button";
 import { Page, Row, RowList } from "@/components/kago/page";
 import { KagoStatusIcon } from "@/components/kago/status-icon";
+import { followTask } from "@/features/tasks/taskToast";
 import { formatUnixDate } from "@/lib/format";
 import { baseName, displayPath } from "@/lib/paths";
 import { run } from "@/lib/run";
 import { confirmAction } from "@/stores/dialogs";
 import { toast } from "@/stores/toast";
 import { t } from "@/lib/i18n";
+import type { FileTask } from "@/types/kago";
 
 export function TrashPage() {
   const queryClient = useQueryClient();
@@ -21,9 +23,8 @@ export function TrashPage() {
 
   async function restore(itemId: string) {
     await run(async () => {
-      await api(`/api/trash/${itemId}/restore`, { method: "POST" });
+      followTask(await api<FileTask>(`/api/trash/${itemId}/restore`, { method: "POST" }));
       await Promise.all(["trash", "tasks", "fs"].map((key) => queryClient.invalidateQueries({ queryKey: [key] })));
-      toast(t("Restore task created"));
     }, t("Couldn’t restore"));
   }
 

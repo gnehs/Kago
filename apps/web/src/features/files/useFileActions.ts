@@ -7,6 +7,7 @@ import { useClipboardStore, type FileRef } from "@/stores/clipboard";
 import { promptText } from "@/stores/dialogs";
 import { toast } from "@/stores/toast";
 import { hideTrashing } from "@/stores/trashing";
+import { followTask } from "@/features/tasks/taskToast";
 import { isUploadCancelled, uploadForm, uploadLabel } from "@/stores/uploads";
 import { folderTitle, useWorkspaceStore } from "@/stores/workspace";
 import { startExtract } from "./ArchivePassword";
@@ -43,8 +44,7 @@ const isInFolder = (source: FileRef, folder: FileRef) => source.rootSlug === fol
 
 export function transferFiles(queryClient: QueryClient, type: "copy" | "move", sources: FileRef[], destination: FileRef) {
   return run(async () => {
-    await createTask(queryClient, { type, sources, destination });
-    toast(type === "copy" ? t("Copy task created") : t("Move task created"));
+    followTask(await createTask(queryClient, { type, sources, destination }));
   });
 }
 
@@ -195,14 +195,9 @@ export function useFileActions(window: FileWindow) {
       run(async () => {
         const choice = await promptCompress({ title: t("Compress to zip"), defaultName: `${window.title || "archive"}.zip` });
         if (!choice) return;
-        await createTask(queryClient, { type: "compress", sources: refs(paths), destination: here(joinLogicalPath(window.logicalPath, ensureZipName(choice.name))), options: choice.options });
-        toast(t("Compress task created"));
+        followTask(await createTask(queryClient, { type: "compress", sources: refs(paths), destination: here(joinLogicalPath(window.logicalPath, ensureZipName(choice.name))), options: choice.options }));
       }),
-    extract: (paths: string[]) =>
-      run(async () => {
-        await startExtract(queryClient, { sources: refs(paths), destination: here() });
-        toast(t("Extract task created"));
-      }),
+    extract: (paths: string[]) => run(() => startExtract(queryClient, { sources: refs(paths), destination: here() })),
     download: (items: FileItem[]) => downloadFiles(queryClient, window.rootSlug, items),
     addToShelf: (paths: string[]) =>
       run(async () => {
