@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { useWorkspaceStore, type PreviewWindow } from "@/stores/workspace";
 import type { FileItem, MediaInfo } from "@/types/kago";
 import { useAudioVisual, VISUAL_STYLES, type VisualStyle } from "./audioVisuals";
+import { useMediaSession } from "./useMediaSession";
 import { FileIcon } from "@/components/kago/file-icon";
 import { isViewableImage, sourceOf } from "./ImagePreview";
 import { extensionOf } from "@/lib/fileKind";
@@ -381,22 +382,26 @@ export function AudioPreviewWindow({ window }: { window: PreviewWindow }) {
     if (streamed && filePath && streamLength > 0) setDurations((known) => (known[filePath] === streamLength ? known : { ...known, [filePath]: streamLength }));
   }, [streamed, filePath, streamLength]);
 
-  // The keys of a keyboard or headset, and the system's own now-playing panel, follow whichever window is playing.
-  const steps = useRef({ previous, next });
-  steps.current = { previous, next };
-  const trackKey = track?.key;
-  useEffect(() => {
-    if (!playing || !track || !("mediaSession" in navigator)) return;
-    const session = navigator.mediaSession;
-    session.metadata = new MediaMetadata({ title: track.title, artist: track.performer, album: albumTitle, artwork: cover ? [{ src: new URL(cover, location.href).href }] : [] });
-    session.setActionHandler("previoustrack", () => steps.current.previous());
-    session.setActionHandler("nexttrack", () => steps.current.next());
-    return () => {
-      session.setActionHandler("previoustrack", null);
-      session.setActionHandler("nexttrack", null);
-    };
-    // The track is named by its key and by what is shown of it; a new object for the same track changes nothing here.
-  }, [playing, trackKey, track?.title, track?.performer, albumTitle, cover]);
+  useMediaSession(
+    audioRef,
+    track
+      ? {
+          title: track.title,
+          artist: track.performer,
+          album: albumTitle,
+          artwork: cover,
+          playing,
+          duration: length,
+          position: () => clock() - start,
+          play,
+          pause: () => audioRef.current?.pause(),
+          seekTo,
+          // "Previous" is also how a track is heard again from the top, so the first of an album has it too.
+          previous: tracks.length > 1 ? previous : null,
+          next: index < tracks.length - 1 ? next : null
+        }
+      : null
+  );
 
   const onKeyDown = (event: React.KeyboardEvent) => {
     if (event.metaKey || event.ctrlKey || event.altKey) return;

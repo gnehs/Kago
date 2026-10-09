@@ -1,12 +1,12 @@
 import { AudioLines, Captions, CaptionsOff, Download, Info, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api, downloadUrl, previewUrl } from "@/api/client";
+import { api, downloadUrl, previewUrl, thumbnailUrl } from "@/api/client";
 import { useFileList, useMediaInfo, useSubtitles } from "@/api/hooks";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { KagoDropdownMenu, KagoMenuCheckItem, KagoMenuHeading, KagoMenuNote, KagoMenuSeparator } from "@/components/kago/menu";
 import { KagoWindow } from "@/components/kago/window";
 import { isVideoType } from "@/lib/format";
-import { parentPath, triggerDownload } from "@/lib/paths";
+import { baseName, parentPath, triggerDownload } from "@/lib/paths";
 import { getSubtitlePref, getVideoHdr, getVideoHdrLift, getVideoQuality, setSubtitlePref, setVideoHdr, setVideoHdrLift, setVideoQuality, type VideoQualityPref } from "@/lib/prefs";
 import { languageLabel, pickSubtitle, subtitleLabel } from "@/lib/subtitles";
 import { toast } from "@/stores/toast";
@@ -276,6 +276,9 @@ export function VideoPreview({
     if (quality === "direct") setAudioIndex(0);
   };
 
+  // The folder stands in for an album: it is what tells one episode 3 from another.
+  const nowPlaying = useMemo(() => ({ title: baseName(path), album: baseName(parentPath(path)), artwork: thumbnailUrl(rootSlug, path) }), [rootSlug, path]);
+
   const output =
     height === null
       ? t("Original file")
@@ -398,6 +401,7 @@ export function VideoPreview({
       <VideoPlayer
         videoRef={videoRef}
         mediaKey={path}
+        nowPlaying={nowPlaying}
         previous={videos.length > 1 && position !== -1 ? neighbour(videos[position - 1]) : undefined}
         next={videos.length > 1 && position !== -1 ? neighbour(videos[position + 1]) : undefined}
         fallbackDuration={media?.duration}

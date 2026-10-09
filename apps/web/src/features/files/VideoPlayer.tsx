@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { startCompositePip } from "./compositePip";
 import { GlassBackdrop } from "./GlassBackdrop";
 import { t } from "@/lib/i18n";
+import { useMediaSession } from "./useMediaSession";
 
 const IDLE_MS = 2500;
 const SEEK_STEP = 5;
@@ -55,6 +56,7 @@ type SettingsSlot = { container: HTMLElement | null; onOpenChange: (open: boolea
 export function VideoPlayer({
   videoRef,
   mediaKey,
+  nowPlaying,
   fallbackDuration = 0,
   previous,
   next,
@@ -73,6 +75,8 @@ export function VideoPlayer({
   fallbackDuration?: number;
   /** Changes when a different video is put in the player, as opposed to another rendition of the same one. */
   mediaKey?: string;
+  /** What the system's now-playing panel says this is. Without it the player keeps out of the panel. */
+  nowPlaying?: { title: string; album?: string; artwork?: string };
   /** The videos before and after this one, where it is one of several; null at either end. */
   previous?: PlayerNeighbour | null;
   next?: PlayerNeighbour | null;
@@ -195,6 +199,25 @@ export function VideoPlayer({
     video.volume = Math.min(1, Math.max(0, volume));
     video.muted = muted;
   };
+
+  useMediaSession(
+    videoRef,
+    nowPlaying
+      ? {
+          ...nowPlaying,
+          playing,
+          duration,
+          // While a new source loads the element sits at zero; the playhead on screen is where it will resume.
+          position: () => (videoRef.current && videoRef.current.readyState > 0 ? videoRef.current.currentTime : time),
+          play: () => void videoRef.current?.play().catch(() => {}),
+          pause: () => videoRef.current?.pause(),
+          seekTo,
+          previous: previous?.go,
+          next: next?.go
+        }
+      : null,
+    floating ?? undefined
+  );
 
   const toggleFullscreen = () => {
     if (floating) return;
