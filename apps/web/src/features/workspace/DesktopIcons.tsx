@@ -85,6 +85,7 @@ export function DesktopIcons({ roots, isAdmin }: { roots: Root[]; isAdmin: boole
             rel="noopener noreferrer"
             draggable={false}
             className={ICON_CLASS}
+            title={app.embed ? undefined : t("Opens in a new tab")}
             onClick={(event) => {
               // One that is shown inside Kago opens there on a plain click; a click with a key held is still the browser's to take.
               if (!app.embed || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
@@ -92,7 +93,7 @@ export function DesktopIcons({ roots, isAdmin }: { roots: Root[]; isAdmin: boole
               openExternalApp(app);
             }}
           >
-            <DesktopIconBody icon={<ExternalAppIcon name={app.name} icon={app.icon} className="size-full" />} label={app.name} />
+            <DesktopIconBody icon={<ExternalAppIcon name={app.name} icon={app.icon} leaves={!app.embed} className="size-full" />} label={app.name} />
           </a>
         </KagoContextMenu>
       ))}

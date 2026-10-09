@@ -732,6 +732,11 @@
     filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.3)) drop-shadow(0 3px 4px rgb(0 0 0 / 0.16));
   }
 
+  /* The mark on a shortcut's corner lies on top of its icon. */
+  .kago-shortcut-mark {
+    filter: drop-shadow(0 0.5px 1px rgb(0 0 0 / 0.3));
+  }
+
   /* File icons cast a little shadow of their own, at any size. */
   .kago-icon {
     filter: drop-shadow(0 0.5px 0.5px rgb(0 0 0 / 0.2));

@@ -177,6 +177,7 @@ export const zhTW: Dictionary = {
   "Apps": "應用程式",
   "Add app": "新增應用程式",
   "Add app…": "新增應用程式…",
+  "Opens in a new tab": "會在新分頁開啟",
   "Shortcuts on the desktop to the other services you run, such as Jellyfin or Home Assistant. Each opens in a new tab, or in a window inside Kago.": "把你執行的其他服務（例如 Jellyfin、Home Assistant）放到桌面上當捷徑，可以在新分頁開啟，也可以開在 Kago 的視窗裡。",
   "Opens in": "開啟方式",
   "A new tab": "新分頁",

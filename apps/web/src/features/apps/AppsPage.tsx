@@ -32,7 +32,7 @@ export function AppsPage() {
       {apps.data?.length ? (
         <RowList>
           {apps.data.map((app) => (
-            <Row key={app.id} icon={<ExternalAppIcon name={app.name} icon={app.icon} className="size-8" />} title={app.name} subtitle={app.url}>
+            <Row key={app.id} icon={<ExternalAppIcon name={app.name} icon={app.icon} leaves={!app.embed} className="size-8" />} title={app.name} subtitle={app.url}>
               {app.shared ? <KagoBadge>{t("Everyone")}</KagoBadge> : null}
               {app.editable ? (
                 <>

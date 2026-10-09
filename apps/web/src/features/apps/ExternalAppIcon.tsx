@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Globe } from "lucide-react";
-import { KagoAppIcon, KagoAppImage } from "@/components/kago/app-icon";
+import { KagoAppIcon, KagoAppImage, KagoShortcutMark } from "@/components/kago/app-icon";
 import { locationTone } from "@/features/workspace/DesktopIcons";
 import { cn } from "@/lib/utils";
 
@@ -15,13 +15,15 @@ const GLOBE = (
 /**
  * The icon of a shortcut to another service, as a tile like Kago's own. Without a picture, or with one that does
  * not load, it is the default tile, in a colour that follows from the name so two of them can be told apart.
+ * One that opens in a tab of its own, and so takes whoever clicks it out of Kago, wears the shortcut mark.
  */
-export function ExternalAppIcon({ name, icon, className }: { name: string; icon: string | null; className?: string }) {
+export function ExternalAppIcon({ name, icon, leaves, className }: { name: string; icon: string | null; /** Whether it opens outside Kago. */ leaves?: boolean; className?: string }) {
   const [failed, setFailed] = useState<string | null>(null);
   const picture = icon && failed !== icon ? icon : null;
   return (
-    <span className={cn("flex size-12 shrink-0", className)} style={picture ? undefined : { color: `var(--kago-app-${locationTone(name.trim().toLowerCase())})` }}>
+    <span className={cn("relative flex size-12 shrink-0", className)} style={picture ? undefined : { color: `var(--kago-app-${locationTone(name.trim().toLowerCase())})` }}>
       {picture ? <KagoAppImage src={picture} onError={() => setFailed(picture)} /> : GLOBE}
+      {leaves ? <KagoShortcutMark className="absolute bottom-0 left-0 size-[36%]" /> : null}
     </span>
   );
 }

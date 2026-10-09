@@ -141,3 +141,17 @@ export function KagoAppImage({ src, className, onError }: { src: string; classNa
     </svg>
   );
 }
+
+/**
+ * The mark of a shortcut that leads out of Kago, worn on the corner of its icon the way Windows marks a shortcut:
+ * a small white card with an arrow that turns and leaves. It is the same in either theme, like the card it is.
+ */
+export function KagoShortcutMark({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden className={cn("kago-shortcut-mark", className)}>
+      <rect x="1.5" y="1.5" width="21" height="21" rx="5" fill="#ffffff" stroke="#000000" strokeOpacity={0.28} strokeWidth={1} />
+      <path d="M7.2 17.6c0-5.2 3-8.4 8.4-8.6" fill="none" stroke="#1d4ed8" strokeWidth={2.4} strokeLinecap="round" />
+      <path d="M12.6 5.6l4.6 3.4-4 4.2" fill="none" stroke="#1d4ed8" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}

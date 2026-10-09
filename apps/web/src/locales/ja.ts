@@ -177,6 +177,7 @@ export const ja: Dictionary = {
   "Apps": "アプリ",
   "Add app": "アプリを追加",
   "Add app…": "アプリを追加…",
+  "Opens in a new tab": "新しいタブで開きます",
   "Shortcuts on the desktop to the other services you run, such as Jellyfin or Home Assistant. Each opens in a new tab, or in a window inside Kago.": "Jellyfin や Home Assistant など、ほかに動かしているサービスへのショートカットをデスクトップに置けます。新しいタブで開くことも、Kago のウィンドウの中で開くこともできます。",
   "Opens in": "開く場所",
   "A new tab": "新しいタブ",
