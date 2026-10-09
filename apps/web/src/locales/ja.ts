@@ -998,5 +998,18 @@ export const ja: Dictionary = {
   "Identity not found": "ID が見つかりません",
   "Set a password first, or there would be no way left to sign in": "先にパスワードを設定してください。設定しないとログインする方法がなくなります",
   "A scope has a character it may not contain": "スコープに使用できない文字が含まれています",
-  "The issuer URL, the client ID and Kago’s own address are needed to turn single sign-on on": "シングルサインオンを有効にするには、Issuer URL、Client ID、Kago のアドレスが必要です"
+  "The issuer URL, the client ID and Kago’s own address are needed to turn single sign-on on": "シングルサインオンを有効にするには、Issuer URL、Client ID、Kago のアドレスが必要です",
+  "SQLite preview page is too large": "SQLite のこのページは大きすぎてプレビューできません",
+  "SQLite preview is busy; try again later": "SQLite のプレビューが混み合っています。しばらくしてからもう一度お試しください",
+  "SQLite preview timed out": "SQLite のプレビューがタイムアウトしました",
+  "Permission update failed and the remote rename could not be rolled back": "アクセス権の更新に失敗し、リモートの場所での名前の変更も元に戻せませんでした",
+  "Permission update failed and the filesystem rename could not be rolled back": "アクセス権の更新に失敗し、ファイルシステムでの名前の変更も元に戻せませんでした",
+  "Cover not found": "カバー画像が見つかりません",
+  "Share owner no longer has access": "共有の作成者にはもうアクセス権がありません",
+  "Tag not found": "タグが見つかりません",
+  "Unsupported zip entry": "zip に対応していない項目が含まれています",
+  "Invalid zip entry size": "zip 内の項目のサイズが正しくありません",
+  "A folder already exists at the target": "移動先に同じ名前のフォルダがすでにあります",
+  "Could not keep a recovery copy of the remote file": "リモートファイルの復旧用コピーを保持できませんでした",
+  "The write failed; the original file was kept in a recovery copy on the remote location": "書き込みに失敗しました。元のファイルはリモートの場所に復旧用コピーとして残っています"
 };

@@ -998,5 +998,18 @@ export const zhTW: Dictionary = {
   "Identity not found": "找不到這個身分",
   "Set a password first, or there would be no way left to sign in": "請先設定密碼，否則就沒有任何方式可以登入了",
   "A scope has a character it may not contain": "Scope 含有不允許的字元",
-  "The issuer URL, the client ID and Kago’s own address are needed to turn single sign-on on": "啟用單一登入需要 Issuer URL、Client ID 與 Kago 的位址"
+  "The issuer URL, the client ID and Kago’s own address are needed to turn single sign-on on": "啟用單一登入需要 Issuer URL、Client ID 與 Kago 的位址",
+  "SQLite preview page is too large": "這一頁 SQLite 資料太大，無法預覽",
+  "SQLite preview is busy; try again later": "SQLite 預覽忙碌中，請稍後再試",
+  "SQLite preview timed out": "SQLite 預覽逾時",
+  "Permission update failed and the remote rename could not be rolled back": "權限更新失敗，而且遠端位置上的重新命名無法復原",
+  "Permission update failed and the filesystem rename could not be rolled back": "權限更新失敗，而且檔案系統上的重新命名無法復原",
+  "Cover not found": "找不到封面",
+  "Share owner no longer has access": "分享的建立者已經沒有存取權限",
+  "Tag not found": "找不到標籤",
+  "Unsupported zip entry": "zip 裡有不支援的項目",
+  "Invalid zip entry size": "zip 裡有項目的大小不正確",
+  "A folder already exists at the target": "目標位置已經有同名的資料夾",
+  "Could not keep a recovery copy of the remote file": "無法為遠端檔案保留復原用的副本",
+  "The write failed; the original file was kept in a recovery copy on the remote location": "寫入失敗；原本的檔案已保留為遠端位置上的復原副本"
 };
