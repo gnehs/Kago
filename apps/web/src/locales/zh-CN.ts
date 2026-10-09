@@ -1011,5 +1011,12 @@ export const zhCN: Dictionary = {
   "Invalid zip entry size": "zip 里有项目的大小不正确",
   "A folder already exists at the target": "目标位置已经有同名的文件夹",
   "Could not keep a recovery copy of the remote file": "无法为远程文件保留恢复用的副本",
-  "The write failed; the original file was kept in a recovery copy on the remote location": "写入失败；原来的文件已保留为远程位置上的恢复副本"
+  "The write failed; the original file was kept in a recovery copy on the remote location": "写入失败；原来的文件已保留为远程位置上的恢复副本",
+  "Kago’s system account has no permission for this on the server’s disk. An administrator needs to check PUID / PGID and who owns the folder.": "运行 Kago 的系统账号在服务器的磁盘上没有这个权限。请管理员检查 PUID / PGID 与文件夹的所有者。",
+  "This folder is mounted read-only on the server": "这个文件夹在服务器上是以只读方式挂载的",
+  "The remote location refused this: the account Kago signs in with has no permission there": "远程位置拒绝了这个操作：Kago 登录用的账号在那里没有权限",
+  "The transfer was refused for lack of permission at one end. An administrator needs to check the account Kago runs as, or the one a remote location signs in with.": "传输因为其中一端权限不足而被拒绝。请管理员检查运行 Kago 的系统账号，或远程位置登录用的账号。",
+  "No permission to read": "没有读取权限",
+  "No permission to write": "没有写入权限",
+  "Kago runs on the server as UID {uid}, GID {gid}, and the disk doesn’t let that account into the folders marked above. On the host, give it access to them, or set PUID / PGID to the account that owns them. A location that is only meant to be read can be made read-only instead.": "Kago 在服务器上以 UID {uid}、GID {gid} 运行，而磁盘不允许这个账号访问上面标示的文件夹。请在宿主机上让它能访问这些文件夹，或把 PUID / PGID 改成拥有它们的账号。只打算读取的位置也可以改设为只读。"
 };

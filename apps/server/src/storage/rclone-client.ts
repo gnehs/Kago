@@ -119,12 +119,16 @@ export class RcloneClient {
   }
 }
 
-/** rclone's own words are for the log and the administrator; everyone else is told only that the remote failed. */
+/** How each kind of storage words a refusal for lack of permission, which rclone passes on as it got it. */
+export const refusedForPermission = (message: string) => /permission denied|access[ _]denied|access is denied|operation not permitted/i.test(message);
+
+/** rclone's own words are for the log and the administrator; everyone else is told only that the remote failed, or that it refused. */
 export function remoteFailure(error: unknown): AppError {
   if (error instanceof AppError) return error;
   if (error instanceof RcloneError) {
     if (error.status === 404 || /not found|does not exist|no such file/i.test(error.message)) return new AppError(404, "Path not found", "PATH_NOT_FOUND");
     logger.warn("remote location failed", error.message);
+    if (refusedForPermission(error.message)) return new AppError(502, "The remote location refused this: the account Kago signs in with has no permission there", "REMOTE_PERMISSION_DENIED");
     return new AppError(502, "The remote location could not be reached", "REMOTE_FAILED");
   }
   throw error;

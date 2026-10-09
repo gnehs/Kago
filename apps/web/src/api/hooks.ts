@@ -38,7 +38,7 @@ export function useRoots() {
   return useQuery({ queryKey: ["roots"], queryFn: () => api<Root[]>("/api/roots") });
 }
 
-/** The kinds of remote location, the ones set up, and whether the server can reach any at all. Administrators only. */
+/** The kinds of remote location, the ones set up, whether the server can reach any at all, and what its disk allows in the local ones. Administrators only. */
 export function useStorage() {
   return useQuery({ queryKey: ["storage"], queryFn: () => api<StorageInfo>("/api/storage"), retry: false });
 }

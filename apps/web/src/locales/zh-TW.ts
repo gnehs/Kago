@@ -1011,5 +1011,12 @@ export const zhTW: Dictionary = {
   "Invalid zip entry size": "zip 裡有項目的大小不正確",
   "A folder already exists at the target": "目標位置已經有同名的資料夾",
   "Could not keep a recovery copy of the remote file": "無法為遠端檔案保留復原用的副本",
-  "The write failed; the original file was kept in a recovery copy on the remote location": "寫入失敗；原本的檔案已保留為遠端位置上的復原副本"
+  "The write failed; the original file was kept in a recovery copy on the remote location": "寫入失敗；原本的檔案已保留為遠端位置上的復原副本",
+  "Kago’s system account has no permission for this on the server’s disk. An administrator needs to check PUID / PGID and who owns the folder.": "執行 Kago 的系統帳號在伺服器的磁碟上沒有這個權限。請管理員檢查 PUID / PGID 與資料夾的擁有者。",
+  "This folder is mounted read-only on the server": "這個資料夾在伺服器上是以唯讀方式掛載的",
+  "The remote location refused this: the account Kago signs in with has no permission there": "遠端位置拒絕了這個操作：Kago 登入用的帳號在那裡沒有權限",
+  "The transfer was refused for lack of permission at one end. An administrator needs to check the account Kago runs as, or the one a remote location signs in with.": "傳輸因為其中一端權限不足而被拒絕。請管理員檢查執行 Kago 的系統帳號，或遠端位置登入用的帳號。",
+  "No permission to read": "沒有讀取權限",
+  "No permission to write": "沒有寫入權限",
+  "Kago runs on the server as UID {uid}, GID {gid}, and the disk doesn’t let that account into the folders marked above. On the host, give it access to them, or set PUID / PGID to the account that owns them. A location that is only meant to be read can be made read-only instead.": "Kago 在伺服器上以 UID {uid}、GID {gid} 執行，而磁碟不允許這個帳號存取上面標示的資料夾。請在主機上讓它能存取這些資料夾，或把 PUID / PGID 改成擁有它們的帳號。只打算讀取的位置也可以改設為唯讀。"
 };

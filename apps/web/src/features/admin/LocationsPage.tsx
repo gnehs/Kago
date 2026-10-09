@@ -60,6 +60,14 @@ export function LocationsPage({ roots }: { roots: Root[] }) {
     });
   }
 
+  // Kago's own rules cannot give what the disk withholds from the account the server runs as, so that is said here, where it is set up.
+  const refusal = (root: Root) => {
+    const access = storage.data?.local.find((item) => item.id === root.id);
+    if (!access) return null;
+    return !access.readable ? "read" : !access.writable && !root.readonly ? "write" : null;
+  };
+  const account = storage.data?.account;
+
   const local = roots.filter((root) => root.provider === "local");
   const remote = roots.filter((root) => root.provider !== "local");
   const addButton = canAdd && !editing ? <Button variant="default" onClick={() => setEditing(true)}><Plus />{t("Add remote location")}</Button> : null;
@@ -78,6 +86,8 @@ export function LocationsPage({ roots }: { roots: Root[] }) {
           <RowList>
             {local.map((root) => (
               <Row key={root.id} icon={<HardDrive />} title={root.name} subtitle={root.slug}>
+                {refusal(root) === "read" ? <KagoBadge tone="danger">{t("No permission to read")}</KagoBadge> : null}
+                {refusal(root) === "write" ? <KagoBadge tone="warning">{t("No permission to write")}</KagoBadge> : null}
                 {readonlyControls(root)}
               </Row>
             ))}
@@ -85,6 +95,11 @@ export function LocationsPage({ roots }: { roots: Root[] }) {
         ) : (
           <KagoEmptyState className="kago-card rounded-lg border border-line" icon={<HardDrive />} title={t("No local locations yet")} description={t("Create or mount a folder under /data and it will show up here.")} />
         )}
+        {account && local.some(refusal) ? (
+          <p className="m-0 text-xs text-muted">
+            {t("Kago runs on the server as UID {uid}, GID {gid}, and the disk doesn’t let that account into the folders marked above. On the host, give it access to them, or set PUID / PGID to the account that owns them. A location that is only meant to be read can be made read-only instead.", account)}
+          </p>
+        ) : null}
       </Section>
       {/* A remote location is a connection Kago keeps: it is added, edited and removed here. */}
       <Section title={t("Remote locations")} description={t("Folders on other machines, reached over the network.")} action={remote.length > 0 ? addButton : null}>

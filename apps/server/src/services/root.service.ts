@@ -85,6 +85,24 @@ export class RootService {
     return created;
   }
 
+  /**
+   * Whether the account the server runs as may read and write each local root's own folder. Kago's rules decide who
+   * may do what, but the disk's ownership and mode bits have the last word, and nothing in Kago can change them.
+   */
+  localAccess(): Array<{ id: string; readable: boolean; writable: boolean }> {
+    const allowed = (folder: string, mode: number) => {
+      try {
+        fs.accessSync(folder, mode | fs.constants.X_OK);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    return this.listMounted()
+      .filter((root) => root.provider === "local")
+      .map((root) => ({ id: root.id, readable: allowed(root.base_path, fs.constants.R_OK), writable: allowed(root.base_path, fs.constants.W_OK) }));
+  }
+
   getBySlug(slug: string): Root {
     const root = row<Root>(this.db.prepare("SELECT * FROM roots WHERE slug = ?").get(slug));
     if (!root) throw new AppError(404, "Root not found", "ROOT_NOT_FOUND");

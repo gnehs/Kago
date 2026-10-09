@@ -26,7 +26,9 @@ export type RemoteField = { key: string; label: string; kind?: "text" | "number"
 export type RemoteProvider = { type: string; label: string; fields: RemoteField[]; path: { label: string; placeholder: string; required: boolean; hint?: string } };
 /** A remote location's settings as an administrator sees them: secrets are only named, never sent. */
 export type RemoteRoot = Root & { remote: { type: string; base: string; params: Record<string, string>; secrets: string[] } };
-export type StorageInfo = { available: boolean; providers: RemoteProvider[]; roots: RemoteRoot[] };
+/** What the server's own account may do in a local location's folder, by the disk's ownership and mode bits. */
+export type LocalAccess = { id: string; readable: boolean; writable: boolean };
+export type StorageInfo = { available: boolean; providers: RemoteProvider[]; roots: RemoteRoot[]; /** The account the server runs as; none where the system has no such thing. */ account: { uid: number; gid: number } | null; local: LocalAccess[] };
 
 export type SyncEndpoint = { kind: "location"; rootSlug: string; path: string };
 export type SyncSchedule = { kind: "interval"; minutes: number } | { kind: "daily"; time: string } | { kind: "weekly"; weekday: number; time: string };

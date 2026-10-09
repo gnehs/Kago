@@ -10,7 +10,7 @@ import { lookup } from "mime-types";
 import { z } from "zod";
 import type { Env } from "./config/env.js";
 import { openDb } from "./db/db.js";
-import { AppError, publicError } from "./lib/errors.js";
+import { AppError, publicError, systemAccount } from "./lib/errors.js";
 import { isPictureFormat } from "./lib/subtitles.js";
 import { nfc } from "./lib/filename.js";
 import { logger } from "./lib/logger.js";
@@ -132,6 +132,14 @@ export async function buildApp(env: Env) {
 
   await auth.ensureInitialAdminFromEnv();
   roots.syncFromDataDir();
+  // Said once in the log as well, where whoever set the container up looks first.
+  for (const access of roots.localAccess()) {
+    const root = roots.getById(access.id);
+    if (!access.readable || !(access.writable || root.readonly)) {
+      const account = systemAccount();
+      logger.warn(`Kago${account ? ` runs as uid ${account.uid}, gid ${account.gid} and` : ""} cannot ${access.readable ? "write to" : "read"} ${root.base_path}; check PUID / PGID or the folder's ownership`);
+    }
+  }
   await remotes.start();
   registerApi(app, { auth, audit, roots, paths, permissions, fsService, workspace, preferences, tasks, shelves, tags, shares, groups, oidc, media, images, apps, iconLibrary, events, db, storage, remotes, sync, env });
 
@@ -497,13 +505,16 @@ function registerApi(app: FastifyInstance, services: Services) {
     return services.roots.publicRoot(root);
   });
 
-  // Remote locations: what kinds there are, the ones set up, and whether rclone is there to reach them.
+  // How locations are kept: the kinds of remote there are, the ones set up, whether rclone is there to reach them, and what the disk allows in the local ones.
   app.get("/api/storage", async (request) => {
     requireAdmin(request);
     return {
       available: await services.remotes.available(),
       providers,
-      roots: services.roots.listRemote().map((root) => services.roots.publicRoot(root, true))
+      roots: services.roots.listRemote().map((root) => services.roots.publicRoot(root, true)),
+      // What the disk itself allows the server's account in each local location, whatever Kago's own rules say.
+      account: systemAccount(),
+      local: services.roots.localAccess()
     };
   });
   app.post("/api/storage/test", async (request) => {

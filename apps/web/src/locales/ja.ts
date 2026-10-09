@@ -1011,5 +1011,12 @@ export const ja: Dictionary = {
   "Invalid zip entry size": "zip 内の項目のサイズが正しくありません",
   "A folder already exists at the target": "移動先に同じ名前のフォルダがすでにあります",
   "Could not keep a recovery copy of the remote file": "リモートファイルの復旧用コピーを保持できませんでした",
-  "The write failed; the original file was kept in a recovery copy on the remote location": "書き込みに失敗しました。元のファイルはリモートの場所に復旧用コピーとして残っています"
+  "The write failed; the original file was kept in a recovery copy on the remote location": "書き込みに失敗しました。元のファイルはリモートの場所に復旧用コピーとして残っています",
+  "Kago’s system account has no permission for this on the server’s disk. An administrator needs to check PUID / PGID and who owns the folder.": "Kago を実行しているシステムアカウントには、サーバーのディスク上でこの操作を行う権限がありません。管理者が PUID / PGID とフォルダの所有者を確認する必要があります。",
+  "This folder is mounted read-only on the server": "このフォルダはサーバー上で読み取り専用としてマウントされています",
+  "The remote location refused this: the account Kago signs in with has no permission there": "リモートの場所に拒否されました：Kago がログインに使うアカウントにはそこでの権限がありません",
+  "The transfer was refused for lack of permission at one end. An administrator needs to check the account Kago runs as, or the one a remote location signs in with.": "どちらか一方で権限が不足しているため、転送は拒否されました。管理者が Kago を実行しているシステムアカウント、またはリモートの場所へのログインに使うアカウントを確認する必要があります。",
+  "No permission to read": "読み取り権限がありません",
+  "No permission to write": "書き込み権限がありません",
+  "Kago runs on the server as UID {uid}, GID {gid}, and the disk doesn’t let that account into the folders marked above. On the host, give it access to them, or set PUID / PGID to the account that owns them. A location that is only meant to be read can be made read-only instead.": "Kago はサーバー上で UID {uid}、GID {gid} として動作しており、ディスクはこのアカウントに上で印の付いたフォルダへのアクセスを許可していません。ホスト側でアクセスできるようにするか、PUID / PGID をフォルダを所有するアカウントに変更してください。読み取るだけの場所は、代わりに読み取り専用にすることもできます。"
 };

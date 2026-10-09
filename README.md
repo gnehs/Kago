@@ -253,7 +253,7 @@ Every push to `main` publishes `latest` and `sha-<commit>`; pushing a `v*` tag a
 The icon and its locations only appear when `/data` contains folders; files placed directly in the root of `/data` aren't shown.
 
 **Uploading or creating a folder fails with a permission error.**
-The account behind `PUID` / `PGID` can't write to the folder mounted into `/data`. Change the variables, or change the folder's permissions on the NAS.
+"Kago's system account has no permission for this on the server's disk" means the account behind `PUID` / `PGID` can't read or write the folder mounted into `/data`. That has nothing to do with the permissions set inside Kago, and can't be changed from there. Settings → Locations marks the locations whose top folder can't be read or written, and shows the UID and GID Kago really runs as; the path that was refused is in the container's log (`docker logs kago`). Change the variables, or change the folder's permissions on the NAS. A location that is only meant to be read can simply be made read-only.
 
 **Finder tags aren't shown.**
 Tags live in a file's extended attributes (xattr). The underlying filesystem has to support them, and the file has to have been saved from a Mac in a way that keeps xattrs (SMB, for example).

@@ -7,7 +7,7 @@ import yauzl from "yauzl";
 import { z } from "zod";
 import type { Db } from "../db/db.js";
 import { row, rows } from "../db/db.js";
-import { AppError } from "../lib/errors.js";
+import { AppError, fileSystemRefusal } from "../lib/errors.js";
 import { assertNameAvailable, nfc } from "../lib/filename.js";
 import { id, now } from "../lib/ids.js";
 import { logger } from "../lib/logger.js";
@@ -15,7 +15,7 @@ import { isZipDirectory, isZipSymlink, openZipArchive } from "../lib/zip-archive
 import { openEncryptedZipEntry, readZipCipherHead, zipCipherOf, zipPasswordFits, ZipPasswordError, type ZipCipher } from "../lib/zip-crypto.js";
 import { SecretBox } from "../lib/secret-box.js";
 import { zipStream, type ZipEntry, type ZipOptions } from "../lib/zip-stream.js";
-import { RcloneJobStopped } from "../storage/rclone-client.js";
+import { RcloneJobStopped, refusedForPermission } from "../storage/rclone-client.js";
 import { runRclone } from "../storage/rclone-daemon.js";
 import { isRemote, joinFs, REMOTE_TRASH, transferProgress } from "../storage/remote-storage.js";
 import type { EventPublisher } from "../ws/events.js";
@@ -1659,10 +1659,13 @@ function assertNotIntoItself(source: SafePath, dest: SafePath): void {
   }
 }
 
-/** rclone's reasons are for the log; the task says only that the transfer failed, unless Kago itself refused it. */
+/** rclone's reasons are for the log; the task says only that the transfer failed or was refused, unless Kago itself refused it. */
 function transferFailure(error: unknown): unknown {
   if (error instanceof AppError || error instanceof TaskCancelledError) return error;
-  logger.warn("transfer failed", error instanceof Error ? error.message : String(error));
+  const reason = error instanceof Error ? error.message : String(error);
+  logger.warn("transfer failed", reason);
+  // Either end may have refused, and rclone does not say which: the disk here, or the account of a remote location.
+  if (refusedForPermission(reason)) return new AppError(502, "The transfer was refused for lack of permission at one end. An administrator needs to check the account Kago runs as, or the one a remote location signs in with.", "TRANSFER_PERMISSION_DENIED");
   return new AppError(502, "The transfer failed", "TRANSFER_FAILED");
 }
 
@@ -1700,6 +1703,8 @@ function downloadFileName(sources: Array<{ path: string }>): string {
 }
 
 function taskFailureMessage(error: unknown): string {
+  const refusal = fileSystemRefusal(error);
+  if (refusal) return refusal.message;
   return error instanceof AppError ? error.message : "Task failed";
 }
 

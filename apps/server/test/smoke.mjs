@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createCipheriv, createHmac, pbkdf2Sync } from "node:crypto";
-import { access, mkdtemp, mkdir, readdir, readFile, rm, symlink, truncate, writeFile } from "node:fs/promises";
+import { access, chmod, mkdtemp, mkdir, readdir, readFile, rm, symlink, truncate, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
@@ -889,6 +889,54 @@ function pgsSubtitle() {
     segment(4000, 0x16, cleared), segment(4000, 0x17, area), segment(4000, 0x80, Buffer.alloc(0))
   ]);
 }
+
+// Root is let past ownership and mode bits, so there is nothing for the disk to refuse it.
+test("what the disk refuses is told apart from an unexpected error", { skip: process.getuid?.() === 0 && "running as root" }, async () => {
+  const fixture = await createFixture("kago-smoke-refused.");
+  const locked = path.join(fixture.dataDir, "photos", "public");
+  const sealed = path.join(fixture.dataDir, "sealed");
+  await mkdir(sealed);
+  const app = await buildApp(testEnv(fixture));
+  const admin = client(app);
+
+  try {
+    await app.ready();
+    assert.equal((await admin.post("/api/auth/setup", { email: "admin@example.test", password: "fake-admin-password-123", displayName: "Smoke Admin" })).statusCode, 200);
+    await chmod(locked, 0o555);
+    await chmod(sealed, 0o000);
+
+    // An administrator of Kago is still only what the server's account is to the disk.
+    const refused = (response) => {
+      assert.equal(response.statusCode, 500);
+      assert.equal(response.json.code, "FS_PERMISSION_DENIED");
+      assert.match(response.json.error, /PUID \/ PGID/);
+    };
+    refused(await admin.post("/api/fs/mkdir", { rootSlug: "photos", path: "/public", name: "new-folder" }));
+    refused(await admin.multipart("/api/fs/upload", { rootSlug: "photos", path: "/public", filename: "uploaded.txt", content: "uploaded" }));
+    refused(await admin.get("/api/fs/list?rootSlug=sealed&path=/"));
+
+    // A task says the same, rather than only that it failed.
+    const copyTask = await admin.post("/api/tasks", { type: "copy", sources: [{ rootSlug: "photos", path: "/2026/demo.txt" }], destination: { rootSlug: "photos", path: "/public" } });
+    const copied = await waitTask(admin, copyTask.json.id);
+    assert.equal(copied.status, "failed");
+    assert.match(copied.error_message, /PUID \/ PGID/);
+
+    // Where it is set up, each local location says what the disk allows the account the server runs as.
+    const storage = (await admin.get("/api/storage")).json;
+    assert.deepEqual(storage.account, { uid: process.getuid(), gid: process.getgid() });
+    const roots = (await admin.get("/api/roots")).json;
+    const accessOf = (slug) => storage.local.find((item) => item.id === roots.find((root) => root.slug === slug).id);
+    assert.deepEqual([accessOf("photos").readable, accessOf("photos").writable], [true, true]);
+    assert.deepEqual([accessOf("sealed").readable, accessOf("sealed").writable], [false, false]);
+    await chmod(path.join(fixture.dataDir, "photos"), 0o555);
+    const readOnly = (await admin.get("/api/storage")).json.local.find((item) => item.id === accessOf("photos").id);
+    assert.deepEqual([readOnly.readable, readOnly.writable], [true, false]);
+  } finally {
+    await app.close();
+    for (const folder of [path.join(fixture.dataDir, "photos"), locked, sealed]) await chmod(folder, 0o755);
+    await rm(fixture.baseDir, { recursive: true, force: true });
+  }
+});
 
 test("videos are probed and transcoded to HLS on demand", { skip: spawnSync("ffmpeg", ["-version"]).status !== 0 && "ffmpeg is not installed" }, async () => {
   const fixture = await createFixture("kago-smoke-media.");
