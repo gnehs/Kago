@@ -232,7 +232,8 @@ export function Shelf() {
           <ul className={cn("m-0 grid max-h-80 w-64 list-none gap-2 overflow-y-auto p-2 pt-0", itemCount === 1 ? "grid-cols-1" : "grid-cols-2")}>
             {items.map((item) => (
               <li key={item.id} draggable className="group relative flex min-w-0 flex-col gap-1" title={where(item)} onDragStart={(event) => dragOut(event, [item])}>
-                <span className="relative flex aspect-[4/3] items-center justify-center overflow-hidden rounded-md bg-hover after:pointer-events-none after:absolute after:inset-0 after:rounded-[inherit] after:ring-1 after:ring-ink/10 after:ring-inset">
+                {/* The rim takes the shape of the corners as well as their radius, which is not handed down: a round rim inside a squircle leaves the picture showing past it at each corner. */}
+                <span className="relative flex aspect-[4/3] items-center justify-center overflow-hidden rounded-md bg-hover after:pointer-events-none after:absolute after:inset-0 after:rounded-[inherit] after:[corner-shape:inherit] after:ring-1 after:ring-ink/10 after:ring-inset">
                   <Preview item={item} icon="size-12" />
                 </span>
                 <span className="truncate px-0.5 text-center text-xs">{item.name}</span>
