@@ -249,6 +249,8 @@ export const zhTW: Dictionary = {
   "Copy": "複製",
   "Cut": "剪下",
   "Rename": "重新命名",
+  "New folder with {count} item | New folder with {count} items": "用 {count} 個項目新增資料夾",
+  "New folder with selection": "用選取項目新增資料夾",
   "Compress {count} item | Compress {count} items": "壓縮 {count} 個項目",
   "Compress": "壓縮",
   "Extract here": "解壓縮到這裡",

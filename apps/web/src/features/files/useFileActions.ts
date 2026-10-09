@@ -1,6 +1,6 @@
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { api, downloadUrl } from "@/api/client";
-import { ensureZipName, joinLogicalPath, needsNormalizing, nfc, parentPath, triggerDownload } from "@/lib/paths";
+import { baseName, ensureZipName, joinLogicalPath, needsNormalizing, nfc, parentPath, triggerDownload } from "@/lib/paths";
 import { run } from "@/lib/run";
 import type { UploadTree } from "@/lib/uploadTree";
 import { useClipboardStore, type FileRef } from "@/stores/clipboard";
@@ -130,6 +130,27 @@ export function useFileActions(window: FileWindow) {
   return {
     refresh,
     newFolder: () => newFolderIn(queryClient, here()),
+    /** Asks for a name, makes a folder of it beside the items, and moves them into it. */
+    newFolderWith: (paths: string[]) =>
+      run(async () => {
+        // What is inside a selected folder goes along with that folder.
+        const sources = paths.filter((path) => !paths.some((other) => path.startsWith(`${other}/`)));
+        const [first] = sources;
+        if (first === undefined) return;
+        // In one folder they cannot share a name; said before there is an empty folder to show for it.
+        if (new Set(sources.map((path) => baseName(path))).size < sources.length) throw new Error(t("Multiple sources resolve to the same target"));
+        // With folders opened in place the items may be in several, so the new one goes in the folder that holds them all.
+        let parent = parentPath(first);
+        while (parent !== "/" && !sources.every((path) => path.startsWith(`${parent}/`))) parent = parentPath(parent);
+        const count = sources.length;
+        const title = count > 1 ? t("New folder with {count} item | New folder with {count} items", { count }) : t("New folder with selection");
+        const name = nfc((await promptText({ title, defaultValue: t("untitled folder"), confirmLabel: t("Create") })) ?? "");
+        if (!name) return;
+        const folder = await api<{ path: string }>("/api/fs/mkdir", { method: "POST", body: JSON.stringify({ rootSlug: window.rootSlug, path: parent, name }) });
+        await refreshRoot();
+        useWorkspaceStore.getState().selectItems(window.id, [folder.path]);
+        await transferFiles(queryClient, "move", refs(sources), here(folder.path));
+      }, t("Couldn’t create the folder")),
     /** Creates the tree's folders, then uploads its files folder by folder in batches the server accepts. */
     upload: (source: UploadTree | Promise<UploadTree>, path = window.logicalPath, rootSlug = window.rootSlug) =>
       run(async () => {

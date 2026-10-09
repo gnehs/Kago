@@ -249,6 +249,8 @@ export const zhCN: Dictionary = {
   "Copy": "复制",
   "Cut": "剪切",
   "Rename": "重命名",
+  "New folder with {count} item | New folder with {count} items": "用 {count} 个项目新建文件夹",
+  "New folder with selection": "用所选项目新建文件夹",
   "Compress {count} item | Compress {count} items": "压缩 {count} 个项目",
   "Compress": "压缩",
   "Extract here": "解压到这里",

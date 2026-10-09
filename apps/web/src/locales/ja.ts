@@ -249,6 +249,8 @@ export const ja: Dictionary = {
   "Copy": "コピー",
   "Cut": "カット",
   "Rename": "名前を変更",
+  "New folder with {count} item | New folder with {count} items": "{count} 項目から新規フォルダ",
+  "New folder with selection": "選択項目から新規フォルダ",
   "Compress {count} item | Compress {count} items": "{count} 項目を圧縮",
   "Compress": "圧縮",
   "Extract here": "ここに展開",

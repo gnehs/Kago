@@ -373,6 +373,7 @@ export function FileWindowView({ window: frame, roots, isAdmin }: { window: File
         <KagoMenuItem icon={<Copy />} shortcut="⌘C" onClick={() => actions.copy(paths)}>{t("Copy")}</KagoMenuItem>
         <KagoMenuItem icon={<Scissors />} shortcut="⌘X" disabled={readonly || targets.some((item) => item.readonly)} onClick={() => actions.cut(paths)}>{t("Cut")}</KagoMenuItem>
         {single ? <KagoMenuItem icon={<Pencil />} disabled={readonly || single.readonly} onClick={() => void actions.rename(single)}>{t("Rename")}</KagoMenuItem> : null}
+        <KagoMenuItem icon={<FolderPlus />} disabled={readonly || targets.some((item) => item.readonly)} onClick={() => void actions.newFolderWith(paths)}>{count > 1 ? t("New folder with {count} item | New folder with {count} items", { count }) : t("New folder with selection")}</KagoMenuItem>
         <KagoMenuItem icon={<Archive />} disabled={readonly} onClick={() => void actions.compress(paths)}>{count > 1 ? t("Compress {count} item | Compress {count} items", { count }) : t("Compress")}</KagoMenuItem>
         {targets.every(isArchive) ? <KagoMenuItem icon={<ArchiveRestore />} disabled={readonly} onClick={() => void actions.extract(paths)}>{t("Extract here")}</KagoMenuItem> : null}
         <KagoMenuSeparator />
