@@ -1,6 +1,6 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { Dialog } from "@base-ui/react/dialog";
-import { Clock, Fingerprint, Folder, HardDrive, KeyRound, LayoutGrid, RefreshCw, ScrollText, Search, UserRound, UsersRound } from "lucide-react";
+import { CircleUserRound, Clock, Fingerprint, Folder, HardDrive, KeyRound, LayoutGrid, RefreshCw, ScrollText, Search, UserRound, UsersRound } from "lucide-react";
 import { useExternalApps } from "@/api/hooks";
 import { ExternalAppGlyph } from "@/features/apps/ExternalAppIcon";
 import { appHost, openExternalApp } from "@/features/apps/externalApps";
@@ -20,6 +20,7 @@ const apps: Array<{ app: AppKind; section?: SettingsSection; label: string; icon
   { app: "trash", label: t("Trash"), icon: appIcons.trash },
   { app: "tasks", label: t("Tasks"), icon: appIcons.tasks },
   { app: "settings", section: "general", label: t("Settings"), icon: appIcons.settings },
+  { app: "settings", section: "account", label: t("Account"), icon: <CircleUserRound /> },
   { app: "settings", section: "apps", label: t("Apps"), icon: <LayoutGrid /> },
   { app: "settings", section: "sync", label: t("Sync"), icon: <RefreshCw /> },
   { app: "settings", section: "locations", label: t("Locations"), icon: <HardDrive />, adminOnly: true },

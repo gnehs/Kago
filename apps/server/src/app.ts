@@ -387,7 +387,7 @@ function registerApi(app: FastifyInstance, services: Services) {
       const outcome = await services.oidc.finish(request, reply);
       if (outcome.kind === "link") {
         services.audit.write({ actorType: "user", actorId: outcome.actor.id, action: "sso_link", result: "success", ...seen });
-        return reply.redirect("/_kago/settings?sso=linked");
+        return reply.redirect("/_kago/account?sso=linked");
       }
       if (outcome.merged) services.audit.write({ actorType: "user", actorId: outcome.actor.id, action: "sso_link", target: { method: "email" }, result: "success", ...seen });
       if (outcome.created) services.audit.write({ actorType: "system", action: "user_create", target: { userId: outcome.actor.id, email: outcome.actor.email, method: "sso" }, result: "success", ...seen });
@@ -398,13 +398,13 @@ function registerApi(app: FastifyInstance, services: Services) {
       const actor = services.auth.actorFromRequest(request);
       services.audit.write({ actorType: actor ? "user" : "system", actorId: actor?.id, action: actor ? "sso_link" : "login_failed", target: { method: "sso", code: ssoFailure(error) }, result: "failure", ...seen });
       // Someone signed in was linking an identity, and goes back to where they asked for it.
-      return reply.redirect(`${actor ? "/_kago/settings" : "/login"}?sso_error=${ssoFailure(error)}`);
+      return reply.redirect(`${actor ? "/_kago/account" : "/login"}?sso_error=${ssoFailure(error)}`);
     }
   });
   // Linking is asked for with a request another site cannot make, so nobody is led into linking an identity that is not theirs.
   app.post("/api/auth/oidc/link", async (request, reply) => {
     const actor = requireActor(request);
-    return { url: await services.oidc.begin(reply, { returnTo: "/_kago/settings", linkUserId: actor.id }) };
+    return { url: await services.oidc.begin(reply, { returnTo: "/_kago/account", linkUserId: actor.id }) };
   });
   app.get("/api/auth/identities", async (request) => {
     const actor = requireActor(request);

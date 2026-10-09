@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Popover } from "@base-ui/react/popover";
-import { ListChecks, LogOut, Search, Settings } from "lucide-react";
+import { CircleUserRound, ListChecks, LogOut, Search, Settings } from "lucide-react";
 import { api } from "@/api/client";
 import { useRoots, useTasks } from "@/api/hooks";
 import { avatarUrl, KagoAvatar } from "@/components/kago/avatar";
@@ -124,6 +124,7 @@ function UserMenu({ user }: { user: Actor }) {
             </div>
           </div>
           <KagoMenuSeparator />
+          <KagoMenuItem icon={<CircleUserRound />} onClick={() => useWorkspaceStore.getState().openApp("settings", "account")}>{t("Account")}</KagoMenuItem>
           <KagoMenuItem icon={<Settings />} onClick={() => useWorkspaceStore.getState().openApp("settings")}>{t("Settings")}</KagoMenuItem>
           <KagoMenuItem icon={<LogOut />} onClick={() => void logout()}>{t("Sign out")}</KagoMenuItem>
         </>

@@ -13,7 +13,7 @@ export type WindowFrame = Pick<FileWindow, "id" | "title" | "x" | "y" | "width" 
 };
 
 export type AppKind = "settings" | "tasks" | "shares" | "trash";
-export type SettingsSection = "general" | "apps" | "sync" | "locations" | "users" | "groups" | "sso" | "permissions" | "audit";
+export type SettingsSection = "general" | "account" | "apps" | "sync" | "locations" | "users" | "groups" | "sso" | "permissions" | "audit";
 
 /**
  * Built-in tools that open as windows next to file windows. They share the window
