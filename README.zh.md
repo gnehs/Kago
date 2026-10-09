@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="apps/web/public/icon.svg" width="72" alt="Kago">
+  <img src="docs/og.zh.png" width="720" alt="Kago：圖示與名稱，旁邊是一個以圖示顯示資料夾與檔案的檔案視窗">
 </p>
 
 <h1 align="center">Kago</h1>

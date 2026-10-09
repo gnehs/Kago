@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="apps/web/public/icon.svg" width="72" alt="Kago">
+  <img src="docs/og.png" width="720" alt="Kago: the icon and name beside a file window showing folders and files as icons">
 </p>
 
 <h1 align="center">Kago</h1>
