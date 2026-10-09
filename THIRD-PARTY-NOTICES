@@ -1,26 +1,28 @@
-Kago 第三方軟體聲明
-====================
+Kago third-party software notices
+=================================
 
-Kago 本身以 AGPL-3.0-only 授權，條文見 LICENSE。這份文件列出隨 Kago 一起散布的
-第三方軟體，以及它們各自的授權條款。本檔由 scripts/third-party-notices.mjs 產生，
-請不要手動修改；相依套件有變動時執行 `pnpm notices` 重新產生。
+Kago itself is licensed under AGPL-3.0-only; the text is in LICENSE. This file lists the
+third-party software distributed with Kago and the license each comes under. It is generated
+by scripts/third-party-notices.mjs, so do not edit it by hand: run `pnpm notices` to
+regenerate it when the dependencies change.
 
 
-Docker 映像檔內含的程式
-------------------------
+Programs included in the Docker image
+-------------------------------------
 
-以下程式不是 Kago 的一部分，只是和 Kago 放在同一個映像檔裡，各自依自己的授權散布。
+The following programs are not part of Kago. They are placed in the same image and are each
+distributed under their own license.
 
-jellyfin-ffmpeg（ffmpeg、ffprobe）
-  授權：GPL-3.0-or-later
-  原始碼：https://github.com/jellyfin/jellyfin-ffmpeg
-  映像檔內的授權檔：/usr/share/doc/jellyfin-ffmpeg8/copyright
-  Kago 以獨立行程呼叫它，沒有與它連結。
+jellyfin-ffmpeg (ffmpeg, ffprobe)
+  License: GPL-3.0-or-later
+  Source: https://github.com/jellyfin/jellyfin-ffmpeg
+  License file in the image: /usr/share/doc/jellyfin-ffmpeg8/copyright
+  Kago runs it as a separate process and is not linked with it.
 
 rclone
-  授權：MIT
-  原始碼：https://github.com/rclone/rclone
-  Kago 以獨立行程呼叫它來連線遠端位置，沒有與它連結。
+  License: MIT
+  Source: https://github.com/rclone/rclone
+  Kago runs it as a separate process to reach remote locations and is not linked with it.
 
   Copyright (C) 2012 by Nick Craig-Wood http://www.craig-wood.com/nick/
 
@@ -43,26 +45,28 @@ rclone
   THE SOFTWARE.
 
 Node.js
-  授權：MIT，另含其內建元件各自的授權
-  原始碼：https://github.com/nodejs/node
+  License: MIT, along with the licenses of the components it bundles
+  Source: https://github.com/nodejs/node
 
-Debian 基礎映像檔中的其他套件，授權檔位於映像檔內的 /usr/share/doc/*/copyright。
+The other packages of the Debian base image have their license files in the image, at
+/usr/share/doc/*/copyright.
 
 
-npm 套件
---------
+npm packages
+------------
 
-伺服器的相依套件安裝在映像檔內，網頁前端的相依套件則打包進前端的靜態檔案。
-授權條文完全相同的套件列在一起。
+The server's dependencies are installed in the image; the web interface's are bundled into
+its static files. Packages whose license text is exactly the same are listed together.
 
-sharp 另外帶著為各平台預先編譯好的 libvips（@img/sharp-libvips-*，LGPL-3.0-or-later）
-和它自己的原生模組（@img/sharp-*，Apache-2.0）。安裝的是哪一個視機器而定，所以不在下面的
-清單裡。伺服器在執行時動態載入它們，沒有修改。libvips 內含的函式庫與各自的授權見
-https://github.com/lovell/sharp-libvips/blob/main/THIRD-PARTY-NOTICES.md
+sharp also brings a libvips prebuilt for each platform (@img/sharp-libvips-*,
+LGPL-3.0-or-later) and a native module of its own (@img/sharp-*, Apache-2.0). Which of them
+is installed depends on the machine, so they are not in the list below. The server loads
+them dynamically at run time, unmodified. For the libraries libvips contains and the license
+of each, see https://github.com/lovell/sharp-libvips/blob/main/THIRD-PARTY-NOTICES.md
 
 --------------------------------------------------------------------------------
 @babel/runtime@7.29.7
-  授權：MIT
+  License: MIT
   https://babel.dev/docs/en/next/babel-runtime
 --------------------------------------------------------------------------------
 
@@ -91,10 +95,10 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 @base-ui/react@1.6.0
-  授權：MIT
+  License: MIT
   https://base-ui.com
 @base-ui/utils@0.3.1
-  授權：MIT
+  License: MIT
   git+https://github.com/mui/base-ui.git
 --------------------------------------------------------------------------------
 
@@ -122,85 +126,85 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 @codemirror/autocomplete@6.20.3
-  授權：MIT
+  License: MIT
   git+https://code.haverbeke.berlin/codemirror/autocomplete.git
 @codemirror/commands@6.11.1
-  授權：MIT
+  License: MIT
   git+https://code.haverbeke.berlin/codemirror/commands.git
 @codemirror/lang-angular@0.1.4
-  授權：MIT
+  License: MIT
   https://github.com/codemirror/lang-angular.git
 @codemirror/lang-cpp@6.0.3
-  授權：MIT
+  License: MIT
   https://github.com/codemirror/lang-cpp.git
 @codemirror/lang-css@6.3.1
-  授權：MIT
+  License: MIT
   https://github.com/codemirror/lang-css.git
 @codemirror/lang-html@6.4.12
-  授權：MIT
+  License: MIT
   git+https://code.haverbeke.berlin/codemirror/lang-html.git
 @codemirror/lang-java@6.0.2
-  授權：MIT
+  License: MIT
   https://github.com/codemirror/lang-java.git
 @codemirror/lang-javascript@6.2.5
-  授權：MIT
+  License: MIT
   git+https://github.com/codemirror/lang-javascript.git
 @codemirror/lang-json@6.0.2
-  授權：MIT
+  License: MIT
   https://github.com/codemirror/lang-json.git
 @codemirror/lang-less@6.0.2
-  授權：MIT
+  License: MIT
   https://github.com/codemirror/lang-less.git
 @codemirror/lang-markdown@6.5.2
-  授權：MIT
+  License: MIT
   git+https://code.haverbeke.berlin/codemirror/lang-markdown.git
 @codemirror/lang-php@6.0.2
-  授權：MIT
+  License: MIT
   https://github.com/codemirror/lang-php.git
 @codemirror/lang-python@6.2.1
-  授權：MIT
+  License: MIT
   https://github.com/codemirror/lang-python.git
 @codemirror/lang-rust@6.0.2
-  授權：MIT
+  License: MIT
   https://github.com/codemirror/lang-rust.git
 @codemirror/lang-sass@6.0.2
-  授權：MIT
+  License: MIT
   https://github.com/codemirror/lang-sass.git
 @codemirror/lang-sql@6.10.0
-  授權：MIT
+  License: MIT
   https://github.com/codemirror/lang-sql.git
 @codemirror/lang-vue@0.1.3
-  授權：MIT
+  License: MIT
   https://github.com/codemirror/lang-vue.git
 @codemirror/lang-wast@6.0.2
-  授權：MIT
+  License: MIT
   https://github.com/codemirror/lang-wast.git
 @codemirror/lang-xml@6.1.0
-  授權：MIT
+  License: MIT
   https://github.com/codemirror/lang-xml.git
 @codemirror/language-data@6.5.2
-  授權：MIT
+  License: MIT
   https://github.com/codemirror/language-data.git
 @codemirror/language@6.12.4
-  授權：MIT
+  License: MIT
   git+https://code.haverbeke.berlin/codemirror/language.git
 @codemirror/legacy-modes@6.5.4
-  授權：MIT
+  License: MIT
   git+https://code.haverbeke.berlin/codemirror/legacy-modes.git
 @codemirror/lint@6.9.7
-  授權：MIT
+  License: MIT
   git+https://code.haverbeke.berlin/codemirror/lint.git
 @codemirror/search@6.7.2
-  授權：MIT
+  License: MIT
   git+https://code.haverbeke.berlin/codemirror/search.git
 @codemirror/state@6.7.6
-  授權：MIT
+  License: MIT
   git+https://code.haverbeke.berlin/codemirror/state.git
 @codemirror/view@6.43.13
-  授權：MIT
+  License: MIT
   git+https://code.haverbeke.berlin/codemirror/view.git
 codemirror@6.0.2
-  授權：MIT
+  License: MIT
   https://github.com/codemirror/basic-setup.git
 --------------------------------------------------------------------------------
 
@@ -228,10 +232,10 @@ THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 @codemirror/lang-go@6.0.1
-  授權：MIT
+  License: MIT
   https://github.com/codemirror/lang-go.git
 @codemirror/lang-yaml@6.1.3
-  授權：MIT
+  License: MIT
   git+https://github.com/codemirror/lang-yaml.git
 --------------------------------------------------------------------------------
 
@@ -259,7 +263,7 @@ THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 @codemirror/lang-jinja@6.0.1
-  授權：MIT
+  License: MIT
   git+https://code.haverbeke.berlin/codemirror/lang-jinja.git
 --------------------------------------------------------------------------------
 
@@ -287,7 +291,7 @@ THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 @codemirror/lang-liquid@6.3.3
-  授權：MIT
+  License: MIT
   git+https://code.haverbeke.berlin/codemirror/lang-liquid.git
 --------------------------------------------------------------------------------
 
@@ -315,16 +319,16 @@ THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 @expo-google-fonts/noto-sans-jp@0.4.4
-  授權：MIT AND OFL-1.1
+  License: MIT AND OFL-1.1
   https://github.com/expo/google-fonts/tree/master/font-packages/noto-sans-jp#readme
 @expo-google-fonts/noto-sans-kr@0.4.4
-  授權：MIT AND OFL-1.1
+  License: MIT AND OFL-1.1
   https://github.com/expo/google-fonts/tree/master/font-packages/noto-sans-kr#readme
 @expo-google-fonts/noto-sans-sc@0.4.4
-  授權：MIT AND OFL-1.1
+  License: MIT AND OFL-1.1
   https://github.com/expo/google-fonts/tree/master/font-packages/noto-sans-sc#readme
 @expo-google-fonts/noto-sans-tc@0.4.4
-  授權：MIT AND OFL-1.1
+  License: MIT AND OFL-1.1
   https://github.com/expo/google-fonts/tree/master/font-packages/noto-sans-tc#readme
 --------------------------------------------------------------------------------
 
@@ -446,7 +450,7 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
 
 --------------------------------------------------------------------------------
 @fastify/accept-negotiator@2.0.1
-  授權：MIT
+  License: MIT
   https://github.com/fastify/accept-negotiator#readme
 --------------------------------------------------------------------------------
 
@@ -475,10 +479,10 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 @fastify/ajv-compiler@4.0.5
-  授權：MIT
+  License: MIT
   https://github.com/fastify/ajv-compiler#readme
 @fastify/deepmerge@3.2.1
-  授權：MIT
+  License: MIT
   https://github.com/fastify/deepmerge#readme
 --------------------------------------------------------------------------------
 
@@ -508,7 +512,7 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 @fastify/busboy@3.2.0
-  授權：MIT
+  License: MIT
   https://github.com/fastify/busboy#readme
 --------------------------------------------------------------------------------
 
@@ -539,13 +543,13 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 @fastify/cookie@11.0.2
-  授權：MIT
+  License: MIT
   https://github.com/fastify/fastify-cookie#readme
 process-warning@4.0.1
-  授權：MIT
+  License: MIT
   https://github.com/fastify/fastify-warning#readme
 process-warning@5.0.0
-  授權：MIT
+  License: MIT
   https://github.com/fastify/fastify-warning#readme
 --------------------------------------------------------------------------------
 
@@ -573,7 +577,7 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 @fastify/error@4.2.0
-  授權：MIT
+  License: MIT
   https://github.com/fastify/fastify-error#readme
 --------------------------------------------------------------------------------
 
@@ -601,7 +605,7 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 @fastify/fast-json-stringify-compiler@5.0.3
-  授權：MIT
+  License: MIT
   https://github.com/fastify/fast-json-stringify-compiler#readme
 --------------------------------------------------------------------------------
 
@@ -629,7 +633,7 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 @fastify/forwarded@3.0.1
-  授權：MIT
+  License: MIT
   https://github.com/fastify/forwarded#readme
 --------------------------------------------------------------------------------
 
@@ -660,7 +664,7 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 @fastify/merge-json-schemas@0.2.1
-  授權：MIT
+  License: MIT
   https://github.com/fastify/merge-json-schemas#readme
 --------------------------------------------------------------------------------
 
@@ -688,13 +692,13 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 @fastify/multipart@10.1.2
-  授權：MIT
+  License: MIT
   https://github.com/fastify/fastify-multipart#readme
 @fastify/static@10.1.5
-  授權：MIT
+  License: MIT
   https://github.com/fastify/fastify-static
 fastify-plugin@6.0.0
-  授權：MIT
+  License: MIT
   https://github.com/fastify/fastify-plugin#readme
 --------------------------------------------------------------------------------
 
@@ -722,7 +726,7 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 @fastify/proxy-addr@5.1.0
-  授權：MIT
+  License: MIT
   https://github.com/fastify/proxy-addr#readme
 --------------------------------------------------------------------------------
 
@@ -753,7 +757,7 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 @fastify/send@4.1.0
-  授權：MIT
+  License: MIT
   https://github.com/fastify/send#readme
 --------------------------------------------------------------------------------
 
@@ -783,10 +787,10 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 @fastify/websocket@11.2.0
-  授權：MIT
+  License: MIT
   https://github.com/fastify/fastify-websocket#readme
 fastify-plugin@5.1.0
-  授權：MIT
+  License: MIT
   https://github.com/fastify/fastify-plugin#readme
 --------------------------------------------------------------------------------
 
@@ -816,16 +820,16 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 @floating-ui/core@1.7.5
-  授權：MIT
+  License: MIT
   https://floating-ui.com
 @floating-ui/dom@1.7.6
-  授權：MIT
+  License: MIT
   https://floating-ui.com
 @floating-ui/react-dom@2.1.8
-  授權：MIT
+  License: MIT
   https://floating-ui.com/docs/react-dom
 @floating-ui/utils@0.2.11
-  授權：MIT
+  License: MIT
   https://floating-ui.com
 --------------------------------------------------------------------------------
 
@@ -852,7 +856,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 @img/colour@1.1.0
-  授權：MIT
+  License: MIT
   git+https://github.com/lovell/colour.git
 --------------------------------------------------------------------------------
 
@@ -941,7 +945,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 --------------------------------------------------------------------------------
 @jellyfin/libass-wasm@4.2.4
-  授權：LGPL-2.1-or-later AND (FTL OR GPL-2.0-or-later) AND MIT AND MIT-Modern-Variant AND ISC AND NTP AND Zlib AND BSL-1.0
+  License: LGPL-2.1-or-later AND (FTL OR GPL-2.0-or-later) AND MIT AND MIT-Modern-Variant AND ISC AND NTP AND Zlib AND BSL-1.0
   https://jellyfin.github.io/JavascriptSubtitlesOctopus/
 --------------------------------------------------------------------------------
 
@@ -1979,34 +1983,34 @@ License: LGPL-2.1
 
 --------------------------------------------------------------------------------
 @lezer/common@1.5.3
-  授權：MIT
+  License: MIT
   git+https://code.haverbeke.berlin/lezer/common.git
 @lezer/css@1.3.8
-  授權：MIT
+  License: MIT
   git+https://code.haverbeke.berlin/lezer/css.git
 @lezer/highlight@1.2.5
-  授權：MIT
+  License: MIT
   git+https://code.haverbeke.berlin/lezer/highlight.git
 @lezer/html@1.3.13
-  授權：MIT
+  License: MIT
   https://github.com/lezer-parser/html.git
 @lezer/javascript@1.5.6
-  授權：MIT
+  License: MIT
   git+https://code.haverbeke.berlin/lezer/javascript.git
 @lezer/lr@1.4.10
-  授權：MIT
+  License: MIT
   git+https://code.haverbeke.berlin/lezer/lr.git
 @lezer/php@1.0.6
-  授權：MIT
+  License: MIT
   git+https://code.haverbeke.berlin/lezer/php.git
 @lezer/rust@1.0.3
-  授權：MIT
+  License: MIT
   git+https://code.haverbeke.berlin/lezer/rust.git
 @lezer/sass@1.1.0
-  授權：MIT
+  License: MIT
   https://github.com/lezer-parser/sass.git
 @lezer/xml@1.0.6
-  授權：MIT
+  License: MIT
   https://github.com/lezer-parser/xml.git
 --------------------------------------------------------------------------------
 
@@ -2034,19 +2038,19 @@ THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 @lezer/cpp@1.1.6
-  授權：MIT
+  License: MIT
   git+https://code.haverbeke.berlin/lezer/cpp.git
 @lezer/go@1.0.1
-  授權：MIT
+  License: MIT
   https://github.com/lezer-parser/go.git
 @lezer/java@1.1.4
-  授權：MIT
+  License: MIT
   git+https://code.haverbeke.berlin/lezer/java.git
 @lezer/markdown@1.7.2
-  授權：MIT
+  License: MIT
   git+https://code.haverbeke.berlin/lezer/markdown.git
 @lezer/python@1.1.19
-  授權：MIT
+  License: MIT
   git+https://code.haverbeke.berlin/lezer/python.git
 --------------------------------------------------------------------------------
 
@@ -2074,7 +2078,7 @@ THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 @lezer/json@1.0.3
-  授權：MIT
+  License: MIT
   https://github.com/lezer-parser/json.git
 --------------------------------------------------------------------------------
 
@@ -2102,7 +2106,7 @@ THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 @lezer/yaml@1.0.4
-  授權：MIT
+  License: MIT
   https://github.com/lezer-parser/yaml.git
 --------------------------------------------------------------------------------
 
@@ -2130,10 +2134,10 @@ THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 @lukeed/ms@2.0.2
-  授權：MIT
+  License: MIT
   lukeed/ms
 clsx@2.1.1
-  授權：MIT
+  License: MIT
   lukeed/clsx
 --------------------------------------------------------------------------------
 
@@ -2149,7 +2153,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 --------------------------------------------------------------------------------
 @marijn/find-cluster-break@1.0.4
-  授權：MIT
+  License: MIT
   https://code.haverbeke.berlin/marijn/find-cluster-break
 --------------------------------------------------------------------------------
 
@@ -2177,7 +2181,7 @@ THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 @photostructure/tz-lookup@11.7.0
-  授權：CC0-1.0
+  License: CC0-1.0
   git+https://github.com/photostructure/tz-lookup.git
 --------------------------------------------------------------------------------
 
@@ -2300,7 +2304,7 @@ For more information, please see
 
 --------------------------------------------------------------------------------
 @pinojs/redact@0.4.0
-  授權：MIT
+  License: MIT
   https://github.com/pinojs/redact#readme
 --------------------------------------------------------------------------------
 
@@ -2328,7 +2332,7 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 @playcanvas/supersplat-viewer@1.37.0
-  授權：MIT
+  License: MIT
   https://github.com/playcanvas/supersplat-viewer#readme
 --------------------------------------------------------------------------------
 
@@ -2356,7 +2360,7 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 @remix-run/route-pattern@0.22.1
-  授權：MIT
+  License: MIT
   https://github.com/remix-run/remix/tree/main/packages/route-pattern#readme
 --------------------------------------------------------------------------------
 
@@ -2384,10 +2388,10 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 @tanstack/query-core@5.101.0
-  授權：MIT
+  License: MIT
   https://tanstack.com/query
 @tanstack/react-query@5.101.0
-  授權：MIT
+  License: MIT
   https://tanstack.com/query
 --------------------------------------------------------------------------------
 
@@ -2415,34 +2419,34 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 @types/debug@4.1.13
-  授權：MIT
+  License: MIT
   https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/debug
 @types/estree-jsx@1.0.5
-  授權：MIT
+  License: MIT
   https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/estree-jsx
 @types/estree@1.0.9
-  授權：MIT
+  License: MIT
   https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/estree
 @types/hast@3.0.5
-  授權：MIT
+  License: MIT
   https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/hast
 @types/luxon@3.7.6
-  授權：MIT
+  License: MIT
   https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/luxon
 @types/mdast@4.0.4
-  授權：MIT
+  License: MIT
   https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/mdast
 @types/ms@2.1.0
-  授權：MIT
+  License: MIT
   https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/ms
 @types/unist@2.0.11
-  授權：MIT
+  License: MIT
   https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/unist
 @types/unist@3.0.3
-  授權：MIT
+  License: MIT
   https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/unist
 @types/webxr@0.5.24
-  授權：MIT
+  License: MIT
   https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/webxr
 --------------------------------------------------------------------------------
 
@@ -2470,7 +2474,7 @@ MIT License
 
 --------------------------------------------------------------------------------
 @ungap/structured-clone@1.4.0
-  授權：ISC
+  License: ISC
   https://github.com/ungap/structured-clone#readme
 --------------------------------------------------------------------------------
 
@@ -2492,7 +2496,7 @@ PERFORMANCE OF THIS SOFTWARE.
 
 --------------------------------------------------------------------------------
 @webgpu/types@0.1.74
-  授權：BSD-3-Clause
+  License: BSD-3-Clause
   https://github.com/gpuweb/types
 --------------------------------------------------------------------------------
 
@@ -2525,15 +2529,15 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 --------------------------------------------------------------------------------
 abstract-logging@2.0.1
-  授權：MIT
+  License: MIT
   https://github.com/jsumners/abstract-logging#readme
 --------------------------------------------------------------------------------
 
-（套件未附授權檔，授權以上方標示為準。）
+(The package comes with no license file; the license stated above applies.)
 
 --------------------------------------------------------------------------------
 adm-zip@0.6.1
-  授權：MIT
+  License: MIT
   https://github.com/cthackers/adm-zip
 --------------------------------------------------------------------------------
 
@@ -2561,7 +2565,7 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 ajv-formats@3.0.1
-  授權：MIT
+  License: MIT
   https://github.com/ajv-validator/ajv-formats#readme
 --------------------------------------------------------------------------------
 
@@ -2589,7 +2593,7 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 ajv@8.20.0
-  授權：MIT
+  License: MIT
   https://ajv.js.org
 --------------------------------------------------------------------------------
 
@@ -2617,7 +2621,7 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 atomic-sleep@1.0.0
-  授權：MIT
+  License: MIT
   https://github.com/davidmarkclements/atomic-sleep#readme
 --------------------------------------------------------------------------------
 
@@ -2645,7 +2649,7 @@ OR OTHER DEALINGS IN THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 avvio@9.2.0
-  授權：MIT
+  License: MIT
   https://github.com/fastify/avvio#readme
 --------------------------------------------------------------------------------
 
@@ -2676,31 +2680,31 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 bail@2.0.2
-  授權：MIT
+  License: MIT
   wooorm/bail
 ccount@2.0.1
-  授權：MIT
+  License: MIT
   wooorm/ccount
 character-entities-html4@2.1.0
-  授權：MIT
+  License: MIT
   wooorm/character-entities-html4
 character-entities-legacy@3.0.0
-  授權：MIT
+  License: MIT
   wooorm/character-entities-legacy
 character-entities@2.0.2
-  授權：MIT
+  License: MIT
   wooorm/character-entities
 character-reference-invalid@2.0.1
-  授權：MIT
+  License: MIT
   wooorm/character-reference-invalid
 mdast-util-to-string@4.0.0
-  授權：MIT
+  License: MIT
   syntax-tree/mdast-util-to-string
 unist-util-position@5.0.0
-  授權：MIT
+  License: MIT
   syntax-tree/unist-util-position
 unist-util-visit@5.1.0
-  授權：MIT
+  License: MIT
   syntax-tree/unist-util-visit
 --------------------------------------------------------------------------------
 
@@ -2729,7 +2733,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 balanced-match@4.0.4
-  授權：MIT
+  License: MIT
   git://github.com/juliangruber/balanced-match.git
 --------------------------------------------------------------------------------
 
@@ -2759,7 +2763,7 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 batch-cluster@19.4.1
-  授權：MIT
+  License: MIT
   https://photostructure.github.io/batch-cluster.js/
 --------------------------------------------------------------------------------
 
@@ -2787,7 +2791,7 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 brace-expansion@5.0.6
-  授權：MIT
+  License: MIT
   git+ssh://git@github.com/juliangruber/brace-expansion.git
 --------------------------------------------------------------------------------
 
@@ -2817,7 +2821,7 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 class-variance-authority@0.7.1
-  授權：Apache-2.0
+  License: Apache-2.0
   https://github.com/joe-bell/cva#readme
 --------------------------------------------------------------------------------
 
@@ -3014,37 +3018,37 @@ Apache License
 
 --------------------------------------------------------------------------------
 comma-separated-tokens@2.0.3
-  授權：MIT
+  License: MIT
   wooorm/comma-separated-tokens
 hast-util-whitespace@3.0.0
-  授權：MIT
+  License: MIT
   syntax-tree/hast-util-whitespace
 is-alphabetical@2.0.1
-  授權：MIT
+  License: MIT
   wooorm/is-alphabetical
 is-alphanumerical@2.0.1
-  授權：MIT
+  License: MIT
   wooorm/is-alphanumerical
 is-decimal@2.0.1
-  授權：MIT
+  License: MIT
   wooorm/is-decimal
 is-hexadecimal@2.0.1
-  授權：MIT
+  License: MIT
   wooorm/is-hexadecimal
 mdast-util-to-hast@13.2.1
-  授權：MIT
+  License: MIT
   syntax-tree/mdast-util-to-hast
 space-separated-tokens@2.0.2
-  授權：MIT
+  License: MIT
   wooorm/space-separated-tokens
 unist-util-stringify-position@4.0.0
-  授權：MIT
+  License: MIT
   syntax-tree/unist-util-stringify-position
 unist-util-visit-parents@6.0.2
-  授權：MIT
+  License: MIT
   syntax-tree/unist-util-visit-parents
 zwitch@2.0.4
-  授權：MIT
+  License: MIT
   wooorm/zwitch
 --------------------------------------------------------------------------------
 
@@ -3073,7 +3077,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 content-disposition@3.0.0
-  授權：MIT
+  License: MIT
   jshttp/content-disposition
 --------------------------------------------------------------------------------
 
@@ -3102,7 +3106,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 cookie-es@3.1.1
-  授權：MIT
+  License: MIT
   unjs/cookie-es
 --------------------------------------------------------------------------------
 
@@ -3137,7 +3141,7 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 cookie@1.1.1
-  授權：MIT
+  License: MIT
   jshttp/cookie
 --------------------------------------------------------------------------------
 
@@ -3167,7 +3171,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 core-util-is@1.0.3
-  授權：MIT
+  License: MIT
   git://github.com/isaacs/core-util-is
 --------------------------------------------------------------------------------
 
@@ -3193,7 +3197,7 @@ IN THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 crelt@1.0.7
-  授權：MIT
+  License: MIT
   https://code.haverbeke.berlin/marijn/crelt
 --------------------------------------------------------------------------------
 
@@ -3219,7 +3223,7 @@ THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 debug@4.4.3
-  授權：MIT
+  License: MIT
   git://github.com/debug-js/debug.git
 --------------------------------------------------------------------------------
 
@@ -3245,109 +3249,109 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 decode-named-character-reference@1.3.0
-  授權：MIT
+  License: MIT
   wooorm/decode-named-character-reference
 hast-util-to-jsx-runtime@2.3.6
-  授權：MIT
+  License: MIT
   syntax-tree/hast-util-to-jsx-runtime
 markdown-table@3.0.4
-  授權：MIT
+  License: MIT
   wooorm/markdown-table
 mdast-util-find-and-replace@3.0.3
-  授權：MIT
+  License: MIT
   syntax-tree/mdast-util-find-and-replace
 mdast-util-from-markdown@2.1.0
-  授權：MIT
+  License: MIT
   syntax-tree/mdast-util-from-markdown
 mdast-util-gfm-footnote@2.1.0
-  授權：MIT
+  License: MIT
   syntax-tree/mdast-util-gfm-footnote
 mdast-util-gfm-strikethrough@2.0.1
-  授權：MIT
+  License: MIT
   syntax-tree/mdast-util-gfm-strikethrough
 mdast-util-gfm@3.1.0
-  授權：MIT
+  License: MIT
   syntax-tree/mdast-util-gfm
 mdast-util-to-markdown@2.2.0
-  授權：MIT
+  License: MIT
   syntax-tree/mdast-util-to-markdown
 micromark-core-commonmark@2.0.4
-  授權：MIT
+  License: MIT
   https://github.com/micromark/micromark/tree/main/packages/micromark-core-commonmark
 micromark-extension-gfm-table@2.1.2
-  授權：MIT
+  License: MIT
   micromark/micromark-extension-gfm-table
 micromark-factory-destination@2.0.1
-  授權：MIT
+  License: MIT
   https://github.com/micromark/micromark/tree/main/packages/micromark-factory-destination
 micromark-factory-label@2.0.1
-  授權：MIT
+  License: MIT
   https://github.com/micromark/micromark/tree/main/packages/micromark-factory-label
 micromark-factory-space@2.1.0
-  授權：MIT
+  License: MIT
   https://github.com/micromark/micromark/tree/main/packages/micromark-factory-space
 micromark-factory-title@2.0.1
-  授權：MIT
+  License: MIT
   https://github.com/micromark/micromark/tree/main/packages/micromark-factory-title
 micromark-factory-whitespace@2.0.1
-  授權：MIT
+  License: MIT
   https://github.com/micromark/micromark/tree/main/packages/micromark-factory-whitespace
 micromark-util-character@2.1.1
-  授權：MIT
+  License: MIT
   https://github.com/micromark/micromark/tree/main/packages/micromark-util-character
 micromark-util-chunked@2.0.1
-  授權：MIT
+  License: MIT
   https://github.com/micromark/micromark/tree/main/packages/micromark-util-chunked
 micromark-util-classify-character@2.0.1
-  授權：MIT
+  License: MIT
   https://github.com/micromark/micromark/tree/main/packages/micromark-util-classify-character
 micromark-util-combine-extensions@2.0.1
-  授權：MIT
+  License: MIT
   https://github.com/micromark/micromark/tree/main/packages/micromark-util-combine-extensions
 micromark-util-decode-numeric-character-reference@2.0.2
-  授權：MIT
+  License: MIT
   https://github.com/micromark/micromark/tree/main/packages/micromark-util-decode-numeric-character-reference
 micromark-util-decode-string@2.0.1
-  授權：MIT
+  License: MIT
   https://github.com/micromark/micromark/tree/main/packages/micromark-util-decode-string
 micromark-util-edit-map@1.0.0
-  授權：MIT
+  License: MIT
   https://github.com/micromark/micromark/tree/main/packages/micromark-util-edit-map
 micromark-util-encode@2.0.1
-  授權：MIT
+  License: MIT
   https://github.com/micromark/micromark/tree/main/packages/micromark-util-encode
 micromark-util-html-tag-name@2.0.1
-  授權：MIT
+  License: MIT
   https://github.com/micromark/micromark/tree/main/packages/micromark-util-html-tag-name
 micromark-util-normalize-identifier@2.0.1
-  授權：MIT
+  License: MIT
   https://github.com/micromark/micromark/tree/main/packages/micromark-util-normalize-identifier
 micromark-util-resolve-all@2.0.1
-  授權：MIT
+  License: MIT
   https://github.com/micromark/micromark/tree/main/packages/micromark-util-resolve-all
 micromark-util-sanitize-uri@2.0.1
-  授權：MIT
+  License: MIT
   https://github.com/micromark/micromark/tree/main/packages/micromark-util-sanitize-uri
 micromark-util-subtokenize@2.1.0
-  授權：MIT
+  License: MIT
   https://github.com/micromark/micromark/tree/main/packages/micromark-util-subtokenize
 micromark-util-symbol@2.0.1
-  授權：MIT
+  License: MIT
   https://github.com/micromark/micromark/tree/main/packages/micromark-util-symbol
 micromark-util-types@2.0.3
-  授權：MIT
+  License: MIT
   https://github.com/micromark/micromark/tree/main/packages/micromark-util-types
 micromark@4.0.3
-  授權：MIT
+  License: MIT
   https://github.com/micromark/micromark/tree/main/packages/micromark
 remark-gfm@4.0.1
-  授權：MIT
+  License: MIT
   remarkjs/remark-gfm
 remark-rehype@11.1.2
-  授權：MIT
+  License: MIT
   remarkjs/remark-rehype
 vfile-message@4.0.3
-  授權：MIT
+  License: MIT
   vfile/vfile-message
 --------------------------------------------------------------------------------
 
@@ -3376,7 +3380,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 depd@2.0.0
-  授權：MIT
+  License: MIT
   dougwilson/nodejs-depd
 --------------------------------------------------------------------------------
 
@@ -3405,7 +3409,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 dequal@2.0.3
-  授權：MIT
+  License: MIT
   lukeed/dequal
 --------------------------------------------------------------------------------
 
@@ -3433,7 +3437,7 @@ THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 detect-libc@2.1.2
-  授權：Apache-2.0
+  License: Apache-2.0
   git://github.com/lovell/detect-libc.git
 --------------------------------------------------------------------------------
 
@@ -3641,7 +3645,7 @@ Apache License
 
 --------------------------------------------------------------------------------
 devlop@1.1.0
-  授權：MIT
+  License: MIT
   wooorm/devlop
 --------------------------------------------------------------------------------
 
@@ -3670,7 +3674,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 docx-preview@0.4.1
-  授權：Apache-2.0
+  License: Apache-2.0
   git+https://github.com/VolodymyrBaydalka/docxjs.git
 --------------------------------------------------------------------------------
 
@@ -3878,10 +3882,10 @@ Apache License
 
 --------------------------------------------------------------------------------
 duplexify@4.1.3
-  授權：MIT
+  License: MIT
   https://github.com/mafintosh/duplexify
 end-of-stream@1.4.5
-  授權：MIT
+  License: MIT
   https://github.com/mafintosh/end-of-stream
 --------------------------------------------------------------------------------
 
@@ -3909,7 +3913,7 @@ THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 echarts@5.6.0
-  授權：Apache-2.0
+  License: Apache-2.0
   https://echarts.apache.org
 --------------------------------------------------------------------------------
 
@@ -4143,7 +4147,7 @@ The Apache Software Foundation (https://www.apache.org/).
 
 --------------------------------------------------------------------------------
 escape-html@1.0.3
-  授權：MIT
+  License: MIT
   component/escape-html
 --------------------------------------------------------------------------------
 
@@ -4174,10 +4178,10 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 escape-string-regexp@5.0.0
-  授權：MIT
+  License: MIT
   sindresorhus/escape-string-regexp
 is-plain-obj@4.1.0
-  授權：MIT
+  License: MIT
   sindresorhus/is-plain-obj
 --------------------------------------------------------------------------------
 
@@ -4193,40 +4197,40 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 --------------------------------------------------------------------------------
 estree-util-is-identifier-name@3.0.0
-  授權：MIT
+  License: MIT
   syntax-tree/estree-util-is-identifier-name
 mdast-util-gfm-autolink-literal@2.0.1
-  授權：MIT
+  License: MIT
   syntax-tree/mdast-util-gfm-autolink-literal
 mdast-util-gfm-table@2.0.0
-  授權：MIT
+  License: MIT
   syntax-tree/mdast-util-gfm-table
 mdast-util-gfm-task-list-item@2.0.0
-  授權：MIT
+  License: MIT
   syntax-tree/mdast-util-gfm-task-list-item
 mdast-util-mdx-expression@2.0.1
-  授權：MIT
+  License: MIT
   syntax-tree/mdast-util-mdx-expression
 mdast-util-mdx-jsx@3.2.0
-  授權：MIT
+  License: MIT
   syntax-tree/mdast-util-mdx-jsx
 mdast-util-mdxjs-esm@2.0.1
-  授權：MIT
+  License: MIT
   syntax-tree/mdast-util-mdxjs-esm
 micromark-extension-gfm-autolink-literal@2.1.0
-  授權：MIT
+  License: MIT
   micromark/micromark-extension-gfm-autolink-literal
 micromark-extension-gfm-strikethrough@2.1.0
-  授權：MIT
+  License: MIT
   micromark/micromark-extension-gfm-strikethrough
 micromark-extension-gfm-tagfilter@2.0.0
-  授權：MIT
+  License: MIT
   micromark/micromark-extension-gfm-tagfilter
 micromark-extension-gfm-task-list-item@2.1.0
-  授權：MIT
+  License: MIT
   micromark/micromark-extension-gfm-task-list-item
 micromark-extension-gfm@3.0.0
-  授權：MIT
+  License: MIT
   micromark/micromark-extension-gfm
 --------------------------------------------------------------------------------
 
@@ -4255,7 +4259,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 exiftool-vendored@39.0.0
-  授權：MIT
+  License: MIT
   https://photostructure.github.io/exiftool-vendored.js/
 --------------------------------------------------------------------------------
 
@@ -4283,7 +4287,7 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 extend@3.0.2
-  授權：MIT
+  License: MIT
   https://github.com/justmoon/node-extend.git
 --------------------------------------------------------------------------------
 
@@ -4312,7 +4316,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 fast-decode-uri-component@1.0.1
-  授權：MIT
+  License: MIT
   https://github.com/delvedor/fast-decode-uri-component#readme
 --------------------------------------------------------------------------------
 
@@ -4342,10 +4346,10 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 fast-deep-equal@3.1.3
-  授權：MIT
+  License: MIT
   https://github.com/epoberezkin/fast-deep-equal#readme
 json-schema-traverse@1.0.0
-  授權：MIT
+  License: MIT
   https://github.com/epoberezkin/json-schema-traverse#readme
 --------------------------------------------------------------------------------
 
@@ -4373,10 +4377,10 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 fast-json-stringify@6.4.0
-  授權：MIT
+  License: MIT
   https://github.com/fastify/fast-json-stringify#readme
 fast-json-stringify@7.0.1
-  授權：MIT
+  License: MIT
   https://github.com/fastify/fast-json-stringify#readme
 --------------------------------------------------------------------------------
 
@@ -4405,7 +4409,7 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 fast-querystring@1.1.2
-  授權：MIT
+  License: MIT
   git+https://github.com/anonrig/fast-querystring.git
 --------------------------------------------------------------------------------
 
@@ -4437,10 +4441,10 @@ DEALINGS IN THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 fast-uri@3.1.2
-  授權：BSD-3-Clause
+  License: BSD-3-Clause
   https://github.com/fastify/fast-uri
 fast-uri@4.2.1
-  授權：BSD-3-Clause
+  License: BSD-3-Clause
   https://github.com/fastify/fast-uri
 --------------------------------------------------------------------------------
 
@@ -4477,7 +4481,7 @@ The complete list of contributors can be found at:
 
 --------------------------------------------------------------------------------
 fastify@5.12.5
-  授權：MIT
+  License: MIT
   https://fastify.dev/
 --------------------------------------------------------------------------------
 
@@ -4505,7 +4509,7 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 fastq@1.20.1
-  授權：ISC
+  License: ISC
   https://github.com/mcollina/fastq#readme
 --------------------------------------------------------------------------------
 
@@ -4525,7 +4529,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 --------------------------------------------------------------------------------
 find-my-way@9.6.0
-  授權：MIT
+  License: MIT
   https://github.com/delvedor/find-my-way#readme
 --------------------------------------------------------------------------------
 
@@ -4553,7 +4557,7 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 glob@13.0.6
-  授權：BlueOak-1.0.0
+  License: BlueOak-1.0.0
   git@github.com:isaacs/node-glob.git
 --------------------------------------------------------------------------------
 
@@ -4623,7 +4627,7 @@ software or this license, under any kind of legal claim.***
 
 --------------------------------------------------------------------------------
 he@1.2.0
-  授權：MIT
+  License: MIT
   https://mths.be/he
 --------------------------------------------------------------------------------
 
@@ -4650,7 +4654,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 hls.js@1.7.3
-  授權：Apache-2.0
+  License: Apache-2.0
   https://github.com/video-dev/hls.js
 --------------------------------------------------------------------------------
 
@@ -4685,7 +4689,7 @@ THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 html-url-attributes@3.0.1
-  授權：MIT
+  License: MIT
   https://github.com/rehypejs/rehype-minify/tree/main/packages/html-url-attributes
 --------------------------------------------------------------------------------
 
@@ -4713,7 +4717,7 @@ THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 http-errors@2.0.1
-  授權：MIT
+  License: MIT
   jshttp/http-errors
 --------------------------------------------------------------------------------
 
@@ -4742,7 +4746,7 @@ THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 immediate@3.0.6
-  授權：MIT
+  License: MIT
   git://github.com/calvinmetcalf/immediate.git
 --------------------------------------------------------------------------------
 
@@ -4769,7 +4773,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 inherits@2.0.4
-  授權：ISC
+  License: ISC
   git://github.com/isaacs/inherits
 --------------------------------------------------------------------------------
 
@@ -4791,7 +4795,7 @@ PERFORMANCE OF THIS SOFTWARE.
 
 --------------------------------------------------------------------------------
 inline-style-parser@0.2.7
-  授權：MIT
+  License: MIT
   git+https://github.com/remarkablemark/inline-style-parser.git
 --------------------------------------------------------------------------------
 
@@ -4807,7 +4811,7 @@ THE SOFTWARE IS PROVIDED 'AS IS', WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 --------------------------------------------------------------------------------
 ipaddr.js@2.4.0
-  授權：MIT
+  License: MIT
   git://github.com/whitequark/ipaddr.js
 --------------------------------------------------------------------------------
 
@@ -4833,15 +4837,15 @@ THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 isarray@1.0.0
-  授權：MIT
+  License: MIT
   https://github.com/juliangruber/isarray
 --------------------------------------------------------------------------------
 
-（套件未附授權檔，授權以上方標示為準。）
+(The package comes with no license file; the license stated above applies.)
 
 --------------------------------------------------------------------------------
 json-schema-ref-resolver@3.0.0
-  授權：MIT
+  License: MIT
   https://github.com/fastify/json-schema-ref-resolver#readme
 --------------------------------------------------------------------------------
 
@@ -4869,7 +4873,7 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 jszip@3.10.2
-  授權：(MIT OR GPL-3.0-or-later)
+  License: (MIT OR GPL-3.0-or-later)
   https://github.com/Stuk/jszip.git
 --------------------------------------------------------------------------------
 
@@ -5539,7 +5543,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 
 --------------------------------------------------------------------------------
 lie@3.3.0
-  授權：MIT
+  License: MIT
   https://github.com/calvinmetcalf/lie.git
 --------------------------------------------------------------------------------
 
@@ -5553,7 +5557,7 @@ The above copyright notice and this permission notice shall be included in all c
 
 --------------------------------------------------------------------------------
 light-my-request@6.6.0
-  授權：BSD-3-Clause
+  License: BSD-3-Clause
   https://github.com/fastify/light-my-request#readme
 --------------------------------------------------------------------------------
 
@@ -5592,7 +5596,7 @@ The complete list of contributors can be found at:
 
 --------------------------------------------------------------------------------
 lodash@4.18.1
-  授權：MIT
+  License: MIT
   https://lodash.com/
 --------------------------------------------------------------------------------
 
@@ -5646,13 +5650,13 @@ terms above.
 
 --------------------------------------------------------------------------------
 longest-streak@3.1.0
-  授權：MIT
+  License: MIT
   wooorm/longest-streak
 stringify-entities@4.0.4
-  授權：MIT
+  License: MIT
   wooorm/stringify-entities
 trim-lines@3.0.1
-  授權：MIT
+  License: MIT
   wooorm/trim-lines
 --------------------------------------------------------------------------------
 
@@ -5681,13 +5685,13 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 lru-cache@11.5.1
-  授權：BlueOak-1.0.0
+  License: BlueOak-1.0.0
   git+ssh://git@github.com/isaacs/node-lru-cache.git
 minipass@7.1.3
-  授權：BlueOak-1.0.0
+  License: BlueOak-1.0.0
   https://github.com/isaacs/minipass
 path-scurry@2.0.2
-  授權：BlueOak-1.0.0
+  License: BlueOak-1.0.0
   git+https://github.com/isaacs/path-scurry
 --------------------------------------------------------------------------------
 
@@ -5749,7 +5753,7 @@ software or this license, under any kind of legal claim.***
 
 --------------------------------------------------------------------------------
 lucide-react@0.468.0
-  授權：ISC
+  License: ISC
   https://lucide.dev
 --------------------------------------------------------------------------------
 
@@ -5771,7 +5775,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 --------------------------------------------------------------------------------
 luxon@3.7.2
-  授權：MIT
+  License: MIT
   https://github.com/moment/luxon
 --------------------------------------------------------------------------------
 
@@ -5785,7 +5789,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 --------------------------------------------------------------------------------
 mdast-util-phrasing@4.1.0
-  授權：MIT
+  License: MIT
   syntax-tree/mdast-util-phrasing
 --------------------------------------------------------------------------------
 
@@ -5815,7 +5819,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 micromark-extension-gfm-footnote@2.1.0
-  授權：MIT
+  License: MIT
   micromark/micromark-extension-gfm-footnote
 --------------------------------------------------------------------------------
 
@@ -5844,7 +5848,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 mime-db@1.52.0
-  授權：MIT
+  License: MIT
   jshttp/mime-db
 --------------------------------------------------------------------------------
 
@@ -5874,7 +5878,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 mime-types@2.1.35
-  授權：MIT
+  License: MIT
   jshttp/mime-types
 --------------------------------------------------------------------------------
 
@@ -5904,7 +5908,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 mime@3.0.0
-  授權：MIT
+  License: MIT
   https://github.com/broofa/mime
 --------------------------------------------------------------------------------
 
@@ -5932,7 +5936,7 @@ THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 minimatch@10.2.5
-  授權：BlueOak-1.0.0
+  License: BlueOak-1.0.0
   git@github.com:isaacs/minimatch
 --------------------------------------------------------------------------------
 
@@ -5994,7 +5998,7 @@ software or this license, under any kind of legal claim._**
 
 --------------------------------------------------------------------------------
 ms@2.1.3
-  授權：MIT
+  License: MIT
   vercel/ms
 --------------------------------------------------------------------------------
 
@@ -6022,7 +6026,7 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 mupdf@1.28.1
-  授權：AGPL-3.0-or-later
+  License: AGPL-3.0-or-later
   https://mupdf.readthedocs.io/en/latest/
 --------------------------------------------------------------------------------
 
@@ -6690,10 +6694,10 @@ For more information on this, and how to apply and follow the GNU AGPL, see
 
 --------------------------------------------------------------------------------
 on-exit-leak-free@2.1.2
-  授權：MIT
+  License: MIT
   https://github.com/mcollina/on-exit-or-gc#readme
 thread-stream@4.2.0
-  授權：MIT
+  License: MIT
   https://github.com/mcollina/thread-stream#readme
 --------------------------------------------------------------------------------
 
@@ -6721,16 +6725,16 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 once@1.4.0
-  授權：ISC
+  License: ISC
   git://github.com/isaacs/once
 semver@7.8.2
-  授權：ISC
+  License: ISC
   git+https://github.com/npm/node-semver.git
 semver@7.8.5
-  授權：ISC
+  License: ISC
   git+https://github.com/npm/node-semver.git
 wrappy@1.0.2
-  授權：ISC
+  License: ISC
   https://github.com/npm/wrappy
 --------------------------------------------------------------------------------
 
@@ -6752,7 +6756,7 @@ IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 --------------------------------------------------------------------------------
 pako@1.0.11
-  授權：(MIT AND Zlib)
+  License: (MIT AND Zlib)
   https://github.com/nodeca/pako
 --------------------------------------------------------------------------------
 
@@ -6780,10 +6784,10 @@ THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 parse-entities@4.0.2
-  授權：MIT
+  License: MIT
   wooorm/parse-entities
 property-information@7.2.0
-  授權：MIT
+  License: MIT
   wooorm/property-information
 --------------------------------------------------------------------------------
 
@@ -6812,7 +6816,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 pdfjs-dist@6.4.299
-  授權：Apache-2.0
+  License: Apache-2.0
   https://mozilla.github.io/pdf.js/
 --------------------------------------------------------------------------------
 
@@ -6995,7 +6999,7 @@ Apache License
 
 --------------------------------------------------------------------------------
 pend@1.2.0
-  授權：MIT
+  License: MIT
   git://github.com/andrewrk/node-pend.git
 --------------------------------------------------------------------------------
 
@@ -7025,7 +7029,7 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 pino-abstract-transport@3.0.0
-  授權：MIT
+  License: MIT
   https://github.com/pinojs/pino-abstract-transport#readme
 --------------------------------------------------------------------------------
 
@@ -7053,7 +7057,7 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 pino-std-serializers@7.1.0
-  授權：MIT
+  License: MIT
   https://github.com/pinojs/pino-std-serializers#readme
 --------------------------------------------------------------------------------
 
@@ -7067,7 +7071,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 --------------------------------------------------------------------------------
 pino@10.3.1
-  授權：MIT
+  License: MIT
   https://getpino.io
 --------------------------------------------------------------------------------
 
@@ -7095,7 +7099,7 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 playcanvas@2.23.0
-  授權：MIT
+  License: MIT
   https://playcanvas.com
 --------------------------------------------------------------------------------
 
@@ -7121,15 +7125,15 @@ THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 pptx-preview@1.0.7
-  授權：ISC
+  License: ISC
   https://www.npmjs.com/package/pptx-preview
 --------------------------------------------------------------------------------
 
-（套件未附授權檔，授權以上方標示為準。）
+(The package comes with no license file; the license stated above applies.)
 
 --------------------------------------------------------------------------------
 process-nextick-args@2.0.1
-  授權：MIT
+  License: MIT
   https://github.com/calvinmetcalf/process-nextick-args
 --------------------------------------------------------------------------------
 
@@ -7155,7 +7159,7 @@ SOFTWARE.**
 
 --------------------------------------------------------------------------------
 process-warning@5.1.0
-  授權：MIT
+  License: MIT
   https://github.com/fastify/fastify-warning#readme
 --------------------------------------------------------------------------------
 
@@ -7183,7 +7187,7 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 quick-format-unescaped@4.0.4
-  授權：MIT
+  License: MIT
   https://github.com/davidmarkclements/quick-format#readme
 --------------------------------------------------------------------------------
 
@@ -7211,16 +7215,16 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 react-dom@19.2.7
-  授權：MIT
+  License: MIT
   https://react.dev/
 react@19.2.7
-  授權：MIT
+  License: MIT
   https://react.dev/
 scheduler@0.27.0
-  授權：MIT
+  License: MIT
   https://react.dev/
 use-sync-external-store@1.6.0
-  授權：MIT
+  License: MIT
   https://github.com/facebook/react.git
 --------------------------------------------------------------------------------
 
@@ -7248,7 +7252,7 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 react-markdown@10.1.0
-  授權：MIT
+  License: MIT
   remarkjs/react-markdown
 --------------------------------------------------------------------------------
 
@@ -7276,7 +7280,7 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 react-router@8.4.0
-  授權：MIT
+  License: MIT
   https://github.com/remix-run/react-router
 --------------------------------------------------------------------------------
 
@@ -7306,16 +7310,16 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 readable-stream@2.3.8
-  授權：MIT
+  License: MIT
   git://github.com/nodejs/readable-stream
 readable-stream@3.6.2
-  授權：MIT
+  License: MIT
   git://github.com/nodejs/readable-stream
 string_decoder@1.1.1
-  授權：MIT
+  License: MIT
   https://github.com/nodejs/string_decoder
 string_decoder@1.3.0
-  授權：MIT
+  License: MIT
   https://github.com/nodejs/string_decoder
 --------------------------------------------------------------------------------
 
@@ -7369,10 +7373,10 @@ IN THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 real-require@0.2.0
-  授權：MIT
+  License: MIT
   https://github.com/pinojs/real-require
 real-require@1.0.0
-  授權：MIT
+  License: MIT
   https://github.com/pinojs/real-require
 --------------------------------------------------------------------------------
 
@@ -7400,10 +7404,10 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 remark-parse@11.0.0
-  授權：MIT
+  License: MIT
   https://remark.js.org
 remark-stringify@11.0.0
-  授權：MIT
+  License: MIT
   https://remark.js.org
 --------------------------------------------------------------------------------
 
@@ -7431,7 +7435,7 @@ THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 require-from-string@2.0.2
-  授權：MIT
+  License: MIT
   floatdrop/require-from-string
 --------------------------------------------------------------------------------
 
@@ -7459,7 +7463,7 @@ THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 reselect@5.2.0
-  授權：MIT
+  License: MIT
   https://github.com/reduxjs/reselect.git
 --------------------------------------------------------------------------------
 
@@ -7487,7 +7491,7 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 ret@0.5.0
-  授權：MIT
+  License: MIT
   git://github.com/fent/ret.js.git
 --------------------------------------------------------------------------------
 
@@ -7515,7 +7519,7 @@ THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 reusify@1.1.0
-  授權：MIT
+  License: MIT
   https://github.com/mcollina/reusify#readme
 --------------------------------------------------------------------------------
 
@@ -7543,7 +7547,7 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 rfdc@1.4.1
-  授權：MIT
+  License: MIT
   https://github.com/davidmarkclements/rfdc#readme
 --------------------------------------------------------------------------------
 
@@ -7565,10 +7569,10 @@ IN THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 safe-buffer@5.1.2
-  授權：MIT
+  License: MIT
   https://github.com/feross/safe-buffer
 safe-buffer@5.2.1
-  授權：MIT
+  License: MIT
   https://github.com/feross/safe-buffer
 --------------------------------------------------------------------------------
 
@@ -7596,7 +7600,7 @@ THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 safe-regex2@5.1.1
-  授權：MIT
+  License: MIT
   https://github.com/fastify/safe-regex2
 --------------------------------------------------------------------------------
 
@@ -7624,7 +7628,7 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 safe-stable-stringify@2.5.0
-  授權：MIT
+  License: MIT
   https://github.com/BridgeAR/safe-stable-stringify#readme
 --------------------------------------------------------------------------------
 
@@ -7652,7 +7656,7 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 secure-json-parse@4.1.0
-  授權：BSD-3-Clause
+  License: BSD-3-Clause
   https://github.com/fastify/secure-json-parse#readme
 --------------------------------------------------------------------------------
 
@@ -7678,7 +7682,7 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 
 --------------------------------------------------------------------------------
 set-cookie-parser@2.7.2
-  授權：MIT
+  License: MIT
   https://github.com/nfriedly/set-cookie-parser
 --------------------------------------------------------------------------------
 
@@ -7706,7 +7710,7 @@ THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 setimmediate@1.0.5
-  授權：MIT
+  License: MIT
   YuzuJS/setImmediate
 --------------------------------------------------------------------------------
 
@@ -7733,7 +7737,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 setprototypeof@1.2.0
-  授權：ISC
+  License: ISC
   https://github.com/wesleytodd/setprototypeof
 --------------------------------------------------------------------------------
 
@@ -7753,7 +7757,7 @@ CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 --------------------------------------------------------------------------------
 sharp@0.35.5
-  授權：Apache-2.0
+  License: Apache-2.0
   https://sharp.pixelplumbing.com
 --------------------------------------------------------------------------------
 
@@ -7951,7 +7955,7 @@ third-party archives.
 
 --------------------------------------------------------------------------------
 sonic-boom@4.2.1
-  授權：MIT
+  License: MIT
   https://github.com/pinojs/sonic-boom#readme
 --------------------------------------------------------------------------------
 
@@ -7979,7 +7983,7 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 split2@4.2.0
-  授權：ISC
+  License: ISC
   https://github.com/mcollina/split2.git
 --------------------------------------------------------------------------------
 
@@ -7999,7 +8003,7 @@ IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 --------------------------------------------------------------------------------
 statuses@2.0.2
-  授權：MIT
+  License: MIT
   jshttp/statuses
 --------------------------------------------------------------------------------
 
@@ -8028,7 +8032,7 @@ THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 stream-shift@1.0.3
-  授權：MIT
+  License: MIT
   https://github.com/mafintosh/stream-shift
 --------------------------------------------------------------------------------
 
@@ -8056,7 +8060,7 @@ THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 style-mod@4.1.4
-  授權：MIT
+  License: MIT
   https://code.haverbeke.berlin/marijn/style-mod
 --------------------------------------------------------------------------------
 
@@ -8082,7 +8086,7 @@ THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 style-to-js@1.1.21
-  授權：MIT
+  License: MIT
   git+https://github.com/remarkablemark/style-to-js.git
 --------------------------------------------------------------------------------
 
@@ -8111,7 +8115,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 style-to-object@1.0.14
-  授權：MIT
+  License: MIT
   git+https://github.com/remarkablemark/style-to-object.git
 --------------------------------------------------------------------------------
 
@@ -8140,7 +8144,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 tailwind-merge@3.6.0
-  授權：MIT
+  License: MIT
   https://github.com/dcastil/tailwind-merge
 --------------------------------------------------------------------------------
 
@@ -8168,7 +8172,7 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 toad-cache@3.7.1
-  授權：MIT
+  License: MIT
   https://github.com/kibertoad/toad-cache
 --------------------------------------------------------------------------------
 
@@ -8196,7 +8200,7 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 toidentifier@1.0.1
-  授權：MIT
+  License: MIT
   component/toidentifier
 --------------------------------------------------------------------------------
 
@@ -8224,7 +8228,7 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 trough@2.2.0
-  授權：MIT
+  License: MIT
   wooorm/trough
 --------------------------------------------------------------------------------
 
@@ -8252,7 +8256,7 @@ THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 tslib@2.3.0
-  授權：0BSD
+  License: 0BSD
   https://www.typescriptlang.org/
 --------------------------------------------------------------------------------
 
@@ -8286,7 +8290,7 @@ PERFORMANCE OF THIS SOFTWARE.
 
 --------------------------------------------------------------------------------
 tslib@2.8.1
-  授權：0BSD
+  License: 0BSD
   https://www.typescriptlang.org/
 --------------------------------------------------------------------------------
 
@@ -8320,10 +8324,10 @@ PERFORMANCE OF THIS SOFTWARE.
 
 --------------------------------------------------------------------------------
 unified@11.0.5
-  授權：MIT
+  License: MIT
   https://unifiedjs.com
 vfile@6.0.3
-  授權：MIT
+  License: MIT
   vfile/vfile
 --------------------------------------------------------------------------------
 
@@ -8351,7 +8355,7 @@ THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 unist-util-is@6.0.1
-  授權：MIT
+  License: MIT
   syntax-tree/unist-util-is
 --------------------------------------------------------------------------------
 
@@ -8380,7 +8384,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 util-deprecate@1.0.2
-  授權：MIT
+  License: MIT
   https://github.com/TooTallNate/util-deprecate
 --------------------------------------------------------------------------------
 
@@ -8411,7 +8415,7 @@ OTHER DEALINGS IN THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 uuid@10.0.0
-  授權：MIT
+  License: MIT
   git+https://github.com/uuidjs/uuid.git
 --------------------------------------------------------------------------------
 
@@ -8427,7 +8431,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 --------------------------------------------------------------------------------
 w3c-keyname@2.2.8
-  授權：MIT
+  License: MIT
   https://github.com/marijnh/w3c-keyname#readme
 --------------------------------------------------------------------------------
 
@@ -8453,7 +8457,7 @@ THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 ws@8.21.0
-  授權：MIT
+  License: MIT
   https://github.com/websockets/ws
 --------------------------------------------------------------------------------
 
@@ -8480,7 +8484,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 --------------------------------------------------------------------------------
 xlsx@0.20.3
-  授權：Apache-2.0
+  License: Apache-2.0
   https://sheetjs.com/
 --------------------------------------------------------------------------------
 
@@ -8688,7 +8692,7 @@ Apache License
 
 --------------------------------------------------------------------------------
 yauzl@3.4.0
-  授權：MIT
+  License: MIT
   https://github.com/thejoshwolfe/yauzl
 --------------------------------------------------------------------------------
 
@@ -8716,7 +8720,7 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 zod@3.25.76
-  授權：MIT
+  License: MIT
   https://zod.dev
 --------------------------------------------------------------------------------
 
@@ -8744,7 +8748,7 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 zrender@5.6.1
-  授權：BSD-3-Clause
+  License: BSD-3-Clause
   https://github.com/ecomfe/zrender.git
 --------------------------------------------------------------------------------
 
@@ -8780,7 +8784,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 --------------------------------------------------------------------------------
 zustand@5.0.14
-  授權：MIT
+  License: MIT
   https://github.com/pmndrs/zustand
 --------------------------------------------------------------------------------
 

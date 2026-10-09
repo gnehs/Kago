@@ -8,29 +8,31 @@ const APPS = ["apps/server", "apps/web"];
 const LICENSE_FILE = /^(licen[sc]e|copying|copyright|notice)/i;
 const RULE = "-".repeat(80);
 
-const HEADER = `Kago 第三方軟體聲明
-====================
+const HEADER = `Kago third-party software notices
+=================================
 
-Kago 本身以 AGPL-3.0-only 授權，條文見 LICENSE。這份文件列出隨 Kago 一起散布的
-第三方軟體，以及它們各自的授權條款。本檔由 scripts/third-party-notices.mjs 產生，
-請不要手動修改；相依套件有變動時執行 \`pnpm notices\` 重新產生。
+Kago itself is licensed under AGPL-3.0-only; the text is in LICENSE. This file lists the
+third-party software distributed with Kago and the license each comes under. It is generated
+by scripts/third-party-notices.mjs, so do not edit it by hand: run \`pnpm notices\` to
+regenerate it when the dependencies change.
 
 
-Docker 映像檔內含的程式
-------------------------
+Programs included in the Docker image
+-------------------------------------
 
-以下程式不是 Kago 的一部分，只是和 Kago 放在同一個映像檔裡，各自依自己的授權散布。
+The following programs are not part of Kago. They are placed in the same image and are each
+distributed under their own license.
 
-jellyfin-ffmpeg（ffmpeg、ffprobe）
-  授權：GPL-3.0-or-later
-  原始碼：https://github.com/jellyfin/jellyfin-ffmpeg
-  映像檔內的授權檔：/usr/share/doc/jellyfin-ffmpeg8/copyright
-  Kago 以獨立行程呼叫它，沒有與它連結。
+jellyfin-ffmpeg (ffmpeg, ffprobe)
+  License: GPL-3.0-or-later
+  Source: https://github.com/jellyfin/jellyfin-ffmpeg
+  License file in the image: /usr/share/doc/jellyfin-ffmpeg8/copyright
+  Kago runs it as a separate process and is not linked with it.
 
 rclone
-  授權：MIT
-  原始碼：https://github.com/rclone/rclone
-  Kago 以獨立行程呼叫它來連線遠端位置，沒有與它連結。
+  License: MIT
+  Source: https://github.com/rclone/rclone
+  Kago runs it as a separate process to reach remote locations and is not linked with it.
 
   Copyright (C) 2012 by Nick Craig-Wood http://www.craig-wood.com/nick/
 
@@ -53,22 +55,24 @@ rclone
   THE SOFTWARE.
 
 Node.js
-  授權：MIT，另含其內建元件各自的授權
-  原始碼：https://github.com/nodejs/node
+  License: MIT, along with the licenses of the components it bundles
+  Source: https://github.com/nodejs/node
 
-Debian 基礎映像檔中的其他套件，授權檔位於映像檔內的 /usr/share/doc/*/copyright。
+The other packages of the Debian base image have their license files in the image, at
+/usr/share/doc/*/copyright.
 
 
-npm 套件
---------
+npm packages
+------------
 
-伺服器的相依套件安裝在映像檔內，網頁前端的相依套件則打包進前端的靜態檔案。
-授權條文完全相同的套件列在一起。
+The server's dependencies are installed in the image; the web interface's are bundled into
+its static files. Packages whose license text is exactly the same are listed together.
 
-sharp 另外帶著為各平台預先編譯好的 libvips（@img/sharp-libvips-*，LGPL-3.0-or-later）
-和它自己的原生模組（@img/sharp-*，Apache-2.0）。安裝的是哪一個視機器而定，所以不在下面的
-清單裡。伺服器在執行時動態載入它們，沒有修改。libvips 內含的函式庫與各自的授權見
-https://github.com/lovell/sharp-libvips/blob/main/THIRD-PARTY-NOTICES.md
+sharp also brings a libvips prebuilt for each platform (@img/sharp-libvips-*,
+LGPL-3.0-or-later) and a native module of its own (@img/sharp-*, Apache-2.0). Which of them
+is installed depends on the machine, so they are not in the list below. The server loads
+them dynamically at run time, unmodified. For the libraries libvips contains and the license
+of each, see https://github.com/lovell/sharp-libvips/blob/main/THIRD-PARTY-NOTICES.md
 `;
 
 /** Looks a dependency up the way Node does, which is also how pnpm's symlinked layout expects to be read. */
@@ -103,7 +107,7 @@ function collect(from, names) {
     const repository = typeof pkg.repository === "string" ? pkg.repository : pkg.repository?.url;
     packages.set(id, {
       id,
-      license: typeof pkg.license === "string" ? pkg.license : JSON.stringify(pkg.license ?? pkg.licenses ?? "未標示"),
+      license: typeof pkg.license === "string" ? pkg.license : JSON.stringify(pkg.license ?? pkg.licenses ?? "not stated"),
       url: pkg.homepage ?? repository ?? `https://www.npmjs.com/package/${pkg.name}`,
       text
     });
@@ -126,7 +130,7 @@ for (const pkg of [...packages.values()].sort((a, b) => a.id.localeCompare(b.id,
 }
 
 const sections = [...groups.values()].map(({ text, members }) =>
-  [RULE, ...members.map((pkg) => `${pkg.id}\n  授權：${pkg.license}\n  ${pkg.url}`), RULE, "", text || "（套件未附授權檔，授權以上方標示為準。）", ""].join("\n")
+  [RULE, ...members.map((pkg) => `${pkg.id}\n  License: ${pkg.license}\n  ${pkg.url}`), RULE, "", text || "(The package comes with no license file; the license stated above applies.)", ""].join("\n")
 );
 
 fs.writeFileSync(path.join(root, "THIRD-PARTY-NOTICES"), `${HEADER}\n${sections.join("\n")}`);
