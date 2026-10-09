@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/input";
 import { Card, Page, Row, RowList } from "@/features/workspace/Page";
 import { run } from "@/lib/run";
-import { promptText } from "@/stores/dialogs";
+import { confirmAction, promptText } from "@/stores/dialogs";
 import { toast } from "@/stores/toast";
 import type { UserAccount } from "@/types/kago";
 import { t } from "@/lib/i18n";
@@ -64,6 +64,14 @@ export function UsersPage({ currentUserId }: { currentUserId: string }) {
     }, t("Couldn’t reset the password"));
   }
 
+  async function unlinkSso(user: UserAccount) {
+    if (!(await confirmAction({ title: t("Unlink {name} from single sign-on?", { name: user.display_name }), description: user.has_password ? t("They can still sign in with their password, and link an identity again themselves.") : t("This account has no password: nobody can sign in to it until you reset its password."), confirmLabel: t("Unlink"), destructive: true }))) return;
+    await run(async () => {
+      for (const identity of user.identities) await api(`/api/users/${user.id}/identities/${identity.id}`, { method: "DELETE" });
+      await refresh();
+    }, t("Couldn’t unlink the identity"));
+  }
+
   return (
     <Page
       title={t("Users")}
@@ -91,7 +99,9 @@ export function UsersPage({ currentUserId }: { currentUserId: string }) {
           {users.data.map((user) => (
             <Row key={user.id} icon={<KagoAvatar name={user.display_name || user.email} />} title={user.display_name} subtitle={user.email}>
               <KagoBadge tone={user.role === "ADMIN" ? "accent" : "neutral"}>{roleLabels[user.role]}</KagoBadge>
+              {user.identities.length > 0 ? <KagoBadge>{user.has_password ? t("Single sign-on") : t("Single sign-on only")}</KagoBadge> : null}
               {user.disabled ? <KagoBadge tone="danger">{t("Disabled")}</KagoBadge> : null}
+              {user.identities.length > 0 ? <Button onClick={() => void unlinkSso(user)}>{t("Unlink")}</Button> : null}
               {user.id === currentUserId ? null : <Button onClick={() => void resetPassword(user)}>{t("Reset password")}</Button>}
               {user.id === currentUserId ? null : <Button onClick={() => void setDisabled(user, !user.disabled)}>{user.disabled ? t("Enable") : t("Disable")}</Button>}
             </Row>

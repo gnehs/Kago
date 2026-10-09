@@ -1,6 +1,6 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { Dialog } from "@base-ui/react/dialog";
-import { Clock, Folder, Globe, HardDrive, KeyRound, LayoutGrid, RefreshCw, ScrollText, Search, UserRound, UsersRound } from "lucide-react";
+import { Clock, Fingerprint, Folder, Globe, HardDrive, KeyRound, LayoutGrid, RefreshCw, ScrollText, Search, UserRound, UsersRound } from "lucide-react";
 import { useExternalApps } from "@/api/hooks";
 import { appHost, openExternalApp } from "@/features/apps/externalApps";
 import { appIcons } from "@/features/windows/AppWindow";
@@ -24,6 +24,7 @@ const apps: Array<{ app: AppKind; section?: SettingsSection; label: string; icon
   { app: "settings", section: "locations", label: t("Locations"), icon: <HardDrive />, adminOnly: true },
   { app: "settings", section: "users", label: t("Users"), icon: <UserRound />, adminOnly: true },
   { app: "settings", section: "groups", label: t("Groups"), icon: <UsersRound />, adminOnly: true },
+  { app: "settings", section: "sso", label: t("Single sign-on"), icon: <Fingerprint />, adminOnly: true },
   { app: "settings", section: "permissions", label: t("Permissions"), icon: <KeyRound />, adminOnly: true },
   { app: "settings", section: "audit", label: t("Audit log"), icon: <ScrollText />, adminOnly: true }
 ];

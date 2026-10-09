@@ -6,6 +6,7 @@ import { KagoLoading } from "./components/kago/empty-state";
 import { KagoToaster } from "./components/kago/toaster";
 import { Login } from "./features/auth/Login";
 import { SetupAdmin } from "./features/auth/SetupAdmin";
+import { useSsoNotice } from "./features/auth/sso";
 import { ArchivePasswordDialogHost } from "./features/files/ArchivePassword";
 import { CompressDialogHost } from "./features/files/CompressDialog";
 import { VideoPage } from "./features/files/VideoPage";
@@ -41,6 +42,7 @@ function PublicShareRoute() {
 function AppGate({ children }: { children?: ReactNode }) {
   const setup = useSetupStatus();
   const me = useMe();
+  useSsoNotice(me.isLoading ? undefined : Boolean(me.data?.user));
 
   if (setup.isLoading || me.isLoading) return <div className="h-full bg-canvas"><KagoLoading /></div>;
   if (setup.data?.needsSetup) return <SetupAdmin />;

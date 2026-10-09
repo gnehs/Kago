@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { HardDrive, KeyRound, LayoutGrid, RefreshCw, ScrollText, SlidersHorizontal, UserRound, UsersRound } from "lucide-react";
+import { Fingerprint, HardDrive, KeyRound, LayoutGrid, RefreshCw, ScrollText, SlidersHorizontal, UserRound, UsersRound } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { SettingsSection } from "@/stores/workspace";
 import { t } from "@/lib/i18n";
@@ -21,6 +21,7 @@ const groups: Array<{ label: string; adminOnly?: boolean; sections: Array<{ sect
       { section: "locations", label: t("Locations"), icon: <HardDrive /> },
       { section: "users", label: t("Users"), icon: <UserRound /> },
       { section: "groups", label: t("Groups"), icon: <UsersRound /> },
+      { section: "sso", label: t("Single sign-on"), icon: <Fingerprint /> },
       { section: "permissions", label: t("Permissions"), icon: <KeyRound /> },
       { section: "audit", label: t("Audit log"), icon: <ScrollText /> }
     ]

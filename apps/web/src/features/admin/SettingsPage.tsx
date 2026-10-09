@@ -1,11 +1,13 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Columns3, KeyRound, LayoutGrid, List, Monitor, Moon, PanelLeft, PanelRight, Sparkles, Sun, ZapOff } from "lucide-react";
+import { Columns3, Fingerprint, KeyRound, LayoutGrid, List, Monitor, Moon, PanelLeft, PanelRight, Sparkles, Sun, ZapOff } from "lucide-react";
 import { api, ApiError } from "@/api/client";
+import { useIdentities } from "@/api/hooks";
 import { KagoAvatar } from "@/components/kago/avatar";
 import { KagoBadge } from "@/components/kago/badge";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/input";
+import { startSsoLink } from "@/features/auth/sso";
 import { firstDirection, sortColumns } from "@/features/files/FileList";
 import { BASE_VIEW } from "@/features/files/folderView";
 import { Card, Page, SettingRow } from "@/features/workspace/Page";
@@ -14,8 +16,9 @@ import { localeNames, setLocale, t } from "@/lib/i18n";
 import { getLocalePref, getMotion, getTheme, getWindowControls, setMotion, setTheme, setWindowControls, type LocalePref, type MotionPref, type ThemePref, type WindowControlsPref } from "@/lib/prefs";
 import { run } from "@/lib/run";
 import { saveSettings, setWallpaper, useSettingsStore, wallpaperUrl } from "@/stores/settings";
+import { confirmAction } from "@/stores/dialogs";
 import { toast } from "@/stores/toast";
-import type { Actor, FolderView } from "@/types/kago";
+import type { Actor, FolderView, SsoIdentity } from "@/types/kago";
 import { roleLabels } from "./UsersPage";
 
 const themes: Array<{ value: ThemePref; label: string; icon: React.ReactNode }> = [
@@ -196,22 +199,46 @@ function ArchivePasswords() {
   );
 }
 
+/** The host of an issuer, which is how people know their provider; the whole of it when it is not an address. */
+const issuerName = (issuer: string) => {
+  try {
+    return new URL(issuer).host;
+  } catch {
+    return issuer;
+  }
+};
+
 function AccountSettings({ user }: { user: Actor }) {
+  const queryClient = useQueryClient();
+  const account = useIdentities();
+  // An account made through single sign-on has no password until one is set here; there is no current one to ask for.
+  const hasPassword = account.data?.hasPassword ?? true;
+  const identities = account.data?.identities ?? [];
+  const sso = account.data?.sso ?? null;
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const tooShort = newPassword.length > 0 && newPassword.length < 8;
   const mismatch = confirmPassword.length > 0 && confirmPassword !== newPassword;
-  const canSubmit = Boolean(currentPassword) && newPassword.length >= 8 && confirmPassword === newPassword;
+  const canSubmit = (Boolean(currentPassword) || !hasPassword) && newPassword.length >= 8 && confirmPassword === newPassword;
+
+  async function unlink(identity: SsoIdentity) {
+    if (!(await confirmAction({ title: t("Unlink {provider}?", { provider: issuerName(identity.issuer) }), description: t("You will no longer be able to sign in to this account through it. Other devices signed in that way are signed out."), confirmLabel: t("Unlink"), destructive: true }))) return;
+    await run(async () => {
+      await api(`/api/auth/identities/${identity.id}`, { method: "DELETE" });
+      await queryClient.invalidateQueries({ queryKey: ["auth", "identities"] });
+    }, t("Couldn’t unlink the identity"));
+  }
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     if (!canSubmit) return;
     try {
-      await api("/api/auth/password", { method: "POST", body: JSON.stringify({ currentPassword, newPassword }) });
+      await api("/api/auth/password", { method: "POST", body: JSON.stringify({ currentPassword: hasPassword ? currentPassword : undefined, newPassword }) });
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
+      await queryClient.invalidateQueries({ queryKey: ["auth", "identities"] });
       toast(t("Password updated. Other devices have been signed out"));
     } catch (error) {
       toast(error instanceof ApiError && error.code === "INVALID_CURRENT_PASSWORD" ? t("The current password is incorrect") : t("Couldn’t change the password"), "error");
@@ -228,11 +255,40 @@ function AccountSettings({ user }: { user: Actor }) {
         </div>
         <KagoBadge tone={user.role === "ADMIN" ? "accent" : "neutral"}>{roleLabels[user.role]}</KagoBadge>
       </div>
+      {sso || identities.length > 0 ? (
+        <div className="mt-4 flex flex-col gap-3 border-t border-line pt-4">
+          <h3 className="m-0 font-medium">{t("Single sign-on")}</h3>
+          {identities.length > 0 ? (
+            <ul className="m-0 flex list-none flex-col divide-y divide-line p-0">
+              {identities.map((identity) => (
+                <li key={identity.id} className="flex items-center gap-3 py-2 first:pt-0 [&>.lucide]:size-4 [&>.lucide]:text-muted">
+                  <Fingerprint />
+                  <div className="flex min-w-0 flex-1 flex-col">
+                    <span className="truncate font-medium">{issuerName(identity.issuer)}</span>
+                    <span className="truncate text-xs text-muted">{identity.email ?? identity.displayName ?? identity.subject}</span>
+                  </div>
+                  <Button variant="destructive" onClick={() => void unlink(identity)}>{t("Unlink")}</Button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {sso ? (
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs text-muted">{identities.length > 0 ? t("You can sign in to this account through the identities above.") : t("Link your identity at the provider to sign in to this account without its password.")}</span>
+              <Button onClick={() => void run(startSsoLink, t("Couldn’t start linking"))}>{identities.length > 0 ? t("Link another") : sso.name ? t("Link {name}", { name: sso.name }) : t("Link an identity")}</Button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       <form className="mt-4 grid grid-cols-2 gap-3 border-t border-line pt-4" onSubmit={submit}>
-        <h3 className="col-span-2 m-0 font-medium">{t("Change password")}</h3>
-        <Field label={t("Current password")} className="col-span-2 @md:col-span-1">
-          <Input type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} />
-        </Field>
+        <h3 className="col-span-2 m-0 font-medium">{hasPassword ? t("Change password") : t("Set a password")}</h3>
+        {hasPassword ? (
+          <Field label={t("Current password")} className="col-span-2 @md:col-span-1">
+            <Input type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} />
+          </Field>
+        ) : (
+          <p className="col-span-2 m-0 text-xs text-muted">{t("This account has no password yet: it is signed in to through single sign-on only. Setting one gives it a second way in.")}</p>
+        )}
         <Field label={t("New password")} hint={tooShort ? t("At least 8 characters") : undefined} className="col-start-1">
           <Input type="password" autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} />
         </Field>
@@ -241,7 +297,7 @@ function AccountSettings({ user }: { user: Actor }) {
         </Field>
         <div className="col-span-2 flex items-center justify-between gap-3">
           <span className="text-xs text-muted">{t("Other devices are signed out after the change.")}</span>
-          <Button type="submit" variant="default" disabled={!canSubmit}>{t("Change password")}</Button>
+          <Button type="submit" variant="default" disabled={!canSubmit}>{hasPassword ? t("Change password") : t("Set a password")}</Button>
         </div>
       </form>
     </Card>

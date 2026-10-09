@@ -12,7 +12,8 @@
     "test:smoke": "tsc -p tsconfig.json && cp src/db/schema.sql dist/db/schema.sql && node --test test/smoke.mjs",
     "test:security": "tsc -p tsconfig.json && cp src/db/schema.sql dist/db/schema.sql && node --import tsx --test test/*-security.mjs",
     "test:remote": "tsc -p tsconfig.json && cp src/db/schema.sql dist/db/schema.sql && node --test test/remote.mjs",
-    "start": "node dist/main.js"
+    "start": "node dist/main.js",
+    "recover": "node dist/recover.js"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",

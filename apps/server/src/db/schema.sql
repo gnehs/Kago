@@ -16,7 +16,36 @@ CREATE TABLE IF NOT EXISTS sessions (
   expires_at INTEGER NOT NULL,
   created_at INTEGER NOT NULL,
   last_seen_at INTEGER,
+  -- A session begun through the identity provider: which identity it was, the sealed token that asks the provider
+  -- whether it still stands, and when that was last asked.
+  identity_id TEXT,
+  oidc_refresh TEXT,
+  oidc_checked_at INTEGER,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- Who a user is to an identity provider. The issuer and its subject together name one person; an email never does.
+CREATE TABLE IF NOT EXISTS user_identities (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  issuer TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  email TEXT,
+  display_name TEXT,
+  created_at INTEGER NOT NULL,
+  last_login_at INTEGER,
+  UNIQUE (issuer, subject),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_identities_user
+ON user_identities(user_id);
+
+-- Settings of the whole installation, one row each.
+CREATE TABLE IF NOT EXISTS app_settings (
+  key TEXT PRIMARY KEY,
+  value_json TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS groups (
@@ -30,6 +59,8 @@ CREATE TABLE IF NOT EXISTS group_members (
   group_id TEXT NOT NULL,
   user_id TEXT NOT NULL,
   role TEXT NOT NULL DEFAULT 'MEMBER',
+  -- `oidc` for a membership the identity provider's groups brought about, which they may also take away again.
+  source TEXT,
   PRIMARY KEY (group_id, user_id),
   FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE

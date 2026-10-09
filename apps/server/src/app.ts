@@ -29,6 +29,7 @@ import { externalAppSchema, ExternalAppService } from "./services/external-app.s
 import { createGroupSchema, GroupService } from "./services/group.service.js";
 import { IconLibraryService } from "./services/icon-library.service.js";
 import { MediaService, mediaAudioSchema, mediaSessionSchema, mediaStreamSchema } from "./services/media.service.js";
+import { oidcConfigSchema, OidcService } from "./services/oidc.service.js";
 import { PathService } from "./services/path.service.js";
 import { permissionInputSchema, permissionSetSchema, PermissionService } from "./services/permission.service.js";
 import { folderViewQuerySchema, folderViewSchema, PreferenceService, settingsSchema } from "./services/preference.service.js";
@@ -55,7 +56,8 @@ export async function buildApp(env: Env) {
   const db = openDb(env);
   const events = new EventHub();
   const audit = new AuditService(db);
-  const roots = new RootService(db, env.dataDir, new SecretBox(env.appDataDir));
+  const secrets = new SecretBox(env.appDataDir);
+  const roots = new RootService(db, env.dataDir, secrets);
   const rclone = new RcloneClient(rcloneSocketPath(env.appDataDir));
   const remote = new RemoteStorage(rclone, roots, env);
   const remotes = new RemoteManager(rclone, roots, env.appDataDir);
@@ -73,6 +75,7 @@ export async function buildApp(env: Env) {
   const shares = new ShareService(db, paths, permissions, audit, events, storage);
   const sync = new SyncService(db, tasks, auth, audit);
   const groups = new GroupService(db);
+  const oidc = new OidcService(db, secrets, auth, audit, events);
   const media = new MediaService(env.appDataDir);
   const iconLibrary = new IconLibraryService(env.appDataDir);
   const apps = new ExternalAppService(db, env.appDataDir, iconLibrary, events, audit);
@@ -130,7 +133,7 @@ export async function buildApp(env: Env) {
   await auth.ensureInitialAdminFromEnv();
   roots.syncFromDataDir();
   await remotes.start();
-  registerApi(app, { auth, audit, roots, paths, permissions, fsService, workspace, preferences, tasks, shelves, tags, shares, groups, media, images, apps, iconLibrary, events, db, storage, remotes, sync, env });
+  registerApi(app, { auth, audit, roots, paths, permissions, fsService, workspace, preferences, tasks, shelves, tags, shares, groups, oidc, media, images, apps, iconLibrary, events, db, storage, remotes, sync, env });
 
   app.get("/ws", {
     websocket: true,
@@ -268,6 +271,7 @@ type Services = {
   tags: TagService;
   shares: ShareService;
   groups: GroupService;
+  oidc: OidcService;
   media: MediaService;
   images: ImageService;
   apps: ExternalAppService;
@@ -305,7 +309,8 @@ function registerApi(app: FastifyInstance, services: Services) {
     }
   };
 
-  app.get("/api/auth/setup", async () => ({ needsSetup: services.auth.needsSetup() }));
+  // `oidc` is what the sign-in page needs to offer single sign-on: nothing of how it is set up.
+  app.get("/api/auth/setup", async () => ({ needsSetup: services.auth.needsSetup(), oidc: services.oidc.publicInfo() }));
   app.post("/api/auth/setup", async (request, reply) => {
     const actor = await services.auth.setupAdmin(request, reply, setupAdminSchema.parse(request.body));
     services.audit.write({ actorType: "user", actorId: actor.id, action: "setup_admin", result: "success" });
@@ -331,6 +336,73 @@ function registerApi(app: FastifyInstance, services: Services) {
     return { ok: true };
   });
 
+  // Single sign-on. These two are pages the browser is sent to, not calls the interface makes: whatever goes wrong
+  // ends in a redirect back to the sign-in page, which says what it was.
+  const ssoFailure = (error: unknown) => (error instanceof AppError ? error.code : "OIDC_FAILED");
+  app.get("/api/auth/oidc/start", async (request, reply) => {
+    const query = z.object({ returnTo: z.string().optional() }).safeParse(request.query);
+    reply.header("Cache-Control", "no-store");
+    try {
+      return reply.redirect(await services.oidc.begin(reply, { returnTo: query.data?.returnTo }));
+    } catch (error) {
+      if (!(error instanceof AppError)) logger.error("single sign-on could not be started", error);
+      return reply.redirect(`/login?sso_error=${ssoFailure(error)}`);
+    }
+  });
+  app.get("/api/auth/oidc/callback", async (request, reply) => {
+    reply.header("Cache-Control", "no-store");
+    // Kept out of the Referer of whatever the page loads next: the address carries the code.
+    reply.header("Referrer-Policy", "no-referrer");
+    const seen = { ip: request.ip, userAgent: request.headers["user-agent"] };
+    try {
+      const outcome = await services.oidc.finish(request, reply);
+      if (outcome.kind === "link") {
+        services.audit.write({ actorType: "user", actorId: outcome.actor.id, action: "sso_link", result: "success", ...seen });
+        return reply.redirect("/_kago/settings?sso=linked");
+      }
+      if (outcome.created) services.audit.write({ actorType: "system", action: "user_create", target: { userId: outcome.actor.id, email: outcome.actor.email, method: "sso" }, result: "success", ...seen });
+      services.audit.write({ actorType: "user", actorId: outcome.actor.id, action: "login_success", target: { method: "sso" }, result: "success", ...seen });
+      return reply.redirect(outcome.returnTo);
+    } catch (error) {
+      if (!(error instanceof AppError)) logger.error("single sign-on failed", error);
+      const actor = services.auth.actorFromRequest(request);
+      services.audit.write({ actorType: actor ? "user" : "system", actorId: actor?.id, action: actor ? "sso_link" : "login_failed", target: { method: "sso", code: ssoFailure(error) }, result: "failure", ...seen });
+      // Someone signed in was linking an identity, and goes back to where they asked for it.
+      return reply.redirect(`${actor ? "/_kago/settings" : "/login"}?sso_error=${ssoFailure(error)}`);
+    }
+  });
+  // Linking is asked for with a request another site cannot make, so nobody is led into linking an identity that is not theirs.
+  app.post("/api/auth/oidc/link", async (request, reply) => {
+    const actor = requireActor(request);
+    return { url: await services.oidc.begin(reply, { returnTo: "/_kago/settings", linkUserId: actor.id }) };
+  });
+  app.get("/api/auth/identities", async (request) => {
+    const actor = requireActor(request);
+    return { sso: services.oidc.publicInfo(), hasPassword: services.auth.hasPassword(actor.id), identities: services.oidc.identitiesOf(actor.id) };
+  });
+  app.delete("/api/auth/identities/:id", async (request) => {
+    const actor = requireActor(request);
+    const params = z.object({ id: z.string() }).parse(request.params);
+    services.oidc.unlink(actor.id, params.id, { keepWayIn: true, request });
+    services.audit.write({ actorType: "user", actorId: actor.id, action: "sso_unlink", target: { userId: actor.id }, result: "success" });
+    return { ok: true };
+  });
+
+  app.get("/api/sso", async (request) => {
+    requireAdmin(request);
+    return services.oidc.adminView();
+  });
+  app.put("/api/sso", async (request) => {
+    const actor = requireAdmin(request);
+    const config = await services.oidc.save(oidcConfigSchema.parse(request.body));
+    services.audit.write({ actorType: "user", actorId: actor.id, action: "sso_update", target: { enabled: config.enabled, issuer: config.issuer, autoCreate: config.autoCreate, syncGroups: config.syncGroups }, result: "success" });
+    return config;
+  });
+  app.post("/api/sso/test", async (request) => {
+    requireAdmin(request);
+    return services.oidc.test(oidcConfigSchema.parse(request.body));
+  });
+
   app.get("/api/auth/me", async (request) => ({ user: services.auth.actorFromRequest(request) }));
   app.post("/api/auth/password", async (request) => {
     const actor = requireActor(request);
@@ -345,7 +417,8 @@ function registerApi(app: FastifyInstance, services: Services) {
   });
   app.get("/api/users", async (request) => {
     requireAdmin(request);
-    return services.auth.listUsers();
+    const identities = services.oidc.identitiesByUser();
+    return services.auth.listUsers().map((user) => ({ ...user, identities: identities.get(user.id) ?? [] }));
   });
   app.post("/api/users", async (request) => {
     const actor = requireAdmin(request);
@@ -369,6 +442,13 @@ function registerApi(app: FastifyInstance, services: Services) {
     const params = z.object({ id: z.string() }).parse(request.params);
     await services.auth.setPassword(request, params.id, resetPasswordSchema.parse(request.body).password);
     services.audit.write({ actorType: "user", actorId: actor.id, action: "password_reset", target: { userId: params.id }, result: "success" });
+    return { ok: true };
+  });
+  app.delete("/api/users/:id/identities/:identityId", async (request) => {
+    const actor = requireAdmin(request);
+    const params = z.object({ id: z.string(), identityId: z.string() }).parse(request.params);
+    services.oidc.unlink(params.id, params.identityId, { request });
+    services.audit.write({ actorType: "user", actorId: actor.id, action: "sso_unlink", target: { userId: params.id }, result: "success" });
     return { ok: true };
   });
   app.get("/api/groups", async (request) => {

@@ -78,6 +78,41 @@ export type UserAccount = {
   disabled: number;
   created_at: number;
   updated_at: number;
+  /** False for an account made through single sign-on that has not been given a password. */
+  has_password: boolean;
+  identities: SsoIdentity[];
+};
+
+/** Who a user is to the identity provider: its issuer and their subject there. */
+export type SsoIdentity = {
+  id: string;
+  issuer: string;
+  subject: string;
+  email: string | null;
+  displayName: string | null;
+  createdAt: number;
+  lastLoginAt: number | null;
+};
+
+/** What the sign-in page knows of single sign-on; `name` is what to call the provider, and may be empty. */
+export type SsoInfo = { name: string; autoRedirect: boolean };
+
+/** How single sign-on is set up, as an administrator sees it. The client secret is never sent back. */
+export type SsoConfig = {
+  enabled: boolean;
+  name: string;
+  issuer: string;
+  clientId: string;
+  hasClientSecret: boolean;
+  publicUrl: string;
+  redirectUri: string | null;
+  scopes: string;
+  autoCreate: boolean;
+  defaultRole: "USER" | "GUEST";
+  autoRedirect: boolean;
+  syncGroups: boolean;
+  groupsClaim: string;
+  groupMappings: Array<{ external: string; groupId: string }>;
 };
 
 export type Group = {

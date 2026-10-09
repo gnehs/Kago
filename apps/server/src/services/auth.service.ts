@@ -17,6 +17,10 @@ const LOGIN_TRIES_PER_ADDRESS = 50;
 const MAX_EMAIL = 320;
 export const MAX_PASSWORD = 1024;
 
+/** Stored for an account that has no password of its own: nothing typed at the sign-in form matches it. */
+const NO_PASSWORD = "none";
+const hasPassword = (user: User) => user.password_hash.startsWith("scrypt:");
+
 export const loginSchema = z.object({
   email: z.string().email().max(MAX_EMAIL),
   password: z.string().min(1).max(MAX_PASSWORD)
@@ -40,7 +44,8 @@ export const patchUserSchema = z.object({
 });
 
 export const changePasswordSchema = z.object({
-  currentPassword: z.string().min(1).max(MAX_PASSWORD),
+  /** Left out by an account that has no password yet and is setting its first. */
+  currentPassword: z.string().min(1).max(MAX_PASSWORD).optional(),
   newPassword: z.string().min(8).max(MAX_PASSWORD)
 });
 
@@ -54,6 +59,9 @@ export class AuthService {
 
   private readonly attempts = new AttemptLimiter();
   private decoy: Promise<string> | undefined;
+
+  /** Told of each request a session makes, by the hash of its token; single sign-on uses it to ask the provider whether the session still stands. */
+  onSession: ((tokenHash: string) => void) | undefined;
 
   async ensureInitialAdminFromEnv(): Promise<void> {
     const count = row<{ count: number }>(this.db.prepare("SELECT COUNT(*) AS count FROM users").get())?.count ?? 0;
@@ -112,10 +120,32 @@ export class AuthService {
     return this.publicUser(user);
   }
 
-  listUsers(): PublicUser[] {
-    return rows<User>(this.db.prepare("SELECT * FROM users ORDER BY created_at ASC").all()).map((user) =>
-      this.publicUser(user)
-    );
+  /**
+   * An account for someone the identity provider vouched for. It has no password: it is entered through the provider
+   * until its owner, or an administrator, gives it one.
+   */
+  createExternalUser(input: { email: string; displayName: string; role: "USER" | "GUEST" }): User {
+    const ts = now();
+    const user: User = { id: id("user"), email: input.email.toLowerCase(), password_hash: NO_PASSWORD, display_name: input.displayName, role: input.role, disabled: 0, created_at: ts, updated_at: ts };
+    this.db
+      .prepare("INSERT INTO users (id, email, password_hash, display_name, role, disabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(user.id, user.email, user.password_hash, user.display_name, user.role, user.disabled, user.created_at, user.updated_at);
+    return user;
+  }
+
+  findUserByEmail(email: string): User | null {
+    return row<User>(this.db.prepare("SELECT * FROM users WHERE email = ?").get(email.toLowerCase()));
+  }
+
+  hasPassword(userId: string): boolean {
+    return hasPassword(this.getUser(userId));
+  }
+
+  listUsers(): Array<PublicUser & { has_password: boolean }> {
+    return rows<User>(this.db.prepare("SELECT * FROM users ORDER BY created_at ASC").all()).map((user) => ({
+      ...this.publicUser(user),
+      has_password: hasPassword(user)
+    }));
   }
 
   /** Who a user without access can turn to. Deliberately limited to name and email. */
@@ -147,12 +177,16 @@ export class AuthService {
 
   /** Changes the caller's own password after re-checking the current one. */
   async changePassword(request: FastifyRequest, actor: Actor, input: z.infer<typeof changePasswordSchema>): Promise<void> {
-    // Whoever holds a session that is not theirs does not get to find the password out by trying.
-    const attempt = this.attempts.begin([{ key: `password:${actor.id}`, limit: LOGIN_TRIES }]);
-    if (!(await verifyPassword(input.currentPassword, this.getUser(actor.id).password_hash))) {
-      throw new AppError(403, "Current password is incorrect", "INVALID_CURRENT_PASSWORD");
+    const user = this.getUser(actor.id);
+    // An account made through single sign-on has no password to ask for before its first is set.
+    if (hasPassword(user)) {
+      // Whoever holds a session that is not theirs does not get to find the password out by trying.
+      const attempt = this.attempts.begin([{ key: `password:${actor.id}`, limit: LOGIN_TRIES }]);
+      if (!input.currentPassword || !(await verifyPassword(input.currentPassword, user.password_hash))) {
+        throw new AppError(403, "Current password is incorrect", "INVALID_CURRENT_PASSWORD");
+      }
+      attempt.succeeded();
     }
-    attempt.succeeded();
     await this.setPassword(request, actor.id, input.newPassword);
   }
 
@@ -171,16 +205,21 @@ export class AuthService {
       { key: `login-from:${address}`, limit: LOGIN_TRIES_PER_ADDRESS }
     ]);
     const user = row<User>(this.db.prepare("SELECT * FROM users WHERE email = ?").get(email.toLowerCase()));
-    // An address without an account is checked against a password all the same, so how long the answer takes
-    // does not tell which addresses have one.
-    const usable = user && !user.disabled ? user : undefined;
+    // An address without an account, or whose account has no password, is checked against a password all the same,
+    // so how long the answer takes does not tell which addresses have one.
+    const usable = user && !user.disabled && hasPassword(user) ? user : undefined;
     const matches = await verifyPassword(password, usable?.password_hash ?? (await (this.decoy ??= hashPassword(randomToken()))));
     if (!usable || !matches) {
       throw new AppError(401, "Invalid email or password", "INVALID_LOGIN");
     }
     attempt.succeeded();
+    return this.startSession(request, reply, usable).actor;
+  }
 
+  /** Signs `user` in on this browser. Whoever calls has already made sure it is them. */
+  startSession(request: FastifyRequest, reply: FastifyReply, user: User): { actor: Actor; sessionId: string } {
     const token = randomToken();
+    const sessionId = id("sess");
     const ts = now();
     // Sessions that have run out are of no use to anyone; signing in is as good a moment as any to clear them.
     this.db.prepare("DELETE FROM sessions WHERE expires_at <= ?").run(ts);
@@ -188,7 +227,7 @@ export class AuthService {
       .prepare(
         "INSERT INTO sessions (id, user_id, token_hash, expires_at, created_at, last_seen_at) VALUES (?, ?, ?, ?, ?, ?)"
       )
-      .run(id("sess"), usable.id, sha256(token), ts + 60 * 60 * 24 * 30, ts, ts);
+      .run(sessionId, user.id, sha256(token), ts + 60 * 60 * 24 * 30, ts, ts);
 
     reply.setCookie("kago_session", token, {
       httpOnly: true,
@@ -198,7 +237,7 @@ export class AuthService {
       maxAge: 60 * 60 * 24 * 30
     });
 
-    return this.actorFromUser(usable);
+    return { actor: this.actorFromUser(user), sessionId };
   }
 
   logout(request: FastifyRequest, reply: FastifyReply): void {
@@ -213,7 +252,9 @@ export class AuthService {
     const ts = now();
     const actor = this.actorForSessionAt(token, ts);
     if (!actor) return null;
-    this.db.prepare("UPDATE sessions SET last_seen_at = ? WHERE token_hash = ?").run(ts, sha256(token));
+    const tokenHash = sha256(token);
+    this.db.prepare("UPDATE sessions SET last_seen_at = ? WHERE token_hash = ?").run(ts, tokenHash);
+    this.onSession?.(tokenHash);
     return actor;
   }
 

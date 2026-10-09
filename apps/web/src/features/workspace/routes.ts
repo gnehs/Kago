@@ -14,6 +14,7 @@ const appRoutes: Record<string, { app: AppKind; section?: SettingsSection; admin
   "/_kago/admin/locations": { app: "settings", section: "locations", adminOnly: true },
   "/_kago/admin/users": { app: "settings", section: "users", adminOnly: true },
   "/_kago/admin/groups": { app: "settings", section: "groups", adminOnly: true },
+  "/_kago/admin/sso": { app: "settings", section: "sso", adminOnly: true },
   "/_kago/admin/permissions": { app: "settings", section: "permissions", adminOnly: true },
   "/_kago/audit": { app: "settings", section: "audit", adminOnly: true }
 };

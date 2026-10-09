@@ -116,6 +116,26 @@ Settings → Sync stores sync jobs: bring the contents of one folder to another,
 - Creating and running a sync needs permission to sync the folders at both ends. A scheduled sync runs as the person who created it; when that person is disabled or loses permission, the run is skipped and noted in the audit log.
 - Schedules follow the server's time zone, which you can set with the `TZ` environment variable (for example `TZ=Asia/Taipei`).
 
+### Single sign-on (OIDC)
+
+Kago can sign people in through a standard OpenID Connect identity provider: Pocket ID, Authentik, Keycloak and the like, with whatever the provider offers for signing in (passkeys, for example). Kago is only ever the client and issues no identities of its own; the provider decides who someone is, and what they may do stays with Kago's users, groups and permissions.
+
+Under Settings → Single sign-on, fill in the issuer URL, the client ID and the client secret (leave it empty for a public client, which PKCE protects), then register the redirect URI the page shows (`https://your-address/api/auth/oidc/callback`) with the provider.
+
+- **Linking an existing account**: sign in with your password, then link under Settings → General → Account. Kago knows people by `issuer + subject`; an identity is never merged into an existing account because its email matches.
+- **Creating accounts automatically**: off by default. When on, someone the provider lets through gets a new account the first time they sign in, as a standard user or a guest, never an administrator.
+- **Group sync**: off by default. When on, the provider's groups put people into Kago's groups by the mapping you set; only mapped groups are touched, and members added by hand stay. A provider's group never makes anyone an administrator. Add whatever scope the provider needs for groups (usually `groups`).
+- **Automatic redirect**: sends anyone not signed in straight to the provider. The password form always stays at `/login?local=1`.
+- **Checking back with the provider**: with `offline_access` among the scopes and a provider that issues refresh tokens, Kago asks the provider about every hour; when it no longer stands behind the sign-in, the Kago session ends too.
+
+When the provider is down, accounts with a password can still sign in at `/login?local=1`. If no administrator can get in at all (no password, or the settings are wrong), run this on the host:
+
+```bash
+docker exec -it kago kago-entrypoint node dist/recover.js you@example.com
+```
+
+It gives that account a new password and makes it an enabled administrator (creating it if there is none); add `--disable-sso` to turn single sign-on off as well.
+
 ### App shortcuts
 
 Settings → Apps puts the address of another service on the desktop; you can also right-click a shortcut on the desktop to add, edit or remove one. Everyone manages their own shortcuts, and nobody else sees them. When an administrator ticks "Show on everyone's desktop", the shortcut appears on every desktop and only administrators can change it.

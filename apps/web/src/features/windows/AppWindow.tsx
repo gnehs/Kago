@@ -6,6 +6,7 @@ import { GroupsPage } from "@/features/admin/GroupsPage";
 import { LocationsPage } from "@/features/admin/LocationsPage";
 import { SettingsLayout } from "@/features/admin/SettingsLayout";
 import { SettingsPage } from "@/features/admin/SettingsPage";
+import { SsoPage } from "@/features/admin/SsoPage";
 import { UsersPage } from "@/features/admin/UsersPage";
 import { PermissionsPage } from "@/features/permissions/PermissionsPage";
 import { SharesPage } from "@/features/shares/SharesPage";
@@ -42,6 +43,7 @@ export function AppWindowView({ window, roots, user }: { window: AppWindow; root
           {isAdmin && window.section === "locations" ? <LocationsPage roots={roots} /> : null}
           {isAdmin && window.section === "users" ? <UsersPage currentUserId={user.id} /> : null}
           {isAdmin && window.section === "groups" ? <GroupsPage /> : null}
+          {isAdmin && window.section === "sso" ? <SsoPage /> : null}
           {isAdmin && window.section === "permissions" ? <PermissionsPage roots={roots} /> : null}
           {isAdmin && window.section === "audit" ? <AuditPage /> : null}
         </SettingsLayout>

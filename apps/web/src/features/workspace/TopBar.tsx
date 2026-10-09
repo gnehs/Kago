@@ -8,6 +8,7 @@ import { KagoSpinner } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { Button } from "@/components/ui/button";
 import { BrandMark } from "@/features/auth/AuthCard";
+import { markSignedOut } from "@/features/auth/sso";
 import { TaskRow } from "@/features/tasks/TaskRow";
 import { isActiveTask, isFinishedTask, isQuietTask } from "@/features/tasks/taskUtils";
 import { useClearFinishedTasks } from "@/features/tasks/useClearFinishedTasks";
@@ -54,6 +55,7 @@ export function TopBar({ user, onOpenPalette }: { user: Actor; onOpenPalette: ()
 
   async function logout() {
     await api("/api/auth/logout", { method: "POST" });
+    markSignedOut();
     await queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
   }
 

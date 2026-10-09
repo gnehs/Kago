@@ -3,14 +3,23 @@ import { useEffect, useState } from "react";
 import { api, previewUrl } from "./client";
 import { decodeSubtitle } from "../lib/subtitles";
 import { isTrashing, useTrashingStore } from "../stores/trashing";
-import type { Actor, AuditLog, ExternalApp, FileItem, FileList, FileMeta, FileTask, Group, ImageMetadata, LibraryIcon, MediaInfo, PermissionRule, Root, ShareLink, Shelf, SqlitePage, SqliteTable, StorageInfo, SubtitleList, SyncJob, SyncRun, SyncTrial, Tag, TrashItem, UserAccount, WorkspaceState } from "../types/kago";
+import type { Actor, AuditLog, ExternalApp, FileItem, FileList, FileMeta, FileTask, Group, ImageMetadata, LibraryIcon, MediaInfo, PermissionRule, Root, ShareLink, Shelf, SqlitePage, SsoConfig, SsoIdentity, SsoInfo, SqliteTable, StorageInfo, SubtitleList, SyncJob, SyncRun, SyncTrial, Tag, TrashItem, UserAccount, WorkspaceState } from "../types/kago";
 
 export function useSetupStatus() {
-  return useQuery({ queryKey: ["auth", "setup"], queryFn: () => api<{ needsSetup: boolean }>("/api/auth/setup") });
+  return useQuery({ queryKey: ["auth", "setup"], queryFn: () => api<{ needsSetup: boolean; oidc: SsoInfo | null }>("/api/auth/setup") });
 }
 
 export function useMe() {
   return useQuery({ queryKey: ["auth", "me"], queryFn: () => api<{ user: Actor | null }>("/api/auth/me") });
+}
+
+/** The identities linked to the account signed in, and whether it can also sign in with a password. */
+export function useIdentities() {
+  return useQuery({ queryKey: ["auth", "identities"], queryFn: () => api<{ sso: SsoInfo | null; hasPassword: boolean; identities: SsoIdentity[] }>("/api/auth/identities") });
+}
+
+export function useSsoConfig() {
+  return useQuery({ queryKey: ["sso"], queryFn: () => api<SsoConfig>("/api/sso"), retry: false });
 }
 
 export function useUsers() {

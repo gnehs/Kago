@@ -19,6 +19,8 @@ export function openDb(env: Env, options: { interruptRunningTasks?: boolean } = 
   `);
   db.exec(schema);
   addMissingColumns(db, "roots", { provider: "TEXT NOT NULL DEFAULT 'local'", config: "TEXT" });
+  addMissingColumns(db, "sessions", { identity_id: "TEXT", oidc_refresh: "TEXT", oidc_checked_at: "INTEGER" });
+  addMissingColumns(db, "group_members", { source: "TEXT" });
   migratePermissionLevels(db);
   dropRsync(db);
   if (options.interruptRunningTasks ?? true) {
