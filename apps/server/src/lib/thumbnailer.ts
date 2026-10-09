@@ -7,7 +7,7 @@ import type { ThumbnailJob, ThumbnailJobResult } from "../workers/thumbnail-work
 import { guardedInput, guardedProbe, PICTURE_FORMATS } from "./ffmpeg-input.js";
 import { pruneKeptFiles, useKeptFile } from "./kept-files.js";
 import { logger } from "./logger.js";
-import { loadSharp, type Sharp } from "./sharp.js";
+import { sharpAvailable, writeAvif } from "./sharp.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -37,8 +37,7 @@ const cut = (square: true | Crop) =>
 const filter = (edge: number, square: boolean | Crop = false) => `[0:v:0]${square ? cut(square) : ""}scale='min(${edge},iw)':'min(${edge},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2[out]`;
 // Barely packed: it is read back at once, and packing it well would take longer than writing the AVIF.
 const AS_PNG = ["-map", "[out]", "-frames:v", "1", "-c:v", "png", "-compression_level", "1", "-f", "image2pipe", "pipe:1"];
-/** How sharp writes an AVIF: the effort is the least that still comes out smaller than the encoders ffmpeg has, in about the time they took. */
-const AVIF = { quality: 50, effort: 2 } as const;
+const AVIF_QUALITY = 50;
 
 /**
  * The kinds of picture sharp reads by itself, which takes about half as long as having ffmpeg read them first: the
@@ -78,7 +77,7 @@ export type ThumbnailSource = "image" | "video" | "pdf" | "embedded";
 export class Thumbnailer {
   private readonly ffmpeg = process.env.FFMPEG_PATH ?? "ffmpeg";
   private readonly ffprobe = process.env.FFPROBE_PATH ?? "ffprobe";
-  private writer?: Promise<Sharp | null>;
+  private writer?: Promise<boolean>;
   private readonly pending = new Map<string, Promise<string | null>>();
   private readonly failed = new Set<string>();
   private running = 0;
@@ -111,8 +110,7 @@ export class Thumbnailer {
   }
 
   private async draw(source: string, target: string, kind: ThumbnailSource, edge: number): Promise<string | null> {
-    const sharp = await (this.writer ??= this.findWriter());
-    if (!sharp) return null;
+    if (!(await (this.writer ??= this.findWriter()))) return null;
     // An SVG is a document that may name other files to draw; the browser shows it as it is instead.
     if (kind === "image" && /\.svgz?$/i.test(source)) return null;
     // A video is read as a video and everything else as a still picture, whatever the file turns out to hold.
@@ -132,8 +130,7 @@ export class Thumbnailer {
       let reason = "no frame to draw";
       if (kind !== "video" && (await sharpReads(picture))) {
         try {
-          // Turned the way the camera was held, which ffmpeg does by itself.
-          await this.write(sharp(picture).rotate().resize(edge, edge, { fit: "inside", withoutEnlargement: true }), partial);
+          await writeAvif({ input: picture, target: partial, quality: AVIF_QUALITY, edge });
           await fsp.rename(partial, target);
           return target;
         } catch {
@@ -148,7 +145,7 @@ export class Thumbnailer {
           const frame = await this.read(input, edge);
           // With no frame after the seek, ffmpeg still succeeds and hands over nothing.
           if (!frame) continue;
-          await this.write(sharp(frame), partial);
+          await writeAvif({ input: frame, target: partial, quality: AVIF_QUALITY });
           await fsp.rename(partial, target);
           return target;
         } catch (error) {
@@ -170,11 +167,6 @@ export class Thumbnailer {
     return stdout.length > 0 ? stdout : null;
   }
 
-  /** Writes a picture as an AVIF. What is transparent in it stays so, unless it is to be `opaque`: then it is laid on white. */
-  private async write(picture: import("sharp").Sharp, target: string, opaque = false): Promise<void> {
-    await (opaque ? picture.flatten({ background: "#ffffff" }) : picture).timeout({ seconds: TIMEOUT_MS / 1000 }).avif(AVIF).toFile(target);
-  }
-
   /** Deletes the thumbnails nobody looked at for a month: those of files since changed, moved or deleted, mostly. */
   prune(): Promise<number> {
     return pruneKeptFiles(this.dir);
@@ -187,8 +179,7 @@ export class Thumbnailer {
    * draw with, or a file ffmpeg does not read as a picture.
    */
   async convert(source: string, target: string, edge: number, square: boolean | Crop = false): Promise<boolean> {
-    const sharp = await (this.writer ??= this.findWriter());
-    if (!sharp || /\.svgz?$/i.test(source)) return false;
+    if (!(await (this.writer ??= this.findWriter())) || /\.svgz?$/i.test(source)) return false;
     await this.acquire();
     // Two conversions for one target may overlap; each writes a file of its own and the later rename wins.
     const partial = `${target}.${process.hrtime.bigint()}.partial`;
@@ -196,7 +187,7 @@ export class Thumbnailer {
       await fsp.mkdir(path.dirname(target), { recursive: true });
       const frame = await this.read(guardedInput(source, PICTURE_FORMATS), edge, square);
       if (!frame) return false;
-      await this.write(sharp(frame), partial, true);
+      await writeAvif({ input: frame, target: partial, quality: AVIF_QUALITY, opaque: true });
       await fsp.rename(partial, target);
       return true;
     } catch (error) {
@@ -253,15 +244,15 @@ export class Thumbnailer {
     }
   }
 
-  /** What pictures are written with, found out once: null where there is no ffmpeg to read what sharp does not, or no sharp built for this machine. */
-  private async findWriter(): Promise<Sharp | null> {
+  /** What pictures are written with, found out once: false where there is no ffmpeg to read what sharp does not, or no sharp built for this machine. */
+  private async findWriter(): Promise<boolean> {
     try {
       await execFileAsync(this.ffmpeg, ["-version"]);
     } catch {
       logger.warn("ffmpeg not found; thumbnails are disabled");
-      return null;
+      return false;
     }
-    return loadSharp();
+    return sharpAvailable();
   }
 
   private async acquire(): Promise<void> {

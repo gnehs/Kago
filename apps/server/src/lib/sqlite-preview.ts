@@ -2,6 +2,7 @@ import { fork, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { AppError } from "./errors.js";
+import { loaderExecArgv } from "./fork-args.js";
 
 const MAX_CONCURRENT_SQLITE_PREVIEWS = 2;
 const SQLITE_PREVIEW_TIMEOUT_MS = 2500;
@@ -95,19 +96,6 @@ function runInChild<T>(request: SqlitePreviewRequest): Promise<T> {
   });
 }
 
-/** Keep the source TypeScript loader in development, while dropping parent-only flags such as --eval and --test. */
 function workerExecArgv(): string[] {
-  const args: string[] = [];
-  for (let index = 0; index < process.execArgv.length; index += 1) {
-    const arg = process.execArgv[index]!;
-    if (arg === "--require" || arg === "-r" || arg === "--import") {
-      const value = process.execArgv[index + 1];
-      if (value !== undefined) args.push(arg, value);
-      index += 1;
-    } else if (arg.startsWith("--require=") || arg.startsWith("--import=")) {
-      args.push(arg);
-    }
-  }
-  args.push(`--max-old-space-size=${MAX_WORKER_OLD_SPACE_MB}`);
-  return args;
+  return [...loaderExecArgv(), `--max-old-space-size=${MAX_WORKER_OLD_SPACE_MB}`];
 }

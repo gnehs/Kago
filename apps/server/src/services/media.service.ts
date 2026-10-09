@@ -10,7 +10,7 @@ import { AppError } from "../lib/errors.js";
 import { guardedInput, guardedProbe, inputProtocols } from "../lib/ffmpeg-input.js";
 import { id as createId } from "../lib/ids.js";
 import { logger } from "../lib/logger.js";
-import { loadSharp } from "../lib/sharp.js";
+import { sharpAvailable, writeAvif } from "../lib/sharp.js";
 import { streamLanguage, type PictureSubtitleFormat, type SubtitleFormat } from "../lib/subtitles.js";
 
 const execFileAsync = promisify(execFile);
@@ -338,14 +338,13 @@ export class MediaService {
     const index = (await this.info(absolutePath, stat)).cover;
     if (index === null) throw new AppError(404, "Cover not found", "NOT_FOUND");
     const picture = (out: string, format: string[]) => [...guardedInput(absolutePath), "-map", `0:v:${index}`, "-frames:v", "1", "-vf", "scale='min(1200,iw)':-2", ...format, out];
-    const sharp = await loadSharp();
-    if (!sharp) return this.extract(absolutePath, stat, "cover.jpg", (out) => picture(out, ["-q:v", "3", "-f", "mjpeg"]));
+    if (!(await sharpAvailable())) return this.extract(absolutePath, stat, "cover.jpg", (out) => picture(out, ["-q:v", "3", "-f", "mjpeg"]));
     return this.extract(
       absolutePath,
       stat,
       "cover.avif",
       (out) => picture(out, ["-c:v", "png", "-compression_level", "1", "-f", "image2pipe"]),
-      (frame, out) => sharp(frame).avif({ quality: 60, effort: 2 }).toFile(out)
+      (frame, out) => writeAvif({ input: frame, target: out, quality: 60 })
     );
   }
 
