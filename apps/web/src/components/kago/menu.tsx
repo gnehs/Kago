@@ -1,4 +1,4 @@
-import type { ComponentProps, ReactNode } from "react";
+import { useState, type ComponentProps, type ReactNode } from "react";
 import { ContextMenu } from "@base-ui/react/context-menu";
 import { Menu } from "@base-ui/react/menu";
 import { cn } from "@/lib/utils";
@@ -48,6 +48,8 @@ export function KagoDropdownMenu({
   onOpenChange?: (open: boolean) => void;
   children: ReactNode;
 }) {
+  // With its menu open the button needs no name beside it.
+  const [open, setOpen] = useState(false);
   const trigger = (
     <Menu.Trigger
       aria-label={label}
@@ -62,8 +64,13 @@ export function KagoDropdownMenu({
     </Menu.Trigger>
   );
   return (
-    <Menu.Root onOpenChange={onOpenChange}>
-      {container ? trigger : <KagoTooltip label={label}>{trigger}</KagoTooltip>}
+    <Menu.Root
+      onOpenChange={(next) => {
+        setOpen(next);
+        onOpenChange?.(next);
+      }}
+    >
+      {container ? trigger : <KagoTooltip label={label} disabled={open}>{trigger}</KagoTooltip>}
       <Menu.Portal container={container ?? undefined}>
         <Menu.Positioner side={side} sideOffset={4} align={align} collisionPadding={8} className="z-[800] outline-none">
           <Menu.Popup className="kago-glass kago-pop max-h-(--available-height) min-w-44 cursor-default overflow-y-auto overscroll-contain rounded-lg p-1 outline-none select-none">{menu}</Menu.Popup>

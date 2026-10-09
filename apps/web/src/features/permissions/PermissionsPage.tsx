@@ -119,7 +119,7 @@ export function PermissionsPage({ roots }: { roots: Root[] }) {
         {otherPaths.length ? (
           <div className="mt-3 flex flex-wrap items-center gap-1.5">
             <span className="text-xs text-muted">{t("Other folders with permissions")}</span>
-            {otherPaths.map((prefix) => <Button key={prefix} variant="ghost" onClick={() => setPathInput(prefix)}>{prefix}</Button>)}
+            {otherPaths.map((prefix) => <Button key={prefix} className="h-6 px-2" onClick={() => setPathInput(prefix)}>{prefix}</Button>)}
           </div>
         ) : null}
       </Card>

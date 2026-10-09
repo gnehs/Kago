@@ -9,9 +9,9 @@ export function KagoTooltipProvider({ children }: { children: ReactNode }) {
   );
 }
 
-export function KagoTooltip({ label, children }: { label: ReactNode; children: ReactElement }) {
+export function KagoTooltip({ label, disabled, children }: { label: ReactNode; /** Says nothing for now: what the button opens is open, and says it better. */ disabled?: boolean; children: ReactElement }) {
   return (
-    <Tooltip.Root>
+    <Tooltip.Root disabled={disabled}>
       <Tooltip.Trigger render={children} />
       <Tooltip.Portal>
         <Tooltip.Positioner sideOffset={6} className="z-[1000]">

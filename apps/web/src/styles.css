@@ -8,7 +8,9 @@
   --kago-bg: #e8ebef;
   --kago-surface: #ffffff;
   --kago-surface-elevated: #f5f6f8;
-  --kago-border: #dde0e5;
+  /* The line that divides paper. It is what `--kago-border` means everywhere but on glass, which has a line of its own. */
+  --kago-border-paper: #dde0e5;
+  --kago-border: var(--kago-border-paper);
   --kago-border-strong: #c5cad2;
   --kago-text: #1c2026;
   --kago-text-muted: #667080;
@@ -116,7 +118,7 @@
   --kago-bg: #131518;
   --kago-surface: #1e2125;
   --kago-surface-elevated: #25282d;
-  --kago-border: #32363c;
+  --kago-border-paper: #32363c;
   --kago-border-strong: #474c54;
   --kago-text: #e7e9ec;
   --kago-text-muted: #9ca3ae;
@@ -577,6 +579,11 @@
 
   /* Floats over everything else: menus, popovers, the shelf, toasts. What is underneath shows through, blurred. */
   .kago-glass {
+    /*
+     * A line on glass is a seam cut into it, which darkens whatever shows through. The opaque grey that divides
+     * a sheet of paper is lighter than a picture seen through the glass, and lies on it like a scratch.
+     */
+    --kago-border: var(--kago-seam);
     background: var(--kago-glass);
     box-shadow: var(--kago-shadow-popup), var(--kago-glass-edge);
     backdrop-filter: blur(24px) saturate(1.8);
@@ -584,6 +591,8 @@
 
   /* A group of settings or a list on a page: a sheet laid on the surface, just thick enough to cast a shadow. */
   .kago-card {
+    /* A sheet laid on glass is paper again, and is ruled as paper is. */
+    --kago-border: var(--kago-border-paper);
     background: var(--kago-surface);
     box-shadow: var(--kago-card-shadow);
   }

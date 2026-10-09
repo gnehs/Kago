@@ -121,7 +121,7 @@ export function Inspector({ window: activeWindow, isAdmin }: { window: FileWindo
             {sharingKey === shareKey ? (
               <>
                 <ShareForm key={shareKey} target={{ rootSlug, path }} compact />
-                <Button variant="ghost" className="mt-2 w-full" onClick={() => setSharingKey(null)}>{t("Collapse")}</Button>
+                <Button className="mt-2 w-full" onClick={() => setSharingKey(null)}>{t("Collapse")}</Button>
               </>
             ) : (
               <>
@@ -129,13 +129,13 @@ export function Inspector({ window: activeWindow, isAdmin }: { window: FileWindo
                 <Button className="w-full" onClick={() => setSharingKey(shareKey)}><Link2 />{t("Create share link")}</Button>
               </>
             )}
-            {pathShares.length > 0 ? <Button variant="ghost" className="mt-2 w-full" onClick={() => store().openApp("shares")}>{t("Manage all shares")}</Button> : null}
+            {pathShares.length > 0 ? <Button className="mt-2 w-full" onClick={() => store().openApp("shares")}>{t("Manage all shares")}</Button> : null}
           </Section>
 
           {isAdmin ? (
             <Section title={t("Permission rules")}>
               {permissions.data?.length ? <RuleList rules={permissions.data} /> : <span className="text-faint">{t("No rules apply to this path")}</span>}
-              <Button variant="ghost" className="mt-2 w-full" onClick={() => store().openApp("settings", "permissions")}>{t("Manage permissions")}</Button>
+              <Button className="mt-2 w-full" onClick={() => store().openApp("settings", "permissions")}>{t("Manage permissions")}</Button>
             </Section>
           ) : null}
         </div>

@@ -5,7 +5,7 @@ import { CircleUserRound, ListChecks, LogOut, Search, Settings } from "lucide-re
 import { api } from "@/api/client";
 import { useRoots, useTasks } from "@/api/hooks";
 import { avatarUrl, KagoAvatar } from "@/components/kago/avatar";
-import { KagoSpinner } from "@/components/kago/empty-state";
+import { KagoEmptyState, KagoSpinner } from "@/components/kago/empty-state";
 import { KagoDropdownMenu, KagoMenuItem, KagoMenuSeparator } from "@/components/kago/menu";
 import { KagoTooltip } from "@/components/kago/tooltip";
 import { Button } from "@/components/ui/button";
@@ -148,7 +148,7 @@ function TaskStatus() {
 
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
-      <KagoTooltip label={label}>
+      <KagoTooltip label={label} disabled={open}>
         <Popover.Trigger
           aria-label={label}
           className={cn(
@@ -160,19 +160,25 @@ function TaskStatus() {
         </Popover.Trigger>
       </KagoTooltip>
       <Popover.Portal>
-        <Popover.Positioner sideOffset={6} align="end" className="z-[700]">
-          <Popover.Popup className="kago-glass kago-pop flex w-80 flex-col rounded-lg outline-none">
+        {/* It hangs a little below the bar rather than from its edge, and keeps off the side of the screen. */}
+        <Popover.Positioner sideOffset={10} align="end" collisionPadding={8} className="z-[700]">
+          {/* Nothing is ruled across the glass: a line drawn on it is lighter than what shows through and reads as a scratch. The tasks lie on a sheet of their own, and space sets the rest apart. */}
+          <Popover.Popup className="kago-glass kago-pop flex w-80 max-w-[calc(100vw-16px)] flex-col gap-2 rounded-lg p-2 outline-none">
+            <header className="flex h-6 shrink-0 items-center gap-2 px-1.5">
+              <h2 className="m-0 min-w-0 flex-1 truncate font-semibold">{t("Tasks")}</h2>
+              {activeCount > 0 ? <span className="shrink-0 text-xs text-muted">{label}</span> : null}
+            </header>
             {visible.length === 0 ? (
-              <p className="m-0 px-4 py-6 text-center text-muted">{t("No tasks right now")}</p>
+              <KagoEmptyState className="px-4 pt-2 pb-4" icon={<ListChecks />} title={t("No tasks right now")} />
             ) : (
-              <div className="flex max-h-96 flex-col divide-y divide-line overflow-y-auto px-3">
+              <div className="kago-card flex max-h-96 flex-col divide-y divide-line overflow-y-auto rounded-md px-3">
                 {visible.map((task) => <TaskRow key={task.id} task={task} />)}
               </div>
             )}
-            <div className="m-1.5 flex gap-1.5">
+            {/* What can be pressed is a button, raised like any other; a line of text here read as one more remark. */}
+            <footer className="flex shrink-0 gap-2">
               <Button
-                variant="ghost"
-                className="flex-1"
+                className="min-w-0 flex-1"
                 onClick={() => {
                   setOpen(false);
                   useWorkspaceStore.getState().openApp("tasks");
@@ -181,11 +187,11 @@ function TaskStatus() {
                 {t("See all tasks")}
               </Button>
               {all.some(isFinishedTask) ? (
-                <Button variant="ghost" className="flex-1" onClick={() => void clear()}>
+                <Button className="min-w-0 flex-1" onClick={() => void clear()}>
                   {t("Clear finished")}
                 </Button>
               ) : null}
-            </div>
+            </footer>
           </Popover.Popup>
         </Popover.Positioner>
       </Popover.Portal>

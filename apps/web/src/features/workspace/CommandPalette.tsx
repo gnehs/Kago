@@ -179,11 +179,11 @@ function Palette({ roots, isAdmin, onClose }: { roots: Root[]; isAdmin: boolean;
           }}
         />
       </label>
-      <ul ref={list} id="kago-palette-list" role="listbox" aria-label={t("Quick open")} className="m-0 min-h-0 flex-1 list-none scroll-py-1 overflow-y-auto overscroll-contain p-1">
+      <ul ref={list} id="kago-palette-list" role="listbox" aria-label={t("Quick open")} className="m-0 min-h-0 flex-1 list-none scroll-py-1 overflow-y-auto overscroll-contain p-1 select-none">
         {items.length === 0 ? <li className="px-3 py-8 text-center text-muted">{t("Nothing to open")}</li> : null}
         {items.map((item, itemIndex) => (
           <Fragment key={item.key}>
-            {item.group !== items[itemIndex - 1]?.group ? <li role="presentation" className="px-2 pt-2 pb-1 text-xs font-medium text-faint first:pt-1">{groupLabels[item.group]}</li> : null}
+            {item.group !== items[itemIndex - 1]?.group ? <li role="presentation" className="px-2 pt-2 pb-1 text-xs font-medium text-muted first:pt-1">{groupLabels[item.group]}</li> : null}
             <li role="presentation">
               <button
                 id={`kago-palette-${itemIndex}`}
@@ -197,7 +197,7 @@ function Palette({ roots, isAdmin, onClose }: { roots: Root[]; isAdmin: boolean;
               >
                 {item.icon}
                 <span className="min-w-0 flex-1 truncate"><Matched label={item.label} query={typed} /></span>
-                <span className={cn("max-w-[50%] truncate text-xs", itemIndex === index ? "opacity-80" : "text-faint")}>{item.hint}</span>
+                <span className={cn("max-w-[50%] truncate text-xs", itemIndex === index ? "opacity-80" : "text-muted")}>{item.hint}</span>
               </button>
             </li>
           </Fragment>

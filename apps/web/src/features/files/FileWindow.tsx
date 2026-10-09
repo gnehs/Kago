@@ -514,7 +514,7 @@ export function FileWindowView({ window: frame, roots, isAdmin }: { window: File
                 {type === "copy" ? t("Copy here") : t("Move here")}
               </Button>
             ))}
-            <Button variant="ghost" onClick={() => setDropChoice(null)}>{t("Cancel")}</Button>
+            <Button onClick={() => setDropChoice(null)}>{t("Cancel")}</Button>
           </div>
         </>
       ) : null}
