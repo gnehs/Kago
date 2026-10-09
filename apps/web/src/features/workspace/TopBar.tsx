@@ -4,15 +4,16 @@ import { CircleUserRound, ListChecks, LogOut, Search, Settings } from "lucide-re
 import { api } from "@/api/client";
 import { useRoots, useTasks } from "@/api/hooks";
 import { avatarUrl, KagoAvatar } from "@/components/kago/avatar";
-import { KagoEmptyState, KagoSpinner } from "@/components/kago/empty-state";
+import { KagoEmptyState } from "@/components/kago/empty-state";
 import { KagoDropdownMenu, KagoMenuItem, KagoMenuSeparator } from "@/components/kago/menu";
 import { KagoPopover } from "@/components/kago/popover";
+import { KagoProgressRing } from "@/components/kago/progress-ring";
 import { KagoTooltip } from "@/components/kago/tooltip";
 import { Button } from "@/components/ui/button";
 import { BrandMark } from "@/components/kago/brand-mark";
 import { markSignedOut } from "@/features/auth/sso";
 import { TaskRow } from "@/features/tasks/TaskRow";
-import { isActiveTask, isFinishedTask, isQuietTask } from "@/features/tasks/taskUtils";
+import { isActiveTask, isFinishedTask, isQuietTask, tasksProgress } from "@/features/tasks/taskUtils";
 import { useClearFinishedTasks } from "@/features/tasks/useClearFinishedTasks";
 import { displayPath } from "@/lib/paths";
 import { cn } from "@/lib/utils";
@@ -142,9 +143,10 @@ function TaskStatus() {
   const clear = useClearFinishedTasks();
   const [open, setOpen] = useState(false);
   const all = (tasks.data ?? []).filter((task) => !isQuietTask(task));
-  const activeCount = all.filter(isActiveTask).length;
+  const active = all.filter(isActiveTask);
+  const activeCount = active.length;
   // Active tasks first, then the most recent finished ones.
-  const visible = [...all.filter(isActiveTask), ...all.filter((task) => !isActiveTask(task))].slice(0, 5);
+  const visible = [...active, ...all.filter((task) => !isActiveTask(task))].slice(0, 5);
 
   const label = activeCount > 0 ? t("{count} task in progress | {count} tasks in progress", { count: activeCount }) : t("Tasks");
 
@@ -191,7 +193,8 @@ function TaskStatus() {
         </>
       }
     >
-      {activeCount > 0 ? <KagoSpinner className="text-accent" /> : <ListChecks />}
+      {/* A ring that fills as the tasks go, not one that turns for as long as there are any. */}
+      {activeCount > 0 ? <KagoProgressRing value={tasksProgress(active)} /> : <ListChecks />}
     </KagoPopover>
   );
 }

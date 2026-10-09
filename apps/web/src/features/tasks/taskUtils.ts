@@ -37,6 +37,9 @@ export const canRetryTask = (task: FileTask) => ["failed", "cancelled", "interru
 export const taskProgressValue = (task: FileTask) => (task.total_bytes > 0 ? task.processed_bytes : task.processed_files);
 export const taskProgressMax = (task: FileTask) => Math.max(task.total_bytes > 0 ? task.total_bytes : task.total_files, 1);
 
+/** How far along several tasks are taken together, from 0 to 1: each counts the same, whatever it is counted in. */
+export const tasksProgress = (tasks: FileTask[]) => (tasks.length > 0 ? tasks.reduce((sum, task) => sum + taskProgressValue(task) / taskProgressMax(task), 0) / tasks.length : 0);
+
 export function taskProgressLabel(task: FileTask) {
   const files = t("{done}/{total} items", { done: task.processed_files, total: Math.max(task.total_files, 1) });
   return task.total_bytes > 0 ? `${formatSize(task.processed_bytes)} / ${formatSize(task.total_bytes)} · ${files}` : files;
