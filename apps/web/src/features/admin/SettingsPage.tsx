@@ -223,7 +223,7 @@ function AccountSettings({ user }: { user: Actor }) {
   const canSubmit = (Boolean(currentPassword) || !hasPassword) && newPassword.length >= 8 && confirmPassword === newPassword;
 
   async function unlink(identity: SsoIdentity) {
-    if (!(await confirmAction({ title: t("Unlink {provider}?", { provider: issuerName(identity.issuer) }), description: t("You will no longer be able to sign in to this account through it. Other devices signed in that way are signed out."), confirmLabel: t("Unlink"), destructive: true }))) return;
+    if (!(await confirmAction({ title: t("Unlink {provider}?", { provider: issuerName(identity.issuer) }), description: t("Other devices signed in through it are signed out. Signing in through it again links it back if its email address is this account’s."), confirmLabel: t("Unlink"), destructive: true }))) return;
     await run(async () => {
       await api(`/api/auth/identities/${identity.id}`, { method: "DELETE" });
       await queryClient.invalidateQueries({ queryKey: ["auth", "identities"] });

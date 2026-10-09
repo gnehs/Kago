@@ -25,10 +25,13 @@ test("an identity signs in only to the account it was linked to", async (t) => {
   const kago = await harness(t);
   const owner = await kago.auth.createUser({ email: "owner@example.test", password, displayName: "Owner", role: "USER" });
 
-  // The email the provider reports belongs to an existing account, and that is not enough to get into it.
-  const stranger = browser();
-  await assert.rejects(kago.signIn(stranger, { ...alice, email: "owner@example.test" }), { code: "OIDC_NOT_LINKED" });
-  assert.equal(stranger.cookies.kago_session, undefined);
+  // An email the provider has not verified belongs to an existing account, and that is not enough to get into it.
+  for (const unverified of [{}, { email_verified: false }, { email_verified: "false" }, { email_verified: 1 }]) {
+    const stranger = browser();
+    await assert.rejects(kago.signIn(stranger, { ...alice, email: "owner@example.test", ...unverified }), { code: "OIDC_EMAIL_UNVERIFIED" });
+    assert.equal(stranger.cookies.kago_session, undefined);
+  }
+  assert.deepEqual(kago.oidc.identitiesOf(owner.id), []);
 
   // The owner signs in with the password and links the identity; from then on it signs in as them.
   const own = browser();
@@ -52,8 +55,10 @@ test("accounts are made only when that is turned on, never over an existing emai
 
   await assert.rejects(kago.signIn(browser(), alice), { code: "OIDC_NOT_LINKED" });
   await kago.configure({ autoCreate: true });
-  await assert.rejects(kago.signIn(browser(), { ...alice, email: "taken@example.test" }), { code: "OIDC_EMAIL_IN_USE" });
+  // An address someone only claims does not get them an existing account, nor a second one beside it.
+  await assert.rejects(kago.signIn(browser(), { ...alice, email: "taken@example.test" }), { code: "OIDC_EMAIL_UNVERIFIED" });
   await assert.rejects(kago.signIn(browser(), { sub: "no-email" }), { code: "OIDC_EMAIL_MISSING" });
+  assert.equal(kago.db.prepare("SELECT COUNT(*) AS count FROM users").get().count, 1);
 
   const created = await kago.signIn(browser(), { ...alice, groups: ["admins", "administrators"], role: "ADMIN" });
   assert.equal(created.created, true);
@@ -63,8 +68,8 @@ test("accounts are made only when that is turned on, never over an existing emai
   assert.equal(kago.auth.hasPassword(created.actor.id), false);
   for (const guess of ["", "none", password]) await assert.rejects(kago.auth.login(browser().request, browser().reply, "alice@example.test", guess || "x"), { code: "INVALID_LOGIN" });
 
-  // Another person at the provider who reports the same address does not get the account that now holds it.
-  await assert.rejects(kago.signIn(browser(), { sub: "impostor", email: "alice@example.test" }), { code: "OIDC_EMAIL_IN_USE" });
+  // Another person at the provider who only claims the same address does not get the account that now holds it.
+  await assert.rejects(kago.signIn(browser(), { sub: "impostor", email: "alice@example.test" }), { code: "OIDC_EMAIL_UNVERIFIED" });
   // A disabled account stays shut whichever way it is entered.
   kago.auth.patchUser(created.actor.id, { disabled: true });
   await assert.rejects(kago.signIn(browser(), alice), { code: "ACCOUNT_DISABLED" });
@@ -220,7 +225,38 @@ test("unlinking ends the sessions the identity began and never leaves an account
   kago.oidc.unlink(actor.id, identity.id, { keepWayIn: true, request: laptop.request });
   assert.equal(kago.auth.actorFromRequest(phone.request), null);
   assert.equal(kago.auth.actorFromRequest(laptop.request).id, actor.id);
-  await assert.rejects(kago.signIn(browser(), alice), { code: "OIDC_EMAIL_IN_USE" });
+  await assert.rejects(kago.signIn(browser(), alice), { code: "OIDC_EMAIL_UNVERIFIED" });
+});
+
+test("an identity seen for the first time joins the account with its verified email address", async (t) => {
+  const kago = await harness(t);
+  const owner = await kago.auth.createUser({ email: "Alice@Example.test", password, displayName: "Alice", role: "ADMIN" });
+  const verified = { ...alice, email: "alice@example.TEST", email_verified: true };
+
+  // Nobody has to be let in from scratch for this: the account is already Kago's own.
+  const first = await kago.signIn(browser(), verified);
+  assert.deepEqual([first.actor.id, first.merged, first.created, first.actor.role], [owner.id, true, false, "ADMIN"]);
+  assert.equal(kago.auth.hasPassword(owner.id), true);
+  assert.equal(kago.db.prepare("SELECT COUNT(*) AS count FROM users").get().count, 1);
+
+  // From then on it is the link that counts: the same person under a new address is still them,
+  const moved = await kago.signIn(browser(), { ...alice, email: "elsewhere@example.test", email_verified: true });
+  assert.deepEqual([moved.actor.id, moved.merged], [owner.id, false]);
+  assert.equal(kago.oidc.identitiesOf(owner.id).length, 1);
+  // and an identity that is already someone's is not moved to whoever has its address now.
+  const other = await kago.auth.createUser({ email: "elsewhere@example.test", password, displayName: "Other", role: "USER" });
+  assert.equal((await kago.signIn(browser(), { ...alice, email: "elsewhere@example.test", email_verified: true })).actor.id, owner.id);
+  assert.deepEqual(kago.oidc.identitiesOf(other.id), []);
+
+  // A second person at the provider with the same verified address is linked to the same account, as the provider vouches.
+  const second = await kago.signIn(browser(), { sub: "alice-second-device", email: "alice@example.test", email_verified: "true" });
+  assert.deepEqual([second.actor.id, second.merged], [owner.id, true]);
+
+  // A disabled account is not joined, and nothing is left linked to it.
+  const closed = await kago.auth.createUser({ email: "closed@example.test", password, displayName: "Closed", role: "USER" });
+  kago.auth.patchUser(closed.id, { disabled: true });
+  await assert.rejects(kago.signIn(browser(), { sub: "closed-subject", email: "closed@example.test", email_verified: true }), { code: "ACCOUNT_DISABLED" });
+  assert.deepEqual(kago.oidc.identitiesOf(closed.id), []);
 });
 
 test("the provider's groups fill only the groups mapped to them, and take back only what they gave", async (t) => {

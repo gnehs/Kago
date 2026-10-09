@@ -360,6 +360,7 @@ function registerApi(app: FastifyInstance, services: Services) {
         services.audit.write({ actorType: "user", actorId: outcome.actor.id, action: "sso_link", result: "success", ...seen });
         return reply.redirect("/_kago/settings?sso=linked");
       }
+      if (outcome.merged) services.audit.write({ actorType: "user", actorId: outcome.actor.id, action: "sso_link", target: { method: "email" }, result: "success", ...seen });
       if (outcome.created) services.audit.write({ actorType: "system", action: "user_create", target: { userId: outcome.actor.id, email: outcome.actor.email, method: "sso" }, result: "success", ...seen });
       services.audit.write({ actorType: "user", actorId: outcome.actor.id, action: "login_success", target: { method: "sso" }, result: "success", ...seen });
       return reply.redirect(outcome.returnTo);

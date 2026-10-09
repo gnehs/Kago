@@ -125,10 +125,10 @@ type Identity = {
   last_login_at: number | null;
 };
 
-type Profile = { issuer: string; subject: string; email: string | null; displayName: string; groups: string[] | null };
+type Profile = { issuer: string; subject: string; email: string | null; /** Whether the provider says it has checked that the address is theirs. */ emailVerified: boolean; displayName: string; groups: string[] | null };
 
 export type OidcOutcome =
-  | { kind: "login"; actor: Actor; created: boolean; returnTo: string }
+  | { kind: "login"; actor: Actor; /** A new account was made for them. */ created: boolean; /** Their identity was linked to the account that has their email address. */ merged: boolean; returnTo: string }
   | { kind: "link"; actor: Actor; returnTo: string };
 
 /** Where someone is sent after signing in: a page of Kago's own, never another site and never the API. */
@@ -166,7 +166,8 @@ function groupsOf(claims: Record<string, unknown>, claim: string): string[] | nu
 
 /**
  * Sign-in through an OpenID Connect provider. Kago is only ever the client: the provider says who someone is, by its
- * issuer and their subject, and Kago's own users, groups and rules go on deciding what they may do.
+ * issuer and their subject (and, the first time, by an email address it has verified), and Kago's own users, groups
+ * and rules go on deciding what they may do.
  */
 export class OidcService {
   private readonly attempts = new AttemptLimiter();
@@ -330,7 +331,7 @@ export class OidcService {
       return { kind: "link", actor, returnTo: flow.returnTo };
     }
 
-    const { identity, created } = this.resolve(config, profile);
+    const { identity, created, merged } = this.resolve(config, profile);
     const user = this.auth.getUser(identity.user_id);
     if (user.disabled) throw new AppError(403, "This account is disabled", "ACCOUNT_DISABLED");
     this.db
@@ -340,7 +341,7 @@ export class OidcService {
     const session = this.auth.startSession(request, reply, user);
     const refresh = typeof answer.body.refresh_token === "string" && answer.body.refresh_token ? this.box.seal(answer.body.refresh_token) : null;
     this.db.prepare("UPDATE sessions SET identity_id = ?, oidc_refresh = ?, oidc_checked_at = ? WHERE id = ?").run(identity.id, refresh, now(), session.sessionId);
-    return { kind: "login", actor: session.actor, created, returnTo: flow.returnTo };
+    return { kind: "login", actor: session.actor, created, merged, returnTo: flow.returnTo };
   }
 
   identitiesOf(userId: string) {
@@ -496,6 +497,7 @@ export class OidcService {
       issuer: provider.issuer,
       subject: claims.sub,
       email: email.success ? email.data.toLowerCase() : null,
+      emailVerified: known.email_verified === true || known.email_verified === "true",
       displayName: (name ?? "User").trim().slice(0, 120),
       groups: groupsOf(known, config.groupsClaim)
     };
@@ -520,21 +522,28 @@ export class OidcService {
   }
 
   /**
-   * The Kago account behind an identity. One is only ever found by the issuer and subject it was linked under: an
-   * email that matches an account proves nothing about who holds it at the provider, and is never used to join the two.
+   * The Kago account behind an identity. Once linked, it is found by the issuer and subject it was linked under and
+   * by nothing else. An identity seen for the first time is linked to the account that has its email address, but
+   * only when the provider says it has verified the address: one that people may type in themselves would let
+   * anyone walk into another's account by claiming their email.
    */
-  private resolve(config: OidcConfig, profile: Profile): { identity: Identity; created: boolean } {
+  private resolve(config: OidcConfig, profile: Profile): { identity: Identity; created: boolean; merged: boolean } {
     const existing = this.findIdentity(profile);
-    if (existing) return { identity: existing, created: false };
+    if (existing) return { identity: existing, created: false, merged: false };
+    const account = profile.email ? this.auth.findUserByEmail(profile.email) : null;
+    if (account) {
+      if (!profile.emailVerified) throw new AppError(403, "A Kago account has this email, but the provider does not say the address is verified; sign in to the account and link the identity from Settings", "OIDC_EMAIL_UNVERIFIED");
+      if (account.disabled) throw new AppError(403, "This account is disabled", "ACCOUNT_DISABLED");
+      return { identity: this.insertIdentity(account.id, profile), created: false, merged: true };
+    }
     if (!config.autoCreate) throw new AppError(403, "No Kago account is linked to this identity yet", "OIDC_NOT_LINKED");
     if (!profile.email) throw new AppError(403, "The identity provider did not share an email address", "OIDC_EMAIL_MISSING");
     this.db.exec("BEGIN IMMEDIATE");
     try {
-      if (this.auth.findUserByEmail(profile.email)) throw new AppError(409, "A Kago account with this email already exists; sign in to it and link the identity from Settings", "OIDC_EMAIL_IN_USE");
       const user = this.auth.createExternalUser({ email: profile.email, displayName: profile.displayName, role: config.defaultRole });
       const identity = this.insertIdentity(user.id, profile);
       this.db.exec("COMMIT");
-      return { identity, created: true };
+      return { identity, created: true, merged: false };
     } catch (error) {
       this.db.exec("ROLLBACK");
       throw error;

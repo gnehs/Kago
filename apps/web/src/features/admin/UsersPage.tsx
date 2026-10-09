@@ -65,7 +65,7 @@ export function UsersPage({ currentUserId }: { currentUserId: string }) {
   }
 
   async function unlinkSso(user: UserAccount) {
-    if (!(await confirmAction({ title: t("Unlink {name} from single sign-on?", { name: user.display_name }), description: user.has_password ? t("They can still sign in with their password, and link an identity again themselves.") : t("This account has no password: nobody can sign in to it until you reset its password."), confirmLabel: t("Unlink"), destructive: true }))) return;
+    if (!(await confirmAction({ title: t("Unlink {name} from single sign-on?", { name: user.display_name }), description: user.has_password ? t("They can still sign in with their password. Signing in through the provider again links it back if its email address is this account’s.") : t("This account has no password: nobody can sign in to it until you reset its password."), confirmLabel: t("Unlink"), destructive: true }))) return;
     await run(async () => {
       for (const identity of user.identities) await api(`/api/users/${user.id}/identities/${identity.id}`, { method: "DELETE" });
       await refresh();

@@ -130,9 +130,9 @@ export function SsoPage() {
           </div>
         </Card>
 
-        <Card title={t("Accounts")} description={t("An identity is matched to a Kago account only once it has been linked to it, never by its email address.")}>
+        <Card title={t("Accounts")} description={t("An identity signs in to the Kago account it is linked to. One seen for the first time is linked to the account with the same email address, if the provider says the address is verified.")}>
           <div className="flex flex-col gap-4">
-            <SettingRow label={t("Create accounts for new people")} description={t("Off, only people who linked their identity under Settings can sign in this way. On, anyone the provider lets through gets an account.")}>
+            <SettingRow label={t("Create accounts for new people")} description={t("Off, only people who already have a Kago account can sign in this way. On, anyone else the provider lets through gets a new one.")}>
               <Checkbox label={t("Create automatically")} checked={form.autoCreate} onChange={(event) => set({ autoCreate: event.target.checked })} />
             </SettingRow>
             {form.autoCreate ? (

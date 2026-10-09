@@ -24,7 +24,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
--- Who a user is to an identity provider. The issuer and its subject together name one person; an email never does.
+-- Who a user is to an identity provider. The issuer and its subject together name one person; an email only brings
+-- an identity to its account the first time, and only when the provider has verified it.
 CREATE TABLE IF NOT EXISTS user_identities (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
