@@ -96,6 +96,22 @@ test("minimum file-manager demo flow", async () => {
     assert.deepEqual(Object.keys(byPath(afterReset.json.folderViews)).sort(), ["/views-kept", "/views-kept/views-renamed/inner"]);
     await rm(path.join(fixture.dataDir, "photos", "views-kept"), { recursive: true });
 
+    // A folder is counted by the files in it, whether they are copied one by one or it is renamed into place in one go.
+    await mkdir(path.join(fixture.dataDir, "photos", "counted", "inner", "empty"), { recursive: true });
+    await mkdir(path.join(fixture.dataDir, "photos", "counted-to", "hollow"), { recursive: true });
+    for (const name of ["a.txt", "b.txt", "inner/c.txt"]) await writeFile(path.join(fixture.dataDir, "photos", "counted", name), name);
+    const counted = async (type, source, destination) => {
+      const task = await admin.post("/api/tasks", { type, sources: [{ rootSlug: "photos", path: source }], destination: { rootSlug: "photos", path: destination } });
+      const { status, total_files, processed_files } = await waitTask(admin, task.json.id);
+      return { status, total_files, processed_files };
+    };
+    assert.deepEqual(await counted("copy", "/counted", "/counted-to"), { status: "done", total_files: 3, processed_files: 3 });
+    assert.deepEqual(await counted("move", "/counted-to/counted", "/counted-to/hollow"), { status: "done", total_files: 3, processed_files: 3 });
+    // One with no file in it is still one thing to carry.
+    assert.deepEqual(await counted("copy", "/counted/inner/empty", "/counted-to"), { status: "done", total_files: 1, processed_files: 1 });
+    await rm(path.join(fixture.dataDir, "photos", "counted"), { recursive: true });
+    await rm(path.join(fixture.dataDir, "photos", "counted-to"), { recursive: true });
+
     assert.equal((await admin.post("/api/fs/mkdir", { rootSlug: "photos", path: "/public", name: "new-folder" })).statusCode, 200);
     const upload = await admin.multipart("/api/fs/upload", {
       rootSlug: "photos",

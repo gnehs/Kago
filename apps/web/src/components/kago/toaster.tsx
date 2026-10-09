@@ -27,7 +27,7 @@ export function KagoToaster() {
           onPointerLeave={() => release(toast.id)}
         >
           {toast.progress ? (
-            <Count title={toast.message} value={toast.progress.value} max={toast.progress.max} details={toast.progress.detail} close={<Close label={t("Dismiss notification")} onClick={() => dismiss(toast.id)} />} />
+            <Count title={toast.message} speed={toast.progress.speed} value={toast.progress.value} max={toast.progress.max} details={toast.progress.detail} close={<Close label={t("Dismiss notification")} onClick={() => dismiss(toast.id)} />} />
           ) : (
             <>
               {toast.kind === "error" ? <CircleAlert /> : null}
@@ -49,12 +49,16 @@ function Close({ label, hint, onClick }: { label: string; hint?: string; onClick
   );
 }
 
-/** What a card that counts holds: what is being done, a bar, and under it the figures, ending in how far along it is where the bar ends. */
-function Count({ title, value, max, details, close }: { title: string; value: number; max: number; details: string; close: React.ReactNode }) {
+/**
+ * What a card that counts holds: what is being done, a bar, and under it the figures, ending in how far along it is where the bar ends.
+ * How fast it goes sits across from its name, where there is room for it whatever the figures run to.
+ */
+function Count({ title, speed, value, max, details, close }: { title: string; speed?: string; value: number; max: number; details: string; close: React.ReactNode }) {
   return (
     <>
       <div className="flex items-center gap-2">
         <span className="min-w-0 flex-1 truncate">{title}</span>
+        {speed ? <span className="shrink-0 text-xs text-muted tabular-nums">{speed}</span> : null}
         {close}
       </div>
       <progress className="mr-1.5 w-auto" value={value} max={Math.max(max, 1)} />

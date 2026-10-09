@@ -10,8 +10,8 @@ export type Toast = {
   key?: string;
   /** It reports on work that is still going, and stays up until it is replaced or dismissed. */
   ongoing?: boolean;
-  /** How far along that work is, with the figures in words. */
-  progress?: { value: number; max: number; detail: string };
+  /** How far along that work is, with the figures in words, and how fast it is going if that is known. */
+  progress?: { value: number; max: number; detail: string; speed?: string };
 };
 
 let nextId = 1;

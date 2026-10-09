@@ -45,6 +45,9 @@ export function taskProgressLabel(task: FileTask) {
   return task.total_bytes > 0 ? `${formatSize(task.processed_bytes)} / ${formatSize(task.total_bytes)} · ${files}` : files;
 }
 
+/** How fast a running task is going, once that can be told and while it is going at all. */
+export const taskSpeedLabel = (task: FileTask) => (task.status === "running" && task.speed ? `${formatSize(task.speed)}/s` : undefined);
+
 /** The server reports task failures in English; the ones a user can act on are worded for a task rather than a request. */
 const errorLabels: Record<string, string> = {
   "Target already exists": t("The destination already has an item with that name"),

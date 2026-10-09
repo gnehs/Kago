@@ -335,6 +335,8 @@ export type FileTask = {
   processed_files: number;
   total_bytes: number;
   processed_bytes: number;
+  /** Bytes a second while it runs. Worked out here from one fetch of the list to the next; the server does not send it. */
+  speed?: number;
   sources_json: string;
   destination: string | null;
   current_path: string | null;

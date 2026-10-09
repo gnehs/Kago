@@ -15,7 +15,7 @@ import { isZipDirectory, isZipSymlink, openZipArchive } from "../lib/zip-archive
 import { openEncryptedZipEntry, readZipCipherHead, zipCipherOf, zipPasswordFits, ZipPasswordError, type ZipCipher } from "../lib/zip-crypto.js";
 import { SecretBox } from "../lib/secret-box.js";
 import { zipStream, type ZipEntry, type ZipOptions } from "../lib/zip-stream.js";
-import { RcloneJobStopped, refusedForPermission } from "../storage/rclone-client.js";
+import { RcloneJobStopped, refusedForPermission, type RcloneStats } from "../storage/rclone-client.js";
 import { runRclone } from "../storage/rclone-daemon.js";
 import { isRemote, joinFs, REMOTE_TRASH, transferProgress } from "../storage/remote-storage.js";
 import type { EventPublisher } from "../ws/events.js";
@@ -495,30 +495,39 @@ export class TaskService {
     const operations = [];
     const targetPaths = new Set<string>();
     let totalBytes = 0;
+    let totalFiles = 0;
     for (const safeSource of resolved) {
       this.permissions.require(actor, move ? "edit" : "view", safeSource.root, safeSource.logicalPath);
       await assertNoSymlinksDeep(safeSource.absolutePath);
       if (!move) await this.requireReadableTree(actor, safeSource);
       const stats = await collectPathStats(safeSource.absolutePath);
+      // A folder with no file in it still counts as one thing to carry.
+      const files = Math.max(stats.files, 1);
       totalBytes += stats.bytes;
+      totalFiles += files;
       const target = path.join(dest.absolutePath, path.basename(safeSource.absolutePath));
       await assertTargetOutsideSource(safeSource.absolutePath, target);
       // Existing names are carried over as they are, so sources that only differ in normalisation still collide.
       if (targetPaths.has(nfc(target))) throw new AppError(409, "Multiple sources resolve to the same target", "TARGET_COLLISION");
       targetPaths.add(nfc(target));
       await assertNameAvailable(dest.absolutePath, path.basename(target));
-      operations.push({ safeSource, target, bytes: stats.bytes });
+      operations.push({ safeSource, target, bytes: stats.bytes, files });
     }
-    await this.updateTotals(task.id, operations.length, totalBytes);
+    await this.updateTotals(task.id, totalFiles, totalBytes);
 
-    for (const { safeSource, target, bytes } of operations) {
+    for (const { safeSource, target, bytes, files } of operations) {
       await this.progress(task.id, safeSource.logicalPath);
       let shouldCountBytesAfterOperation = false;
+      let countedFiles = 0;
+      const onFile = () => {
+        countedFiles += 1;
+        this.countFiles(task.id, 1);
+      };
       if (move) {
-        const streamed = await movePath(safeSource.absolutePath, target, (processedBytes) => this.bumpProcessedBytes(task.id, processedBytes));
+        const streamed = await movePath(safeSource.absolutePath, target, (processedBytes) => this.bumpProcessedBytes(task.id, processedBytes), onFile);
         shouldCountBytesAfterOperation = !streamed;
       } else {
-        await copyTree(safeSource.absolutePath, target, (processedBytes) => this.bumpProcessedBytes(task.id, processedBytes));
+        await copyTree(safeSource.absolutePath, target, (processedBytes) => this.bumpProcessedBytes(task.id, processedBytes), onFile);
       }
       if (move) {
         const movedTo = path.posix.join(dest.logicalPath, path.basename(target));
@@ -554,7 +563,8 @@ export class TaskService {
         });
       }
       if (shouldCountBytesAfterOperation) this.bumpProcessedBytes(task.id, bytes);
-      await this.bumpProcessed(task.id);
+      // Whatever was not counted file by file: all of a folder renamed into place, or the one an empty folder stands for.
+      await this.bumpProcessed(task.id, files - countedFiles);
     }
   }
 
@@ -563,6 +573,7 @@ export class TaskService {
     const operations = [];
     const names = new Set<string>();
     let totalBytes = 0;
+    let totalFiles = 0;
     for (const source of sources) {
       this.permissions.require(actor, move ? "edit" : "view", source.root, source.logicalPath);
       if (source.logicalPath === "/") throw new AppError(400, "Invalid path", "INVALID_PATH");
@@ -578,23 +589,35 @@ export class TaskService {
       if (names.has(nfc(name))) throw new AppError(409, "Multiple sources resolve to the same target", "TARGET_COLLISION");
       names.add(nfc(name));
       await this.storage.assertNameAvailable(dest, name);
-      let bytes: number;
-      if (isRemote(source.root)) bytes = (await this.storage.remote.size(source.root, source.logicalPath, directory)).bytes;
-      else {
+      let size: PathStats;
+      if (isRemote(source.root)) {
+        const found = await this.storage.remote.size(source.root, source.logicalPath, directory);
+        size = { bytes: found.bytes, files: found.count };
+      } else {
         await assertNoSymlinksDeep(source.absolutePath);
-        bytes = (await collectPathStats(source.absolutePath)).bytes;
+        size = await collectPathStats(source.absolutePath);
       }
-      totalBytes += bytes;
-      operations.push({ source, directory, name });
+      const files = Math.max(size.files, 1);
+      totalBytes += size.bytes;
+      totalFiles += files;
+      operations.push({ source, directory, name, files });
     }
-    await this.updateTotals(task.id, operations.length, totalBytes);
+    await this.updateTotals(task.id, totalFiles, totalBytes);
 
-    for (const { source, directory, name } of operations) {
+    for (const { source, directory, name, files } of operations) {
       await this.progress(task.id, source.logicalPath);
       const from = this.rcloneAddress(source);
       const to = this.rcloneAddress(dest);
       const target = to.remote ? `${to.remote}/${name}` : name;
-      const onStats = transferProgress((bytes) => this.countBytes(task.id, bytes));
+      const onBytes = transferProgress((bytes) => this.countBytes(task.id, bytes));
+      let countedFiles = 0;
+      const onStats = (stats: RcloneStats) => {
+        onBytes(stats);
+        // Never past what was found beforehand, so the count cannot overtake its total.
+        const done = Math.min(stats.transfers, files);
+        this.countFiles(task.id, done - countedFiles);
+        countedFiles = Math.max(countedFiles, done);
+      };
       const stopped = () => this.isCancelled(task.id);
       try {
         if (directory) {
@@ -633,7 +656,8 @@ export class TaskService {
           record();
         });
       } else record();
-      await this.bumpProcessed(task.id);
+      // rclone counts no transfer for what the remote moved by itself, so the rest is counted once it is done.
+      await this.bumpProcessed(task.id, files - countedFiles);
     }
   }
 
@@ -1469,10 +1493,18 @@ export class TaskService {
     this.flushProgress(taskId);
   }
 
-  private async bumpProcessed(taskId: string): Promise<void> {
+  private async bumpProcessed(taskId: string, files = 1): Promise<void> {
     this.assertNotCancelled(taskId);
     const buffer = this.progressBuffer(taskId);
-    buffer.processedFiles += 1;
+    buffer.processedFiles += Math.max(files, 0);
+    this.flushProgress(taskId);
+  }
+
+  /** Adds to the files done without asking whether the task goes on, as `countBytes` does for bytes. */
+  private countFiles(taskId: string, files: number): void {
+    if (files <= 0) return;
+    const buffer = this.progressBuffer(taskId);
+    buffer.processedFiles += files;
     this.flushProgress(taskId);
   }
 
@@ -1643,6 +1675,8 @@ type RestorableTrashItem = {
 
 type PathStats = {
   bytes: number;
+  /** The files in it, folders not counted. */
+  files: number;
 };
 
 type ProgressBuffer = {
@@ -1779,17 +1813,19 @@ async function collectPathStats(targetPath: string): Promise<PathStats> {
   if (stat.isSymbolicLink()) {
     throw new AppError(403, "Symlink paths are not allowed", "SYMLINK_FORBIDDEN");
   }
-  if (stat.isFile()) return { bytes: stat.size };
+  if (stat.isFile()) return { bytes: stat.size, files: 1 };
   if (!stat.isDirectory()) {
     throw new AppError(403, "Only files and folders are supported", "UNSUPPORTED_FILE_TYPE");
   }
   let bytes = 0;
+  let files = 0;
   const entries = await fsp.readdir(targetPath);
   for (const entry of entries) {
     const childStats = await collectPathStats(path.join(targetPath, entry));
     bytes += childStats.bytes;
+    files += childStats.files;
   }
-  return { bytes };
+  return { bytes, files };
 }
 
 async function assertTargetOutsideSource(sourcePath: string, targetPath: string): Promise<void> {
@@ -1801,7 +1837,7 @@ async function assertTargetOutsideSource(sourcePath: string, targetPath: string)
   }
 }
 
-async function copyPath(sourcePath: string, targetPath: string, onBytes: (bytes: number) => void): Promise<void> {
+async function copyPath(sourcePath: string, targetPath: string, onBytes: (bytes: number) => void, onFile?: () => void): Promise<void> {
   const stat = await fsp.lstat(sourcePath);
   if (stat.isSymbolicLink()) {
     throw new AppError(403, "Symlink paths are not allowed", "SYMLINK_FORBIDDEN");
@@ -1810,7 +1846,7 @@ async function copyPath(sourcePath: string, targetPath: string, onBytes: (bytes:
     await fsp.mkdir(targetPath, { mode: stat.mode });
     const entries = await fsp.readdir(sourcePath);
     for (const entry of entries) {
-      await copyPath(path.join(sourcePath, entry), path.join(targetPath, entry), onBytes);
+      await copyPath(path.join(sourcePath, entry), path.join(targetPath, entry), onBytes, onFile);
     }
     await preservePathMetadata(targetPath, stat);
     return;
@@ -1832,15 +1868,16 @@ async function copyPath(sourcePath: string, targetPath: string, onBytes: (bytes:
   });
   await pipeline(createReadStream(sourcePath), byteCounter, createWriteStream(targetPath, { flags: "wx", mode: Number(stat.mode) }));
   await preservePathMetadata(targetPath, stat);
+  onFile?.();
 }
 
 /**
  * Copies a file or folder to a target that did not exist before. A cancelled copy removes the
  * partial target again; cancellation only fires mid-stream, after this call created it.
  */
-async function copyTree(sourcePath: string, targetPath: string, onBytes: (bytes: number) => void): Promise<void> {
+async function copyTree(sourcePath: string, targetPath: string, onBytes: (bytes: number) => void, onFile?: () => void): Promise<void> {
   try {
-    await copyPath(sourcePath, targetPath, onBytes);
+    await copyPath(sourcePath, targetPath, onBytes, onFile);
   } catch (error) {
     if (error instanceof TaskCancelledError) await fsp.rm(targetPath, { recursive: true, force: true });
     throw error;
@@ -1852,13 +1889,13 @@ async function preservePathMetadata(targetPath: string, stat: Awaited<ReturnType
   await fsp.utimes(targetPath, stat.atime, stat.mtime).catch(() => undefined);
 }
 
-async function movePath(sourcePath: string, targetPath: string, onBytes: (bytes: number) => void): Promise<boolean> {
+async function movePath(sourcePath: string, targetPath: string, onBytes: (bytes: number) => void, onFile?: () => void): Promise<boolean> {
   try {
     await fsp.rename(sourcePath, targetPath);
     return false;
   } catch (error) {
     if (!isNodeError(error, "EXDEV")) throw error;
-    await copyTree(sourcePath, targetPath, onBytes);
+    await copyTree(sourcePath, targetPath, onBytes, onFile);
     await fsp.rm(sourcePath, { recursive: true, force: false });
     return true;
   }

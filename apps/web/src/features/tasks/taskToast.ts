@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { useTasks } from "@/api/hooks";
 import { dismissToast, hasToast, toast, type Toast } from "@/stores/toast";
 import type { FileTask } from "@/types/kago";
-import { isActiveTask, taskErrorLabel, taskProgressLabel, taskProgressMax, taskProgressValue, taskStatus, taskTypeLabel } from "./taskUtils";
+import { isActiveTask, taskErrorLabel, taskProgressLabel, taskProgressMax, taskProgressValue, taskSpeedLabel, taskStatus, taskTypeLabel } from "./taskUtils";
 import { t } from "@/lib/i18n";
 
 /** Task types whose completion is worth announcing; the rest finish quietly. */
@@ -25,7 +25,7 @@ function show(task: FileTask) {
     toast(label, "info", {
       key: keyOf(task.id),
       ongoing: true,
-      progress: { value: taskProgressValue(task), max: taskProgressMax(task), detail: task.status === "running" ? figures : `${taskStatus(task).label} · ${figures}` }
+      progress: { value: taskProgressValue(task), max: taskProgressMax(task), detail: task.status === "running" ? figures : `${taskStatus(task).label} · ${figures}`, speed: taskSpeedLabel(task) }
     });
   }
 }

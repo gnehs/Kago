@@ -7,7 +7,7 @@ import { triggerDownload } from "@/lib/paths";
 import { run } from "@/lib/run";
 import { cn } from "@/lib/utils";
 import type { FileTask } from "@/types/kago";
-import { canCancelTask, canRetryTask, compressDownloadTarget, hasTaskDownload, isActiveTask, taskErrorLabel, taskProgressLabel, taskProgressMax, taskProgressValue, taskStatus, taskTypeLabel } from "./taskUtils";
+import { canCancelTask, canRetryTask, compressDownloadTarget, hasTaskDownload, isActiveTask, taskErrorLabel, taskProgressLabel, taskProgressMax, taskProgressValue, taskSpeedLabel, taskStatus, taskTypeLabel } from "./taskUtils";
 import { t } from "@/lib/i18n";
 
 /** The colour of a state, on the plate at the row's far end. */
@@ -43,11 +43,15 @@ export function TaskRow({ task }: { task: FileTask }) {
 
   const counting = task.status === "running" || task.status === "pausing";
   const detail = task.error_message ? taskErrorLabel(task.error_message) : taskProgressLabel(task);
+  const speed = taskSpeedLabel(task);
 
   return (
     <div className={cn("kago-card flex shrink-0 overflow-hidden rounded-md border border-line", tones[status.tone])}>
       <div className="flex min-w-0 flex-1 flex-col gap-1.5 px-3 py-2.5 text-ink">
-        <strong className="truncate font-medium">{taskTypeLabel(task)}</strong>
+        <div className="flex items-baseline gap-2">
+          <strong className="min-w-0 flex-1 truncate font-medium">{taskTypeLabel(task)}</strong>
+          {speed ? <span className="shrink-0 text-xs text-muted tabular-nums">{speed}</span> : null}
+        </div>
         {isActiveTask(task) ? <progress value={taskProgressValue(task)} max={taskProgressMax(task)} /> : null}
         <span className="truncate text-xs text-muted">{task.status === "running" ? detail : `${status.label} · ${detail}`}</span>
         {downloadHref || canCancelTask(task) || canRetryTask(task) ? (

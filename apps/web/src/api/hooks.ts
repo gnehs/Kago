@@ -2,6 +2,7 @@ import { keepPreviousData, useMutation, useQueries, useQuery, useQueryClient, ty
 import { useEffect, useState } from "react";
 import { api, previewUrl } from "./client";
 import { decodeSubtitle } from "../lib/subtitles";
+import { withSpeeds } from "../lib/taskSpeed";
 import { isTrashing, useTrashingStore } from "../stores/trashing";
 import type { Actor, AuditLog, ExternalApp, FileItem, FileList, FileMeta, FileTask, FrameVerdict, Group, ImageMetadata, LibraryIcon, MediaInfo, PermissionRule, Root, ShareLink, Shelf, SqlitePage, SsoConfig, SsoIdentity, SsoInfo, SqliteTable, StorageInfo, SubtitleList, SyncJob, SyncRun, SyncTrial, Tag, TrashItem, UserAccount, WorkspaceState } from "../types/kago";
 
@@ -238,7 +239,7 @@ export function usePathPermissions(rootSlug: string, path: string, enabled = tru
 }
 
 export function useTasks() {
-  return useQuery({ queryKey: ["tasks"], queryFn: () => api<FileTask[]>("/api/tasks"), refetchInterval: 4000 });
+  return useQuery({ queryKey: ["tasks"], queryFn: async () => withSpeeds(await api<FileTask[]>("/api/tasks")), refetchInterval: 4000 });
 }
 
 export function useExternalApps() {
