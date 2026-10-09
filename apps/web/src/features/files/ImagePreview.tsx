@@ -5,7 +5,7 @@ import { useFileList, useImageMetadata } from "@/api/hooks";
 import { KagoEmptyState, KagoLoading, KagoSpinner } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { Button } from "@/components/ui/button";
-import { KagoWindow } from "@/features/windows/KagoWindow";
+import { KagoWindow } from "@/components/kago/window";
 import { formatDate, formatSize, isConvertedImage, isImageType, kindLabel } from "@/lib/format";
 import { parentPath, triggerDownload } from "@/lib/paths";
 import { getImageInfoOpen, setImageInfoOpen } from "@/lib/prefs";

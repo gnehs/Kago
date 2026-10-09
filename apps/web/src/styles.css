@@ -90,7 +90,9 @@
   --kago-destructive-to: #c5221a;
   --kago-destructive-ring: #a61b14;
   --kago-destructive-glow: rgb(217 45 32 / 0.4);
-  --kago-selection: linear-gradient(#4f8df7, #2a66e6);
+  --kago-selection-from: #4f8df7;
+  --kago-selection-to: #2a66e6;
+  --kago-selection: linear-gradient(var(--kago-selection-from), var(--kago-selection-to));
   --kago-paper-from: #ffffff;
   --kago-paper-to: #eceef2;
   --kago-paper-edge: rgb(15 23 42 / 0.28);
@@ -177,7 +179,8 @@
   --kago-destructive-to: #c5221a;
   --kago-destructive-ring: #5c0f0a;
   --kago-destructive-glow: rgb(240 80 65 / 0.35);
-  --kago-selection: linear-gradient(#4a86f2, #2a5fd6);
+  --kago-selection-from: #4a86f2;
+  --kago-selection-to: #2a5fd6;
   --kago-paper-from: #f4f5f7;
   --kago-paper-to: #d3d7dd;
   --kago-paper-edge: rgb(0 0 0 / 0.6);
@@ -625,7 +628,7 @@
   /*
    * A chosen row that stands alone stands a little off the surface, with a rim and a shadow of its own: the section
    * of a sidebar, and the one row of a menu under the pointer. They are the same thing wherever they are met.
-   * Rows chosen side by side in a list of files stay flat, where a rim round each would rule lines between them.
+   * Rows of a list chosen one under another are one block with one rim (see `data-run` below).
    */
   .kago-selection-raised,
   .kago-menu-item[data-highlighted],
@@ -1053,6 +1056,52 @@
 .kago-segments > :is(:active, [aria-checked="true"]):not(:disabled)::before,
 .kago-segments > :is(:active, [aria-checked="true"]):not(:disabled) + *::before {
   content: none;
+}
+
+/*
+ * Rows chosen one under another make one block: `data-run` says whether a row is the first, the last or in the
+ * middle of it. Only the outer corners are round, the light falls across the whole block rather than each row,
+ * and each row's rim and shadow are cut off where the next row carries on, so there is one rim round all of them.
+ * Unlayered, as the segments above are: the corners a row was given by its class have to give way.
+ */
+[data-run="start"] {
+  border-end-start-radius: 0;
+  border-end-end-radius: 0;
+}
+
+[data-run="end"] {
+  border-start-start-radius: 0;
+  border-start-end-radius: 0;
+}
+
+[data-run="middle"] {
+  border-radius: 0;
+}
+
+.kago-selection-raised[data-run] {
+  --kago-selection-mid: color-mix(in srgb, var(--kago-selection-from), var(--kago-selection-to));
+}
+
+.kago-selection-raised[data-run="start"] {
+  background: linear-gradient(var(--kago-selection-from), var(--kago-selection-mid));
+  clip-path: inset(-6px -6px 0 -6px);
+}
+
+.kago-selection-raised[data-run="middle"] {
+  background: var(--kago-selection-mid);
+  clip-path: inset(0 -6px);
+}
+
+.kago-selection-raised[data-run="end"] {
+  background: linear-gradient(var(--kago-selection-mid), var(--kago-selection-to));
+  clip-path: inset(0 -6px -6px -6px);
+}
+
+/* The highlight along the top belongs to the top of the block. */
+.kago-selection-raised:is([data-run="middle"], [data-run="end"]) {
+  box-shadow:
+    0 0 0 0.5px var(--kago-primary-ring),
+    0 1px 2.5px rgb(8 30 90 / 0.3);
 }
 
 /*

@@ -1,10 +1,6 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { motionAllowed } from "@/lib/motion";
 
-export function BrandMark({ className = "size-7" }: { className?: string }) {
-  return <img src="/icon.svg" alt="" draggable={false} className={`shrink-0 drop-shadow-sm ${className}`} />;
-}
-
 /**
  * The screens there are before the desktop: signing in, the first-run setup and a public share. What it is stands
  * on the desktop itself, as an icon with its name under it does, and what is asked for is on a sheet below.

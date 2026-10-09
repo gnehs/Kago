@@ -34,6 +34,7 @@ export function KagoDropdownMenu({
   side,
   sideOffset = 4,
   align = "end",
+  raised,
   container,
   onOpenChange,
   children
@@ -44,6 +45,8 @@ export function KagoDropdownMenu({
   side?: "top" | "bottom";
   /** How far from its button the popup hangs. */
   sideOffset?: number;
+  /** Drawn as a button with a body, to stand beside other such buttons (at the end of a row of a list) instead of on a bar. */
+  raised?: boolean;
   /** Which edge of the button the popup lines up with. */
   align?: "start" | "end";
   /** Where the popup is mounted. An element shown fullscreen has to hold its own menu. */
@@ -59,7 +62,8 @@ export function KagoDropdownMenu({
       // Shown fullscreen, the element holds its own menu but not the tooltips, which are drawn on the page behind it.
       title={container ? label : undefined}
       className={cn(
-        "flex size-(--kago-control-h) shrink-0 items-center justify-center kago-flat rounded-md text-muted outline-none hover:text-ink focus-visible:ring-2 focus-visible:ring-accent/50 data-[popup-open]:text-ink",
+        "flex size-(--kago-control-h) shrink-0 items-center justify-center rounded-md outline-none focus-visible:ring-2 focus-visible:ring-accent/50",
+        raised ? "kago-raised text-ink" : "kago-flat text-muted hover:text-ink data-[popup-open]:text-ink",
         className
       )}
     >
@@ -97,6 +101,20 @@ export function KagoMenuItem({ icon, shortcut, destructive, className, children,
       {children}
       {shortcut ? <kbd className="ml-auto pl-6 font-mono text-xs tracking-wide opacity-55">{shortcut}</kbd> : null}
     </ContextMenu.Item>
+  );
+}
+
+/**
+ * The same row as a button of its own, for the few menus that are not opened from a button or a right click
+ * (the choice shown where something was dropped). It is lit while it holds the focus, and the pointer moves the
+ * focus to it, so the keyboard and the pointer always agree on which row is chosen.
+ */
+export function KagoMenuButton({ icon, className, children, ...props }: ComponentProps<"button"> & { icon?: ReactNode }) {
+  return (
+    <button type="button" role="menuitem" className={cn("kago-menu-item flex h-7 items-center gap-2 rounded-[calc(var(--kago-radius-md)+1px)] [corner-shape:squircle] px-2 text-left outline-none", className)} onPointerMove={(event) => event.currentTarget.focus()} {...props}>
+      {icon}
+      {children}
+    </button>
   );
 }
 

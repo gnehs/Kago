@@ -4,13 +4,12 @@ import { Plus, X } from "lucide-react";
 import { api } from "@/api/client";
 import { useUsers } from "@/api/hooks";
 import { avatarUrl, KagoAvatar } from "@/components/kago/avatar";
-import { KagoBadge } from "@/components/kago/badge";
 import { KagoLoading } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/input";
 import { KagoPasswordInput } from "@/components/kago/password-input";
-import { Card, Page, Row, RowList } from "@/features/workspace/Page";
+import { Card, Page, Row, RowList } from "@/components/kago/page";
 import { run } from "@/lib/run";
 import { confirmAction, promptText } from "@/stores/dialogs";
 import { toast } from "@/stores/toast";
@@ -98,10 +97,18 @@ export function UsersPage({ currentUserId }: { currentUserId: string }) {
       {users.data?.length ? (
         <RowList>
           {users.data.map((user) => (
-            <Row key={user.id} icon={<KagoAvatar name={user.display_name || user.email} picture={avatarUrl(user.id, user.avatar_at)} />} title={user.display_name} subtitle={user.email}>
-              <KagoBadge tone={user.role === "ADMIN" ? "accent" : "neutral"}>{roleLabels[user.role]}</KagoBadge>
-              {user.identities.length > 0 ? <KagoBadge>{user.has_password ? t("Single sign-on") : t("Single sign-on only")}</KagoBadge> : null}
-              {user.disabled ? <KagoBadge tone="danger">{t("Disabled")}</KagoBadge> : null}
+            <Row
+              key={user.id}
+              icon={<KagoAvatar name={user.display_name || user.email} picture={avatarUrl(user.id, user.avatar_at)} className={user.disabled ? "opacity-50" : undefined} />}
+              title={user.display_name}
+              // What kind of account it is reads as part of the line about it; only being switched off is set apart.
+              subtitle={
+                <>
+                  {user.disabled ? <span className="text-danger">{t("Disabled")} · </span> : null}
+                  {[user.email, roleLabels[user.role], user.identities.length > 0 ? (user.has_password ? t("Single sign-on") : t("Single sign-on only")) : null].filter(Boolean).join(" · ")}
+                </>
+              }
+            >
               {user.identities.length > 0 ? <Button onClick={() => void unlinkSso(user)}>{t("Unlink")}</Button> : null}
               {user.id === currentUserId ? null : <Button onClick={() => void resetPassword(user)}>{t("Reset password")}</Button>}
               {user.id === currentUserId ? null : <Button onClick={() => void setDisabled(user, !user.disabled)}>{user.disabled ? t("Enable") : t("Disable")}</Button>}

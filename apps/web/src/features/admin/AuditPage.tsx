@@ -2,7 +2,7 @@ import { ScrollText } from "lucide-react";
 import { useAudit, useRoots } from "@/api/hooks";
 import { KagoBadge } from "@/components/kago/badge";
 import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
-import { Page } from "@/features/workspace/Page";
+import { Page } from "@/components/kago/page";
 import { formatUnixDate } from "@/lib/format";
 import { displayPath } from "@/lib/paths";
 import type { AuditLog } from "@/types/kago";

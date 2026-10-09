@@ -4,7 +4,7 @@ import { api } from "@/api/client";
 import { useRoots, useTrash } from "@/api/hooks";
 import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
 import { Button } from "@/components/ui/button";
-import { Page, Row, RowList } from "@/features/workspace/Page";
+import { Page, Row, RowList } from "@/components/kago/page";
 import { formatUnixDate } from "@/lib/format";
 import { baseName, displayPath } from "@/lib/paths";
 import { run } from "@/lib/run";

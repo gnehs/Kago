@@ -5,7 +5,7 @@ import { KagoLoading, KagoSpinner } from "@/components/kago/empty-state";
 import { KagoPasswordInput } from "@/components/kago/password-input";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Field } from "@/components/ui/input";
-import { AuthCard, FormError } from "@/features/auth/AuthCard";
+import { AuthCard, FormError } from "@/components/kago/auth-card";
 import { FileTile } from "@/features/files/FileIcon";
 import { errorMessage, formatSize } from "@/lib/format";
 import { baseName, nfc } from "@/lib/paths";

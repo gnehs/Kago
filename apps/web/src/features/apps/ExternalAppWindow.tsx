@@ -4,7 +4,7 @@ import { useFrameProbe } from "@/api/hooks";
 import { KagoEmptyState } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { Button } from "@/components/ui/button";
-import { KagoWindow } from "@/features/windows/KagoWindow";
+import { KagoWindow } from "@/components/kago/window";
 import { t } from "@/lib/i18n";
 import type { ExternalWindow } from "@/stores/workspace";
 import { ExternalAppGlyph } from "./ExternalAppIcon";

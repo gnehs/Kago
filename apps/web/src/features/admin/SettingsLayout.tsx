@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { CircleUserRound, Fingerprint, HardDrive, KeyRound, LayoutGrid, RefreshCw, ScrollText, SlidersHorizontal, UserRound, UsersRound } from "lucide-react";
+import { KagoDivider } from "@/components/kago/divider";
 import { cn } from "@/lib/utils";
 import type { SettingsSection } from "@/stores/workspace";
 import { t } from "@/lib/i18n";
@@ -54,7 +55,7 @@ export function SettingsLayout({ section, isAdmin, onSection, children }: { sect
           >
             {visible.map((group, index) => (
               <div key={group.label} role="group" aria-label={group.label} className="flex shrink-0 items-center gap-1 @xl:flex-col @xl:items-stretch @xl:gap-px">
-                {index > 0 ? <span aria-hidden className="mx-1 h-4 w-px shrink-0 bg-line-strong/70 @xl:hidden" /> : null}
+                {index > 0 ? <KagoDivider className="@xl:hidden" /> : null}
                 <span className="hidden px-2 pt-1 pb-1 text-xs font-medium text-faint @xl:block">{group.label}</span>
                 {group.sections.map((item) => (
                   <button

@@ -2,6 +2,7 @@ import { Fragment, useLayoutEffect, useMemo, useRef, useState, type ReactNode } 
 import { Dialog } from "@base-ui/react/dialog";
 import { CircleUserRound, Clock, Fingerprint, Folder, HardDrive, KeyRound, LayoutGrid, RefreshCw, ScrollText, Search, UserRound, UsersRound } from "lucide-react";
 import { useExternalApps } from "@/api/hooks";
+import { KagoKbd } from "@/components/kago/kbd";
 import { ExternalAppGlyph } from "@/features/apps/ExternalAppIcon";
 import { appHost, openExternalApp } from "@/features/apps/externalApps";
 import { appIcons } from "@/features/windows/AppWindow";
@@ -93,8 +94,6 @@ function Matched({ label, query }: { label: string; query: string }) {
     </>
   );
 }
-
-const Key = ({ children }: { children: ReactNode }) => <kbd className="kago-badge flex h-4.5 min-w-4.5 items-center justify-center rounded-[5px] px-1 font-sans text-[11px] text-muted">{children}</kbd>;
 
 export function CommandPalette({ open, roots, isAdmin, onClose }: { open: boolean; roots: Root[]; isAdmin: boolean; onClose: () => void }) {
   return (
@@ -205,9 +204,9 @@ function Palette({ roots, isAdmin, onClose }: { roots: Root[]; isAdmin: boolean;
       </ul>
       {/* The keys are of no use on a screen that is touched. */}
       <footer className="hidden h-8 shrink-0 items-center gap-3 border-t border-line px-3 text-xs text-muted pointer-fine:flex">
-        <span className="flex items-center gap-1.5"><Key>↑</Key><Key>↓</Key>{t("to move")}</span>
-        <span className="flex items-center gap-1.5"><Key>↩</Key>{t("to open")}</span>
-        <span className="ml-auto flex items-center gap-1.5"><Key>esc</Key>{t("to close")}</span>
+        <span className="flex items-center gap-1.5"><KagoKbd>↑</KagoKbd><KagoKbd>↓</KagoKbd>{t("to move")}</span>
+        <span className="flex items-center gap-1.5"><KagoKbd>↩</KagoKbd>{t("to open")}</span>
+        <span className="ml-auto flex items-center gap-1.5"><KagoKbd>esc</KagoKbd>{t("to close")}</span>
       </footer>
     </>
   );

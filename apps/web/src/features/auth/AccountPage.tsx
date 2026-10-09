@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/input";
 import { KagoPasswordInput } from "@/components/kago/password-input";
 import { roleLabels } from "@/features/admin/UsersPage";
-import { Card, Page, SettingRow } from "@/features/workspace/Page";
+import { Card, Page, SettingRow } from "@/components/kago/page";
 import { t } from "@/lib/i18n";
 import { run } from "@/lib/run";
 import { confirmAction } from "@/stores/dialogs";

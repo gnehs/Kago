@@ -4,7 +4,7 @@ import { downloadUrl, previewUrl } from "@/api/client";
 import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { Button } from "@/components/ui/button";
-import { KagoWindow } from "@/features/windows/KagoWindow";
+import { KagoWindow } from "@/components/kago/window";
 import { triggerDownload } from "@/lib/paths";
 import type { PreviewWindow } from "@/stores/workspace";
 import { FileIcon } from "./FileIcon";

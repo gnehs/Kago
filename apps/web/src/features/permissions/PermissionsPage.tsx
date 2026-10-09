@@ -6,7 +6,7 @@ import { useGroups, usePermissions, useUsers } from "@/api/hooks";
 import { KagoEmptyState } from "@/components/kago/empty-state";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/input";
-import { Card, Page } from "@/features/workspace/Page";
+import { Card, Page } from "@/components/kago/page";
 import { normalizeLogicalPath } from "@/lib/paths";
 import { run } from "@/lib/run";
 import type { PermissionRule, Root } from "@/types/kago";

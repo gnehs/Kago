@@ -5,7 +5,7 @@ import { useSqliteOverview, useSqliteRows } from "@/api/hooks";
 import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { Button } from "@/components/ui/button";
-import { KagoWindow } from "@/features/windows/KagoWindow";
+import { KagoWindow } from "@/components/kago/window";
 import { errorMessage, formatSize } from "@/lib/format";
 import { triggerDownload } from "@/lib/paths";
 import { cn } from "@/lib/utils";

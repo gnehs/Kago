@@ -6,7 +6,7 @@ import { KagoPasswordInput } from "@/components/kago/password-input";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/input";
 import { errorMessage } from "@/lib/format";
-import { AuthCard, FormError } from "./AuthCard";
+import { AuthCard, FormError } from "@/components/kago/auth-card";
 import { t } from "@/lib/i18n";
 
 export function SetupAdmin() {

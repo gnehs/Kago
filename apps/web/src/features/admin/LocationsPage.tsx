@@ -1,15 +1,15 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { HardDrive, Plus, Server, X } from "lucide-react";
+import { HardDrive, Lock, Plus, Server, TriangleAlert, X } from "lucide-react";
 import { api } from "@/api/client";
 import { useStorage } from "@/api/hooks";
-import { KagoBadge } from "@/components/kago/badge";
 import { KagoEmptyState } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { Button } from "@/components/ui/button";
 import { Checkbox, Field, Input, Select } from "@/components/ui/input";
 import { KagoPasswordInput } from "@/components/kago/password-input";
-import { Card, Page, Row, RowList, Section } from "@/features/workspace/Page";
+import { Card, Page, Row, RowList, Section } from "@/components/kago/page";
+import { KagoStatusIcon } from "@/components/kago/status-icon";
 import { run } from "@/lib/run";
 import { confirmAction } from "@/stores/dialogs";
 import { toast } from "@/stores/toast";
@@ -72,12 +72,10 @@ export function LocationsPage({ roots }: { roots: Root[] }) {
   const local = roots.filter((root) => root.provider === "local");
   const remote = roots.filter((root) => root.provider !== "local");
   const addButton = canAdd && !editing ? <Button variant="default" onClick={() => setEditing(true)}><Plus />{t("Add remote location")}</Button> : null;
-  const readonlyControls = (root: Root) => (
-    <>
-      {root.readonly ? <KagoBadge>{t("Read-only")}</KagoBadge> : null}
-      <Button onClick={() => void setRootReadonly(root, !root.readonly)}>{root.readonly ? t("Allow writing") : t("Make read-only")}</Button>
-    </>
-  );
+  /** What stands in the way of using a location, said before its address: the disk refusing Kago, or the location being read-only. */
+  const hindrance = (root: Root, refused: "read" | "write" | null = null) =>
+    refused === "read" ? <span className="text-danger">{t("No permission to read")} · </span> : refused === "write" ? <span className="text-warning">{t("No permission to write")} · </span> : root.readonly ? `${t("Read-only")} · ` : null;
+  const readonlyButton = (root: Root) => <Button onClick={() => void setRootReadonly(root, !root.readonly)}>{root.readonly ? t("Allow writing") : t("Make read-only")}</Button>;
 
   return (
     <Page title={t("Locations")}>
@@ -86,10 +84,19 @@ export function LocationsPage({ roots }: { roots: Root[] }) {
         {local.length > 0 ? (
           <RowList>
             {local.map((root) => (
-              <Row key={root.id} icon={<HardDrive />} title={root.name} subtitle={root.slug}>
-                {refusal(root) === "read" ? <KagoBadge tone="danger">{t("No permission to read")}</KagoBadge> : null}
-                {refusal(root) === "write" ? <KagoBadge tone="warning">{t("No permission to write")}</KagoBadge> : null}
-                {readonlyControls(root)}
+              <Row
+                key={root.id}
+                icon={
+                  refusal(root) ? (
+                    <KagoStatusIcon tone={refusal(root) === "read" ? "danger" : "warning"} label={refusal(root) === "read" ? t("No permission to read") : t("No permission to write")}><TriangleAlert /></KagoStatusIcon>
+                  ) : (
+                    <KagoStatusIcon label={root.readonly ? t("Read-only") : undefined}>{root.readonly ? <Lock /> : <HardDrive />}</KagoStatusIcon>
+                  )
+                }
+                title={root.name}
+                subtitle={<>{hindrance(root, refusal(root))}{root.slug}</>}
+              >
+                {readonlyButton(root)}
               </Row>
             ))}
           </RowList>
@@ -118,8 +125,8 @@ export function LocationsPage({ roots }: { roots: Root[] }) {
             {remote.map((root) => {
               const connection = storage.data?.roots.find((item) => item.id === root.id);
               return (
-                <Row key={root.id} icon={<Server />} title={root.name} subtitle={[providerLabel(root.provider), remoteAddress(connection)].filter(Boolean).join(" · ")}>
-                  {readonlyControls(root)}
+                <Row key={root.id} icon={<KagoStatusIcon label={root.readonly ? t("Read-only") : undefined}>{root.readonly ? <Lock /> : <Server />}</KagoStatusIcon>} title={root.name} subtitle={<>{hindrance(root)}{[providerLabel(root.provider), remoteAddress(connection)].filter(Boolean).join(" · ")}</>}>
+                  {readonlyButton(root)}
                   {connection ? <Button onClick={() => setEditing(connection)}>{t("Edit")}</Button> : null}
                   <Button variant="destructive" onClick={() => void remove(root)}>{t("Remove")}</Button>
                 </Row>

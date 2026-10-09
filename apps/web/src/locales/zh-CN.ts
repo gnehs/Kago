@@ -214,7 +214,6 @@ export const zhCN: Dictionary = {
   "Couldn’t load the apps": "无法加载应用",
   "No apps yet": "还没有应用",
   "Add the address of a service and it gets an icon on the desktop.": "添加一个服务的网址，它就会在桌面上有自己的图标。",
-  "Everyone": "所有人",
   "Address##of a web page": "网址",
   "Icon": "图标",
   "Type a name, and icons that match it are suggested here.": "输入名称后，这里会推荐匹配的图标。",

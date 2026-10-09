@@ -83,7 +83,18 @@ function itemProps({ window, items, selectedPaths, onSelect, onOpen, onContextIt
   };
 }
 
-const selectedClass = (window: FolderWindow, selected: boolean) => (selected ? (window.focused ? "kago-selection" : "bg-accent-soft") : "hover:bg-hover");
+const selectedClass = (window: FolderWindow, selected: boolean) => (selected ? (window.focused ? "kago-selection kago-selection-raised" : "bg-accent-soft") : "hover:bg-hover");
+
+/**
+ * Where a chosen row stands among the chosen rows around it. Rows chosen one under another are drawn as one block,
+ * so each has to know whether the block carries on above it and below it.
+ */
+function selectionRun(items: FileItem[], index: number, selectedPaths: Set<string>) {
+  if (!selectedPaths.has(items[index]!.path)) return undefined;
+  const above = index > 0 && selectedPaths.has(items[index - 1]!.path);
+  const below = index < items.length - 1 && selectedPaths.has(items[index + 1]!.path);
+  return above && below ? "middle" : above ? "end" : below ? "start" : undefined;
+}
 
 /** Folder under a drag, and items waiting to be moved by a cut. */
 const stateClass = ({ dropTarget, cutPaths }: ViewProps, item: FileItem) => cn(dropTarget === item.path && "ring-2 ring-accent ring-inset", cutPaths.has(item.path) && "opacity-50");
@@ -115,7 +126,7 @@ function ListView(props: ViewProps) {
           const selected = selectedPaths.has(item.path);
           const open = tree?.expanded.has(item.path) ?? false;
           return (
-            <div key={item.path} role="option" className={cn("mx-1 flex h-(--kago-row-h) items-center gap-2 rounded-sm px-2", selectedClass(window, selected), stateClass(props, item))} {...itemProps(props, item, range.start + offset)}>
+            <div key={item.path} role="option" data-run={selectionRun(items, range.start + offset, selectedPaths)} className={cn("mx-1 flex h-(--kago-row-h) items-center gap-2 rounded-sm px-2", selectedClass(window, selected), stateClass(props, item))} {...itemProps(props, item, range.start + offset)}>
               <span className="flex min-w-0 flex-1 items-center gap-2" style={{ paddingLeft: (tree?.depths[range.start + offset] ?? 0) * TREE_INDENT }}>
                 {tree ? (
                   item.kind === "folder" ? (
@@ -301,7 +312,7 @@ function Column({ column, index, opened, revealers, onSelect, onSelectColumn, on
             const selected = shared.selectedPaths.has(item.path);
             return (
               // A folder the next column was opened from stays marked after the selection has moved on into it.
-              <div key={item.path} role="option" className={cn("mx-1 flex h-(--kago-row-h) items-center gap-2 rounded-sm px-2", selected ? selectedClass(window, true) : item.path === opened ? "bg-accent-soft" : "hover:bg-hover", stateClass(view, item))} {...itemProps(view, item, range.start + offset)}>
+              <div key={item.path} role="option" data-run={selectionRun(items, range.start + offset, shared.selectedPaths)} className={cn("mx-1 flex h-(--kago-row-h) items-center gap-2 rounded-sm px-2", selected ? selectedClass(window, true) : item.path === opened ? "bg-accent-soft" : "hover:bg-hover", stateClass(view, item))} {...itemProps(view, item, range.start + offset)}>
                 <FileIcon item={item} />
                 <span className="min-w-0 flex-1 truncate">{item.name}</span>
                 <FinderTagDots tags={item.finderTags} />

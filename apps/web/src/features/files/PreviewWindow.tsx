@@ -3,7 +3,7 @@ import { downloadUrl } from "@/api/client";
 import { KagoEmptyState } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { Button } from "@/components/ui/button";
-import { KagoWindow } from "@/features/windows/KagoWindow";
+import { KagoWindow } from "@/components/kago/window";
 import { formatSize, hasTextName, isCueSheet, isMusicFile, isSplatFile, isSqliteFile, isTextFile, isVideoType, kindLabel, MAX_TEXT_BYTES, officeKind } from "@/lib/format";
 import { triggerDownload } from "@/lib/paths";
 import type { PreviewWindow } from "@/stores/workspace";

@@ -5,7 +5,7 @@ import { api, ApiError, downloadUrl, previewUrl } from "@/api/client";
 import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { Button } from "@/components/ui/button";
-import { KagoWindow } from "@/features/windows/KagoWindow";
+import { KagoWindow } from "@/components/kago/window";
 import { errorMessage } from "@/lib/format";
 import { parentPath, triggerDownload } from "@/lib/paths";
 import { cn } from "@/lib/utils";

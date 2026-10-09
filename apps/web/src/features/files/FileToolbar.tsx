@@ -2,9 +2,9 @@ import type { ReactNode } from "react";
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, Columns3, Ellipsis, FolderPlus, Info, LayoutGrid, List, PanelLeft, RotateCcw, Search, SlidersHorizontal, Square, Star, Upload, X } from "lucide-react";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { KagoDropdownMenu, KagoMenuItem, KagoMenuSeparator } from "@/components/kago/menu";
-import { KagoTooltip } from "@/components/kago/tooltip";
+import { KagoDivider } from "@/components/kago/divider";
+import { KagoSegmented } from "@/components/kago/segmented";
 import { baseName } from "@/lib/paths";
-import { cn } from "@/lib/utils";
 import { resetFolderView, saveSettings, setFolderView } from "@/stores/settings";
 import { toast } from "@/stores/toast";
 import { useWorkspaceStore } from "@/stores/workspace";
@@ -46,8 +46,6 @@ type FileToolbarProps = {
   menu: ReactNode;
 };
 
-/** Sets one group of controls apart from the next. */
-const Divider = ({ className }: { className?: string }) => <span aria-hidden className={cn("mx-1 h-4 w-px shrink-0 bg-line-strong/70", className)} />;
 
 export function FileToolbar({ window, folderView, rootName, readonly, canGoBack, canGoForward, search, onSearch, onGo, onNavigate, onNewFolder, onUpload, menu }: FileToolbarProps) {
   const store = useWorkspaceStore.getState;
@@ -96,22 +94,9 @@ export function FileToolbar({ window, folderView, rootName, readonly, canGoBack,
         ) : null}
       </label>
 
-      <Divider />
-      <div className="kago-segments" role="radiogroup" aria-label={t("View as")}>
-        {viewModes.map(({ mode, label, icon, onClick }) => (
-          <KagoTooltip key={mode} label={label}>
-            <button
-              role="radio"
-              aria-checked={window.viewMode === mode}
-              aria-label={label}
-              className="flex h-6 w-7.5 items-center justify-center outline-none focus-visible:ring-2 focus-visible:ring-accent/50 focus-visible:ring-inset"
-              onClick={onClick}
-            >
-              {icon}
-            </button>
-          </KagoTooltip>
-        ))}
-      </div>
+      <KagoDivider />
+      {/* Already in the icon view, its segment steps to the next size instead; each mode says what a press of it does. */}
+      <KagoSegmented iconOnly label={t("View as")} options={viewModes.map(({ mode, label, icon }) => ({ value: mode, label, icon }))} value={window.viewMode} onChange={(mode) => viewModes.find((item) => item.mode === mode)?.onClick()} />
 
       {/* The list view sorts from its column headers; the other views have none. */}
       {window.viewMode === "list" ? null : (
@@ -165,10 +150,10 @@ export function FileToolbar({ window, folderView, rootName, readonly, canGoBack,
         <SlidersHorizontal />
       </KagoDropdownMenu>
 
-      <Divider className="hidden @xl:block" />
+      <KagoDivider className="hidden @xl:block" />
       <KagoIconButton label={t("New folder")} className="hidden @xl:inline-flex" disabled={readonly} onClick={onNewFolder}><FolderPlus /></KagoIconButton>
       <KagoIconButton label={t("Upload files")} className="hidden @xl:inline-flex" disabled={readonly} onClick={onUpload}><Upload /></KagoIconButton>
-      <Divider />
+      <KagoDivider />
       <KagoIconButton label={t("Info (⌘I)")} active={Boolean(window.inspectorOpen)} onClick={() => store().updateWindow(window.id, { inspectorOpen: !window.inspectorOpen })}><Info /></KagoIconButton>
       {menu ? <KagoDropdownMenu label={window.selectedItems.length > 0 ? t("All actions for the selection") : t("Folder actions")} menu={menu}><Ellipsis /></KagoDropdownMenu> : null}
     </div>

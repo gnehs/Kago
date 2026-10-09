@@ -1,16 +1,16 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Ellipsis, History, Pencil, Plus, RefreshCw, Trash2, X } from "lucide-react";
+import { Ban, Check, Clock, Ellipsis, FileDiff, History, Pause, Pencil, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import { api } from "@/api/client";
 import { useSyncJobs } from "@/api/hooks";
-import { KagoBadge } from "@/components/kago/badge";
 import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { KagoDropdownMenu, KagoMenuItem, KagoMenuSeparator } from "@/components/kago/menu";
 import { Button } from "@/components/ui/button";
 import { Checkbox, Field, Input, Select } from "@/components/ui/input";
-import { taskErrorLabel, taskStatus } from "@/features/tasks/taskUtils";
-import { Card, Page, Row, RowList } from "@/features/workspace/Page";
+import { isActiveTask, taskErrorLabel, taskStatus } from "@/features/tasks/taskUtils";
+import { Card, Page, Row, RowList } from "@/components/kago/page";
+import { KagoStatusIcon } from "@/components/kago/status-icon";
 import { formatUnixDate } from "@/lib/format";
 import { displayPath, normalizeLogicalPath } from "@/lib/paths";
 import { run } from "@/lib/run";
@@ -30,6 +30,17 @@ function describeSchedule(schedule: SyncSchedule | null) {
   return schedule.minutes % 60 === 0
     ? t("Every {count} hour | Every {count} hours", { count: schedule.minutes / 60 })
     : t("Every {count} minute | Every {count} minutes", { count: schedule.minutes });
+}
+
+/** The glyph for how a sync's last run ended, or for the run it is in the middle of. */
+function statusGlyph(status: string | null) {
+  if (status === "done") return <Check />;
+  if (status === "running") return <RefreshCw className="animate-spin" />;
+  if (status === "queued") return <Clock />;
+  if (status === "pausing" || status === "paused") return <Pause />;
+  if (status === "cancelled") return <Ban />;
+  if (status === "failed" || status === "interrupted") return <X />;
+  return <RefreshCw />;
 }
 
 export function SyncPage({ roots, user }: { roots: Root[]; user: Actor }) {
@@ -84,7 +95,8 @@ export function SyncPage({ roots, user }: { roots: Root[]; user: Actor }) {
             return (
               <Row
                 key={job.id}
-                icon={<RefreshCw />}
+                // How its last run ended is shown by the icon at the head of the row; the end of the row is for what can be done.
+                icon={<KagoStatusIcon tone={last?.tone} label={last?.label ?? t("No runs yet")}>{statusGlyph(job.last_status)}</KagoStatusIcon>}
                 title={job.name}
                 subtitle={
                   <>
@@ -92,6 +104,8 @@ export function SyncPage({ roots, user }: { roots: Root[]; user: Actor }) {
                     <span className="block truncate">{`${describeEndpoint(job.source)} → ${describeEndpoint(job.destination)}`}</span>
                     <span className="block truncate">
                       {[
+                        // A run that is under way, or waiting, is said in words too: the icon alone has to be pointed at.
+                        last && isActiveTask({ status: job.last_status } as FileTask) ? last.label : null,
                         job.enabled ? describeSchedule(job.schedule) : t("Schedule paused"),
                         job.last_error ? taskErrorLabel(job.last_error) : job.last_run_at ? t("Last run {date}", { date: formatUnixDate(job.last_run_at) }) : null,
                         job.created_by !== user.id ? t("Someone else’s") : null
@@ -102,14 +116,14 @@ export function SyncPage({ roots, user }: { roots: Root[]; user: Actor }) {
                   </>
                 }
               >
-                {last ? <KagoBadge tone={last.tone}>{last.label}</KagoBadge> : null}
-                {job.last_trial ? <Button onClick={() => setTrialOf(job.id)}>{t("See changes")}</Button> : null}
                 <Button disabled={running} onClick={() => void start(job)}>{t("Run now")}</Button>
-                {/* Running it is what a row is for; the rest is asked for now and then, and waits in the menu. */}
+                {/* Running it is what a row is for; the rest is asked for now and then, and waits in the menu, whose button is the same kind of button. */}
                 <KagoDropdownMenu
+                  raised
                   label={t("More actions")}
                   menu={
                     <>
+                      {job.last_trial ? <KagoMenuItem icon={<FileDiff />} onClick={() => setTrialOf(job.id)}>{t("See changes")}</KagoMenuItem> : null}
                       <KagoMenuItem icon={<History />} disabled={!job.last_run_at} onClick={() => setRunsOf(job.id)}>{t("History")}</KagoMenuItem>
                       <KagoMenuItem icon={<Pencil />} onClick={() => setEditing(job)}>{t("Edit")}</KagoMenuItem>
                       <KagoMenuSeparator />

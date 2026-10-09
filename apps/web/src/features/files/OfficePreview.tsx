@@ -5,7 +5,7 @@ import { downloadUrl, previewUrl } from "@/api/client";
 import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { Button } from "@/components/ui/button";
-import { KagoWindow } from "@/features/windows/KagoWindow";
+import { KagoWindow } from "@/components/kago/window";
 import { formatSize, type OfficeKind } from "@/lib/format";
 import { triggerDownload } from "@/lib/paths";
 import { checkZip, MAX_UNPACKED_BYTES, type ZipVerdict } from "@/lib/zipCheck";

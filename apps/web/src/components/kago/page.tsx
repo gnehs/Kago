@@ -76,6 +76,12 @@ export function RowList({ children }: { children: ReactNode }) {
   return <ul className="m-0 flex list-none flex-col divide-y divide-line kago-card rounded-lg border border-line p-0">{children}</ul>;
 }
 
+/**
+ * One thing in a list. What it is stands on the left: an icon, which is also where its state is shown
+ * (`KagoStatusIcon`), its name, and a line or two about it underneath. What can be done to it stands on the right
+ * (`children`), and that end holds nothing but buttons, all of one kind: a badge among them reads as one more thing
+ * to press, and one beside the name competes with the name.
+ */
 export function Row({ icon, title, subtitle, children }: { icon?: ReactNode; title: ReactNode; subtitle?: ReactNode; children?: ReactNode }) {
   return (
     <li className="flex min-h-12 items-center gap-3 px-4 py-2 [&>.lucide]:text-muted">

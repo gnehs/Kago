@@ -214,7 +214,6 @@ export const zhTW: Dictionary = {
   "Couldn’t load the apps": "無法載入應用程式",
   "No apps yet": "還沒有應用程式",
   "Add the address of a service and it gets an icon on the desktop.": "加入一個服務的網址，它就會在桌面上有自己的圖示。",
-  "Everyone": "所有人",
   "Address##of a web page": "網址",
   "Icon": "圖示",
   "Type a name, and icons that match it are suggested here.": "輸入名稱後，這裡會推薦符合的圖示。",

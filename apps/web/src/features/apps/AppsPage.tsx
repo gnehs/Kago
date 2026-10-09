@@ -1,10 +1,9 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { LayoutGrid, Plus } from "lucide-react";
 import { useExternalApps } from "@/api/hooks";
-import { KagoBadge } from "@/components/kago/badge";
 import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
 import { Button } from "@/components/ui/button";
-import { Page, Row, RowList } from "@/features/workspace/Page";
+import { Page, Row, RowList } from "@/components/kago/page";
 import { t } from "@/lib/i18n";
 import { editExternalApp } from "./ExternalAppDialog";
 import { ExternalAppIcon } from "./ExternalAppIcon";
@@ -32,8 +31,7 @@ export function AppsPage() {
       {apps.data?.length ? (
         <RowList>
           {apps.data.map((app) => (
-            <Row key={app.id} icon={<ExternalAppIcon name={app.name} icon={app.icon} leaves={!app.embed} className="size-8" />} title={app.name} subtitle={app.url}>
-              {app.shared ? <KagoBadge>{t("Everyone")}</KagoBadge> : null}
+            <Row key={app.id} icon={<ExternalAppIcon name={app.name} icon={app.icon} leaves={!app.embed} className="size-8" />} title={app.name} subtitle={app.shared ? `${app.url} · ${t("Show on everyone’s desktop")}` : app.url}>
               {app.editable ? (
                 <>
                   <Button onClick={() => editExternalApp(app)}>{t("Edit")}</Button>

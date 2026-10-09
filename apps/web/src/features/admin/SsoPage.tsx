@@ -8,7 +8,7 @@ import { KagoIconButton } from "@/components/kago/icon-button";
 import { Button } from "@/components/ui/button";
 import { Checkbox, Field, Input, Select } from "@/components/ui/input";
 import { KagoPasswordInput } from "@/components/kago/password-input";
-import { Card, Page, SettingRow } from "@/features/workspace/Page";
+import { Card, Page, SettingRow } from "@/components/kago/page";
 import { t } from "@/lib/i18n";
 import { run } from "@/lib/run";
 import { copyText } from "@/lib/utils";

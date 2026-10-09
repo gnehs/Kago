@@ -2,7 +2,7 @@ import { ListChecks } from "lucide-react";
 import { useTasks } from "@/api/hooks";
 import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
 import { Button } from "@/components/ui/button";
-import { Page } from "@/features/workspace/Page";
+import { Page } from "@/components/kago/page";
 import { TaskRow } from "./TaskRow";
 import { isFinishedTask } from "./taskUtils";
 import { useClearFinishedTasks } from "./useClearFinishedTasks";

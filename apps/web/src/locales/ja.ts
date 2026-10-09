@@ -214,7 +214,6 @@ export const ja: Dictionary = {
   "Couldn’t load the apps": "アプリを読み込めませんでした",
   "No apps yet": "アプリはまだありません",
   "Add the address of a service and it gets an icon on the desktop.": "サービスのアドレスを追加すると、デスクトップにアイコンが置かれます。",
-  "Everyone": "全員",
   "Address##of a web page": "アドレス",
   "Icon": "アイコン",
   "Type a name, and icons that match it are suggested here.": "名前を入力すると、合うアイコンがここに表示されます。",

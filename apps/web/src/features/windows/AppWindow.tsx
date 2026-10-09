@@ -16,7 +16,7 @@ import { TasksPage } from "@/features/tasks/TasksPage";
 import { TrashPage } from "@/features/trash/TrashPage";
 import { useWorkspaceStore, type AppKind, type AppWindow } from "@/stores/workspace";
 import type { Actor, Root } from "@/types/kago";
-import { KagoWindow } from "./KagoWindow";
+import { KagoWindow } from "@/components/kago/window";
 
 export const appIcons: Record<AppKind, ReactNode> = {
   settings: <Settings />,

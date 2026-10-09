@@ -3,11 +3,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Plus, Share2, X } from "lucide-react";
 import { api } from "@/api/client";
 import { useShares } from "@/api/hooks";
-import { KagoBadge } from "@/components/kago/badge";
 import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { Button } from "@/components/ui/button";
-import { Card, Page, Row, RowList } from "@/features/workspace/Page";
+import { Card, Page, Row, RowList } from "@/components/kago/page";
+import { KagoStatusIcon } from "@/components/kago/status-icon";
 import { formatUnixDate } from "@/lib/format";
 import { baseName, displayPath } from "@/lib/paths";
 import { run } from "@/lib/run";
@@ -68,8 +68,13 @@ export function SharesPage({ roots }: { roots: Root[] }) {
       {shares.data?.length ? (
         <RowList>
           {shares.data.map((share) => (
-            <Row key={share.id} icon={<Share2 />} title={baseName(share.path) || rootName(share.root_id)} subtitle={`${displayPath(rootName(share.root_id), share.path)} · ${describe(share)}`}>
-              <KagoBadge tone={share.disabled ? "neutral" : "success"}>{share.disabled ? t("Disabled") : t("Active")}</KagoBadge>
+            <Row
+              key={share.id}
+              icon={<KagoStatusIcon tone={share.disabled ? "neutral" : "success"} label={share.disabled ? t("Disabled") : t("Active")}><Share2 /></KagoStatusIcon>}
+              title={baseName(share.path) || rootName(share.root_id)}
+              // A link that is switched off says so in words as well: it is the one that needs noticing.
+              subtitle={`${share.disabled ? `${t("Disabled")} · ` : ""}${displayPath(rootName(share.root_id), share.path)} · ${describe(share)}`}
+            >
               <Button onClick={() => void setDisabled(share, !share.disabled)}>{share.disabled ? t("Enable") : t("Disable")}</Button>
               <Button variant="destructive" onClick={() => void remove(share)}>{t("Delete")}</Button>
             </Row>

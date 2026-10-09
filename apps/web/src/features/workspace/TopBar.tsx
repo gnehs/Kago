@@ -9,7 +9,7 @@ import { KagoEmptyState, KagoSpinner } from "@/components/kago/empty-state";
 import { KagoDropdownMenu, KagoMenuItem, KagoMenuSeparator } from "@/components/kago/menu";
 import { KagoTooltip } from "@/components/kago/tooltip";
 import { Button } from "@/components/ui/button";
-import { BrandMark } from "@/features/auth/AuthCard";
+import { BrandMark } from "@/components/kago/brand-mark";
 import { markSignedOut } from "@/features/auth/sso";
 import { TaskRow } from "@/features/tasks/TaskRow";
 import { isActiveTask, isFinishedTask, isQuietTask } from "@/features/tasks/taskUtils";

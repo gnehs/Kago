@@ -4,9 +4,9 @@ import { useFileList, useFolderContents } from "@/api/hooks";
 import { KagoBadge } from "@/components/kago/badge";
 import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
-import { KagoContextMenu, KagoMenuItem, KagoMenuSeparator } from "@/components/kago/menu";
+import { KagoContextMenu, KagoMenuButton, KagoMenuItem, KagoMenuSeparator } from "@/components/kago/menu";
 import { chooseAvatar } from "@/features/auth/AvatarDialog";
-import { KagoWindow } from "@/features/windows/KagoWindow";
+import { KagoWindow } from "@/components/kago/window";
 import { OPEN_ITEM_EVENT } from "@/features/workspace/useShortcuts";
 import { formatSize, isCueSheet, isMusicFile, isPicture, isVideoType } from "@/lib/format";
 import { nfc, parentPath } from "@/lib/paths";
@@ -36,8 +36,6 @@ import { t } from "@/lib/i18n";
 // A shared collator sorts a folder of tens of thousands of names far faster than localeCompare does.
 /** The icon of a window showing a folder. */
 const FOLDER = { kind: "folder", type: "", name: "" } as const;
-/** A row of the menu shown where something was dropped: the same row a menu has, lit while it holds the focus. */
-const DROP_ITEM = "kago-menu-item flex h-7 items-center gap-2 rounded-[calc(var(--kago-radius-md)+1px)] [corner-shape:squircle] px-2 text-left outline-none";
 
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 const compare = (a: string, b: string) => collator.compare(a, b);
@@ -517,26 +515,20 @@ export function FileWindowView({ window: frame, roots, isAdmin }: { window: File
               {t("{count} item | {count} items", { count: dropChoice.sources.length })}{dropChoice.destination.path === win.logicalPath && dropChoice.destination.rootSlug === win.rootSlug ? "" : ` → ${folderTitle(dropChoice.destination.rootSlug, dropChoice.destination.path)}`}
             </span>
             {(["copy", "move"] as const).map((type) => (
-              <button
+              <KagoMenuButton
                 key={type}
-                role="menuitem"
                 autoFocus={type === "copy"}
-                className={DROP_ITEM}
-                onPointerMove={(event) => event.currentTarget.focus()}
+                icon={type === "copy" ? <Copy /> : <FolderInput />}
                 onClick={() => {
                   void actions.transfer(type, dropChoice.sources, dropChoice.destination);
                   setDropChoice(null);
                 }}
               >
-                {type === "copy" ? <Copy /> : <FolderInput />}
                 {type === "copy" ? t("Copy here") : t("Move here")}
-              </button>
+              </KagoMenuButton>
             ))}
-            <span role="separator" className="mx-1 my-1 h-px bg-line" />
-            <button role="menuitem" className={DROP_ITEM} onPointerMove={(event) => event.currentTarget.focus()} onClick={() => setDropChoice(null)}>
-              <X />
-              {t("Cancel")}
-            </button>
+            <KagoMenuSeparator />
+            <KagoMenuButton icon={<X />} onClick={() => setDropChoice(null)}>{t("Cancel")}</KagoMenuButton>
           </div>
         </>
       ) : null}

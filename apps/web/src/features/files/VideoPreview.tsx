@@ -4,7 +4,7 @@ import { api, downloadUrl, previewUrl } from "@/api/client";
 import { useFileList, useMediaInfo, useSubtitles } from "@/api/hooks";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { KagoDropdownMenu, KagoMenuItem, KagoMenuSeparator } from "@/components/kago/menu";
-import { KagoWindow } from "@/features/windows/KagoWindow";
+import { KagoWindow } from "@/components/kago/window";
 import { isVideoType } from "@/lib/format";
 import { parentPath, triggerDownload } from "@/lib/paths";
 import { getSubtitlePref, getVideoHdr, getVideoHdrLift, getVideoQuality, setSubtitlePref, setVideoHdr, setVideoHdrLift, setVideoQuality, type VideoQualityPref } from "@/lib/prefs";

@@ -7,7 +7,8 @@ import { Field, Input, Select } from "@/components/ui/input";
 import { KagoPasswordInput } from "@/components/kago/password-input";
 import { firstDirection, sortColumns } from "@/features/files/FileList";
 import { BASE_VIEW } from "@/features/files/folderView";
-import { Card, Page, SettingRow } from "@/features/workspace/Page";
+import { Card, Page, SettingRow } from "@/components/kago/page";
+import { KagoSegmented } from "@/components/kago/segmented";
 import { formatUnixDate } from "@/lib/format";
 import { localeNames, setLocale, t } from "@/lib/i18n";
 import { getLocalePref, getMotion, getTheme, getWindowControls, setMotion, setTheme, setWindowControls, type LocalePref, type MotionPref, type ThemePref, type WindowControlsPref } from "@/lib/prefs";
@@ -42,26 +43,6 @@ const switches: Array<{ value: "on" | "off"; label: string; icon: React.ReactNod
   { value: "off", label: t("Off"), icon: null }
 ];
 
-/** One of a few, as a row of joined buttons. */
-function Choice<T extends string>({ label, options, value, onChange }: { label: string; options: Array<{ value: T; label: string; icon: React.ReactNode }>; value: T; onChange: (value: T) => void }) {
-  return (
-    <div className="kago-segments" role="radiogroup" aria-label={label}>
-      {options.map((item) => (
-        <button
-          key={item.value}
-          role="radio"
-          aria-checked={value === item.value}
-          className="flex h-[calc(var(--kago-control-h)-4px)] items-center gap-1.5 px-2.5 outline-none focus-visible:ring-2 focus-visible:ring-accent/50 focus-visible:ring-inset"
-          onClick={() => onChange(item.value)}
-        >
-          {item.icon}
-          {item.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 /** How Kago looks and shows folders for the person signed in. */
 export function SettingsPage() {
   // Kept with the account, so a change made in another browser shows here as it arrives.
@@ -82,7 +63,7 @@ export function SettingsPage() {
             </Select>
           </SettingRow>
           <SettingRow label={t("Theme")}>
-            <Choice
+            <KagoSegmented
               label={t("Theme")}
               options={themes}
               value={theme}
@@ -90,7 +71,7 @@ export function SettingsPage() {
             />
           </SettingRow>
           <SettingRow label={t("Window controls")} description={t("Which end of the title bar holds close, minimize and maximize.")}>
-            <Choice
+            <KagoSegmented
               label={t("Window controls position")}
               options={sides}
               value={side}
@@ -104,7 +85,7 @@ export function SettingsPage() {
             </div>
           </SettingRow>
           <SettingRow label={t("Animations")} description={t("Windows, menus and dialogs come and go at once when this is off.")}>
-            <Choice
+            <KagoSegmented
               label={t("Animations")}
               options={motions}
               value={motion}
@@ -116,7 +97,7 @@ export function SettingsPage() {
       <Card title={t("Folders")} description={t("Each folder remembers the view you pick for it. These apply to the folders you have not picked one for.")}>
         <div className="flex flex-col gap-4">
           <SettingRow label={t("Default view")}>
-            <Choice label={t("Default view")} options={viewModes} value={defaultView.viewMode} onChange={(viewMode) => void saveSettings({ defaultView: { viewMode } })} />
+            <KagoSegmented label={t("Default view")} options={viewModes} value={defaultView.viewMode} onChange={(viewMode) => void saveSettings({ defaultView: { viewMode } })} />
           </SettingRow>
           <SettingRow label={t("Default sort")}>
             <Select
@@ -132,7 +113,7 @@ export function SettingsPage() {
             </Select>
           </SettingRow>
           <SettingRow label={t("Icons for pictures and videos")} description={t("A folder that mostly holds pictures and videos opens as icons, until you pick a view for it.")}>
-            <Choice label={t("Icons for pictures and videos")} options={switches} value={settings.smartView === false ? "off" : "on"} onChange={(value) => void saveSettings({ smartView: value === "on" })} />
+            <KagoSegmented label={t("Icons for pictures and videos")} options={switches} value={settings.smartView === false ? "off" : "on"} onChange={(value) => void saveSettings({ smartView: value === "on" })} />
           </SettingRow>
         </div>
       </Card>

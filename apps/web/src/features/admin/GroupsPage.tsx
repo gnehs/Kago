@@ -8,7 +8,7 @@ import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/input";
-import { Card, Page } from "@/features/workspace/Page";
+import { Card, Page } from "@/components/kago/page";
 import { run } from "@/lib/run";
 import type { Group, UserAccount } from "@/types/kago";
 import { t } from "@/lib/i18n";

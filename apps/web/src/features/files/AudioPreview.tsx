@@ -6,7 +6,7 @@ import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { KagoDropdownMenu, KagoMenuItem, KagoMenuSeparator } from "@/components/kago/menu";
 import { Button } from "@/components/ui/button";
-import { KagoWindow } from "@/features/windows/KagoWindow";
+import { KagoWindow } from "@/components/kago/window";
 import { parseCue, type CueSheet } from "@/lib/cue";
 import { formatClock, isAudioType, isCueSheet, isMusicFile } from "@/lib/format";
 import { t } from "@/lib/i18n";
