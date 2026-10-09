@@ -99,7 +99,8 @@ export function DesktopIcons({ roots, isAdmin }: { roots: Root[]; isAdmin: boole
             rel="noopener noreferrer"
             draggable={false}
             className={ICON_CLASS}
-            title={app.embed ? undefined : t("Opens in a new tab")}
+            // The whole name, for when there was no room for it.
+            title={app.embed ? app.name : `${app.name} · ${t("Opens in a new tab")}`}
             onClick={(event) => {
               // One that is shown inside Kago opens there on a plain click; a click with a key held is still the browser's to take.
               if (!app.embed || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
@@ -112,7 +113,7 @@ export function DesktopIcons({ roots, isAdmin }: { roots: Root[]; isAdmin: boole
         </KagoContextMenu>
       ))}
       {home ? null : (
-        <p className="m-0 w-20 px-1 pt-2 text-center text-xs text-muted">{isAdmin ? t("No folders under /data yet") : t("No locations available. Contact an administrator")}</p>
+        <p className="m-0 w-28 px-1 pt-2 text-center text-xs text-muted">{isAdmin ? t("No folders under /data yet") : t("No locations available. Contact an administrator")}</p>
       )}
     </div>
   );
@@ -149,7 +150,7 @@ const GLYPHS = {
   )
 };
 
-const ICON_CLASS = "kago-desktop-icon kago-flat group flex w-20 flex-col items-center gap-1.5 rounded-lg px-1 py-2 text-inherit no-underline outline-none focus-visible:ring-2 focus-visible:ring-accent/50";
+const ICON_CLASS = "kago-desktop-icon kago-flat group flex w-28 flex-col items-center gap-1.5 rounded-lg px-1 py-2 text-inherit no-underline outline-none focus-visible:ring-2 focus-visible:ring-accent/50";
 
 function DesktopIcon({ icon, label, tone, ...props }: React.ComponentProps<"button"> & { icon: ReactNode; label: string; /** The colour of the tile. */ tone: string }) {
   return (
@@ -164,8 +165,12 @@ function DesktopIconBody({ icon, label, tone }: { icon: ReactNode; label: string
   return (
     <>
       <span className="flex size-12 transition-transform group-active:scale-95" style={{ color: tone }}>{icon}</span>
-      {/* Over a picture the name has to carry its own contrast. */}
-      <span className="line-clamp-2 max-w-full text-center leading-tight break-words group-data-[wallpaper]/canvas:text-white group-data-[wallpaper]/canvas:[text-shadow:0_1px_3px_rgb(0_0_0/0.85)]">{label}</span>
+      {/*
+        One line, cut short when it is longer than the icon's place is wide: a name on two lines makes its icon taller
+        than the ones beside it, and the rows stop lining up. The room above and below is for the shadow, which is
+        cut off where the line is. Over a picture the name has to carry its own contrast.
+      */}
+      <span className="-my-1 w-full truncate py-1 text-center leading-tight group-data-[wallpaper]/canvas:text-white group-data-[wallpaper]/canvas:[text-shadow:0_1px_3px_rgb(0_0_0/0.85)]">{label}</span>
     </>
   );
 }
