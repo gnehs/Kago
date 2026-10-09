@@ -113,6 +113,8 @@ function UserMenu({ user }: { user: Actor }) {
     <KagoDropdownMenu
       label={t("Account")}
       className="size-7 rounded-full"
+      // Clear of the bar, as the tasks beside it are.
+      sideOffset={10}
       menu={
         <>
           <div className="flex max-w-64 items-center gap-2.5 px-2 pt-1.5 pb-2">

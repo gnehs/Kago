@@ -32,6 +32,7 @@ export function KagoDropdownMenu({
   menu,
   className,
   side,
+  sideOffset = 4,
   align = "end",
   container,
   onOpenChange,
@@ -41,6 +42,8 @@ export function KagoDropdownMenu({
   menu: ReactNode;
   className?: string;
   side?: "top" | "bottom";
+  /** How far from its button the popup hangs. */
+  sideOffset?: number;
   /** Which edge of the button the popup lines up with. */
   align?: "start" | "end";
   /** Where the popup is mounted. An element shown fullscreen has to hold its own menu. */
@@ -72,7 +75,7 @@ export function KagoDropdownMenu({
     >
       {container ? trigger : <KagoTooltip label={label} disabled={open}>{trigger}</KagoTooltip>}
       <Menu.Portal container={container ?? undefined}>
-        <Menu.Positioner side={side} sideOffset={4} align={align} collisionPadding={8} className="z-[800] outline-none">
+        <Menu.Positioner side={side} sideOffset={sideOffset} align={align} collisionPadding={8} className="z-[800] outline-none">
           <Menu.Popup className="kago-glass kago-pop max-h-(--available-height) min-w-44 cursor-default overflow-y-auto overscroll-contain rounded-lg p-1 outline-none select-none">{menu}</Menu.Popup>
         </Menu.Positioner>
       </Menu.Portal>

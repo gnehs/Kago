@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Archive, ArchiveRestore, Ban, CircleUserRound, ClipboardPaste, Copy, Download, ExternalLink, Folder, FolderOpen, FolderPlus, FolderUp, Inbox, Info, PanelTop, Pencil, Play, Plus, RefreshCw, Scissors, SquareArrowOutUpRight, Trash2, Upload, Wallpaper } from "lucide-react";
+import { Archive, ArchiveRestore, Ban, CircleUserRound, ClipboardPaste, Copy, Download, ExternalLink, Folder, FolderInput, FolderOpen, FolderPlus, FolderUp, Inbox, Info, PanelTop, Pencil, Play, Plus, RefreshCw, Scissors, SquareArrowOutUpRight, Trash2, Upload, Wallpaper, X } from "lucide-react";
 import { useFileList, useFolderContents } from "@/api/hooks";
 import { KagoBadge } from "@/components/kago/badge";
 import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { KagoContextMenu, KagoMenuItem, KagoMenuSeparator } from "@/components/kago/menu";
-import { Button } from "@/components/ui/button";
 import { chooseAvatar } from "@/features/auth/AvatarDialog";
 import { KagoWindow } from "@/features/windows/KagoWindow";
 import { OPEN_ITEM_EVENT } from "@/features/workspace/useShortcuts";
@@ -37,6 +36,8 @@ import { t } from "@/lib/i18n";
 // A shared collator sorts a folder of tens of thousands of names far faster than localeCompare does.
 /** The icon of a window showing a folder. */
 const FOLDER = { kind: "folder", type: "", name: "" } as const;
+/** A row of the menu shown where something was dropped: the same row a menu has, lit while it holds the focus. */
+const DROP_ITEM = "kago-menu-item flex h-7 items-center gap-2 rounded-[calc(var(--kago-radius-md)+1px)] [corner-shape:squircle] px-2 text-left outline-none";
 
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 const compare = (a: string, b: string) => collator.compare(a, b);
@@ -497,24 +498,45 @@ export function FileWindowView({ window: frame, roots, isAdmin }: { window: File
       {dropChoice ? (
         <>
           <div className="absolute inset-0 z-20" onClick={() => setDropChoice(null)} />
-          <div className={cn("absolute z-30 kago-glass flex w-44 flex-col gap-1 rounded-lg p-1.5")} style={{ left: Math.max(8, dropChoice.x), top: Math.max(44, dropChoice.y) }}>
-            <span className="truncate px-1.5 py-0.5 text-xs text-muted">
+          {/* What to do with what was dropped is picked from a menu where it was dropped, as any other choice of one action is. Copying is the one already chosen, since it loses nothing. */}
+          <div
+            role="menu"
+            aria-label={t("{count} item | {count} items", { count: dropChoice.sources.length })}
+            className="absolute z-30 kago-glass flex min-w-44 flex-col rounded-lg p-1 select-none"
+            style={{ left: Math.max(8, dropChoice.x), top: Math.max(44, dropChoice.y) }}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") setDropChoice(null);
+              if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+              event.preventDefault();
+              const items = [...event.currentTarget.querySelectorAll("button")];
+              const at = items.indexOf(document.activeElement as HTMLButtonElement);
+              items[(at + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length]?.focus();
+            }}
+          >
+            <span className="max-w-60 truncate px-2 py-1 text-xs text-muted">
               {t("{count} item | {count} items", { count: dropChoice.sources.length })}{dropChoice.destination.path === win.logicalPath && dropChoice.destination.rootSlug === win.rootSlug ? "" : ` → ${folderTitle(dropChoice.destination.rootSlug, dropChoice.destination.path)}`}
             </span>
             {(["copy", "move"] as const).map((type) => (
-              <Button
+              <button
                 key={type}
-                variant={type === "copy" ? "default" : "outline"}
+                role="menuitem"
                 autoFocus={type === "copy"}
+                className={DROP_ITEM}
+                onPointerMove={(event) => event.currentTarget.focus()}
                 onClick={() => {
                   void actions.transfer(type, dropChoice.sources, dropChoice.destination);
                   setDropChoice(null);
                 }}
               >
+                {type === "copy" ? <Copy /> : <FolderInput />}
                 {type === "copy" ? t("Copy here") : t("Move here")}
-              </Button>
+              </button>
             ))}
-            <Button onClick={() => setDropChoice(null)}>{t("Cancel")}</Button>
+            <span role="separator" className="mx-1 my-1 h-px bg-line" />
+            <button role="menuitem" className={DROP_ITEM} onPointerMove={(event) => event.currentTarget.focus()} onClick={() => setDropChoice(null)}>
+              <X />
+              {t("Cancel")}
+            </button>
           </div>
         </>
       ) : null}

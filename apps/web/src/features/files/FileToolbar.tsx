@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { ArrowDown, ArrowUp, ArrowUpDown, Check, ChevronLeft, ChevronRight, Columns3, Ellipsis, FolderPlus, Info, LayoutGrid, List, PanelLeft, RotateCcw, Search, SlidersHorizontal, Square, Star, Upload, X } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, Columns3, Ellipsis, FolderPlus, Info, LayoutGrid, List, PanelLeft, RotateCcw, Search, SlidersHorizontal, Square, Star, Upload, X } from "lucide-react";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { KagoDropdownMenu, KagoMenuItem, KagoMenuSeparator } from "@/components/kago/menu";
 import { KagoTooltip } from "@/components/kago/tooltip";
@@ -141,7 +141,8 @@ export function FileToolbar({ window, folderView, rootName, readonly, canGoBack,
             {/* Passing the view down passes all of it, as it looks now, not just the parts set by hand. */}
             <KagoMenuItem
               closeOnClick={false}
-              icon={own?.recursive ? <Check /> : <span className="size-4" />}
+              // It is switched on and off, so it shows a box that is ticked or empty, not a tick that is there or missing.
+              icon={<span className="flex size-4 items-center justify-center"><input type="checkbox" aria-hidden tabIndex={-1} readOnly checked={Boolean(own?.recursive)} className="kago-checkbox pointer-events-none" /></span>}
               onClick={() => void setFolderView(window.rootSlug, window.logicalPath, own?.recursive ? { recursive: false } : { ...view, recursive: true })}
             >
               {t("Apply to subfolders")}

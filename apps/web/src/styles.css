@@ -611,7 +611,8 @@
 
   /* A row that is chosen: in a menu, a list or a sidebar. */
   .kago-selection,
-  .kago-menu-item[data-highlighted] {
+  .kago-menu-item[data-highlighted],
+  button.kago-menu-item:focus {
     color: #ffffff;
     background: var(--kago-selection);
     box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.18);

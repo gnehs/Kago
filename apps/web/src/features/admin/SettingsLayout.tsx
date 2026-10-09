@@ -33,7 +33,15 @@ const groups: Array<{ label: string; adminOnly?: boolean; sections: Array<{ sect
 export function SettingsLayout({ section, isAdmin, onSection, children }: { section: SettingsSection; isAdmin: boolean; onSection: (section: SettingsSection) => void; children: ReactNode }) {
   const visible = groups.filter((group) => isAdmin || !group.adminOnly);
   // Lying across the top, the list can be longer than the window is wide: the section being shown is kept in sight.
-  const reveal = (button: HTMLButtonElement | null) => button?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  // Only the list is scrolled for that, by hand: asking the browser to show the button scrolls everything it is in.
+  const reveal = (button: HTMLButtonElement | null) => {
+    const list = button?.closest("nav");
+    if (!button || !list) return;
+    const item = button.getBoundingClientRect();
+    const box = list.getBoundingClientRect();
+    list.scrollLeft += item.left < box.left ? item.left - box.left - 8 : item.right > box.right ? item.right - box.right + 8 : 0;
+    list.scrollTop += item.top < box.top ? item.top - box.top - 8 : item.bottom > box.bottom ? item.bottom - box.bottom + 8 : 0;
+  };
 
   return (
     // In a window too narrow for a column of its own, the list lies across the top instead and scrolls sideways.

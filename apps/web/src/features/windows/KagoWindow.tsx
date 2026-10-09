@@ -59,7 +59,8 @@ export function KagoWindow({
       data-inactive={window.focused ? undefined : ""}
       data-maximized={filled ? "" : undefined}
       className={cn(
-        "kago-window absolute flex flex-col overflow-hidden bg-surface",
+        // Clipped, not hidden, for the reason the desktop is: nothing that takes the focus may scroll a window's frame.
+        "kago-window absolute flex flex-col overflow-clip bg-surface",
         filled ? "inset-0" : "rounded-lg",
         window.focused ? "shadow-window-active" : "shadow-window",
         className

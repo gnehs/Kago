@@ -98,8 +98,10 @@ function Canvas({ roots, user }: { roots: Root[]; user: Actor }) {
     return () => observer.disconnect();
   }, []);
 
+  // Clipped rather than hidden: a window may hang over the edge, and anything that takes the focus in the part that
+  // does would scroll a hidden box to show it, shifting the whole desktop with nothing to scroll it back.
   return (
-    <div ref={element} data-wallpaper={wallpaper ? "" : undefined} className="group/canvas relative isolate min-w-0 flex-1 overflow-hidden">
+    <div ref={element} data-wallpaper={wallpaper ? "" : undefined} className="group/canvas relative isolate min-w-0 flex-1 overflow-clip">
       {wallpaper ? <img key={wallpaper} alt="" aria-hidden draggable={false} src={wallpaperUrl(wallpaper)} className="pointer-events-none absolute inset-0 size-full object-cover select-none" /> : null}
       <DesktopIcons roots={roots} isAdmin={user.role === "ADMIN"} />
       {windows.map((window) => (
