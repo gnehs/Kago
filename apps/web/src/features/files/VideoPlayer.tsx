@@ -356,7 +356,7 @@ export function VideoPlayer({
       {hdr ? <GlassBackdrop videoRef={videoRef} shown={controlsShown || loading || Boolean(notice)} menuOpen={menuOpen} /> : null}
 
       {(notice ?? (loading ? t("Loading…") : null)) ? (
-        <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-center">
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <span className="kago-player-glass rounded-full px-3 py-1 text-xs">{notice ?? t("Loading…")}</span>
         </div>
       ) : playing ? null : (
