@@ -46,6 +46,8 @@ const STAGE = 320;
 /** How much of that the circle in its middle takes, which is what is kept. The rest shows what is around it. */
 const FRAME = 0.8;
 const MAX_ZOOM = 5;
+/** Two fingers closer together than this are not measured: a pixel either way would double the picture or halve it. */
+const MIN_PINCH = 24;
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
@@ -74,8 +76,9 @@ function AvatarCropper({ request }: { request: AvatarRequest }) {
   const [failed, setFailed] = useState(false);
   const [view, setView] = useState<View>({ zoom: 1, x: 0.5, y: 0.5 });
   const [saving, setSaving] = useState(false);
-  // Where the pointer that is dragging the picture was last seen.
-  const [drag, setDrag] = useState<{ x: number; y: number } | null>(null);
+  // Where each pointer that is down on the picture was last seen: one drags it, two pinch it.
+  const pointers = useRef(new Map<number, { x: number; y: number }>());
+  const [dragging, setDragging] = useState(false);
 
   // As wide as it turned out to be: a narrow screen leaves it less room.
   const [side, setSide] = useState(STAGE);
@@ -84,9 +87,31 @@ function AvatarCropper({ request }: { request: AvatarRequest }) {
   // How many pixels of the screen one of the picture takes.
   const scale = picture ? (frame / Math.min(picture.width, picture.height)) * view.zoom : 0;
   const change = (next: (view: View) => View) => picture && setView((current) => settle(picture, next(current)));
-  const zoomBy = (factor: number) => change((current) => ({ ...current, zoom: current.zoom * factor }));
-  /** Moves the picture under the circle by this many pixels of the screen. */
-  const moveBy = (dx: number, dy: number) => picture && change((current) => ({ ...current, x: current.x - dx / (picture.width * scale), y: current.y - dy / (picture.height * scale) }));
+  /**
+   * Zooms by `factor` and moves the picture by (`dx`, `dy`) pixels of the screen, both at once as two fingers do.
+   * Whatever of the picture is at `at`, counted from the middle of the stage, stays under it: under the fingers,
+   * or under the cursor as the wheel turns.
+   */
+  const transform = (factor: number, dx = 0, dy = 0, at = { x: 0, y: 0 }) =>
+    change((current) => {
+      if (!picture) return current;
+      const zoom = clamp(current.zoom * factor, 1, MAX_ZOOM);
+      const base = frame / Math.min(picture.width, picture.height);
+      const before = base * current.zoom;
+      const after = base * zoom;
+      return {
+        zoom,
+        x: current.x + at.x / (picture.width * before) - (at.x + dx) / (picture.width * after),
+        y: current.y + at.y / (picture.height * before) - (at.y + dy) / (picture.height * after)
+      };
+    });
+  const zoomBy = (factor: number) => transform(factor);
+  const moveBy = (dx: number, dy: number) => transform(1, dx, dy);
+  /** Where a point of the screen is, counted from the middle of the stage. */
+  const fromMiddle = (node: HTMLElement, x: number, y: number) => {
+    const rect = node.getBoundingClientRect();
+    return { x: x - rect.left - rect.width / 2, y: y - rect.top - rect.height / 2 };
+  };
 
   useEffect(() => {
     const node = stage.current;
@@ -102,11 +127,13 @@ function AvatarCropper({ request }: { request: AvatarRequest }) {
     if (!node || !picture) return;
     const onWheel = (event: WheelEvent) => {
       event.preventDefault();
-      setView((current) => settle(picture, { ...current, zoom: current.zoom * Math.exp(-event.deltaY * 0.002) }));
+      // A pinch on a trackpad arrives as a wheel with Ctrl held, in much smaller steps than a wheel turns in.
+      transform(Math.exp(-event.deltaY * (event.ctrlKey ? 0.01 : 0.002)), 0, 0, fromMiddle(node, event.clientX, event.clientY));
     };
     node.addEventListener("wheel", onWheel, { passive: false });
     return () => node.removeEventListener("wheel", onWheel);
-  }, [picture]);
+    // `transform` is made anew each time, out of these two.
+  }, [picture, frame]);
 
   async function save() {
     let crop: AvatarCrop | undefined;
@@ -140,20 +167,38 @@ function AvatarCropper({ request }: { request: AvatarRequest }) {
             role="group"
             aria-label={t("Drag the picture to place it in the circle.")}
             tabIndex={0}
-            className={cn("relative mx-auto aspect-square w-full touch-none overflow-hidden rounded-md bg-neutral-900 outline-none select-none focus-visible:ring-2 focus-visible:ring-accent/50", drag ? "cursor-grabbing" : "cursor-grab")}
+            className={cn("relative mx-auto aspect-square w-full touch-none overflow-hidden rounded-md bg-neutral-900 outline-none select-none focus-visible:ring-2 focus-visible:ring-accent/50", dragging ? "cursor-grabbing" : "cursor-grab")}
             style={{ maxWidth: STAGE }}
             onPointerDown={(event) => {
-              if (!event.isPrimary || event.button !== 0) return;
+              // A third finger has nothing to add.
+              if (event.button !== 0 || pointers.current.size >= 2) return;
               event.currentTarget.setPointerCapture(event.pointerId);
-              setDrag({ x: event.clientX, y: event.clientY });
+              pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+              setDragging(true);
             }}
             onPointerMove={(event) => {
-              if (!drag) return;
-              moveBy(event.clientX - drag.x, event.clientY - drag.y);
-              setDrag({ x: event.clientX, y: event.clientY });
+              const last = pointers.current.get(event.pointerId);
+              if (!last) return;
+              const next = { x: event.clientX, y: event.clientY };
+              pointers.current.set(event.pointerId, next);
+              const other = [...pointers.current].find(([id]) => id !== event.pointerId)?.[1];
+              if (!other) {
+                moveBy(next.x - last.x, next.y - last.y);
+                return;
+              }
+              // Two fingers: the picture grows by as much as they moved apart, and follows the point midway between them.
+              const apart = (from: { x: number; y: number }) => Math.max(MIN_PINCH, Math.hypot(from.x - other.x, from.y - other.y));
+              const middle = { x: (last.x + other.x) / 2, y: (last.y + other.y) / 2 };
+              transform(apart(next) / apart(last), (next.x - last.x) / 2, (next.y - last.y) / 2, fromMiddle(event.currentTarget, middle.x, middle.y));
             }}
-            onPointerUp={() => setDrag(null)}
-            onPointerCancel={() => setDrag(null)}
+            onPointerUp={(event) => {
+              pointers.current.delete(event.pointerId);
+              setDragging(pointers.current.size > 0);
+            }}
+            onPointerCancel={(event) => {
+              pointers.current.delete(event.pointerId);
+              setDragging(pointers.current.size > 0);
+            }}
             onKeyDown={(event) => {
               const step = event.shiftKey ? 32 : 8;
               const moves: Record<string, () => void> = {
