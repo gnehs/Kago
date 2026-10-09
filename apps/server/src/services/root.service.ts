@@ -7,6 +7,7 @@ import { row, rows } from "../db/db.js";
 import { AppError } from "../lib/errors.js";
 import { id, now } from "../lib/ids.js";
 import type { SecretBox } from "../lib/secret-box.js";
+import { isSystemFile } from "../lib/system-files.js";
 import { normalizeRemoteConfig, publicRemoteConfig, remoteConfigSchema, type RemoteConfig } from "../storage/providers.js";
 import type { Root } from "./types.js";
 
@@ -76,7 +77,7 @@ export class RootService {
     const known = new Set(this.list().filter((root) => root.provider === "local").map((root) => root.base_path));
     const created: Root[] = [];
     for (const entry of entries) {
-      if (!entry.isDirectory() || /^[.@#]/.test(entry.name)) continue;
+      if (!entry.isDirectory() || /^[.@#]/.test(entry.name) || isSystemFile(entry.name)) continue;
       const basePath = path.join(dataRoot, entry.name);
       if (known.has(basePath)) continue;
       created.push(this.insert(this.availableSlug(entry.name), entry.name.slice(0, 120), basePath, false, "local", null));

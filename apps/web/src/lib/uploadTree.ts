@@ -6,8 +6,34 @@ export type UploadTree = {
   files: Array<{ file: File; dir: string }>;
 };
 
-/** Finder litters folders with these; they are never what the user meant to upload. */
-const ignoredNames = new Set([".DS_Store"]);
+/**
+ * What Finder, Explorer and NAS software litter folders with; they are never what the user meant to upload, and
+ * the server lists a folder without them. Kept in step with `system-files.ts` there.
+ */
+const systemNames = new Set([
+  ".ds_store",
+  ".appledouble",
+  ".lsoverride",
+  ".spotlight-v100",
+  ".trashes",
+  ".fseventsd",
+  ".temporaryitems",
+  ".documentrevisions-v100",
+  ".volumeicon.icns",
+  ".apdisk",
+  ".com.apple.timemachine.donotpresent",
+  "icon\r",
+  "thumbs.db",
+  "ehthumbs.db",
+  "ehthumbs_vista.db",
+  "desktop.ini",
+  "$recycle.bin",
+  "system volume information",
+  "@eadir",
+  ".@__thumb"
+]);
+
+const isSystemFile = (name: string) => name.startsWith("._") || systemNames.has(name.toLowerCase());
 
 const joinRelative = (dir: string, name: string) => (dir ? `${dir}/${nfc(name)}` : nfc(name));
 
@@ -18,7 +44,7 @@ export function pickedFolderTree(files: File[]): UploadTree {
   const dirs = new Set<string>();
   const tree: UploadTree = { dirs: [], files: [] };
   for (const file of files) {
-    if (ignoredNames.has(file.name)) continue;
+    if (isSystemFile(file.name)) continue;
     const parts = file.webkitRelativePath.split("/").slice(0, -1).map(nfc);
     for (let depth = 1; depth <= parts.length; depth++) dirs.add(parts.slice(0, depth).join("/"));
     tree.files.push({ file, dir: parts.join("/") });
@@ -42,7 +68,7 @@ async function readChildren(entry: FileSystemDirectoryEntry): Promise<FileSystem
 }
 
 async function walk(entry: FileSystemEntry, dir: string, tree: UploadTree): Promise<void> {
-  if (ignoredNames.has(entry.name)) return;
+  if (isSystemFile(entry.name)) return;
   if (entry.isFile) {
     tree.files.push({ file: await readFile(entry as FileSystemFileEntry), dir });
     return;

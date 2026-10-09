@@ -11,6 +11,7 @@ import { assertNameAvailable, nfc } from "../lib/filename.js";
 import { readFinderTags, writeFinderTags } from "../lib/finder-tags.js";
 import { MAX_SQLITE_PAGE, sqliteOverview, sqliteRows } from "../lib/sqlite-preview.js";
 import { isPictureFormat, parseSubtitleName } from "../lib/subtitles.js";
+import { isSystemFile } from "../lib/system-files.js";
 import { Thumbnailer, type ThumbnailSource } from "../lib/thumbnailer.js";
 import type { ZipEntry } from "../lib/zip-stream.js";
 import type { AuditService } from "./audit.service.js";
@@ -125,7 +126,7 @@ export class FsService {
     const finderTags = await readFinderTags(safe.absolutePath, entries.map((entry) => entry.name));
     const listedItems = await Promise.all(
       entries
-        .filter((entry) => !entry.name.includes("\0"))
+        .filter((entry) => !entry.name.includes("\0") && !isSystemFile(entry.name))
         .map(async (entry) => {
           const itemPath = path.join(safe.absolutePath, entry.name);
           const itemStat = await fsp.lstat(itemPath);
@@ -160,7 +161,7 @@ export class FsService {
     // Where the folders listed are a server's shares, nothing can be added beside them or done to them.
     const readonly = Boolean(safe.root.readonly) || this.storage.remote.isFixed(safe.root, path.posix.join(safe.logicalPath, "child"));
     const items = (await this.storage.remote.list(safe.root, safe.logicalPath))
-      .filter((entry) => !entry.name.includes("\0"))
+      .filter((entry) => !entry.name.includes("\0") && !isSystemFile(entry.name))
       .map((entry) => {
         const itemLogicalPath = path.posix.join(safe.logicalPath, entry.name);
         if (!this.permissions.can(actor, "view", safe.root, itemLogicalPath).allowed && !this.permissions.canReachDescendant(actor, safe.root, itemLogicalPath)) return null;

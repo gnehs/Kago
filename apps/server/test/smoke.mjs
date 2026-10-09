@@ -339,6 +339,16 @@ test("minimum file-manager demo flow", async () => {
     const publicList = await scopedUser.get("/api/fs/list?rootSlug=photos&path=/public");
     assert.equal(publicList.statusCode, 200);
     assert.ok(publicList.json.items.some((item) => item.name === "readme.txt"));
+
+    // What the system left behind is not listed, in whatever case it was written, but stays reachable by path.
+    const litter = [".DS_Store", "Thumbs.db", "desktop.ini", "._readme.txt", "@eaDir"];
+    for (const name of litter.slice(0, 4)) await writeFile(path.join(fixture.dataDir, "photos", "public", name), "litter");
+    await mkdir(path.join(fixture.dataDir, "photos", "public", "@eaDir"));
+    await writeFile(path.join(fixture.dataDir, "photos", "public", "thumbs.db.txt"), "kept");
+    const tidyList = (await admin.get("/api/fs/list?rootSlug=photos&path=/public")).json.items.map((item) => item.name);
+    assert.deepEqual(tidyList.filter((name) => litter.includes(name)), []);
+    assert.ok(tidyList.includes("thumbs.db.txt"));
+    assert.equal((await admin.get("/api/fs/download?rootSlug=photos&path=/public/Thumbs.db")).payload, "litter");
     assert.equal((await scopedUser.get("/api/fs/list?rootSlug=photos&path=/private")).statusCode, 403);
 
     const audit = await admin.get("/api/audit");
