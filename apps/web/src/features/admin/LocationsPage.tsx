@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { HardDrive, Lock, Plus, Server, TriangleAlert, X } from "lucide-react";
+import { ArrowDownUp, Globe, HardDrive, Lock, Network, Plus, Server, SquareTerminal, TriangleAlert, X } from "lucide-react";
 import { api } from "@/api/client";
 import { useStorage } from "@/api/hooks";
+import { KagoChoice } from "@/components/kago/choice";
 import { KagoEmptyState } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { Button } from "@/components/ui/button";
-import { Checkbox, Field, Input, Select } from "@/components/ui/input";
+import { Checkbox, Field, FieldGroup, Input, Select } from "@/components/ui/input";
 import { KagoPasswordInput } from "@/components/kago/password-input";
 import { Card, Page, Row, RowList, Section } from "@/components/kago/page";
 import { KagoStatusIcon } from "@/components/kago/status-icon";
@@ -53,7 +54,7 @@ export function LocationsPage({ roots }: { roots: Root[] }) {
   }
 
   async function remove(root: Root) {
-    if (!(await confirmAction({ title: t("Remove {name}?", { name: root.name }), description: t("Its files stay where they are. Share links, permission rules and tags that point into it are removed."), confirmLabel: t("Remove"), destructive: true }))) return;
+    if (!(await confirmAction({ title: t("Remove this location?"), subject: { icon: <KagoStatusIcon large>{root.readonly ? <Lock /> : <Server />}</KagoStatusIcon>, name: root.name, detail: [providerLabel(root.provider), remoteAddress(storage.data?.roots.find((item) => item.id === root.id))].filter(Boolean).join(" · ") }, description: t("Its files stay where they are. Share links, permission rules and tags that point into it are removed."), confirmLabel: t("Remove"), destructive: true }))) return;
     await run(async () => {
       await api(`/api/roots/${root.id}`, { method: "DELETE" });
       setEditing(null);
@@ -150,6 +151,9 @@ function remoteAddress(root?: RemoteRoot) {
   return [host, root.remote.base].filter(Boolean).join(host && !host.includes("/") && !root.remote.base.startsWith("/") ? "/" : " · ");
 }
 
+/** What stands for each kind of remote on its card; a kind the interface has not heard of is a server like any other. */
+const providerIcons: Record<string, React.ReactNode> = { smb: <Network />, sftp: <SquareTerminal />, webdav: <Globe />, ftp: <ArrowDownUp /> };
+
 function RemoteForm({ providers, root, onSaved }: { providers: RemoteProvider[]; root: RemoteRoot | null; onSaved: () => Promise<void> }) {
   const [type, setType] = useState(root?.remote.type ?? providers[0]?.type ?? "");
   const [name, setName] = useState(root?.name ?? "");
@@ -194,13 +198,16 @@ function RemoteForm({ providers, root, onSaved }: { providers: RemoteProvider[];
     <form className="grid grid-cols-2 gap-3" onSubmit={submit}>
       {/* What kind of remote a location is stays what it was made as; everything else about it can be changed. */}
       {root ? null : (
-        <Field label={t("Kind")}>
-          <Select value={type} onChange={(event) => { setType(event.target.value); setParams({}); setBase(""); }}>
-            {providers.map((item) => <option key={item.type} value={item.type}>{item.label}</option>)}
-          </Select>
-        </Field>
+        <FieldGroup label={t("Kind")} className="col-span-2">
+          <KagoChoice
+            label={t("Kind")}
+            value={type}
+            onChange={(next) => { if (next === type) return; setType(next); setParams({}); setBase(""); }}
+            options={providers.map((item) => ({ value: item.type, label: item.label, icon: providerIcons[item.type] ?? <Server /> }))}
+          />
+        </FieldGroup>
       )}
-      <Field label={t("Name")} className={root ? "col-span-2" : undefined}><Input autoFocus value={name} onChange={(event) => setName(event.target.value)} /></Field>
+      <Field label={t("Name")} className="col-span-2"><Input autoFocus value={name} onChange={(event) => setName(event.target.value)} /></Field>
       {provider.fields.map((field) =>
         field.kind === "boolean" ? (
           <Checkbox key={field.key} className="col-span-2" label={label(field.label)} checked={Boolean(params[field.key])} onChange={(event) => set(field.key, event.target.checked)} />

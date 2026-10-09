@@ -22,6 +22,17 @@ export function Field({ label, hint, className, children }: { label: string; hin
   );
 }
 
+/** A field made of more than one control (cards to choose from): named the same way, but not a `<label>`, which would press the first of them. */
+export function FieldGroup({ label, hint, className, children }: { label: string; hint?: string; className?: string; children: React.ReactNode }) {
+  return (
+    <div className={cn("flex min-w-0 flex-col gap-1", className)}>
+      <span className="text-xs font-medium text-muted">{label}</span>
+      {children}
+      {hint ? <span className="text-xs text-faint">{hint}</span> : null}
+    </div>
+  );
+}
+
 export function Checkbox({ label, className, ...props }: Omit<React.ComponentProps<"input">, "type"> & { label: React.ReactNode }) {
   return (
     <label className={cn("inline-flex items-center gap-1.5 text-ink", className)}>

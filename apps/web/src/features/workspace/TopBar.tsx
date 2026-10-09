@@ -156,7 +156,7 @@ function TaskStatus() {
       className={cn("size-7", activeCount > 0 && "text-accent hover:text-accent")}
       // It hangs a little below the bar rather than from its edge, and keeps off the side of the screen.
       sideOffset={10}
-      // Nothing is ruled across the glass: a line drawn on it is lighter than what shows through and reads as a scratch. The tasks lie on a sheet of their own, and space sets the rest apart.
+      // Nothing is ruled across the glass: a line drawn on it is lighter than what shows through and reads as a scratch. Each task lies on a slab of its own, and space sets the rest apart.
       panelClassName="flex w-80 flex-col gap-2"
       panel={
         <>
@@ -167,7 +167,7 @@ function TaskStatus() {
           {visible.length === 0 ? (
             <KagoEmptyState className="px-4 pt-2 pb-4" icon={<ListChecks />} title={t("No tasks right now")} />
           ) : (
-            <div className="kago-card flex max-h-96 flex-col divide-y divide-line overflow-y-auto rounded-md px-3">
+            <div className="flex max-h-96 flex-col gap-1.5 overflow-y-auto">
               {visible.map((task) => <TaskRow key={task.id} task={task} />)}
             </div>
           )}

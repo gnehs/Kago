@@ -10,6 +10,7 @@ import { Field } from "@/components/ui/input";
 import { KagoPasswordInput } from "@/components/kago/password-input";
 import { roleLabels } from "@/features/admin/UsersPage";
 import { Card, Page, Row, RowList, SettingRow } from "@/components/kago/page";
+import { KagoStatusIcon } from "@/components/kago/status-icon";
 import { t } from "@/lib/i18n";
 import { run } from "@/lib/run";
 import { confirmAction } from "@/stores/dialogs";
@@ -43,7 +44,7 @@ export function AccountPage({ user }: { user: Actor }) {
   const canSubmit = (Boolean(currentPassword) || !hasPassword) && newPassword.length >= 8 && confirmPassword === newPassword;
 
   async function unlink(identity: SsoIdentity) {
-    if (!(await confirmAction({ title: t("Unlink {provider}?", { provider: issuerName(identity.issuer) }), description: t("Other devices signed in through it are signed out. Signing in through it again links it back if its email address is this account’s."), confirmLabel: t("Unlink"), destructive: true }))) return;
+    if (!(await confirmAction({ title: t("Unlink this identity?"), subject: { icon: <KagoStatusIcon large><Fingerprint /></KagoStatusIcon>, name: issuerName(identity.issuer), detail: identity.email ?? identity.displayName ?? identity.subject }, description: t("Other devices signed in through it are signed out. Signing in through it again links it back if its email address is this account’s."), confirmLabel: t("Unlink"), destructive: true }))) return;
     await run(async () => {
       await api(`/api/auth/identities/${identity.id}`, { method: "DELETE" });
       await queryClient.invalidateQueries({ queryKey: ["auth", "identities"] });

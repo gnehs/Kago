@@ -14,7 +14,7 @@ import { toast } from "@/stores/toast";
 import { guardWindowClose, useWorkspaceStore, type PreviewWindow } from "@/stores/workspace";
 import type { FileMeta } from "@/types/kago";
 import type { CodeEditorHandle } from "./CodeEditor";
-import { FileIcon } from "@/components/kago/file-icon";
+import { FileIcon, FileTile } from "@/components/kago/file-icon";
 import { t } from "@/lib/i18n";
 
 // CodeMirror is only downloaded by someone who opens a text file.
@@ -78,7 +78,7 @@ export function TextPreviewWindow({ window }: { window: PreviewWindow }) {
 
   useEffect(() => {
     if (!dirty) return;
-    const withdraw = guardWindowClose(window.id, () => confirmAction({ title: t("Discard the changes to “{name}”?", { name: item.name }), description: t("Unsaved changes will be lost."), confirmLabel: t("Discard"), destructive: true }));
+    const withdraw = guardWindowClose(window.id, () => confirmAction({ title: t("Discard the changes?"), subject: { icon: <FileTile item={item} className="size-12" />, name: item.name }, description: t("Unsaved changes will be lost."), confirmLabel: t("Discard"), destructive: true }));
     const warn = (event: BeforeUnloadEvent) => event.preventDefault();
     globalThis.addEventListener("beforeunload", warn);
     return () => {
@@ -99,7 +99,7 @@ export function TextPreviewWindow({ window }: { window: PreviewWindow }) {
         meta = await write(baseMtime.current);
       } catch (error) {
         if (!(error instanceof ApiError) || error.code !== "FILE_CHANGED") throw error;
-        const overwrite = await confirmAction({ title: t("The file changed after you opened it"), description: t("Saving overwrites the changes made elsewhere."), confirmLabel: t("Overwrite"), destructive: true });
+        const overwrite = await confirmAction({ title: t("The file changed after you opened it"), subject: { icon: <FileTile item={item} className="size-12" />, name: item.name }, description: t("Saving overwrites the changes made elsewhere."), confirmLabel: t("Overwrite"), destructive: true });
         if (!overwrite) return;
         meta = await write();
       }

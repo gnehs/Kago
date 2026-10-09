@@ -616,6 +616,15 @@
       var(--kago-badge-edge);
   }
 
+  /*
+   * The far end of a row that says how it stands: a plate tinted with the colour of its state, as a badge is,
+   * but part of the row and as tall as it, holding a figure or a glyph.
+   */
+  .kago-cap {
+    background: linear-gradient(color-mix(in srgb, currentColor 8%, var(--kago-surface)), color-mix(in srgb, currentColor 18%, var(--kago-surface)));
+    box-shadow: inset 1px 0 0 color-mix(in srgb, currentColor 26%, var(--kago-surface));
+  }
+
   /* A row that is chosen: in a menu, a list or a sidebar. */
   .kago-selection,
   .kago-menu-item[data-highlighted],

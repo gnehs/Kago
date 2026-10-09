@@ -5,6 +5,7 @@ import { useRoots, useTrash } from "@/api/hooks";
 import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
 import { Button } from "@/components/ui/button";
 import { Page, Row, RowList } from "@/components/kago/page";
+import { KagoStatusIcon } from "@/components/kago/status-icon";
 import { formatUnixDate } from "@/lib/format";
 import { baseName, displayPath } from "@/lib/paths";
 import { run } from "@/lib/run";
@@ -29,7 +30,8 @@ export function TrashPage() {
   async function empty() {
     const confirmed = await confirmAction({
       title: t("Empty the Trash?"),
-      description: t("The {count} item in the Trash will be deleted for good. This can’t be undone. | The {count} items in the Trash will be deleted for good. This can’t be undone.", { count: trash.data?.length ?? 0 }),
+      subject: { icon: <KagoStatusIcon large tone="danger"><Trash2 /></KagoStatusIcon>, name: t("Trash"), detail: t("{count} item | {count} items", { count: trash.data?.length ?? 0 }) },
+      description: t("Everything in it will be deleted for good. This can’t be undone."),
       confirmLabel: t("Empty"),
       destructive: true
     });

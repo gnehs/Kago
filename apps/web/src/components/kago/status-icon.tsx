@@ -16,9 +16,9 @@ const tones = {
  * for whoever points at it or cannot see it, and anything that has to be read without doing either belongs in the
  * line under the name as well.
  */
-export function KagoStatusIcon({ tone = "neutral", label, className, children }: { tone?: keyof typeof tones; /** The state in words. */ label?: string; className?: string; children: ReactNode }) {
+export function KagoStatusIcon({ tone = "neutral", label, large, className, children }: { tone?: keyof typeof tones; /** The state in words. */ label?: string; /** As big as an app's icon, where it stands for the thing itself: what a dialog asks about. */ large?: boolean; className?: string; children: ReactNode }) {
   const plate = (
-    <span role="img" aria-label={label} className={cn("kago-badge flex size-7 shrink-0 items-center justify-center rounded-full", tones[tone], className)}>
+    <span role="img" aria-label={label} className={cn("kago-badge flex shrink-0 items-center justify-center rounded-full", large ? "size-12 [&>.lucide]:size-5" : "size-7", tones[tone], className)}>
       {children}
     </span>
   );

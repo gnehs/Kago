@@ -1,5 +1,7 @@
+import { createElement } from "react";
 import type { QueryClient } from "@tanstack/react-query";
 import { api } from "@/api/client";
+import { ExternalAppIcon } from "@/components/kago/external-app-icon";
 import { t } from "@/lib/i18n";
 import { run } from "@/lib/run";
 import { confirmAction } from "@/stores/dialogs";
@@ -43,7 +45,8 @@ export function openExternalApp(app: ExternalApp) {
 
 export async function removeExternalApp(queryClient: QueryClient, app: ExternalApp) {
   const confirmed = await confirmAction({
-    title: t("Remove {name}?", { name: app.name }),
+    title: t("Remove this shortcut?"),
+    subject: { icon: createElement(ExternalAppIcon, { name: app.name, icon: app.icon, leaves: !app.embed }), name: app.name, detail: app.url },
     description: app.shared ? t("The shortcut is removed from everyone’s desktop. The service itself is not touched.") : t("Only the shortcut is removed. The service itself is not touched."),
     confirmLabel: t("Remove"),
     destructive: true

@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, TriangleAlert, Upload } from "lucide-react";
+import { AppWindow, ChevronRight, ExternalLink, TriangleAlert, Upload } from "lucide-react";
 import { create } from "zustand";
 import { api, libraryIconUrl } from "@/api/client";
 import { useFrameProbe, useIconSuggestions } from "@/api/hooks";
+import { KagoChoice } from "@/components/kago/choice";
 import { KagoDialog, KagoDialogActions } from "@/components/kago/dialog";
 import { KagoTooltip } from "@/components/kago/tooltip";
 import { Button } from "@/components/ui/button";
-import { Checkbox, Field, Input, Select } from "@/components/ui/input";
+import { Checkbox, Field, FieldGroup, Input } from "@/components/ui/input";
 import { KagoPasswordInput } from "@/components/kago/password-input";
 import { t } from "@/lib/i18n";
 import { run } from "@/lib/run";
@@ -171,12 +172,17 @@ function AppForm({ app, isAdmin }: { app: ExternalApp | null; isAdmin: boolean }
         <Input value={url} maxLength={2048} inputMode="url" autoCapitalize="off" autoCorrect="off" spellCheck={false} placeholder="http://nas.local:8096" onChange={(event) => setUrl(event.target.value)} onBlur={takeSignInOutOfAddress} />
       </Field>
       <div className="flex flex-col gap-1">
-        <Field label={t("Opens in")}>
-          <Select value={embed ? "window" : "tab"} onChange={(event) => setEmbed(event.target.value === "window")}>
-            <option value="tab">{t("A new tab")}</option>
-            <option value="window">{t("A window in Kago")}</option>
-          </Select>
-        </Field>
+        <FieldGroup label={t("Opens in")}>
+          <KagoChoice
+            label={t("Opens in")}
+            value={embed ? "window" : "tab"}
+            onChange={(value) => setEmbed(value === "window")}
+            options={[
+              { value: "tab", label: t("A new tab"), description: t("Works with every service"), icon: <ExternalLink /> },
+              { value: "window", label: t("A window in Kago"), description: t("The service has to allow it"), icon: <AppWindow /> }
+            ]}
+          />
+        </FieldGroup>
         {/* Whether a service lets itself be framed is the service's to say. What it says is told here, before a blank window does. */}
         {!embed ? null : mixed ? (
           <span className="text-xs text-warning">{t("Kago is served over HTTPS and this address is not, so the browser refuses to show it inside Kago. Use an https:// address, or a new tab.")}</span>

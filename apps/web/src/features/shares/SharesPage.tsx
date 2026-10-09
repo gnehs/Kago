@@ -41,7 +41,7 @@ export function SharesPage({ roots }: { roots: Root[] }) {
   }
 
   async function remove(share: ShareLink) {
-    if (!(await confirmAction({ title: t("Delete this share link?"), description: t("Links you’ve already sent stop working right away."), confirmLabel: t("Delete"), destructive: true }))) return;
+    if (!(await confirmAction({ title: t("Delete this share link?"), subject: { icon: <KagoStatusIcon large tone={share.disabled ? "neutral" : "success"}><Share2 /></KagoStatusIcon>, name: baseName(share.path) || rootName(share.root_id), detail: displayPath(rootName(share.root_id), share.path) }, description: t("Links you’ve already sent stop working right away."), confirmLabel: t("Delete"), destructive: true }))) return;
     await run(async () => {
       await api(`/api/shares/${share.id}`, { method: "DELETE" });
       await refresh();

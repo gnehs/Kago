@@ -1,7 +1,12 @@
+import type { ReactNode } from "react";
 import { create } from "zustand";
+
+/** What a dialog asks about, shown as the thing itself: its icon, its name under it, and a line about it. */
+export type DialogSubject = { icon: ReactNode; name: string; detail?: string };
 
 export type DialogRequest = {
   title: string;
+  subject?: DialogSubject;
   description?: string;
   confirmLabel?: string;
   destructive?: boolean;
@@ -23,7 +28,7 @@ export function promptText(options: { title: string; description?: string; defau
   return open({ ...options, input: { defaultValue: options.defaultValue ?? "", placeholder: options.placeholder } });
 }
 
-export async function confirmAction(options: { title: string; description?: string; confirmLabel?: string; destructive?: boolean }) {
+export async function confirmAction(options: { title: string; subject?: DialogSubject; description?: string; confirmLabel?: string; destructive?: boolean }) {
   return (await open(options)) !== null;
 }
 
