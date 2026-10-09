@@ -649,7 +649,10 @@ export class FsService {
     if (medium && source !== "image") return null;
 
     if (source) {
-      const key = createHash("sha256").update(`${safe.root.id}:${safe.logicalPath}:${stat.mtimeMs}:${stat.size}${medium ? ":medium" : ""}`).digest("hex");
+      // Thumbnails used to be laid on white. A picture that may be transparent is keyed apart from the one kept of it
+      // then, so it is drawn again; a JPEG has nothing transparent in it, nor has the one made of a HEIF or a RAW.
+      const clear = source === "image" && !rendition && contentType !== "image/jpeg";
+      const key = createHash("sha256").update(`${safe.root.id}:${safe.logicalPath}:${stat.mtimeMs}:${stat.size}${medium ? ":medium" : ""}${clear ? ":clear" : ""}`).digest("hex");
       let picture: string | undefined;
       if (rendition) {
         const file = await onDisk();

@@ -4,8 +4,10 @@
 ARG RCLONE_VERSION=1.75.1
 
 # Build stages run on the builder's native platform so multi-arch builds skip
-# QEMU emulation. This is safe because the production deps are pure JS; if a
-# native addon is ever added, drop --platform here.
+# QEMU emulation. This is safe because nothing is compiled for the image there:
+# the one production dep with a binary of its own, sharp, ships it prebuilt, and
+# the deploy below fetches the one for the platform the image is for. If a native
+# addon that has to be compiled is ever added, drop --platform here.
 FROM --platform=$BUILDPLATFORM node:24-bookworm-slim AS base
 WORKDIR /app
 ENV PNPM_HOME="/pnpm"
@@ -23,10 +25,14 @@ RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
   pnpm install --frozen-lockfile
 
 FROM deps AS build
+# Set by BuildKit to the architecture the image is for: amd64 or arm64.
+ARG TARGETARCH
 COPY . .
 RUN pnpm build
+# Node's name for amd64 is x64; the runtime image below is Debian, so glibc.
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
-  pnpm --filter @kago/server deploy --prod /prod
+  pnpm --filter @kago/server deploy --prod --os=linux --libc=glibc \
+    --cpu="$([ "$TARGETARCH" = amd64 ] && echo x64 || echo "$TARGETARCH")" /prod
 
 # rclone is what reaches remote locations (SMB, SFTP, WebDAV, ...); it is one static binary.
 FROM rclone/rclone:${RCLONE_VERSION} AS rclone

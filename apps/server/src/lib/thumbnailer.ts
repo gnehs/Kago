@@ -17,8 +17,9 @@ const TIMEOUT_MS = 30_000;
 const MAX_JOBS = 3;
 /** Files that could not be drawn are remembered, so a folder full of them is not retried on every visit. */
 const MAX_REMEMBERED_FAILURES = 2000;
+/** What ffmpeg hands over is held whole in memory: a desktop background's worth of pixels, hardly packed, fits. */
+const MAX_FRAME_BYTES = 256 * 1024 * 1024;
 
-// AVIF has no place for transparency with the encoders at hand, so pictures are laid on white first.
 /**
  * A square cut out of a picture, in parts of the picture so it does not matter how large the copy being cut is:
  * `x` and `y` are its corner as parts of the width and height, `size` its side as a part of the shorter of the two.
@@ -31,17 +32,39 @@ const part = (value: number) => value.toFixed(6);
 const cut = (square: true | Crop) =>
   square === true ? "crop='min(iw,ih)':'min(iw,ih)'," : `crop='max(2,min(iw,ih)*${part(square.size)})':'max(2,min(iw,ih)*${part(square.size)})':'iw*${part(square.x)}':'ih*${part(square.y)}',`;
 
-const filter = (edge: number, square: boolean | Crop = false) =>
-  [
-    `[0:v:0]${square ? cut(square) : ""}scale='min(${edge},iw)':'min(${edge},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2,format=rgba,split[picture][sheet]`,
-    "[sheet]drawbox=c=white:t=fill:replace=1[white]",
-    "[white][picture]overlay,format=yuv420p[out]"
-  ].join(";");
+// Where ffmpeg does the reading, it cuts the picture, scales it down and hands it over as a PNG, with whatever is transparent in it.
+const filter = (edge: number, square: boolean | Crop = false) => `[0:v:0]${square ? cut(square) : ""}scale='min(${edge},iw)':'min(${edge},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2[out]`;
+// Barely packed: it is read back at once, and packing it well would take longer than writing the AVIF.
+const AS_PNG = ["-map", "[out]", "-frames:v", "1", "-c:v", "png", "-compression_level", "1", "-f", "image2pipe", "pipe:1"];
+/** How sharp writes an AVIF: the effort is the least that still comes out smaller than the encoders ffmpeg has, in about the time they took. */
+const AVIF = { quality: 50, effort: 2 } as const;
 
-const ENCODERS: Record<string, string[]> = {
-  libsvtav1: ["-c:v", "libsvtav1", "-crf", "32", "-preset", "8"],
-  "libaom-av1": ["-c:v", "libaom-av1", "-crf", "32", "-cpu-used", "8", "-still-picture", "1"]
-};
+type Sharp = (typeof import("sharp"))["default"];
+
+/**
+ * The kinds of picture sharp reads by itself, which takes about half as long as having ffmpeg read them first: the
+ * ones every browser shows, whose decoders are the most worn in. They are told by how the file begins, not by its
+ * name, so that nothing else is opened as one: sharp would draw an SVG, and an SVG can name other files to draw.
+ */
+const SHARP_READS: Array<(head: Buffer) => boolean> = [
+  (head) => head.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff])),
+  (head) => head.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
+  (head) => ["GIF87a", "GIF89a"].includes(head.toString("latin1", 0, 6)),
+  (head) => head.toString("latin1", 0, 4) === "RIFF" && head.toString("latin1", 8, 12) === "WEBP"
+];
+
+/** Whether a file on this machine's disk begins the way one of those does. A remote location's file is an address, and is left to ffmpeg. */
+async function sharpReads(file: string): Promise<boolean> {
+  if (!path.isAbsolute(file)) return false;
+  const handle = await fsp.open(file, "r").catch(() => null);
+  if (!handle) return false;
+  try {
+    const { buffer, bytesRead } = await handle.read(Buffer.alloc(12), 0, 12, 0);
+    return SHARP_READS.some((begins) => begins(buffer.subarray(0, bytesRead)));
+  } finally {
+    await handle.close();
+  }
+}
 
 /**
  * How a file becomes a picture: images and videos are read by ffmpeg directly; the first page of a PDF is drawn first,
@@ -49,11 +72,14 @@ const ENCODERS: Record<string, string[]> = {
  */
 export type ThumbnailSource = "image" | "video" | "pdf" | "embedded";
 
-/** Draws AVIF thumbnails with ffmpeg, keeping each one on disk under the key it was asked for. */
+/**
+ * Draws AVIF thumbnails, keeping each one on disk under the key it was asked for. sharp writes them all, and reads
+ * the common kinds of picture itself; ffmpeg reads the rest, videos among them, and hands sharp what it made of them.
+ */
 export class Thumbnailer {
   private readonly ffmpeg = process.env.FFMPEG_PATH ?? "ffmpeg";
   private readonly ffprobe = process.env.FFPROBE_PATH ?? "ffprobe";
-  private encoder?: Promise<string[] | null>;
+  private writer?: Promise<Sharp | null>;
   private readonly pending = new Map<string, Promise<string | null>>();
   private readonly failed = new Set<string>();
   private running = 0;
@@ -86,8 +112,8 @@ export class Thumbnailer {
   }
 
   private async draw(source: string, target: string, kind: ThumbnailSource, edge: number): Promise<string | null> {
-    const encoder = await (this.encoder ??= this.findEncoder());
-    if (!encoder) return null;
+    const sharp = await (this.writer ??= this.findWriter());
+    if (!sharp) return null;
     // An SVG is a document that may name other files to draw; the browser shows it as it is instead.
     if (kind === "image" && /\.svgz?$/i.test(source)) return null;
     // A video is read as a video and everything else as a still picture, whatever the file turns out to hold.
@@ -105,20 +131,30 @@ export class Thumbnailer {
       // A tenth of the way in is past most title cards; the very first frame is tried when nothing is there.
       const seeks = kind === "video" ? [(await this.duration(source)) * 0.1, 0].filter((seek, index) => index > 0 || seek > 0) : [null];
       let reason = "no frame to draw";
+      if (kind !== "video" && (await sharpReads(picture))) {
+        try {
+          // Turned the way the camera was held, which ffmpeg does by itself.
+          await this.write(sharp(picture).rotate().resize(edge, edge, { fit: "inside", withoutEnlargement: true }), partial);
+          await fsp.rename(partial, target);
+          return target;
+        } catch {
+          // A file cut short, or one that only begins like a picture: ffmpeg makes more of those.
+        }
+      }
       for (const seek of seeks) {
         // Past the start only keyframes are decoded: landing between two would mean decoding every frame up to that point,
         // which for 4K HEVC with keyframes ten seconds apart outlasts the timeout on a slow machine.
         const input = seek === null ? guardedInput(picture, formats) : [...(seek > 0 ? ["-skip_frame", "nokey"] : []), "-ss", seek.toFixed(2), ...guardedInput(picture, formats), "-an", "-sn", "-dn"];
         try {
-          const { stderr } = await execFileAsync(this.ffmpeg, ["-v", "warning", "-nostdin", "-y", ...input, "-filter_complex", filter(edge), "-map", "[out]", "-frames:v", "1", ...encoder, "-f", "avif", partial], { timeout: TIMEOUT_MS });
-          // With no frame after the seek, ffmpeg still succeeds and leaves a file that is only a header.
-          if (stderr.includes("Output file is empty")) continue;
+          const frame = await this.read(input, edge);
+          // With no frame after the seek, ffmpeg still succeeds and hands over nothing.
+          if (!frame) continue;
+          await this.write(sharp(frame), partial);
           await fsp.rename(partial, target);
           return target;
         } catch (error) {
           // Tried again from the start of the video, or given up on below.
-          const failure = error as { killed?: boolean; stderr?: string; message: string };
-          reason = failure.killed ? `timed out after ${TIMEOUT_MS / 1000}s` : failure.stderr?.trim().split("\n").at(-1) || failure.message;
+          reason = failureOf(error);
         }
       }
       logger.warn(`no thumbnail for ${source}`, reason);
@@ -129,6 +165,17 @@ export class Thumbnailer {
     }
   }
 
+  /** What ffmpeg makes of a picture: cut, scaled down to `edge`, and handed over as a PNG. Null when there was no frame to read. */
+  private async read(input: string[], edge: number, square: boolean | Crop = false): Promise<Buffer | null> {
+    const { stdout } = await execFileAsync(this.ffmpeg, ["-v", "warning", "-nostdin", ...input, "-filter_complex", filter(edge, square), ...AS_PNG], { timeout: TIMEOUT_MS, encoding: "buffer", maxBuffer: MAX_FRAME_BYTES });
+    return stdout.length > 0 ? stdout : null;
+  }
+
+  /** Writes a picture as an AVIF. What is transparent in it stays so, unless it is to be `opaque`: then it is laid on white. */
+  private async write(picture: import("sharp").Sharp, target: string, opaque = false): Promise<void> {
+    await (opaque ? picture.flatten({ background: "#ffffff" }) : picture).timeout({ seconds: TIMEOUT_MS / 1000 }).avif(AVIF).toFile(target);
+  }
+
   /** Deletes the thumbnails nobody looked at for a month: those of files since changed, moved or deleted, mostly. */
   prune(): Promise<number> {
     return pruneKeptFiles(this.dir);
@@ -136,23 +183,25 @@ export class Thumbnailer {
 
   /**
    * Writes a picture to `target` as an AVIF no longer than `edge` on its longer side, replacing what was there;
-   * `square` cuts it to a square first, the one named or the one in its middle. False when it cannot be done: no
-   * encoder, or a file ffmpeg does not read as a picture.
+   * `square` cuts it to a square first, the one named or the one in its middle. It is a picture Kago shows over
+   * whatever is behind it, so what is transparent in it is laid on white. False when it cannot be done: nothing to
+   * draw with, or a file ffmpeg does not read as a picture.
    */
   async convert(source: string, target: string, edge: number, square: boolean | Crop = false): Promise<boolean> {
-    const encoder = await (this.encoder ??= this.findEncoder());
-    if (!encoder || /\.svgz?$/i.test(source)) return false;
+    const sharp = await (this.writer ??= this.findWriter());
+    if (!sharp || /\.svgz?$/i.test(source)) return false;
     await this.acquire();
     // Two conversions for one target may overlap; each writes a file of its own and the later rename wins.
     const partial = `${target}.${process.hrtime.bigint()}.partial`;
     try {
       await fsp.mkdir(path.dirname(target), { recursive: true });
-      await execFileAsync(this.ffmpeg, ["-v", "warning", "-nostdin", "-y", ...guardedInput(source, PICTURE_FORMATS), "-filter_complex", filter(edge, square), "-map", "[out]", "-frames:v", "1", ...encoder, "-f", "avif", partial], { timeout: TIMEOUT_MS });
-      if ((await fsp.stat(partial)).size === 0) return false;
+      const frame = await this.read(guardedInput(source, PICTURE_FORMATS), edge, square);
+      if (!frame) return false;
+      await this.write(sharp(frame), partial, true);
       await fsp.rename(partial, target);
       return true;
     } catch (error) {
-      logger.warn(`could not convert ${source}`, (error as { stderr?: string; message: string }).stderr?.trim().split("\n").at(-1) || (error as Error).message);
+      logger.warn(`could not convert ${source}`, failureOf(error));
       return false;
     } finally {
       await fsp.rm(partial, { force: true });
@@ -205,16 +254,24 @@ export class Thumbnailer {
     }
   }
 
-  private async findEncoder(): Promise<string[] | null> {
+  /** What pictures are written with, found out once: null where there is no ffmpeg to read what sharp does not, or no sharp built for this machine. */
+  private async findWriter(): Promise<Sharp | null> {
     try {
-      const { stdout } = await execFileAsync(this.ffmpeg, ["-hide_banner", "-encoders"]);
-      const name = Object.keys(ENCODERS).find((encoder) => stdout.includes(` ${encoder} `));
-      if (name) return ENCODERS[name]!;
-      logger.warn("ffmpeg has no AV1 encoder; thumbnails are disabled");
+      await execFileAsync(this.ffmpeg, ["-version"]);
     } catch {
       logger.warn("ffmpeg not found; thumbnails are disabled");
+      return null;
     }
-    return null;
+    try {
+      // It carries a library built for one kind of machine, so it is only loaded once a picture needs writing.
+      const sharp = (await import("sharp")).default;
+      // It would remember a file by its name, and answer for one changed since with what it was before.
+      sharp.cache(false);
+      return sharp;
+    } catch (error) {
+      logger.warn("sharp could not be loaded; thumbnails are disabled", (error as Error).message);
+      return null;
+    }
   }
 
   private async acquire(): Promise<void> {
@@ -228,4 +285,10 @@ export class Thumbnailer {
     if (next) next();
     else this.running -= 1;
   }
+}
+
+/** Why a picture could not be drawn, in a line: ffmpeg's last word, or sharp's. */
+function failureOf(error: unknown): string {
+  const failure = error as { killed?: boolean; stderr?: Buffer | string; message: string };
+  return failure.killed ? `timed out after ${TIMEOUT_MS / 1000}s` : String(failure.stderr ?? "").trim().split("\n").at(-1) || failure.message;
 }

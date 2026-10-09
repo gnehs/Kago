@@ -64,6 +64,11 @@ npm 套件
 
 伺服器的相依套件安裝在映像檔內，網頁前端的相依套件則打包進前端的靜態檔案。
 授權條文完全相同的套件列在一起。
+
+sharp 另外帶著為各平台預先編譯好的 libvips（@img/sharp-libvips-*，LGPL-3.0-or-later）
+和它自己的原生模組（@img/sharp-*，Apache-2.0）。安裝的是哪一個視機器而定，所以不在下面的
+清單裡。伺服器在執行時動態載入它們，沒有修改。libvips 內含的函式庫與各自的授權見
+https://github.com/lovell/sharp-libvips/blob/main/THIRD-PARTY-NOTICES.md
 `;
 
 /** Looks a dependency up the way Node does, which is also how pnpm's symlinked layout expects to be read. */
@@ -77,7 +82,8 @@ function locate(from, name) {
 
 const packages = new Map();
 
-// Optional dependencies are left out: they are platform-specific native builds that neither the web bundle nor the server uses.
+// Optional dependencies are left out: they are platform-specific native builds, and which of them is installed depends
+// on the machine this runs on. The one kind the server does load, sharp's, is named in the header instead.
 function collect(from, names) {
   for (const name of names) {
     const dir = locate(from, name);
