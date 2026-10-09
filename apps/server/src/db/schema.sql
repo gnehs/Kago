@@ -169,6 +169,8 @@ CREATE TABLE IF NOT EXISTS external_apps (
   url TEXT NOT NULL,
   icon_type TEXT,
   icon_version INTEGER,
+  -- Shown in a frame inside a window of Kago's, rather than in a tab of its own.
+  embed INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE

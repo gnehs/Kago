@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { FileItem, FileTab, FileWindow, Root, WorkspaceState } from "../types/kago";
+import type { ExternalApp, FileItem, FileTab, FileWindow, Root, WorkspaceState } from "../types/kago";
 import { ghostWindowOut } from "../lib/motion";
 import { baseName } from "../lib/paths";
 import { randomId } from "../lib/utils";
@@ -21,6 +21,9 @@ export type SettingsSection = "general" | "apps" | "sync" | "locations" | "users
  */
 export type AppWindow = WindowFrame & { app: AppKind; section: SettingsSection };
 
+/** Another service of the machine, shown in a frame inside a window of Kago's. It is kept with the app windows, one for each service. */
+export type ExternalWindow = WindowFrame & { app: "external"; external: ExternalApp };
+
 /** A file opened for viewing. Like app windows, previews are not persisted with the workspace. */
 export type PreviewWindow = WindowFrame & { preview: { rootSlug: string; item: FileItem } };
 
@@ -33,7 +36,7 @@ const appMeta: Record<AppKind, { title: string; width: number; height: number }>
 
 type WorkspaceStore = WorkspaceState & {
   hydrated: boolean;
-  appWindows: AppWindow[];
+  appWindows: Array<AppWindow | ExternalWindow>;
   previewWindows: PreviewWindow[];
   openPreview: (rootSlug: string, item: FileItem) => void;
   /** Shows another file in a preview window that is already open, e.g. the next video of a folder. */
@@ -41,6 +44,8 @@ type WorkspaceStore = WorkspaceState & {
   /** Locks a preview window to its content's proportions, reshaping it around its centre. */
   setPreviewAspect: (id: string, aspect: number) => void;
   openApp: (app: AppKind, section?: SettingsSection) => void;
+  /** Shows another service in a window of its own, or brings back the window that already shows it. */
+  openExternal: (app: ExternalApp) => void;
   setAppSection: (id: string, section: SettingsSection) => void;
   hydrate: (workspace: WorkspaceState) => void;
   /** Pulls windows back inside the canvas after it shrinks. */
@@ -129,7 +134,7 @@ function fitGeometry<T extends WindowFrame>(window: T): T {
   };
 }
 
-type Stack = { windows: FileWindow[]; appWindows: AppWindow[]; previewWindows: PreviewWindow[] };
+type Stack = { windows: FileWindow[]; appWindows: Array<AppWindow | ExternalWindow>; previewWindows: PreviewWindow[] };
 
 const frames = (stack: Stack): WindowFrame[] => [...stack.windows, ...stack.appWindows, ...stack.previewWindows];
 
@@ -276,10 +281,21 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       const id = existing?.id ?? `app_${app}`;
       const meta = appMeta[app];
       const appWindows = existing
-        ? state.appWindows.map((window) => (window.id === id ? { ...window, minimized: false, section: section ?? window.section } : window))
+        ? state.appWindows.map((window) => (window.id === id && window.app !== "external" ? { ...window, minimized: false, section: section ?? window.section } : window))
         : [
             ...state.appWindows,
             { id, app, section: section ?? "general", title: meta.title, ...initialGeometry(frames(state).length, meta.width, meta.height), zIndex: topZ(state) + 1, minimized: false, maximized: false, focused: true, createdAt: ts() }
+          ];
+      return { ...restack({ ...state, appWindows }, id), activeWindowId: id };
+    }),
+  openExternal: (app) =>
+    set((state) => {
+      const id = `app_external_${app.id}`;
+      const appWindows = state.appWindows.some((window) => window.id === id)
+        ? state.appWindows.map((window) => (window.id === id && window.app === "external" ? { ...window, minimized: false, title: app.name, external: app } : window))
+        : [
+            ...state.appWindows,
+            { id, app: "external" as const, external: app, title: app.name, ...initialGeometry(frames(state).length, 1040, 720), zIndex: topZ(state) + 1, minimized: false, maximized: false, focused: true, createdAt: ts() }
           ];
       return { ...restack({ ...state, appWindows }, id), activeWindowId: id };
     }),
@@ -309,7 +325,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         return fitGeometry({ ...window, aspect, ...size, x: window.x + (window.width - size.width) / 2, y: window.y + (window.height - size.height) / 2 });
       })
     })),
-  setAppSection: (id, section) => set((state) => ({ appWindows: state.appWindows.map((window) => (window.id === id ? { ...window, section } : window)) })),
+  setAppSection: (id, section) => set((state) => ({ appWindows: state.appWindows.map((window) => (window.id === id && window.app !== "external" ? { ...window, section } : window)) })),
   closeWindow: (id) =>
     set((state) => {
       const stack = {

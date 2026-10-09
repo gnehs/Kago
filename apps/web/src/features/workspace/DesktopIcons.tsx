@@ -1,12 +1,12 @@
 import type { ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Copy, ExternalLink, HardDrive, Pencil, Plus, Server, Trash2 } from "lucide-react";
+import { AppWindow, Copy, ExternalLink, HardDrive, Pencil, Plus, Server, Trash2 } from "lucide-react";
 import { useExternalApps } from "@/api/hooks";
 import { KagoAppIcon } from "@/components/kago/app-icon";
 import { KagoContextMenu, KagoMenuItem, KagoMenuSeparator } from "@/components/kago/menu";
 import { editExternalApp } from "@/features/apps/ExternalAppDialog";
 import { ExternalAppIcon } from "@/features/apps/ExternalAppIcon";
-import { appHref, openExternalApp, removeExternalApp } from "@/features/apps/externalApps";
+import { appHref, openExternalApp, openInNewTab, removeExternalApp } from "@/features/apps/externalApps";
 import { copyText } from "@/lib/utils";
 import { useWorkspaceStore } from "@/stores/workspace";
 import type { FileWindow, Root } from "@/types/kago";
@@ -63,7 +63,8 @@ export function DesktopIcons({ roots, isAdmin }: { roots: Root[]; isAdmin: boole
           key={app.id}
           menu={
             <>
-              <KagoMenuItem icon={<ExternalLink />} onClick={() => openExternalApp(app)}>{t("Open in new tab")}</KagoMenuItem>
+              {app.embed ? <KagoMenuItem icon={<AppWindow />} onClick={() => openExternalApp(app)}>{t("Open")}</KagoMenuItem> : null}
+              <KagoMenuItem icon={<ExternalLink />} onClick={() => openInNewTab(app)}>{t("Open in new tab")}</KagoMenuItem>
               <KagoMenuItem icon={<Copy />} onClick={() => void run(() => copyText(app.url))}>{t("Copy address")}</KagoMenuItem>
               <KagoMenuSeparator />
               {app.editable ? (
@@ -78,7 +79,19 @@ export function DesktopIcons({ roots, isAdmin }: { roots: Root[]; isAdmin: boole
           }
         >
           {/* A link, so that the browser's own ways of opening one (middle click, the address on hover) all work. */}
-          <a href={appHref(app)} target="_blank" rel="noopener noreferrer" draggable={false} className={ICON_CLASS}>
+          <a
+            href={appHref(app)}
+            target="_blank"
+            rel="noopener noreferrer"
+            draggable={false}
+            className={ICON_CLASS}
+            onClick={(event) => {
+              // One that is shown inside Kago opens there on a plain click; a click with a key held is still the browser's to take.
+              if (!app.embed || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+              event.preventDefault();
+              openExternalApp(app);
+            }}
+          >
             <DesktopIconBody icon={<ExternalAppIcon name={app.name} icon={app.icon} className="size-full" />} label={app.name} />
           </a>
         </KagoContextMenu>

@@ -246,6 +246,34 @@ test("a shortcut is its maker's own unless an administrator shares it", async ()
     assert.equal((await alice.post("/api/external-apps", { name: "Bad", url: "http://nas.local", icon: { kind: "url", url: "http://169.254.169.254/latest/meta-data" } })).statusCode, 400);
     assert.deepEqual(await names(alice), ["Jellyfin"]);
 
+    // A shortcut opens in a tab of its own unless it was asked to be shown inside Kago; only then is there a frame for it.
+    assert.equal(mine.json.embed, false);
+    assert.equal((await alice.get(`/api/external-apps/${mine.json.id}/frame`)).statusCode, 404);
+    const framed = await alice.post("/api/external-apps", { name: "Framed", url: 'http://nas.local:8096/web/?a=1&b="><script>alert(1)</script>', embed: true });
+    assert.equal(framed.statusCode, 200, framed.payload);
+    assert.equal(framed.json.embed, true);
+    // Saying nothing of it leaves it as it was.
+    assert.equal((await alice.put(`/api/external-apps/${framed.json.id}`, { name: "Framed", url: framed.json.url })).json.embed, true);
+    const frame = await alice.get(`/api/external-apps/${framed.json.id}/frame`);
+    assert.equal(frame.statusCode, 200);
+    assert.match(frame.headers["content-type"], /^text\/html/);
+    // The page can hold a frame and nothing else, and only Kago can hold the page.
+    assert.match(frame.headers["content-security-policy"], /default-src 'none'/);
+    assert.match(frame.headers["content-security-policy"], /frame-ancestors 'self'/);
+    assert.equal(frame.headers["x-frame-options"], "SAMEORIGIN");
+    assert.equal(frame.headers["cache-control"], "no-store");
+    // The address is written into it as an address, whatever it holds, and the service is not handed Kago's tab.
+    assert.equal((frame.payload.match(/<iframe /g) ?? []).length, 1);
+    assert.equal(frame.payload.includes("<script"), false);
+    assert.ok(frame.payload.includes('src="http://nas.local:8096/web/?a=1&amp;b=%22%3E%3Cscript%3Ealert(1)%3C/script%3E"'), frame.payload);
+    assert.match(frame.payload, /sandbox="[^"]*allow-scripts[^"]*"/);
+    assert.equal(frame.payload.includes("allow-top-navigation"), false);
+    // It is there for whoever has the shortcut, and for nobody else.
+    for (const other of [bob, admin, stranger]) assert.notEqual((await other.get(`/api/external-apps/${framed.json.id}/frame`)).statusCode, 200);
+    assert.equal((await alice.put(`/api/external-apps/${framed.json.id}`, { name: "Framed", url: framed.json.url, embed: false })).json.embed, false);
+    assert.equal((await alice.get(`/api/external-apps/${framed.json.id}/frame`)).statusCode, 404);
+    assert.equal((await alice.delete(`/api/external-apps/${framed.json.id}`)).statusCode, 200);
+
     // Sharing with everyone is an administrator's to do, whether at the start or later.
     assert.equal((await alice.post("/api/external-apps", { name: "Mine for all", url: "http://nas.local", shared: true })).statusCode, 403);
     assert.equal((await alice.put(`/api/external-apps/${mine.json.id}`, { name: "Jellyfin", url: "http://nas.local:8096", shared: true })).statusCode, 403);

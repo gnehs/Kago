@@ -227,6 +227,25 @@ function pagePolicy(host: string | undefined): string {
   ].join("; ");
 }
 
+/**
+ * The page that holds another service inside Kago. The interface frames this page, and this page frames the
+ * service, so the interface itself stays unable to frame anything but Kago: the one place a frame from elsewhere
+ * can stand is here, around an address that was checked when it was saved. Whatever the service then goes to
+ * inside its frame (its sign-in page, say) is its own affair.
+ */
+const FRAME_POLICY = "default-src 'none'; frame-src http: https:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'";
+
+/**
+ * What the framed service may do: run, keep its own sign-in, open tabs and save files. It is not given the tab
+ * Kago is in: without `allow-top-navigation` it cannot take the person away from their desktop.
+ */
+const FRAME_SANDBOX = "allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-popups-to-escape-sandbox allow-downloads allow-pointer-lock allow-presentation allow-orientation-lock allow-storage-access-by-user-activation";
+
+function framePage(url: string): string {
+  const address = url.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="referrer" content="no-referrer"><style>html,body{height:100%;margin:0;background:#fff}iframe{display:block;width:100%;height:100%;border:0}</style></head><body><iframe src="${address}" sandbox="${FRAME_SANDBOX}" allow="fullscreen; autoplay; clipboard-write; encrypted-media; picture-in-picture" referrerpolicy="no-referrer"></iframe></body></html>`;
+}
+
 /** Header values must be latin1, so non-ASCII names travel in the RFC 5987 `filename*` form. */
 function contentDisposition(kind: "attachment" | "inline", rawFileName: string): string {
   const fileName = nfc(rawFileName);
@@ -648,6 +667,14 @@ function registerApi(app: FastifyInstance, services: Services) {
     // An icon may be an SVG. It was rewritten when it was taken in, and is still sent as something that cannot run.
     sandboxContent(reply);
     return sendFile(request, reply, icon.file, stat, icon.contentType);
+  });
+  // A shortcut that is shown inside Kago is shown through this page: a frame around the service and nothing else.
+  app.get("/api/external-apps/:id/frame", async (request, reply) => {
+    const target = services.apps.frameTarget(requireActor(request), z.object({ id: z.string() }).parse(request.params).id);
+    reply.header("Content-Type", "text/html; charset=utf-8");
+    reply.header("Cache-Control", "no-store");
+    reply.header("Content-Security-Policy", FRAME_POLICY);
+    return framePage(target);
   });
   // The icon libraries, asked by this server so that no browser has to: which icons answer to a name, and what one looks like.
   app.get("/api/app-icons", async (request) => {

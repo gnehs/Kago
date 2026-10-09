@@ -21,6 +21,8 @@ export const externalAppSchema = z.object({
   url: z.string().trim().min(1).max(2048),
   /** On everyone's desktop, and an administrator's to change. Left out, a shortcut stays whose it was. */
   shared: z.boolean().optional(),
+  /** Shown in a frame inside a window of Kago's, rather than in a tab of its own. Left out, it opens as it did. */
+  embed: z.boolean().optional(),
   /** Left out, the icon stays as it is. */
   icon: z
     .discriminatedUnion("kind", [
@@ -33,7 +35,7 @@ export const externalAppSchema = z.object({
 });
 
 type ExternalAppInput = z.infer<typeof externalAppSchema>;
-type AppRow = { id: string; owner_id: string | null; name: string; url: string; icon_type: IconType | null; icon_version: number | null; created_at: number; updated_at: number };
+type AppRow = { id: string; owner_id: string | null; name: string; url: string; icon_type: IconType | null; icon_version: number | null; embed: number; created_at: number; updated_at: number };
 
 /**
  * Where a shortcut leads, as it is kept. It becomes a link on someone's desktop, so it is a web address and
@@ -84,12 +86,12 @@ export class ExternalAppService {
     if (count >= MAX_APPS) throw new AppError(400, "There are too many apps already", "TOO_MANY_APPS");
     const icon = await this.readChoice(input.icon);
     const ts = now();
-    const app: AppRow = { id: id("app"), owner_id: ownerId, name: input.name, url, icon_type: icon?.type ?? null, icon_version: icon ? Date.now() : null, created_at: ts, updated_at: ts };
+    const app: AppRow = { id: id("app"), owner_id: ownerId, name: input.name, url, icon_type: icon?.type ?? null, icon_version: icon ? Date.now() : null, embed: input.embed ? 1 : 0, created_at: ts, updated_at: ts };
     if (icon) await this.writeIcon(app.id, icon);
     this.db
-      .prepare("INSERT INTO external_apps (id, owner_id, name, url, icon_type, icon_version, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-      .run(app.id, app.owner_id, app.name, app.url, app.icon_type, app.icon_version, app.created_at, app.updated_at);
-    this.audit.write({ actorType: "user", actorId: actor.id, action: "external_app_create", target: { appId: app.id, name: app.name, url: app.url, shared }, result: "success" });
+      .prepare("INSERT INTO external_apps (id, owner_id, name, url, icon_type, icon_version, embed, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(app.id, app.owner_id, app.name, app.url, app.icon_type, app.icon_version, app.embed, app.created_at, app.updated_at);
+    this.audit.write({ actorType: "user", actorId: actor.id, action: "external_app_create", target: { appId: app.id, name: app.name, url: app.url, shared, embed: Boolean(app.embed) }, result: "success" });
     this.announce(app.owner_id);
     return this.publicApp(actor, app);
   }
@@ -108,12 +110,15 @@ export class ExternalAppService {
       name: input.name,
       url,
       ...(icon === undefined ? {} : { icon_type: icon?.type ?? null, icon_version: icon ? Date.now() : null }),
+      embed: input.embed === undefined ? previous.embed : input.embed ? 1 : 0,
       updated_at: now()
     };
     if (icon) await this.writeIcon(app.id, icon);
-    this.db.prepare("UPDATE external_apps SET owner_id = ?, name = ?, url = ?, icon_type = ?, icon_version = ?, updated_at = ? WHERE id = ?").run(app.owner_id, app.name, app.url, app.icon_type, app.icon_version, app.updated_at, app.id);
+    this.db
+      .prepare("UPDATE external_apps SET owner_id = ?, name = ?, url = ?, icon_type = ?, icon_version = ?, embed = ?, updated_at = ? WHERE id = ?")
+      .run(app.owner_id, app.name, app.url, app.icon_type, app.icon_version, app.embed, app.updated_at, app.id);
     if (icon === null) await this.removeIcon(app.id);
-    this.audit.write({ actorType: "user", actorId: actor.id, action: "external_app_update", target: { appId: app.id, name: app.name, url: app.url, shared }, result: "success" });
+    this.audit.write({ actorType: "user", actorId: actor.id, action: "external_app_update", target: { appId: app.id, name: app.name, url: app.url, shared, embed: Boolean(app.embed) }, result: "success" });
     this.announce(previous.owner_id);
     if (app.owner_id !== previous.owner_id) this.announce(app.owner_id);
     return this.publicApp(actor, app);
@@ -132,6 +137,14 @@ export class ExternalAppService {
     const app = this.visible(actor, appId);
     if (!app.icon_type) throw new AppError(404, "Icon not found", "ICON_NOT_FOUND");
     return { file: this.iconPath(app.id, app.icon_type), contentType: ICON_TYPES[app.icon_type] };
+  }
+
+  /** Where a shortcut the caller can see leads, when it is one that is shown inside Kago. Any other has no frame to ask for. */
+  frameTarget(actor: Actor, appId: string): string {
+    const app = this.visible(actor, appId);
+    if (!app.embed) throw new AppError(404, "App not found", "APP_NOT_FOUND");
+    // Checked again as it is used: it is about to be written into a page.
+    return appUrl(app.url);
   }
 
   /** Deletes the icons no shortcut holds any more. Returns how many went. */
@@ -154,6 +167,7 @@ export class ExternalAppService {
       name: app.name,
       url: app.url,
       shared: app.owner_id === null,
+      embed: Boolean(app.embed),
       /** Whether the caller may change or remove it. */
       editable: app.owner_id === actor.id || (app.owner_id === null && actor.role === "ADMIN"),
       // The address names the icon's version, so a new one is never answered from the browser's cache.

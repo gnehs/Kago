@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from "react-router";
 import { useRoots } from "@/api/hooks";
 import { KagoLoading } from "@/components/kago/empty-state";
 import { ExternalAppDialogHost } from "@/features/apps/ExternalAppDialog";
+import { ExternalAppWindow } from "@/features/apps/ExternalAppWindow";
 import { FileWindowView } from "@/features/files/FileWindow";
 import { Shelf } from "@/features/shelves/Shelf";
 import { PreviewWindowView } from "@/features/files/PreviewWindow";
@@ -95,9 +96,7 @@ function Canvas({ roots, user }: { roots: Root[]; user: Actor }) {
       {windows.map((window) => (
         <FileWindowView key={window.id} window={window} isAdmin={user.role === "ADMIN"} roots={roots} />
       ))}
-      {appWindows.map((window) => (
-        <AppWindowView key={window.id} window={window} roots={roots} user={user} />
-      ))}
+      {appWindows.map((window) => (window.app === "external" ? <ExternalAppWindow key={window.id} window={window} /> : <AppWindowView key={window.id} window={window} roots={roots} user={user} />))}
       {previewWindows.map((window) => (
         <PreviewWindowView key={window.id} window={window} />
       ))}

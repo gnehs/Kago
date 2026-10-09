@@ -141,7 +141,8 @@ It gives that account a new password and makes it an enabled administrator (crea
 
 Settings → Apps puts the address of another service on the desktop; you can also right-click a shortcut on the desktop to add, edit or remove one. Everyone manages their own shortcuts, and nobody else sees them. When an administrator ticks "Show on everyone's desktop", the shortcut appears on every desktop and only administrators can change it.
 
-- A shortcut always opens in a new tab. It is never embedded in Kago, so a service that refuses to be framed works all the same. Only `http://` and `https://` addresses are accepted.
+- A shortcut opens in a new tab by default. Only `http://` and `https://` addresses are accepted.
+- "Opens in" can be set to "A window in Kago", which shows the service inside a window on the desktop. This may not work: many services are set up to refuse being shown inside another page (`X-Frame-Options`, CSP `frame-ancestors`), and some can't keep you signed in there, in which case the window stays blank. When Kago is served over HTTPS and the service is not, the browser always refuses. The window's title bar can open the service in a new tab at any time.
 - As you type a name, Kago looks for an icon by that name in [Dashboard Icons](https://github.com/homarr-labs/dashboard-icons) and [selfh.st Icons](https://selfh.st/icons/). The server does the looking and the downloading, from `cdn.jsdelivr.net`; your browser never contacts a third party. The icon you pick is copied to `/app-data/app-icons` and needs no network after that.
 - When the server can't reach the internet there are no suggestions, and you can still upload a PNG, JPEG, WebP or SVG of up to 1 MB, or keep the default icon.
 - Kago never contacts the address you enter (to fetch its favicon, say): icons come only from the two libraries above, or from the file you upload.

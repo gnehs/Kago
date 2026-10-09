@@ -141,7 +141,8 @@ docker exec -it kago kago-entrypoint node dist/recover.js you@example.com
 
 「設定 → 應用程式」可以把其他服務的網址加到桌面上，也可以在桌面的捷徑上按右鍵新增、編輯或移除。每個人管理自己的捷徑，別人看不到；管理員新增時勾選「顯示在所有人的桌面上」，它就會出現在每個人的桌面，而且只有管理員能修改。
 
-- 捷徑一律在新分頁開啟，不會嵌在 Kago 裡，所以不受對方禁止內嵌的影響。網址只接受 `http://` 與 `https://`。
+- 捷徑預設在新分頁開啟。網址只接受 `http://` 與 `https://`。
+- 「開啟方式」可以改成「Kago 的視窗」，把服務嵌在桌面的視窗裡。這不一定能用：許多服務的設定不允許被嵌入其他網頁（`X-Frame-Options`、CSP `frame-ancestors`），有些嵌入後登入狀態留不住，這時視窗會是一片空白；Kago 以 HTTPS 開啟而服務是 HTTP 時，瀏覽器也一定會擋。視窗的標題列隨時可以改在新分頁開啟。
 - 輸入名稱時，Kago 會從 [Dashboard Icons](https://github.com/homarr-labs/dashboard-icons) 與 [selfh.st Icons](https://selfh.st/icons/) 找出同名的圖示。查詢與下載都是伺服器向 `cdn.jsdelivr.net` 進行的，你的瀏覽器不會連到第三方；選定的圖示會存一份在 `/app-data/app-icons`，之後不再需要網路。
 - 伺服器連不上外網時不會有推薦，仍然可以自己上傳 PNG、JPEG、WebP 或 SVG（1 MB 以內），或直接使用預設圖示。
 - Kago 不會去連你填的網址（例如抓它的 favicon）：圖示只來自上面兩個圖示庫，或你上傳的檔案。

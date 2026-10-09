@@ -7,13 +7,14 @@ import { useIconSuggestions } from "@/api/hooks";
 import { KagoDialog } from "@/components/kago/dialog";
 import { KagoTooltip } from "@/components/kago/tooltip";
 import { Button } from "@/components/ui/button";
-import { Checkbox, Field, Input } from "@/components/ui/input";
+import { Checkbox, Field, Input, Select } from "@/components/ui/input";
 import { t } from "@/lib/i18n";
 import { run } from "@/lib/run";
 import { cn } from "@/lib/utils";
 import { toast } from "@/stores/toast";
 import type { ExternalApp, LibraryIcon } from "@/types/kago";
 import { ExternalAppIcon } from "./ExternalAppIcon";
+import { blockedAsMixedContent } from "./externalApps";
 
 /** The shortcut whose form is open: one that is there, or one about to be added. */
 const useEditorStore = create<{ editing: ExternalApp | "new" | null }>(() => ({ editing: null }));
@@ -59,6 +60,7 @@ function AppForm({ app, isAdmin }: { app: ExternalApp | null; isAdmin: boolean }
   const [name, setName] = useState(app?.name ?? "");
   const [url, setUrl] = useState(app?.url ?? "");
   const [shared, setShared] = useState(app?.shared ?? false);
+  const [embed, setEmbed] = useState(app?.embed ?? false);
   const [choice, setChoice] = useState<IconChoice>(app ? { kind: "keep" } : { kind: "none" });
   // A new shortcut takes the icon that goes by its name, until one is chosen by hand. One that is there keeps what it has.
   const [chosen, setChosen] = useState(app !== null);
@@ -105,7 +107,7 @@ function AppForm({ app, isAdmin }: { app: ExternalApp | null; isAdmin: boolean }
       const icon =
         choice.kind === "keep" ? undefined : choice.kind === "library" ? { kind: "library", source: choice.icon.source, name: choice.icon.name } : choice.kind === "upload" ? { kind: "upload", data: await base64Of(choice.file) } : { kind: "none" };
       // Only an administrator says whose a shortcut is; anyone else's request leaves that as it was.
-      const body = JSON.stringify({ name: name.trim(), url: withScheme(url.trim()), shared: isAdmin ? shared : undefined, icon });
+      const body = JSON.stringify({ name: name.trim(), url: withScheme(url.trim()), embed, shared: isAdmin ? shared : undefined, icon });
       await api(app ? `/api/external-apps/${app.id}` : "/api/external-apps", { method: app ? "PUT" : "POST", body });
       await queryClient.invalidateQueries({ queryKey: ["external-apps"] });
       return true;
@@ -129,9 +131,23 @@ function AppForm({ app, isAdmin }: { app: ExternalApp | null; isAdmin: boolean }
       <Field label={t("Name")}>
         <Input autoFocus value={name} maxLength={80} placeholder="Jellyfin" onChange={(event) => setName(event.target.value)} />
       </Field>
-      <Field label={t("Address##of a web page")} hint={t("It opens in a new tab.")}>
+      <Field label={t("Address##of a web page")}>
         <Input value={url} maxLength={2048} inputMode="url" autoCapitalize="off" autoCorrect="off" spellCheck={false} placeholder="http://nas.local:8096" onChange={(event) => setUrl(event.target.value)} />
       </Field>
+      <div className="flex flex-col gap-1">
+        <Field label={t("Opens in")}>
+          <Select value={embed ? "window" : "tab"} onChange={(event) => setEmbed(event.target.value === "window")}>
+            <option value="tab">{t("A new tab")}</option>
+            <option value="window">{t("A window in Kago")}</option>
+          </Select>
+        </Field>
+        {/* Whether a service lets itself be framed is the service's to say, and cannot be asked ahead of time; what the browser will refuse outright can. */}
+        {!embed ? null : blockedAsMixedContent({ url: withScheme(url.trim()) }) ? (
+          <span className="text-xs text-warning">{t("Kago is served over HTTPS and this address is not, so the browser refuses to show it inside Kago. Use an https:// address, or a new tab.")}</span>
+        ) : (
+          <span className="text-xs text-faint">{t("This may not work: many services refuse to be shown inside another page, and some can’t keep you signed in there. If the window stays blank, switch back to a new tab.")}</span>
+        )}
+      </div>
       <div className="flex flex-col gap-1.5">
         <span className="text-xs font-medium text-muted">{t("Icon")}</span>
         <div className="flex items-start gap-3">

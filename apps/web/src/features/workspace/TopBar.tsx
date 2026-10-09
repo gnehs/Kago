@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Popover } from "@base-ui/react/popover";
-import { ListChecks, LogOut, Search, Settings } from "lucide-react";
+import { Globe, ListChecks, LogOut, Search, Settings } from "lucide-react";
 import { api } from "@/api/client";
 import { useRoots, useTasks } from "@/api/hooks";
 import { KagoSpinner } from "@/components/kago/empty-state";
@@ -84,7 +84,7 @@ export function TopBar({ user, onOpenPalette }: { user: Actor; onOpenPalette: ()
             )}
             onClick={() => activate(window)}
           >
-            {"app" in window ? appIcons[window.app] : "preview" in window ? <FileIcon item={window.preview.item} /> : <FileIcon item={{ kind: "folder", type: "", name: "" }} />}
+            {"app" in window ? (window.app === "external" ? <Globe /> : appIcons[window.app]) : "preview" in window ? <FileIcon item={window.preview.item} /> : <FileIcon item={{ kind: "folder", type: "", name: "" }} />}
             <span className="truncate">{window.title}</span>
           </button>
         ))}

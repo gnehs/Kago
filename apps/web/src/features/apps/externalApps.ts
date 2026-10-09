@@ -3,6 +3,7 @@ import { api } from "@/api/client";
 import { t } from "@/lib/i18n";
 import { run } from "@/lib/run";
 import { confirmAction } from "@/stores/dialogs";
+import { useWorkspaceStore } from "@/stores/workspace";
 import type { ExternalApp } from "@/types/kago";
 
 /**
@@ -20,10 +21,22 @@ export function appHost(app: Pick<ExternalApp, "url">) {
   }
 }
 
-/** Opens a shortcut the way they all open: in a tab of its own, which learns nothing of the one it came from. */
-export function openExternalApp(app: ExternalApp) {
+/**
+ * Whether the browser will refuse to show a service inside Kago whatever the service itself allows: a page served
+ * over HTTPS may not hold one that is not, unless that one is on the very machine the browser runs on.
+ */
+export const blockedAsMixedContent = (app: Pick<ExternalApp, "url">) => location.protocol === "https:" && /^http:\/\/(?!(?:localhost|127\.0\.0\.1|\[::1\])(?:[:/?#]|$))/i.test(app.url);
+
+/** Opens a shortcut in a tab of its own, which learns nothing of the one it came from. */
+export function openInNewTab(app: Pick<ExternalApp, "url">) {
   const href = appHref(app);
   if (href) window.open(href, "_blank", "noopener,noreferrer");
+}
+
+/** Opens a shortcut the way it was set up to open: in a tab of its own, or in a window of Kago's. */
+export function openExternalApp(app: ExternalApp) {
+  if (app.embed) useWorkspaceStore.getState().openExternal(app);
+  else openInNewTab(app);
 }
 
 export async function removeExternalApp(queryClient: QueryClient, app: ExternalApp) {

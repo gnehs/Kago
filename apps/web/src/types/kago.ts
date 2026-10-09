@@ -18,7 +18,7 @@ export type Root = {
 };
 
 /** A shortcut on the desktop to another service. `icon` is where the picture Kago keeps for it is, when it has one. */
-export type ExternalApp = { id: string; name: string; url: string; /** On everyone's desktop. */ shared: boolean; /** Whether the person signed in may change it. */ editable: boolean; icon: string | null; created_at: number; updated_at: number };
+export type ExternalApp = { id: string; name: string; url: string; /** On everyone's desktop. */ shared: boolean; /** Shown in a window of Kago's rather than in a tab of its own. */ embed: boolean; /** Whether the person signed in may change it. */ editable: boolean; icon: string | null; created_at: number; updated_at: number };
 /** An icon of one of the open icon libraries, as suggested for a name. `exact` when it goes by that very name. */
 export type LibraryIcon = { source: string; name: string; label: string; exact: boolean };
 
