@@ -1,6 +1,6 @@
 import { Fragment, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Dialog } from "@base-ui/react/dialog";
-import { CircleUserRound, Clock, Fingerprint, Folder, HardDrive, KeyRound, LayoutGrid, RefreshCw, ScrollText, Search, UserRound, UsersRound } from "lucide-react";
+import { CircleUserRound, Clock, Fingerprint, Folder, HardDrive, Info, KeyRound, LayoutGrid, RefreshCw, ScrollText, Search, UserRound, UsersRound } from "lucide-react";
 import { useExternalApps } from "@/api/hooks";
 import { KagoKbd } from "@/components/kago/kbd";
 import { ExternalAppGlyph } from "@/components/kago/external-app-icon";
@@ -32,7 +32,8 @@ const apps: Array<{ app: AppKind; section?: SettingsSection; label: string; icon
   { app: "settings", section: "groups", label: t("Groups"), icon: <UsersRound />, adminOnly: true },
   { app: "settings", section: "sso", label: t("Single sign-on"), icon: <Fingerprint />, adminOnly: true },
   { app: "settings", section: "permissions", label: t("Permissions"), icon: <KeyRound />, adminOnly: true },
-  { app: "settings", section: "audit", label: t("Audit log"), icon: <ScrollText />, adminOnly: true }
+  { app: "settings", section: "audit", label: t("Audit log"), icon: <ScrollText />, adminOnly: true },
+  { app: "settings", section: "about", label: t("About"), icon: <Info /> }
 ];
 
 function suggestions(query: string, roots: Root[], activeRootSlug: string | undefined, recent: RecentFolder[], isAdmin: boolean, externalApps: ExternalApp[]): Target[] {

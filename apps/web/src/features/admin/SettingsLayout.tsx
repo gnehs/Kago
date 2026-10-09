@@ -1,11 +1,11 @@
 import type { ReactNode } from "react";
-import { CircleUserRound, Fingerprint, HardDrive, KeyRound, LayoutGrid, RefreshCw, ScrollText, SlidersHorizontal, UserRound, UsersRound } from "lucide-react";
+import { CircleUserRound, Fingerprint, HardDrive, Info, KeyRound, LayoutGrid, RefreshCw, ScrollText, SlidersHorizontal, UserRound, UsersRound } from "lucide-react";
 import { KagoDivider } from "@/components/kago/divider";
 import { cn } from "@/lib/utils";
 import type { SettingsSection } from "@/stores/workspace";
 import { t } from "@/lib/i18n";
 
-/** What is yours comes first; what an administrator runs for everyone is a group of its own. */
+/** What is yours comes first; what an administrator runs for everyone is a group of its own, and what Kago says of itself comes last. */
 const groups: Array<{ label: string; adminOnly?: boolean; sections: Array<{ section: SettingsSection; label: string; icon: ReactNode }> }> = [
   {
     label: t("Personal"),
@@ -27,6 +27,10 @@ const groups: Array<{ label: string; adminOnly?: boolean; sections: Array<{ sect
       { section: "permissions", label: t("Permissions"), icon: <KeyRound /> },
       { section: "audit", label: t("Audit log"), icon: <ScrollText /> }
     ]
+  },
+  {
+    label: "Kago",
+    sections: [{ section: "about", label: t("About"), icon: <Info /> }]
   }
 ];
 

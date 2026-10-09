@@ -17,7 +17,8 @@ const appRoutes: Record<string, { app: AppKind; section?: SettingsSection; admin
   "/_kago/admin/groups": { app: "settings", section: "groups", adminOnly: true },
   "/_kago/admin/sso": { app: "settings", section: "sso", adminOnly: true },
   "/_kago/admin/permissions": { app: "settings", section: "permissions", adminOnly: true },
-  "/_kago/audit": { app: "settings", section: "audit", adminOnly: true }
+  "/_kago/audit": { app: "settings", section: "audit", adminOnly: true },
+  "/_kago/about": { app: "settings", section: "about" }
 };
 
 export const appRouteFromPath = (pathname: string) => appRoutes[pathname] ?? null;

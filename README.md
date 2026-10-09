@@ -296,6 +296,8 @@ To build the image yourself:
 docker build -t kago:local .
 ```
 
+The commit on the About page comes from the `KAGO_COMMIT` build arg and is left out without it: `--build-arg KAGO_COMMIT=$(git rev-parse HEAD)`.
+
 ### Translations
 
 Interface text is always written in English in the code and wrapped in `t()` (`apps/web/src/lib/i18n.ts`). The dictionary for each language is in `apps/web/src/locales/`, keyed by the English source text:
@@ -319,4 +321,4 @@ Kago is released under the [GNU Affero General Public License v3.0](LICENSE) (`A
 
 The Docker image also contains [jellyfin-ffmpeg](https://github.com/jellyfin/jellyfin-ffmpeg), a separate program licensed under GPL-3.0; see that project for its source code.
 
-The third-party packages Kago uses and their license terms are listed in [THIRD-PARTY-NOTICES](THIRD-PARTY-NOTICES), and a copy is included in the image (`/app/THIRD-PARTY-NOTICES`). When dependencies change, run `pnpm notices` to regenerate it.
+The third-party packages Kago uses and their license terms are listed in [THIRD-PARTY-NOTICES](THIRD-PARTY-NOTICES), and a copy is included in the image (`/app/THIRD-PARTY-NOTICES`). Inside Kago it is under About in the account menu, along with the version, commit and build date. When dependencies change, run `pnpm notices` to regenerate it.

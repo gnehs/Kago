@@ -28,6 +28,8 @@ FROM deps AS build
 # Set by BuildKit to the architecture the image is for: amd64 or arm64.
 ARG TARGETARCH
 COPY . .
+# The commit the image is built from, for Settings → About: .git is not in the build context, so it is handed in.
+ARG KAGO_COMMIT
 RUN pnpm build
 # Node's name for amd64 is x64; the runtime image below is Debian, so glibc.
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \

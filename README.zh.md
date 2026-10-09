@@ -296,6 +296,8 @@ pnpm test:smoke
 docker build -t kago:local .
 ```
 
+「關於」頁上的 commit 取自 `KAGO_COMMIT` 這個 build arg，沒給就不顯示：`--build-arg KAGO_COMMIT=$(git rev-parse HEAD)`。
+
 ### 翻譯
 
 介面文字在程式碼裡一律以英文撰寫並包在 `t()` 裡（`apps/web/src/lib/i18n.ts`），各語言的字典放在 `apps/web/src/locales/`，以英文原文為鍵：
@@ -319,4 +321,4 @@ Kago 以 [GNU Affero General Public License v3.0](LICENSE)（`AGPL-3.0-only`）�
 
 Docker 映像檔另外內含 [jellyfin-ffmpeg](https://github.com/jellyfin/jellyfin-ffmpeg)，它是獨立的程式，以 GPL-3.0 授權，原始碼請見該專案。
 
-Kago 使用的第三方套件與它們的授權條款列在 [THIRD-PARTY-NOTICES](THIRD-PARTY-NOTICES)，映像檔內也附有一份（`/app/THIRD-PARTY-NOTICES`）。相依套件有變動時，執行 `pnpm notices` 重新產生。
+Kago 使用的第三方套件與它們的授權條款列在 [THIRD-PARTY-NOTICES](THIRD-PARTY-NOTICES)，映像檔內也附有一份（`/app/THIRD-PARTY-NOTICES`），在 Kago 裡則是帳號選單的「關於」，那裡也寫著版本、commit 與建置時間。相依套件有變動時，執行 `pnpm notices` 重新產生。
