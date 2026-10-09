@@ -126,6 +126,10 @@ test("minimum file-manager demo flow", async () => {
     const notPortrait = await admin.post("/api/avatar", { rootSlug: "photos", path: "/public/uploaded.txt" });
     assert.equal(notPortrait.statusCode, 422);
     assert.equal(notPortrait.json.code, "NOT_A_PICTURE");
+    // Which square of it to keep is named in parts of the picture, and nothing else is taken for one.
+    assert.equal((await admin.post("/api/avatar", { rootSlug: "photos", path: "/public/uploaded.txt", crop: { x: 0.25, y: 0, size: 0.5 } })).json.code, "NOT_A_PICTURE");
+    assert.equal((await admin.post("/api/avatar", { rootSlug: "photos", path: "/public/uploaded.txt", crop: { x: 0, y: 0, size: 0 } })).statusCode, 400);
+    assert.equal((await admin.post("/api/avatar", { rootSlug: "photos", path: "/public/uploaded.txt", crop: { x: 2, y: 0, size: 1 } })).statusCode, 400);
     assert.equal((await admin.delete("/api/avatar")).json.user.avatar, null);
     assert.equal((await admin.get("/api/users")).json[0].avatar_at, null);
 

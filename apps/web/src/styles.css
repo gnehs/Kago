@@ -498,6 +498,83 @@
     background: var(--kago-chevron) right 6px center / 14px no-repeat, var(--kago-raised);
   }
 
+  /*
+   * A slider (`KagoSlider`): the groove of a progress bar, filled with the accent as far as a knob raised like a
+   * button. `--value` is how far along the knob is, from 0 to 1; its middle never leaves the groove, so the filling
+   * stops half a knob short of each end.
+   */
+  .kago-slider {
+    --knob: 16px;
+    --groove: 6px;
+    --filled: calc(var(--knob) / 2 + (100% - var(--knob)) * var(--value, 0));
+    appearance: none;
+    height: var(--knob);
+    margin: 0;
+    background: transparent;
+    outline: none;
+  }
+
+  .kago-slider:disabled {
+    opacity: 0.4;
+  }
+
+  .kago-slider::-webkit-slider-runnable-track {
+    height: var(--groove);
+    border-radius: 999px;
+    background:
+      linear-gradient(var(--kago-primary-from), var(--kago-primary-to)) 0 0 / var(--filled) 100% no-repeat,
+      var(--kago-well-track);
+    box-shadow: inset 0 1px 1.5px rgb(0 0 0 / 0.2);
+  }
+
+  .kago-slider::-webkit-slider-thumb {
+    appearance: none;
+    width: var(--knob);
+    height: var(--knob);
+    margin-top: calc((var(--groove) - var(--knob)) / 2);
+    border-radius: 50%;
+    background: var(--kago-raised);
+    box-shadow: var(--kago-raised-shadow);
+  }
+
+  .kago-slider:not(:disabled):active::-webkit-slider-thumb {
+    background: var(--kago-raised-pressed);
+  }
+
+  .kago-slider:focus-visible::-webkit-slider-thumb {
+    box-shadow: var(--kago-raised-shadow), 0 0 0 3px color-mix(in srgb, var(--kago-accent) 45%, transparent);
+  }
+
+  .kago-slider::-moz-range-track {
+    height: var(--groove);
+    border-radius: 999px;
+    background: var(--kago-well-track);
+    box-shadow: inset 0 1px 1.5px rgb(0 0 0 / 0.2);
+  }
+
+  .kago-slider::-moz-range-progress {
+    height: var(--groove);
+    border-radius: 999px;
+    background: linear-gradient(var(--kago-primary-from), var(--kago-primary-to));
+  }
+
+  .kago-slider::-moz-range-thumb {
+    width: var(--knob);
+    height: var(--knob);
+    border: 0;
+    border-radius: 50%;
+    background: var(--kago-raised);
+    box-shadow: var(--kago-raised-shadow);
+  }
+
+  .kago-slider:not(:disabled):active::-moz-range-thumb {
+    background: var(--kago-raised-pressed);
+  }
+
+  .kago-slider:focus-visible::-moz-range-thumb {
+    box-shadow: var(--kago-raised-shadow), 0 0 0 3px color-mix(in srgb, var(--kago-accent) 45%, transparent);
+  }
+
   /* Floats over everything else: menus, popovers, the shelf, toasts. What is underneath shows through, blurred. */
   .kago-glass {
     background: var(--kago-glass);

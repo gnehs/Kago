@@ -10,7 +10,7 @@ import { logger } from "./logger.js";
 
 const execFileAsync = promisify(execFile);
 
-/** Thumbnails fit inside a square of this many pixels; smaller pictures are not enlarged. */
+/** Thumbnails fit inside a square of this many pixels unless a larger one is asked for; smaller pictures are not enlarged. */
 const MAX_EDGE = 512;
 const TIMEOUT_MS = 30_000;
 /** A folder of pictures asks for all of its thumbnails at once; only this many are drawn at a time. */
@@ -19,10 +19,21 @@ const MAX_JOBS = 3;
 const MAX_REMEMBERED_FAILURES = 2000;
 
 // AVIF has no place for transparency with the encoders at hand, so pictures are laid on white first.
-// `square` keeps only the middle of the picture, as wide as it is tall.
-const filter = (edge: number, square = false) =>
+/**
+ * A square cut out of a picture, in parts of the picture so it does not matter how large the copy being cut is:
+ * `x` and `y` are its corner as parts of the width and height, `size` its side as a part of the shorter of the two.
+ */
+export type Crop = { x: number; y: number; size: number };
+
+// Written out in full: a small number would otherwise be spelled with an exponent.
+const part = (value: number) => value.toFixed(6);
+// A square where none is named is the one in the middle, as large as the picture allows. One that reaches past an edge is moved back inside.
+const cut = (square: true | Crop) =>
+  square === true ? "crop='min(iw,ih)':'min(iw,ih)'," : `crop='max(2,min(iw,ih)*${part(square.size)})':'max(2,min(iw,ih)*${part(square.size)})':'iw*${part(square.x)}':'ih*${part(square.y)}',`;
+
+const filter = (edge: number, square: boolean | Crop = false) =>
   [
-    `[0:v:0]${square ? "crop='min(iw,ih)':'min(iw,ih)'," : ""}scale='min(${edge},iw)':'min(${edge},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2,format=rgba,split[picture][sheet]`,
+    `[0:v:0]${square ? cut(square) : ""}scale='min(${edge},iw)':'min(${edge},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2,format=rgba,split[picture][sheet]`,
     "[sheet]drawbox=c=white:t=fill:replace=1[white]",
     "[white][picture]overlay,format=yuv420p[out]"
   ].join(";");
@@ -53,14 +64,17 @@ export class Thumbnailer {
 
   constructor(private readonly dir: string) {}
 
-  /** The path of the thumbnail for `key`, drawing it first when it is not there yet. Null when the file cannot be drawn. */
-  async render(source: string, key: string, kind: ThumbnailSource): Promise<string | null> {
+  /**
+   * The path of the thumbnail for `key`, drawing it first when it is not there yet. Null when the file cannot be drawn.
+   * One of another `edge` is another picture, and is kept under a key of its own.
+   */
+  async render(source: string, key: string, kind: ThumbnailSource, edge = MAX_EDGE): Promise<string | null> {
     const target = path.join(this.dir, `${key}.avif`);
     if (await useKeptFile(target)) return target;
     if (this.failed.has(key)) return null;
     let job = this.pending.get(key);
     if (!job) {
-      job = this.draw(source, target, kind).finally(() => this.pending.delete(key));
+      job = this.draw(source, target, kind, edge).finally(() => this.pending.delete(key));
       this.pending.set(key, job);
     }
     const result = await job;
@@ -71,7 +85,7 @@ export class Thumbnailer {
     return result;
   }
 
-  private async draw(source: string, target: string, kind: ThumbnailSource): Promise<string | null> {
+  private async draw(source: string, target: string, kind: ThumbnailSource, edge: number): Promise<string | null> {
     const encoder = await (this.encoder ??= this.findEncoder());
     if (!encoder) return null;
     // An SVG is a document that may name other files to draw; the browser shows it as it is instead.
@@ -85,7 +99,7 @@ export class Thumbnailer {
       await fsp.mkdir(this.dir, { recursive: true });
       let picture = source;
       if (kind === "pdf" || kind === "embedded") {
-        if (!(await this.prepare({ kind, source, target: prepared, edge: MAX_EDGE }))) return null;
+        if (!(await this.prepare({ kind, source, target: prepared, edge }))) return null;
         picture = prepared;
       }
       // A tenth of the way in is past most title cards; the very first frame is tried when nothing is there.
@@ -96,7 +110,7 @@ export class Thumbnailer {
         // which for 4K HEVC with keyframes ten seconds apart outlasts the timeout on a slow machine.
         const input = seek === null ? guardedInput(picture, formats) : [...(seek > 0 ? ["-skip_frame", "nokey"] : []), "-ss", seek.toFixed(2), ...guardedInput(picture, formats), "-an", "-sn", "-dn"];
         try {
-          const { stderr } = await execFileAsync(this.ffmpeg, ["-v", "warning", "-nostdin", "-y", ...input, "-filter_complex", filter(MAX_EDGE), "-map", "[out]", "-frames:v", "1", ...encoder, "-f", "avif", partial], { timeout: TIMEOUT_MS });
+          const { stderr } = await execFileAsync(this.ffmpeg, ["-v", "warning", "-nostdin", "-y", ...input, "-filter_complex", filter(edge), "-map", "[out]", "-frames:v", "1", ...encoder, "-f", "avif", partial], { timeout: TIMEOUT_MS });
           // With no frame after the seek, ffmpeg still succeeds and leaves a file that is only a header.
           if (stderr.includes("Output file is empty")) continue;
           await fsp.rename(partial, target);
@@ -122,10 +136,10 @@ export class Thumbnailer {
 
   /**
    * Writes a picture to `target` as an AVIF no longer than `edge` on its longer side, replacing what was there;
-   * `square` cuts it to its middle first. False when it cannot be done: no encoder, or a file ffmpeg does not read
-   * as a picture.
+   * `square` cuts it to a square first, the one named or the one in its middle. False when it cannot be done: no
+   * encoder, or a file ffmpeg does not read as a picture.
    */
-  async convert(source: string, target: string, edge: number, square = false): Promise<boolean> {
+  async convert(source: string, target: string, edge: number, square: boolean | Crop = false): Promise<boolean> {
     const encoder = await (this.encoder ??= this.findEncoder());
     if (!encoder || /\.svgz?$/i.test(source)) return false;
     await this.acquire();

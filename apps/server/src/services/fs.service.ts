@@ -12,7 +12,7 @@ import { readFinderTags, writeFinderTags } from "../lib/finder-tags.js";
 import { MAX_SQLITE_PAGE, sqliteOverview, sqliteRows } from "../lib/sqlite-preview.js";
 import { isPictureFormat, parseSubtitleName } from "../lib/subtitles.js";
 import { isSystemFile } from "../lib/system-files.js";
-import { Thumbnailer, type ThumbnailSource } from "../lib/thumbnailer.js";
+import { Thumbnailer, type Crop, type ThumbnailSource } from "../lib/thumbnailer.js";
 import type { ZipEntry } from "../lib/zip-stream.js";
 import type { AuditService } from "./audit.service.js";
 import { renditionKind, type ImageService } from "./image.service.js";
@@ -29,6 +29,22 @@ export const fsQuerySchema = z.object({
   rootSlug: z.string().min(1),
   path: z.string().min(1).default("/")
 });
+
+/** The picture to make a profile picture of, and the square of it to keep: without one, the middle. */
+export const avatarSchema = fsQuerySchema.extend({
+  crop: z
+    .object({
+      x: z.number().min(0).max(1),
+      y: z.number().min(0).max(1),
+      // The interface zooms in five times at most; this leaves it room, and still leaves something to look at.
+      size: z.number().min(0.05).max(1)
+    })
+    .strict()
+    .optional()
+});
+
+/** Which thumbnail of a file: the one its icon shows, or the larger one a picture's viewer shows while the picture itself is on its way. */
+export const thumbnailQuerySchema = fsQuerySchema.extend({ size: z.enum(["small", "medium"]).default("small") });
 
 /** One path or several: a repeated query parameter arrives as a list, a single one as a string. */
 export const zipQuerySchema = z.object({
@@ -72,6 +88,8 @@ const BROWSER_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "im
 /** Documents that may carry a preview picture of their first page inside the file. */
 const EMBEDDED_PREVIEW_EXTENSIONS = new Set(["docx", "docm", "xlsx", "xlsm", "pptx", "pptm", "ppsx", "odt", "ods", "odp", "pages", "numbers", "key"]);
 const MAX_ORIGINAL_THUMBNAIL_BYTES = 8 * 1024 * 1024;
+/** The longer side of a medium thumbnail: sharp across a window, and a fraction of what a camera's picture weighs. */
+const MEDIUM_THUMBNAIL_EDGE = 2048;
 /** A desktop background fills a screen, so it is kept up to the width of a 4K one. */
 const WALLPAPER_EDGE = 3840;
 /** A profile picture is only ever shown small; this is sharp at the largest it is drawn, on a dense screen. */
@@ -578,10 +596,11 @@ export class FsService {
 
   /**
    * What a file's icon shows of its contents: a small picture for images and videos, the opening lines for text.
-   * Anything else has no thumbnail, and its icon is drawn by the client alone.
+   * Anything else has no thumbnail, and its icon is drawn by the client alone. Only pictures have a medium one,
+   * and only a drawn one: where the small one falls back on the file itself, the viewer is about to read that anyway.
    */
-  async thumbnail(actor: Actor, rootSlug: string, logicalPath: string): Promise<Thumbnail> {
-    const thumbnail = await this.prepareThumbnail(actor, rootSlug, logicalPath);
+  async thumbnail(actor: Actor, rootSlug: string, logicalPath: string, medium = false): Promise<Thumbnail> {
+    const thumbnail = await this.prepareThumbnail(actor, rootSlug, logicalPath, medium);
     if (!thumbnail) throw new AppError(404, "No thumbnail for this file", "NO_THUMBNAIL");
     return thumbnail;
   }
@@ -605,7 +624,7 @@ export class FsService {
     await this.prepareThumbnail(actor, rootSlug, logicalPath);
   }
 
-  private async prepareThumbnail(actor: Actor, rootSlug: string, logicalPath: string): Promise<Thumbnail | null> {
+  private async prepareThumbnail(actor: Actor, rootSlug: string, logicalPath: string, medium = false): Promise<Thumbnail | null> {
     const safe = await this.paths.resolveExisting(rootSlug, logicalPath);
     this.permissions.require(actor, "view", safe.root, safe.logicalPath);
     const stat = await this.storage.stat(safe);
@@ -627,17 +646,19 @@ export class FsService {
           : EMBEDDED_PREVIEW_EXTENSIONS.has(extension)
             ? "embedded"
             : null;
+    if (medium && source !== "image") return null;
 
     if (source) {
-      const key = createHash("sha256").update(`${safe.root.id}:${safe.logicalPath}:${stat.mtimeMs}:${stat.size}`).digest("hex");
+      const key = createHash("sha256").update(`${safe.root.id}:${safe.logicalPath}:${stat.mtimeMs}:${stat.size}${medium ? ":medium" : ""}`).digest("hex");
       let picture: string | undefined;
       if (rendition) {
         const file = await onDisk();
         picture = file ? await this.images?.rendition(file, stat).catch(() => undefined) : undefined;
       } else if (!remote) picture = (await this.isKeptPicture(safe.absolutePath)) ? undefined : safe.absolutePath;
       else picture = source === "image" || source === "video" ? this.storage.mediaInput(safe) : await onDisk();
-      const drawn = picture ? await this.thumbnailer.render(picture, key, source) : null;
+      const drawn = picture ? await this.thumbnailer.render(picture, key, source, medium ? MEDIUM_THUMBNAIL_EDGE : undefined) : null;
       if (drawn) return { contentType: "image/avif", path: drawn, size: (await fsp.stat(drawn)).size };
+      if (medium) return null;
       // Without ffmpeg, or for a picture it cannot read, the browser is handed the original when it can show it.
       if (BROWSER_IMAGE_TYPES.has(contentType) && stat.size <= MAX_ORIGINAL_THUMBNAIL_BYTES) {
         const original = await onDisk();
@@ -670,10 +691,11 @@ export class FsService {
 
   /**
    * Keeps a picture as the profile picture of whoever asks, the same way as their desktop background: one AVIF each
-   * under `app-data/avatars`. It is shown in a circle, so only the square in its middle is kept.
+   * under `app-data/avatars`. It is shown in a circle, so only a square of it is kept: the one chosen, or the one
+   * in its middle.
    */
-  async setAvatar(actor: Actor, rootSlug: string, logicalPath: string): Promise<void> {
-    await this.keepPicture(actor, rootSlug, logicalPath, { target: this.avatarPath(actor.id), edge: AVATAR_EDGE, square: true, action: "set_avatar", notPicture: new AppError(422, "Only a picture can be a profile picture", "NOT_A_PICTURE") });
+  async setAvatar(actor: Actor, rootSlug: string, logicalPath: string, crop?: Crop): Promise<void> {
+    await this.keepPicture(actor, rootSlug, logicalPath, { target: this.avatarPath(actor.id), edge: AVATAR_EDGE, square: crop ?? true, action: "set_avatar", notPicture: new AppError(422, "Only a picture can be a profile picture", "NOT_A_PICTURE") });
   }
 
   async clearAvatar(actor: Actor): Promise<void> {
@@ -686,7 +708,7 @@ export class FsService {
   }
 
   /** Writes Kago's own copy of a picture the actor may see to `target`, so the file it came from can move or go. */
-  private async keepPicture(actor: Actor, rootSlug: string, logicalPath: string, copy: { target: string; edge: number; square?: boolean; action: string; /** What to answer for a file that is not one. */ notPicture: AppError }): Promise<void> {
+  private async keepPicture(actor: Actor, rootSlug: string, logicalPath: string, copy: { target: string; edge: number; square?: boolean | Crop; action: string; /** What to answer for a file that is not one. */ notPicture: AppError }): Promise<void> {
     const safe = await this.paths.resolveExisting(rootSlug, logicalPath);
     this.permissions.require(actor, "view", safe.root, safe.logicalPath);
     const stat = await this.storage.stat(safe);

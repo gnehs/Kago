@@ -4,6 +4,7 @@ import { useMe, useSetupStatus } from "./api/hooks";
 import { KagoDialogHost } from "./components/kago/dialog";
 import { KagoLoading } from "./components/kago/empty-state";
 import { KagoToaster } from "./components/kago/toaster";
+import { AvatarDialogHost } from "./features/auth/AvatarDialog";
 import { Login } from "./features/auth/Login";
 import { SetupAdmin } from "./features/auth/SetupAdmin";
 import { useSsoNotice } from "./features/auth/sso";
@@ -27,6 +28,7 @@ export function App() {
       <KagoDialogHost />
       <CompressDialogHost />
       <ArchivePasswordDialogHost />
+      <AvatarDialogHost />
       <KagoToaster />
     </>
   );

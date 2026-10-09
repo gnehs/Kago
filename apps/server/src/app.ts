@@ -24,7 +24,7 @@ import { zipStream } from "./lib/zip-stream.js";
 import { isBrowserViewable } from "./lib/viewable.js";
 import { AuditService } from "./services/audit.service.js";
 import { AuthService, MAX_PASSWORD, changePasswordSchema, createUserSchema, loginSchema, patchUserSchema, resetPasswordSchema, setupAdminSchema } from "./services/auth.service.js";
-import { FsService, finderTagsSchema, fsQuerySchema, maxUploadFiles, mkdirSchema, renameSchema, sqliteRowsSchema, writeTextSchema, zipQuerySchema } from "./services/fs.service.js";
+import { FsService, avatarSchema, finderTagsSchema, fsQuerySchema, maxUploadFiles, mkdirSchema, renameSchema, sqliteRowsSchema, thumbnailQuerySchema, writeTextSchema, zipQuerySchema } from "./services/fs.service.js";
 import { ImageService } from "./services/image.service.js";
 import { appUrl, externalAppOrderSchema, externalAppSchema, ExternalAppService } from "./services/external-app.service.js";
 import { createGroupSchema, GroupService } from "./services/group.service.js";
@@ -664,8 +664,8 @@ function registerApi(app: FastifyInstance, services: Services) {
   });
   app.post("/api/avatar", async (request) => {
     const actor = requireActor(request);
-    const body = fsQuerySchema.parse(request.body);
-    await services.fsService.setAvatar(actor, body.rootSlug, body.path);
+    const body = avatarSchema.parse(request.body);
+    await services.fsService.setAvatar(actor, body.rootSlug, body.path, body.crop);
     const user = services.auth.setAvatar(actor.id, true);
     services.events.publish({ type: "account.updated", userId: actor.id });
     return { user };
@@ -790,8 +790,8 @@ function registerApi(app: FastifyInstance, services: Services) {
   });
   app.get("/api/fs/thumbnail", async (request, reply) => {
     const actor = requireActor(request);
-    const query = fsQuerySchema.parse(request.query);
-    const thumbnail = await services.fsService.thumbnail(actor, query.rootSlug, query.path);
+    const query = thumbnailQuerySchema.parse(request.query);
+    const thumbnail = await services.fsService.thumbnail(actor, query.rootSlug, query.path, query.size === "medium");
     reply.header("Content-Type", thumbnail.contentType);
     reply.header("Cache-Control", "private, max-age=86400");
     // A picture ffmpeg could not draw is sent as the file itself, and that file may be an SVG.
