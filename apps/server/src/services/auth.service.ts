@@ -96,6 +96,7 @@ export class AuthService {
       display_name: input.displayName,
       role: input.role,
       disabled: 0,
+      avatar_at: null,
       created_at: ts,
       updated_at: ts
     };
@@ -126,7 +127,7 @@ export class AuthService {
    */
   createExternalUser(input: { email: string; displayName: string; role: "USER" | "GUEST" }): User {
     const ts = now();
-    const user: User = { id: id("user"), email: input.email.toLowerCase(), password_hash: NO_PASSWORD, display_name: input.displayName, role: input.role, disabled: 0, created_at: ts, updated_at: ts };
+    const user: User = { id: id("user"), email: input.email.toLowerCase(), password_hash: NO_PASSWORD, display_name: input.displayName, role: input.role, disabled: 0, avatar_at: null, created_at: ts, updated_at: ts };
     this.db
       .prepare("INSERT INTO users (id, email, password_hash, display_name, role, disabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
       .run(user.id, user.email, user.password_hash, user.display_name, user.role, user.disabled, user.created_at, user.updated_at);
@@ -173,6 +174,12 @@ export class AuthService {
         userId
       );
     return this.publicUser(this.getUser(userId));
+  }
+
+  /** Notes that a person's profile picture was set just now, or that they have none any more. */
+  setAvatar(userId: string, present: boolean): Actor {
+    this.db.prepare("UPDATE users SET avatar_at = ?, updated_at = ? WHERE id = ?").run(present ? Date.now() : null, now(), userId);
+    return this.actorFromUser(this.getUser(userId));
   }
 
   /** Changes the caller's own password after re-checking the current one. */
@@ -296,7 +303,8 @@ export class AuthService {
       email: user.email,
       displayName: user.display_name,
       role: user.role,
-      disabled: Boolean(user.disabled)
+      disabled: Boolean(user.disabled),
+      avatar: user.avatar_at
     };
   }
 

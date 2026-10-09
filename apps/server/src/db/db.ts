@@ -18,6 +18,7 @@ export function openDb(env: Env, options: { interruptRunningTasks?: boolean } = 
     PRAGMA busy_timeout = 5000;
   `);
   db.exec(schema);
+  addMissingColumns(db, "users", { avatar_at: "INTEGER" });
   addMissingColumns(db, "roots", { provider: "TEXT NOT NULL DEFAULT 'local'", config: "TEXT" });
   addMissingColumns(db, "external_apps", { embed: "INTEGER NOT NULL DEFAULT 0", auth_user: "TEXT", auth_secret: "TEXT" });
   addMissingColumns(db, "sessions", { identity_id: "TEXT", oidc_refresh: "TEXT", oidc_checked_at: "INTEGER" });

@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Archive, ArchiveRestore, ClipboardPaste, Copy, Download, ExternalLink, Folder, FolderOpen, FolderPlus, FolderUp, Inbox, Info, PanelTop, Pencil, Play, Plus, RefreshCw, Scissors, SquareArrowOutUpRight, Trash2, Upload, Wallpaper } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { Archive, ArchiveRestore, CircleUserRound, ClipboardPaste, Copy, Download, ExternalLink, Folder, FolderOpen, FolderPlus, FolderUp, Inbox, Info, PanelTop, Pencil, Play, Plus, RefreshCw, Scissors, SquareArrowOutUpRight, Trash2, Upload, Wallpaper } from "lucide-react";
 import { useFileList, useFolderContents } from "@/api/hooks";
 import { KagoBadge } from "@/components/kago/badge";
 import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { KagoContextMenu, KagoMenuItem, KagoMenuSeparator } from "@/components/kago/menu";
 import { Button } from "@/components/ui/button";
+import { setAvatar } from "@/features/auth/avatar";
 import { KagoWindow } from "@/features/windows/KagoWindow";
 import { OPEN_ITEM_EVENT } from "@/features/workspace/useShortcuts";
 import { formatSize, isCueSheet, isMusicFile, isPicture, isVideoType } from "@/lib/format";
@@ -63,6 +65,7 @@ export function FileWindowView({ window: frame, roots, isAdmin }: { window: File
   const folderView = useFolderView(frame.rootSlug, frame.logicalPath, fileList.data?.items);
   const win = useMemo<FolderWindow>(() => ({ ...frame, ...folderView.view }), [frame, folderView.view]);
   const actions = useFileActions(win);
+  const queryClient = useQueryClient();
   const uploadInput = useRef<HTMLInputElement>(null);
   const folderInput = useRef<HTMLInputElement>(null);
   const [search, setSearch] = useState("");
@@ -362,6 +365,19 @@ export function FileWindowView({ window: frame, roots, isAdmin }: { window: File
             }
           >
             {t("Set as desktop background")}
+          </KagoMenuItem>
+        ) : null}
+        {single && isPicture(single) ? (
+          <KagoMenuItem
+            icon={<CircleUserRound />}
+            onClick={() =>
+              void run(async () => {
+                await setAvatar(queryClient, { rootSlug: win.rootSlug, path: single.path });
+                toast(t("Profile picture set"));
+              }, t("Couldn’t set the profile picture"))
+            }
+          >
+            {t("Set as profile picture")}
           </KagoMenuItem>
         ) : null}
         <KagoMenuSeparator />

@@ -650,6 +650,34 @@ function registerApi(app: FastifyInstance, services: Services) {
     return services.preferences.setWallpaper(actor.id, false);
   });
 
+  // One profile picture per person, kept the same way. Unlike the background it is shown to others, so anyone signed in may ask for it.
+  app.get("/api/users/:id/avatar", async (request, reply) => {
+    requireActor(request);
+    // Ids are generated here; anything else is not one, and is not looked for on disk.
+    const params = z.object({ id: z.string().regex(/^\w+$/) }).parse(request.params);
+    const file = services.fsService.avatarPath(params.id);
+    const stat = await fs.promises.stat(file).catch(() => null);
+    if (!stat) throw new AppError(404, "No profile picture is set", "NO_AVATAR");
+    reply.header("Cache-Control", "private, max-age=31536000, immutable");
+    sandboxContent(reply);
+    return sendFile(request, reply, file, stat, "image/avif");
+  });
+  app.post("/api/avatar", async (request) => {
+    const actor = requireActor(request);
+    const body = fsQuerySchema.parse(request.body);
+    await services.fsService.setAvatar(actor, body.rootSlug, body.path);
+    const user = services.auth.setAvatar(actor.id, true);
+    services.events.publish({ type: "account.updated", userId: actor.id });
+    return { user };
+  });
+  app.delete("/api/avatar", async (request) => {
+    const actor = requireActor(request);
+    await services.fsService.clearAvatar(actor);
+    const user = services.auth.setAvatar(actor.id, false);
+    services.events.publish({ type: "account.updated", userId: actor.id });
+    return { user };
+  });
+
   // Shortcuts on the desktop to other services: one's own, and the ones an administrator shares with everyone.
   app.get("/api/external-apps", async (request) => services.apps.list(requireActor(request)));
   app.post("/api/external-apps", async (request) => services.apps.create(requireActor(request), externalAppSchema.parse(request.body)));

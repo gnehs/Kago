@@ -3,10 +3,11 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Columns3, Fingerprint, KeyRound, LayoutGrid, List, Monitor, Moon, PanelLeft, PanelRight, Sparkles, Sun, ZapOff } from "lucide-react";
 import { api, ApiError } from "@/api/client";
 import { useIdentities } from "@/api/hooks";
-import { KagoAvatar } from "@/components/kago/avatar";
+import { avatarUrl, KagoAvatar } from "@/components/kago/avatar";
 import { KagoBadge } from "@/components/kago/badge";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/input";
+import { setAvatar } from "@/features/auth/avatar";
 import { startSsoLink } from "@/features/auth/sso";
 import { firstDirection, sortColumns } from "@/features/files/FileList";
 import { BASE_VIEW } from "@/features/files/folderView";
@@ -248,12 +249,17 @@ function AccountSettings({ user }: { user: Actor }) {
   return (
     <Card title={t("Account")}>
       <div className="flex items-center gap-3">
-        <KagoAvatar name={user.displayName || user.email} className="size-9 text-sm" />
+        <KagoAvatar name={user.displayName || user.email} picture={avatarUrl(user.id, user.avatar)} className="size-9 text-sm" />
         <div className="flex min-w-0 flex-1 flex-col">
           <span className="truncate font-medium">{user.displayName}</span>
           <span className="truncate text-xs text-muted">{user.email}</span>
         </div>
         <KagoBadge tone={user.role === "ADMIN" ? "accent" : "neutral"}>{roleLabels[user.role]}</KagoBadge>
+      </div>
+      <div className="mt-4 border-t border-line pt-4">
+        <SettingRow label={t("Profile picture")} description={t("Right-click a picture in any folder and choose “Set as profile picture”. Kago keeps its own copy.")}>
+          <Button variant="outline" disabled={!user.avatar} onClick={() => void run(() => setAvatar(queryClient, null))}>{user.avatar ? t("Remove") : t("None set")}</Button>
+        </SettingRow>
       </div>
       {sso || identities.length > 0 ? (
         <div className="mt-4 flex flex-col gap-3 border-t border-line pt-4">

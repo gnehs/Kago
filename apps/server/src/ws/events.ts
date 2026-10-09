@@ -9,6 +9,7 @@ export type ServerEvent =
   | { type: "shelf.updated"; userId: string; shelfId: string }
   | { type: "workspace.updated"; userId: string }
   | { type: "settings.updated"; userId: string }
+  | { type: "account.updated"; userId: string }
   | { type: "permission.updated"; userId?: string }
   | { type: "roots.updated" }
   | { type: "apps.updated"; userId?: string }

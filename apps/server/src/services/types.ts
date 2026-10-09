@@ -7,6 +7,8 @@ export type User = {
   display_name: string;
   role: Role;
   disabled: number;
+  /** When their profile picture was last set. Null without one. */
+  avatar_at: number | null;
   created_at: number;
   updated_at: number;
 };
@@ -34,6 +36,8 @@ export type Actor = {
   displayName: string;
   role: Role;
   disabled: boolean;
+  /** When their profile picture was last set, for the ones who are shown: it names the picture to ask for. */
+  avatar?: number | null;
 };
 
 export type FileRef = {

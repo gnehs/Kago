@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Plus, UsersRound, X } from "lucide-react";
 import { api } from "@/api/client";
 import { useGroups, useUsers } from "@/api/hooks";
-import { KagoAvatar } from "@/components/kago/avatar";
+import { avatarUrl, KagoAvatar } from "@/components/kago/avatar";
 import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { Button } from "@/components/ui/button";
@@ -85,7 +85,7 @@ function GroupCard({ group, users, onChange }: { group: Group; users: UserAccoun
         <ul className="-mx-4 -mt-4 mb-4 flex list-none flex-col divide-y divide-line border-b border-line p-0">
           {group.members.map((member) => (
             <li key={member.id} className="flex h-11 items-center gap-2.5 pr-2 pl-4">
-              <KagoAvatar name={member.display_name || member.email} className="size-6" />
+              <KagoAvatar name={member.display_name || member.email} picture={avatarUrl(member.id, member.avatar_at)} className="size-6" />
               <span className="truncate font-medium">{member.display_name}</span>
               <span className="min-w-0 flex-1 truncate text-xs text-muted">{member.email}</span>
               <KagoIconButton label={t("Remove {member} from {group}", { member: member.display_name, group: group.name })} onClick={() => void remove(member.id)}><X /></KagoIconButton>

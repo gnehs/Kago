@@ -74,6 +74,8 @@ const EMBEDDED_PREVIEW_EXTENSIONS = new Set(["docx", "docm", "xlsx", "xlsm", "pp
 const MAX_ORIGINAL_THUMBNAIL_BYTES = 8 * 1024 * 1024;
 /** A desktop background fills a screen, so it is kept up to the width of a 4K one. */
 const WALLPAPER_EDGE = 3840;
+/** A profile picture is only ever shown small; this is sharp at the largest it is drawn, on a dense screen. */
+const AVATAR_EDGE = 512;
 const isVideoType = (type: string) => type.startsWith("video/") || type.startsWith("application/vnd.rn-realmedia");
 
 /** The editor holds a file whole in the browser, and saves it whole. */
@@ -654,18 +656,7 @@ export class FsService {
    * so a new one takes the place of the last.
    */
   async setWallpaper(actor: Actor, rootSlug: string, logicalPath: string): Promise<void> {
-    const safe = await this.paths.resolveExisting(rootSlug, logicalPath);
-    this.permissions.require(actor, "view", safe.root, safe.logicalPath);
-    const stat = await this.storage.stat(safe);
-    const rendition = renditionKind(safe.logicalPath);
-    if (!stat.isFile() || !(rendition || String(lookup(safe.logicalPath)).startsWith("image/"))) throw new AppError(422, "Only a picture can be the desktop background", "NOT_A_PICTURE");
-    let picture: string | undefined;
-    if (rendition) {
-      const file = await this.storage.localFile(safe, stat);
-      picture = await this.images?.rendition(file, stat);
-    } else picture = this.storage.isRemote(safe) ? this.storage.mediaInput(safe) : safe.absolutePath;
-    if (!picture || !(await this.thumbnailer.convert(picture, this.wallpaperPath(actor.id), WALLPAPER_EDGE))) throw new AppError(422, "The picture could not be converted", "WALLPAPER_FAILED");
-    this.audit.write({ actorType: "user", actorId: actor.id, action: "set_wallpaper", rootId: safe.root.id, path: safe.logicalPath, result: "success" });
+    await this.keepPicture(actor, rootSlug, logicalPath, { target: this.wallpaperPath(actor.id), edge: WALLPAPER_EDGE, action: "set_wallpaper", notPicture: new AppError(422, "Only a picture can be the desktop background", "NOT_A_PICTURE") });
   }
 
   async clearWallpaper(actor: Actor): Promise<void> {
@@ -675,6 +666,39 @@ export class FsService {
   /** Where a person's desktop background is kept. Ids are generated here, so they are safe as file names. */
   wallpaperPath(userId: string): string {
     return path.join(this.appDataDir, "wallpapers", `${userId}.avif`);
+  }
+
+  /**
+   * Keeps a picture as the profile picture of whoever asks, the same way as their desktop background: one AVIF each
+   * under `app-data/avatars`. It is shown in a circle, so only the square in its middle is kept.
+   */
+  async setAvatar(actor: Actor, rootSlug: string, logicalPath: string): Promise<void> {
+    await this.keepPicture(actor, rootSlug, logicalPath, { target: this.avatarPath(actor.id), edge: AVATAR_EDGE, square: true, action: "set_avatar", notPicture: new AppError(422, "Only a picture can be a profile picture", "NOT_A_PICTURE") });
+  }
+
+  async clearAvatar(actor: Actor): Promise<void> {
+    await fsp.rm(this.avatarPath(actor.id), { force: true });
+  }
+
+  /** Where a person's profile picture is kept. */
+  avatarPath(userId: string): string {
+    return path.join(this.appDataDir, "avatars", `${userId}.avif`);
+  }
+
+  /** Writes Kago's own copy of a picture the actor may see to `target`, so the file it came from can move or go. */
+  private async keepPicture(actor: Actor, rootSlug: string, logicalPath: string, copy: { target: string; edge: number; square?: boolean; action: string; /** What to answer for a file that is not one. */ notPicture: AppError }): Promise<void> {
+    const safe = await this.paths.resolveExisting(rootSlug, logicalPath);
+    this.permissions.require(actor, "view", safe.root, safe.logicalPath);
+    const stat = await this.storage.stat(safe);
+    const rendition = renditionKind(safe.logicalPath);
+    if (!stat.isFile() || !(rendition || String(lookup(safe.logicalPath)).startsWith("image/"))) throw copy.notPicture;
+    let picture: string | undefined;
+    if (rendition) {
+      const file = await this.storage.localFile(safe, stat);
+      picture = await this.images?.rendition(file, stat);
+    } else picture = this.storage.isRemote(safe) ? this.storage.mediaInput(safe) : safe.absolutePath;
+    if (!picture || !(await this.thumbnailer.convert(picture, copy.target, copy.edge, copy.square))) throw new AppError(422, "The picture could not be converted", "PICTURE_FAILED");
+    this.audit.write({ actorType: "user", actorId: actor.id, action: copy.action, rootId: safe.root.id, path: safe.logicalPath, result: "success" });
   }
 
   private auditThumbnail(actor: Actor, rootId: string, logicalPath: string): void {

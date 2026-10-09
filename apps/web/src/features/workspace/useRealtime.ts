@@ -69,6 +69,11 @@ export function useRealtime(userId: string, onRemoteWorkspaceChange: () => void)
       if (type === "permission.updated") invalidate("permissions", "roots", "fs");
       if (type === "roots.updated") invalidate("roots", "storage", "fs");
       if (type === "settings.updated" && message.userId === userId) void loadSettings();
+      // Someone has a new picture: one's own is on the bar, and an administrator's lists show everyone's.
+      if (type === "account.updated") {
+        if (message.userId === userId) void queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
+        invalidate("users", "groups");
+      }
       if (type === "workspace.updated" && message.userId === userId) {
         onRemoteWorkspaceChange();
         invalidate("workspace");

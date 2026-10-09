@@ -6,7 +6,7 @@ import { id, now } from "../lib/ids.js";
 
 export const createGroupSchema = z.object({ name: z.string().min(1).max(120) });
 
-type GroupMember = { id: string; email: string; display_name: string };
+type GroupMember = { id: string; email: string; display_name: string; avatar_at: number | null };
 
 export class GroupService {
   constructor(private readonly db: Db) {}
@@ -15,7 +15,7 @@ export class GroupService {
     const members = rows<GroupMember & { group_id: string }>(
       this.db
         .prepare(
-          `SELECT group_members.group_id, users.id, users.email, users.display_name
+          `SELECT group_members.group_id, users.id, users.email, users.display_name, users.avatar_at
           FROM group_members JOIN users ON users.id = group_members.user_id
           ORDER BY users.email ASC`
         )

@@ -4,6 +4,8 @@ export type Actor = {
   displayName: string;
   role: "ADMIN" | "USER" | "GUEST";
   disabled: boolean;
+  /** When their profile picture was last set, which names the picture to ask for. Absent without one. */
+  avatar?: number | null;
 };
 
 export type Root = {
@@ -80,6 +82,8 @@ export type UserAccount = {
   display_name: string;
   role: "ADMIN" | "USER" | "GUEST";
   disabled: number;
+  /** When their profile picture was last set. Null without one. */
+  avatar_at: number | null;
   created_at: number;
   updated_at: number;
   /** False for an account made through single sign-on that has not been given a password. */
@@ -122,7 +126,7 @@ export type SsoConfig = {
 export type Group = {
   id: string;
   name: string;
-  members: Array<Pick<UserAccount, "id" | "email" | "display_name">>;
+  members: Array<Pick<UserAccount, "id" | "email" | "display_name" | "avatar_at">>;
   created_at: number;
   updated_at: number;
 };

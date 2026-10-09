@@ -5,6 +5,8 @@ CREATE TABLE IF NOT EXISTS users (
   display_name TEXT NOT NULL,
   role TEXT NOT NULL DEFAULT 'USER',
   disabled INTEGER NOT NULL DEFAULT 0,
+  -- When their profile picture was last set, which names the picture to ask for. Null without one.
+  avatar_at INTEGER,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );

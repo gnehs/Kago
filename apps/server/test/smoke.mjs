@@ -118,6 +118,17 @@ test("minimum file-manager demo flow", async () => {
     assert.equal((await admin.delete("/api/wallpaper")).json.settings.wallpaper, null);
     assert.equal((await admin.patch("/api/settings", { wallpaper: 1 })).statusCode, 400);
 
+    // A profile picture is kept the same way, on the account rather than among its settings.
+    const me = (await admin.get("/api/auth/me")).json.user;
+    assert.equal(me.avatar, null);
+    assert.equal((await admin.get(`/api/users/${me.id}/avatar`)).statusCode, 404);
+    assert.equal((await admin.get("/api/users/..%2Fwallpapers%2Fx/avatar")).statusCode, 400);
+    const notPortrait = await admin.post("/api/avatar", { rootSlug: "photos", path: "/public/uploaded.txt" });
+    assert.equal(notPortrait.statusCode, 422);
+    assert.equal(notPortrait.json.code, "NOT_A_PICTURE");
+    assert.equal((await admin.delete("/api/avatar")).json.user.avatar, null);
+    assert.equal((await admin.get("/api/users")).json[0].avatar_at, null);
+
     // The editor saves a file's text back in place, and refuses to save over a copy that has changed since it was read.
     const uploadedFile = path.join(fixture.dataDir, "photos", "public", "uploaded.txt");
     const beforeEdit = await admin.get("/api/fs/meta?rootSlug=photos&path=/public/uploaded.txt");
@@ -185,7 +196,7 @@ test("minimum file-manager demo flow", async () => {
     const group = await admin.post("/api/groups", { name: "public-readers" });
     assert.equal((await admin.post(`/api/groups/${group.json.id}/members`, { userId: reader.json.id })).statusCode, 200);
     assert.deepEqual((await admin.get("/api/groups")).json.map((item) => ({ name: item.name, members: item.members })), [
-      { name: "public-readers", members: [{ id: reader.json.id, email: "reader@example.test", display_name: "Reader" }] }
+      { name: "public-readers", members: [{ id: reader.json.id, email: "reader@example.test", display_name: "Reader", avatar_at: null }] }
     ]);
     assert.equal((await admin.post("/api/permissions", {
       principalType: "group",

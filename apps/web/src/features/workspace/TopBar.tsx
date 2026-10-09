@@ -4,8 +4,9 @@ import { Popover } from "@base-ui/react/popover";
 import { ListChecks, LogOut, Search, Settings } from "lucide-react";
 import { api } from "@/api/client";
 import { useRoots, useTasks } from "@/api/hooks";
+import { avatarUrl, KagoAvatar } from "@/components/kago/avatar";
 import { KagoSpinner } from "@/components/kago/empty-state";
-import { KagoIconButton } from "@/components/kago/icon-button";
+import { KagoDropdownMenu, KagoMenuItem, KagoMenuSeparator } from "@/components/kago/menu";
 import { Button } from "@/components/ui/button";
 import { BrandMark } from "@/features/auth/AuthCard";
 import { markSignedOut } from "@/features/auth/sso";
@@ -23,11 +24,9 @@ import { t } from "@/lib/i18n";
 
 /** The workspace's only chrome: open windows on the left, status and account on the right. */
 export function TopBar({ user, onOpenPalette }: { user: Actor; onOpenPalette: () => void }) {
-  const queryClient = useQueryClient();
   const windows = useWorkspaceStore((state) => state.windows);
   const appWindows = useWorkspaceStore((state) => state.appWindows);
   const previewWindows = useWorkspaceStore((state) => state.previewWindows);
-  const settingsFocused = appWindows.some((window) => window.app === "settings" && window.focused && !window.minimized);
   const ordered = [...windows, ...appWindows, ...previewWindows].sort((a, b) => a.createdAt - b.createdAt);
   const anyVisible = ordered.some((window) => !window.minimized);
   const roots = useRoots().data;
@@ -52,12 +51,6 @@ export function TopBar({ user, onOpenPalette }: { user: Actor; onOpenPalette: ()
     }
     const store = useWorkspaceStore.getState();
     for (const window of ordered) store.updateWindow(window.id, { minimized: false });
-  }
-
-  async function logout() {
-    await api("/api/auth/logout", { method: "POST" });
-    markSignedOut();
-    await queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
   }
 
   return (
@@ -100,9 +93,44 @@ export function TopBar({ user, onOpenPalette }: { user: Actor; onOpenPalette: ()
         <kbd className="font-sans text-xs">⌘K</kbd>
       </button>
       <TaskStatus />
-      <KagoIconButton label={t("Settings")} active={settingsFocused} onClick={() => useWorkspaceStore.getState().openApp("settings")}><Settings /></KagoIconButton>
-      <KagoIconButton label={t("Sign out {email}", { email: user.email })} onClick={() => void logout()}><LogOut /></KagoIconButton>
+      <UserMenu user={user} />
     </header>
+  );
+}
+
+/** Who is signed in, at the far end of the bar: their picture, and behind it what belongs to the account. */
+function UserMenu({ user }: { user: Actor }) {
+  const queryClient = useQueryClient();
+  const name = user.displayName || user.email;
+  const picture = avatarUrl(user.id, user.avatar);
+
+  async function logout() {
+    await api("/api/auth/logout", { method: "POST" });
+    markSignedOut();
+    await queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
+  }
+
+  return (
+    <KagoDropdownMenu
+      label={t("Account")}
+      className="size-7 rounded-full"
+      menu={
+        <>
+          <div className="flex max-w-64 items-center gap-2.5 px-2 pt-1.5 pb-2">
+            <KagoAvatar name={name} picture={picture} className="size-9 text-sm" />
+            <div className="flex min-w-0 flex-col">
+              <span className="truncate font-medium">{user.displayName}</span>
+              <span className="truncate text-xs text-muted">{user.email}</span>
+            </div>
+          </div>
+          <KagoMenuSeparator />
+          <KagoMenuItem icon={<Settings />} onClick={() => useWorkspaceStore.getState().openApp("settings")}>{t("Settings")}</KagoMenuItem>
+          <KagoMenuItem icon={<LogOut />} onClick={() => void logout()}>{t("Sign out")}</KagoMenuItem>
+        </>
+      }
+    >
+      <KagoAvatar name={name} picture={picture} className="size-6" />
+    </KagoDropdownMenu>
   );
 }
 

@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Plus, X } from "lucide-react";
 import { api } from "@/api/client";
 import { useUsers } from "@/api/hooks";
-import { KagoAvatar } from "@/components/kago/avatar";
+import { avatarUrl, KagoAvatar } from "@/components/kago/avatar";
 import { KagoBadge } from "@/components/kago/badge";
 import { KagoLoading } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
@@ -97,7 +97,7 @@ export function UsersPage({ currentUserId }: { currentUserId: string }) {
       {users.data?.length ? (
         <RowList>
           {users.data.map((user) => (
-            <Row key={user.id} icon={<KagoAvatar name={user.display_name || user.email} />} title={user.display_name} subtitle={user.email}>
+            <Row key={user.id} icon={<KagoAvatar name={user.display_name || user.email} picture={avatarUrl(user.id, user.avatar_at)} />} title={user.display_name} subtitle={user.email}>
               <KagoBadge tone={user.role === "ADMIN" ? "accent" : "neutral"}>{roleLabels[user.role]}</KagoBadge>
               {user.identities.length > 0 ? <KagoBadge>{user.has_password ? t("Single sign-on") : t("Single sign-on only")}</KagoBadge> : null}
               {user.disabled ? <KagoBadge tone="danger">{t("Disabled")}</KagoBadge> : null}

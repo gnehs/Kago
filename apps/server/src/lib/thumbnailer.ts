@@ -19,9 +19,10 @@ const MAX_JOBS = 3;
 const MAX_REMEMBERED_FAILURES = 2000;
 
 // AVIF has no place for transparency with the encoders at hand, so pictures are laid on white first.
-const filter = (edge: number) =>
+// `square` keeps only the middle of the picture, as wide as it is tall.
+const filter = (edge: number, square = false) =>
   [
-    `[0:v:0]scale='min(${edge},iw)':'min(${edge},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2,format=rgba,split[picture][sheet]`,
+    `[0:v:0]${square ? "crop='min(iw,ih)':'min(iw,ih)'," : ""}scale='min(${edge},iw)':'min(${edge},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2,format=rgba,split[picture][sheet]`,
     "[sheet]drawbox=c=white:t=fill:replace=1[white]",
     "[white][picture]overlay,format=yuv420p[out]"
   ].join(";");
@@ -120,10 +121,11 @@ export class Thumbnailer {
   }
 
   /**
-   * Writes a picture to `target` as an AVIF no longer than `edge` on its longer side, replacing what was there.
-   * False when it cannot be done: no encoder, or a file ffmpeg does not read as a picture.
+   * Writes a picture to `target` as an AVIF no longer than `edge` on its longer side, replacing what was there;
+   * `square` cuts it to its middle first. False when it cannot be done: no encoder, or a file ffmpeg does not read
+   * as a picture.
    */
-  async convert(source: string, target: string, edge: number): Promise<boolean> {
+  async convert(source: string, target: string, edge: number, square = false): Promise<boolean> {
     const encoder = await (this.encoder ??= this.findEncoder());
     if (!encoder || /\.svgz?$/i.test(source)) return false;
     await this.acquire();
@@ -131,7 +133,7 @@ export class Thumbnailer {
     const partial = `${target}.${process.hrtime.bigint()}.partial`;
     try {
       await fsp.mkdir(path.dirname(target), { recursive: true });
-      await execFileAsync(this.ffmpeg, ["-v", "warning", "-nostdin", "-y", ...guardedInput(source, PICTURE_FORMATS), "-filter_complex", filter(edge), "-map", "[out]", "-frames:v", "1", ...encoder, "-f", "avif", partial], { timeout: TIMEOUT_MS });
+      await execFileAsync(this.ffmpeg, ["-v", "warning", "-nostdin", "-y", ...guardedInput(source, PICTURE_FORMATS), "-filter_complex", filter(edge, square), "-map", "[out]", "-frames:v", "1", ...encoder, "-f", "avif", partial], { timeout: TIMEOUT_MS });
       if ((await fsp.stat(partial)).size === 0) return false;
       await fsp.rename(partial, target);
       return true;
