@@ -6,6 +6,7 @@ import type { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { Env } from "../config/env.js";
 import { AppError } from "../lib/errors.js";
+import { nfc } from "../lib/filename.js";
 import { id } from "../lib/ids.js";
 import { logger } from "../lib/logger.js";
 import type { RootService } from "../services/root.service.js";
@@ -197,10 +198,27 @@ export class RemoteStorage {
   async move(root: Root, from: string, to: string, directory: boolean): Promise<void> {
     const fs = this.fs(root);
     try {
-      if (directory) await this.client.call("sync/move", { srcFs: joinFs(fs, this.rel(from)), dstFs: joinFs(fs, this.rel(to)), deleteEmptySrcDirs: true });
-      else await this.client.call("operations/movefile", { srcFs: fs, srcRemote: this.rel(from), dstFs: fs, dstRemote: this.rel(to) });
+      if (directory) {
+        await this.client.call("sync/move", { srcFs: joinFs(fs, this.rel(from)), dstFs: joinFs(fs, this.rel(to)), deleteEmptySrcDirs: true });
+        // A remote that takes two spellings for one name would be asked to remove the folder it has just been given.
+        if (nfc(from).toLowerCase() !== nfc(to).toLowerCase()) await this.clearMoved(fs, this.rel(from));
+      } else await this.client.call("operations/movefile", { srcFs: fs, srcRemote: this.rel(from), dstFs: fs, dstRemote: this.rel(to) });
     } catch (error) {
       throw remoteFailure(error);
+    }
+  }
+
+  /**
+   * Removes the folder a move has emptied. Moving file by file, rclone clears the folders inside its source
+   * and leaves the source itself; one it could hand over whole is already gone.
+   */
+  async clearMoved(fs: string, remote: string): Promise<void> {
+    try {
+      // Asked first: rclone writes an error into the log for every folder it is told to remove and does not find.
+      if (await this.client.stat(fs, remote)) await this.client.call("operations/rmdir", { fs, remote });
+    } catch (error) {
+      // Only an empty folder goes, and the move is done either way; what kept one there is logged, not thrown.
+      remoteFailure(error);
     }
   }
 

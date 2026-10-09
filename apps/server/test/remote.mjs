@@ -185,6 +185,13 @@ test("a remote location behaves like a local one", { skip: remote ? false : "KAG
     assert.equal((await api.get(`/api/fs/meta?${q("/album/nested")}`)).status, 404);
     assert.equal((await task({ type: "move", sources: [{ rootSlug: slug, path: "/album/one.txt" }], destination: { rootSlug: "local", path: "/" } })).status, "done");
     assert.equal(await readFile(path.join(dataDir, "local", "one.txt"), "utf8"), "one");
+    // A folder moved between locations leaves nothing where it was, not even itself.
+    assert.equal((await task({ type: "move", sources: [{ rootSlug: "local", path: "/docs" }], destination: { rootSlug: slug, path: "/album" } })).status, "done");
+    assert.equal((await api.get(`/api/fs/preview?${q("/album/docs/renamed.txt")}`)).text, "edited");
+    assert.deepEqual((await readdir(path.join(dataDir, "local"))).sort(), ["album", "one.txt"]);
+    assert.equal((await task({ type: "move", sources: [{ rootSlug: slug, path: "/album/docs" }], destination: { rootSlug: "local", path: "/" } })).status, "done");
+    assert.equal(await readFile(path.join(dataDir, "local", "docs", "renamed.txt"), "utf8"), "edited");
+    assert.equal((await api.get(`/api/fs/meta?${q("/album/docs")}`)).status, 404);
     assert.equal((await api.post("/api/tasks", { type: "copy", sources: [{ rootSlug: slug, path: "/docs" }], destination: { rootSlug: slug, path: "/docs/nested" } })).status, 409);
 
     // The trash of a remote location is on the remote, out of sight.

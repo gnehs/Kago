@@ -604,6 +604,7 @@ export class TaskService {
             onStats,
             stopped
           );
+          if (move) await this.storage.remote.clearMoved(from.fs, from.remote);
         } else {
           await this.storage.remote.client.runJob(move ? "operations/movefile" : "operations/copyfile", { srcFs: from.fs, srcRemote: from.remote, dstFs: to.fs, dstRemote: target }, onStats, stopped);
         }
