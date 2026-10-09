@@ -118,8 +118,9 @@ export function KagoAppIcon({ texture, className, children }: { texture: keyof t
  * An app icon made of a picture that is someone else's: the same tile, in white, in either theme, as a logo is
  * drawn for a light ground far more often than for a dark one. The white takes on the picture's own colour, evenly
  * and lightly: the picture blurred until nothing of its shapes is left, so that each shortcut has a tile of its
- * own and none is the bare white of a blank. The picture itself is left as it was made, with only a faint shadow
- * to lift it off the tile.
+ * own and none is the bare white of a blank. The tile is the same object as Kago's own: lit from above, with the
+ * same line of light around its edge and the same grain, here dark, as white grain does not show on white. The
+ * picture itself is left as it was made, with only a faint shadow to lift it off the tile.
  */
 export function KagoAppImage({ src, className, onError }: { src: string; className?: string; onError?: () => void }) {
   const id = useId();
@@ -141,6 +142,21 @@ export function KagoAppImage({ src, className, onError }: { src: string; classNa
           <stop offset="0" stopColor="#ffffff" stopOpacity={0.55} />
           <stop offset="1" stopColor="#ffffff" stopOpacity={0} />
         </linearGradient>
+        {/* A little darker toward the bottom, and never quite white, or the light on the edge would have nothing to show against. */}
+        <linearGradient id={`${id}-shade`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#000000" stopOpacity={0.02} />
+          <stop offset="1" stopColor="#000000" stopOpacity={0.08} />
+        </linearGradient>
+        <linearGradient id={`${id}-rim`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#ffffff" stopOpacity={1} />
+          <stop offset="0.3" stopColor="#ffffff" stopOpacity={0.45} />
+          <stop offset="0.75" stopColor="#ffffff" stopOpacity={0.3} />
+          <stop offset="1" stopColor="#ffffff" stopOpacity={0.8} />
+        </linearGradient>
+        <filter id={`${id}-grain`}>
+          <feTurbulence type="fractalNoise" baseFrequency="1.1" numOctaves="2" seed="7" />
+          <feColorMatrix values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  1.4 0 0 0 -0.62" />
+        </filter>
         <clipPath id={`${id}-clip`}>
           <path d={TILE} />
         </clipPath>
@@ -149,7 +165,10 @@ export function KagoAppImage({ src, className, onError }: { src: string; classNa
       <g clipPath={`url(#${id}-clip)`}>
         <image href={src} x="8" y="8" width="80" height="80" filter={`url(#${id}-tint)`} opacity={0.28} />
         <rect width="96" height="96" fill={`url(#${id}-light)`} />
+        <rect width="96" height="96" fill={`url(#${id}-shade)`} />
+        <rect width="96" height="96" filter={`url(#${id}-grain)`} opacity={0.1} />
       </g>
+      <path d={TILE} fill="none" stroke={`url(#${id}-rim)`} strokeWidth={1.1} transform="translate(0.7 0.7) scale(0.9854)" />
       {/* Drawn as a picture, whatever it is: an SVG shown this way runs nothing and fetches nothing. */}
       <image href={src} x="14" y="14" width="68" height="68" preserveAspectRatio="xMidYMid meet" filter={`url(#${id}-lift)`} onError={onError} />
       <path d={TILE} fill="none" stroke="#000000" strokeOpacity={0.12} strokeWidth={0.6} />
