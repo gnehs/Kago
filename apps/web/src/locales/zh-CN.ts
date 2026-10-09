@@ -564,6 +564,7 @@ export const zhCN: Dictionary = {
   "Drag files here to hold them": "把文件拖到这里暂存",
   "Only their location is kept; nothing is copied": "只记录位置，不会复制文件",
   "Remove {name} from Shelf": "从中转区移除 {name}",
+  "Clear Shelf": "清空中转区",
   "The current window is read-only": "当前窗口是只读的",
   "Send to “{title}”": "发送到“{title}”",
   "Pick a file window as the destination first": "先选择一个文件窗口作为目的地",

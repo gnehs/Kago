@@ -564,6 +564,7 @@ export const ja: Dictionary = {
   "Drag files here to hold them": "ファイルをここにドラッグして一時的に置けます",
   "Only their location is kept; nothing is copied": "場所を記録するだけで、ファイルはコピーされません",
   "Remove {name} from Shelf": "{name} をシェルフから削除",
+  "Clear Shelf": "シェルフを空にする",
   "The current window is read-only": "現在のウィンドウは読み取り専用です",
   "Send to “{title}”": "「{title}」に送る",
   "Pick a file window as the destination first": "先に送り先のファイルウィンドウを選んでください",
