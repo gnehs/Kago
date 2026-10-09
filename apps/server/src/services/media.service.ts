@@ -10,6 +10,7 @@ import { AppError } from "../lib/errors.js";
 import { guardedInput, guardedProbe, inputProtocols } from "../lib/ffmpeg-input.js";
 import { id as createId } from "../lib/ids.js";
 import { logger } from "../lib/logger.js";
+import { loadSharp } from "../lib/sharp.js";
 import { streamLanguage, type PictureSubtitleFormat, type SubtitleFormat } from "../lib/subtitles.js";
 
 const execFileAsync = promisify(execFile);
@@ -185,6 +186,8 @@ const SUBTITLE_DEMUXER: Record<PictureSubtitleFormat, string> = { pgs: "sup", vo
 const SUBTITLE_LEAD_SECONDS = 120;
 /** Reading a subtitle stream out means reading through the whole file, which takes a while on a large one. */
 const EXTRACT_TIMEOUT_MS = 180_000;
+/** What ffmpeg hands over through a pipe is held whole in memory: a cover scaled down for a screen, hardly packed, fits many times over. */
+const MAX_PIPED_BYTES = 64 * 1024 * 1024;
 const EXTRACT_KEEP = 24;
 /** How many files are looked at, and how many have something taken out of them, at one time; the rest wait their turn. */
 const PROBE_JOBS = 4;
@@ -327,14 +330,30 @@ export class MediaService {
     return this.extract(absolutePath, stat, `font-${index}`, (out) => [`-dump_attachment:t:${index}`, out, ...guardedInput(absolutePath)]);
   }
 
-  /** The picture attached to a file, as a JPEG no larger than a screen needs. */
+  /**
+   * The picture attached to a file, no larger than a screen needs. ffmpeg takes it out of the file and sharp writes
+   * it as an AVIF, well under half the size of the JPEG it is where there is no sharp to do so.
+   */
   async cover(absolutePath: string, stat: FileVersion): Promise<string> {
     const index = (await this.info(absolutePath, stat)).cover;
     if (index === null) throw new AppError(404, "Cover not found", "NOT_FOUND");
-    return this.extract(absolutePath, stat, "cover.jpg", (out) => [...guardedInput(absolutePath), "-map", `0:v:${index}`, "-frames:v", "1", "-vf", "scale='min(1200,iw)':-2", "-q:v", "3", "-f", "mjpeg", out]);
+    const picture = (out: string, format: string[]) => [...guardedInput(absolutePath), "-map", `0:v:${index}`, "-frames:v", "1", "-vf", "scale='min(1200,iw)':-2", ...format, out];
+    const sharp = await loadSharp();
+    if (!sharp) return this.extract(absolutePath, stat, "cover.jpg", (out) => picture(out, ["-q:v", "3", "-f", "mjpeg"]));
+    return this.extract(
+      absolutePath,
+      stat,
+      "cover.avif",
+      (out) => picture(out, ["-c:v", "png", "-compression_level", "1", "-f", "image2pipe"]),
+      (frame, out) => sharp(frame).avif({ quality: 60, effort: 2 }).toFile(out)
+    );
   }
 
-  private extract(absolutePath: string, stat: FileVersion, name: string, args: (out: string) => string[]): Promise<string> {
+  /**
+   * Something ffmpeg takes out of a file, kept under the file's key and `name`. With `write`, ffmpeg hands what it
+   * took out over through a pipe instead of writing it, and `write` makes the file of it.
+   */
+  private extract(absolutePath: string, stat: FileVersion, name: string, args: (out: string) => string[], write?: (made: Buffer, out: string) => Promise<unknown>): Promise<string> {
     const key = createHash("sha1").update(`${absolutePath}:${stat.mtimeMs}:${stat.size}`).digest("hex");
     const target = path.join(this.extractDir, `${key}-${name}`);
     let pending = this.extracts.get(target);
@@ -342,8 +361,13 @@ export class MediaService {
       pending = this.extractSlots(async () => {
         await fsp.mkdir(this.extractDir, { recursive: true });
         const partial = `${target}.part`;
-        // Dumping an attachment has no output file, which ffmpeg reports as an error after writing it.
-        await execFileAsync(this.ffmpeg, ["-v", "error", "-nostdin", "-y", ...args(partial)], { timeout: EXTRACT_TIMEOUT_MS }).catch(() => {});
+        if (write) {
+          const made = await execFileAsync(this.ffmpeg, ["-v", "error", "-nostdin", ...args("pipe:1")], { timeout: EXTRACT_TIMEOUT_MS, encoding: "buffer", maxBuffer: MAX_PIPED_BYTES }).then(({ stdout }) => stdout, () => null);
+          if (made?.length) await write(made, partial).catch(() => {});
+        } else {
+          // Dumping an attachment has no output file, which ffmpeg reports as an error after writing it.
+          await execFileAsync(this.ffmpeg, ["-v", "error", "-nostdin", "-y", ...args(partial)], { timeout: EXTRACT_TIMEOUT_MS }).catch(() => {});
+        }
         try {
           await fsp.rename(partial, target);
         } catch {

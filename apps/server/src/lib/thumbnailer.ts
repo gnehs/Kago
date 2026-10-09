@@ -7,6 +7,7 @@ import type { ThumbnailJob, ThumbnailJobResult } from "../workers/thumbnail-work
 import { guardedInput, guardedProbe, PICTURE_FORMATS } from "./ffmpeg-input.js";
 import { pruneKeptFiles, useKeptFile } from "./kept-files.js";
 import { logger } from "./logger.js";
+import { loadSharp, type Sharp } from "./sharp.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -38,8 +39,6 @@ const filter = (edge: number, square: boolean | Crop = false) => `[0:v:0]${squar
 const AS_PNG = ["-map", "[out]", "-frames:v", "1", "-c:v", "png", "-compression_level", "1", "-f", "image2pipe", "pipe:1"];
 /** How sharp writes an AVIF: the effort is the least that still comes out smaller than the encoders ffmpeg has, in about the time they took. */
 const AVIF = { quality: 50, effort: 2 } as const;
-
-type Sharp = (typeof import("sharp"))["default"];
 
 /**
  * The kinds of picture sharp reads by itself, which takes about half as long as having ffmpeg read them first: the
@@ -262,16 +261,7 @@ export class Thumbnailer {
       logger.warn("ffmpeg not found; thumbnails are disabled");
       return null;
     }
-    try {
-      // It carries a library built for one kind of machine, so it is only loaded once a picture needs writing.
-      const sharp = (await import("sharp")).default;
-      // It would remember a file by its name, and answer for one changed since with what it was before.
-      sharp.cache(false);
-      return sharp;
-    } catch (error) {
-      logger.warn("sharp could not be loaded; thumbnails are disabled", (error as Error).message);
-      return null;
-    }
+    return loadSharp();
   }
 
   private async acquire(): Promise<void> {

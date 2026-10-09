@@ -897,7 +897,7 @@ function registerApi(app: FastifyInstance, services: Services) {
     const cover = await services.media.cover(file.input, file.stat);
     reply.header("Cache-Control", "private, max-age=3600");
     sandboxContent(reply);
-    return sendFile(request, reply, cover, await fs.promises.stat(cover), "image/jpeg");
+    return sendFile(request, reply, cover, await fs.promises.stat(cover), cover.endsWith(".avif") ? "image/avif" : "image/jpeg");
   });
   app.get("/api/media/audio", async (request, reply) => {
     const actor = requireActor(request);
