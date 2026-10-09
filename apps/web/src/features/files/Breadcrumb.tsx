@@ -63,21 +63,39 @@ export function Breadcrumb({ window, rootName, onNavigate }: { window: FileWindo
   return (
     <nav
       aria-label={t("Path")}
-      className="flex h-(--kago-control-h) min-w-0 flex-1 items-center rounded-md px-1 hover:bg-hover"
+      className="flex h-(--kago-control-h) min-w-0 flex-1 items-center overflow-hidden rounded-md px-1 hover:bg-hover"
       title={t("Click the empty space to type a path")}
       onClick={(event) => event.target === event.currentTarget && setDraft(window.logicalPath)}
     >
+      {/* The narrowest of windows has room to name only the folder it is in: every folder above it waits behind the dots. */}
+      {crumbs.length > 1 ? (
+        <>
+          <KagoDropdownMenu
+            label={t("Show the folders above")}
+            align="start"
+            className="h-auto w-auto rounded-sm px-1.5 py-0.5 @sm:hidden"
+            menu={crumbs.slice(0, -1).map((crumb) => (
+              <KagoMenuItem key={crumb.path} icon={<FileIcon item={FOLDER} />} onClick={() => onNavigate(crumb.path)}>
+                <span className="max-w-64 truncate">{crumb.label}</span>
+              </KagoMenuItem>
+            ))}
+          >
+            …
+          </KagoDropdownMenu>
+          <ChevronRight className="size-3.5 text-faint @sm:hidden" />
+        </>
+      ) : null}
       {visible.map((crumb, index) => {
         const isLast = index === visible.length - 1;
         return (
           <Fragment key={crumb.path}>
-            {index > 0 ? <ChevronRight className="size-3.5 text-faint" /> : null}
+            {index > 0 ? <ChevronRight className="hidden size-3.5 text-faint @sm:block" /> : null}
             {index === 1 && hidden > 0 ? (
               <>
                 <KagoDropdownMenu
                   label={t("Show the folders in between")}
                   align="start"
-                  className="h-auto w-auto rounded-sm px-1.5 py-0.5"
+                  className="hidden h-auto w-auto rounded-sm px-1.5 py-0.5 @sm:flex"
                   menu={folded.map((crumb) => (
                     <KagoMenuItem key={crumb.path} icon={<FileIcon item={FOLDER} />} onClick={() => onNavigate(crumb.path)}>
                       <span className="max-w-64 truncate">{crumb.label}</span>
@@ -86,11 +104,11 @@ export function Breadcrumb({ window, rootName, onNavigate }: { window: FileWindo
                 >
                   …
                 </KagoDropdownMenu>
-                <ChevronRight className="size-3.5 text-faint" />
+                <ChevronRight className="hidden size-3.5 text-faint @sm:block" />
               </>
             ) : null}
             <button
-              className={cn("max-w-40 shrink truncate rounded-sm px-1.5 py-0.5 outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-accent/50", isLast ? "shrink-0 font-medium text-ink" : "text-muted")}
+              className={cn("max-w-40 shrink truncate rounded-sm px-1.5 py-0.5 outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-accent/50", isLast ? "min-w-0 [flex-shrink:0.001] font-medium text-ink" : "hidden text-muted @sm:block")}
               aria-current={isLast ? "location" : undefined}
               onClick={() => !isLast && onNavigate(crumb.path)}
             >

@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { api } from "@/api/client";
+import { KagoSpinner } from "@/components/kago/empty-state";
+import { KagoPasswordInput } from "@/components/kago/password-input";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/input";
 import { errorMessage } from "@/lib/format";
@@ -42,10 +44,11 @@ export function SetupAdmin() {
           <Input value={displayName} onChange={(event) => setDisplayName(event.target.value)} autoComplete="name" />
         </Field>
         <Field label={t("Password")} hint={t("At least 8 characters")}>
-          <Input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" required />
+          <KagoPasswordInput value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" required />
         </Field>
         <FormError message={error} />
         <Button type="submit" variant="default" size="lg" className="mt-1" disabled={busy || !email || password.length < 8}>
+          {busy ? <KagoSpinner className="text-inherit" /> : null}
           {t("Create administrator")}
         </Button>
       </form>

@@ -653,6 +653,13 @@
     justify-content: flex-end;
   }
 
+  /* On a phone a window is the whole desktop and has no key to make it so: two keys to balance instead of three. */
+  @media (max-width: 639px) {
+    .kago-window-extra {
+      min-width: 48px;
+    }
+  }
+
   /* At the right, the controls are mirrored: closing stays the outermost. */
   :root[data-window-controls="right"] .kago-window-controls {
     order: 1;
@@ -1079,7 +1086,14 @@
   }
 
   .kago-toast {
-    animation: kago-toast-in 160ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+    animation: kago-toast-in 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  /* A notification goes the way a menu does: it was only ever passing through. */
+  .kago-toast[data-leaving] {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 120ms ease-out;
   }
 
   /* A menu, a popover or a tooltip is there at once, and fades when it is dismissed. */

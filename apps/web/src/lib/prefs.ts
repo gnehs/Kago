@@ -260,6 +260,8 @@ export function applyPrefs() {
   const theme = getTheme();
   const resolved = theme === "system" ? (media?.matches ? "dark" : "light") : theme;
   document.documentElement.dataset.theme = resolved;
+  // The browser's own bars take the colour of the top bar. public/boot.js does the same before the first paint.
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", resolved === "dark" ? "#3a3e44" : "#f7f8fa");
   document.documentElement.dataset.windowControls = getWindowControls();
   document.documentElement.dataset.motion = getMotion();
 }

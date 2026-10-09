@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { api } from "@/api/client";
 import { useSetupStatus } from "@/api/hooks";
-import { KagoLoading } from "@/components/kago/empty-state";
+import { KagoLoading, KagoSpinner } from "@/components/kago/empty-state";
+import { KagoPasswordInput } from "@/components/kago/password-input";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/input";
 import { errorMessage } from "@/lib/format";
@@ -57,10 +58,11 @@ export function Login() {
           <Input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="username" autoFocus={!sso} />
         </Field>
         <Field label={t("Password")}>
-          <Input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" />
+          <KagoPasswordInput value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" />
         </Field>
         <FormError message={error} />
         <Button type="submit" variant={sso ? "outline" : "default"} size="lg" className="mt-1" disabled={busy || !email || !password}>
+          {busy ? <KagoSpinner className="text-inherit" /> : null}
           {t("Sign in")}
         </Button>
       </form>

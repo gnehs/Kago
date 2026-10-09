@@ -228,12 +228,18 @@ export class ShareService {
 
     const safe = await this.paths.resolveRootById(share.root_id, share.path);
     this.requireCreatorPermissions(share, safe);
+    const type = lookup(safe.logicalPath) || "";
     return {
       ...base,
       path: share.path,
       rootSlug: safe.root.slug,
+      // A share of a whole location goes by the location's name, as it does everywhere else.
+      rootName: safe.root.name,
+      // What the page draws the file with: its kind of icon, and how much there is to download. A folder to upload into has neither.
+      type,
+      size: base.mode === "upload_only" ? undefined : (await this.storage.stat(safe)).size,
       // Told up front, so the page offers to show only what the preview will agree to send.
-      previewable: isBrowserViewable(lookup(safe.logicalPath) || "")
+      previewable: isBrowserViewable(type)
     };
   }
 

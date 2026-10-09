@@ -6,16 +6,23 @@ import { useUploadStore, type Upload } from "@/stores/uploads";
 import { t } from "@/lib/i18n";
 
 export function KagoToaster() {
-  const { toasts, dismiss } = useToastStore();
+  const { toasts, dismiss, hold, release } = useToastStore();
   const uploads = useUploadStore((state) => state.uploads);
   return (
-    <div className="pointer-events-none fixed bottom-5 left-1/2 z-[1000] flex -translate-x-1/2 flex-col items-center gap-2" role="status" aria-live="polite">
+    <div className="pointer-events-none fixed bottom-5 left-1/2 z-[1000] flex w-max max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-col items-center gap-2" role="status" aria-live="polite">
       {uploads.map((upload) => <UploadCard key={upload.id} upload={upload} />)}
       {toasts.map((toast) => (
-        <div key={toast.id} className={cn("kago-toast pointer-events-auto flex max-w-md items-center gap-2 kago-glass rounded-md py-1.5 pr-1.5 pl-3", toast.kind === "error" && "text-danger")}>
+        <div
+          key={toast.id}
+          data-leaving={toast.leaving ? "" : undefined}
+          className={cn("kago-toast pointer-events-auto flex max-w-full items-center gap-2 kago-glass rounded-md py-1.5 pr-1.5 pl-3 sm:max-w-md", toast.kind === "error" && "text-danger")}
+          // Still being read: it does not go while the pointer is on it.
+          onPointerEnter={() => hold(toast.id)}
+          onPointerLeave={() => release(toast.id)}
+        >
           {toast.kind === "error" ? <CircleAlert /> : null}
-          <span>{toast.message}</span>
-          <button className="rounded-sm p-1 text-muted kago-flat" aria-label={t("Dismiss notification")} onClick={() => dismiss(toast.id)}>
+          <span className="min-w-0 wrap-anywhere">{toast.message}</span>
+          <button className="shrink-0 rounded-sm p-1 text-muted outline-none kago-flat focus-visible:ring-2 focus-visible:ring-accent/50" aria-label={t("Dismiss notification")} onClick={() => dismiss(toast.id)}>
             <X className="size-3.5" />
           </button>
         </div>
@@ -40,7 +47,7 @@ function UploadCard({ upload }: { upload: Upload }) {
       <div className="flex items-center gap-2">
         <span className="min-w-0 flex-1 truncate">{t("Uploading {name}", { name: upload.label })}</span>
         <span className="text-xs text-muted tabular-nums">{percent}%</span>
-        <button className="rounded-sm p-1 text-muted kago-flat" aria-label={t("Cancel upload")} title={t("Cancel upload")} onClick={upload.cancel}>
+        <button className="shrink-0 rounded-sm p-1 text-muted outline-none kago-flat focus-visible:ring-2 focus-visible:ring-accent/50" aria-label={t("Cancel upload")} title={t("Cancel upload")} onClick={upload.cancel}>
           <X className="size-3.5" />
         </button>
       </div>

@@ -2,6 +2,7 @@ import type { ComponentProps, ReactNode } from "react";
 import { ContextMenu } from "@base-ui/react/context-menu";
 import { Menu } from "@base-ui/react/menu";
 import { cn } from "@/lib/utils";
+import { KagoTooltip } from "./tooltip";
 
 /**
  * Kago's context menu. `children` is the right-click target; `menu` is rendered lazily
@@ -47,18 +48,22 @@ export function KagoDropdownMenu({
   onOpenChange?: (open: boolean) => void;
   children: ReactNode;
 }) {
+  const trigger = (
+    <Menu.Trigger
+      aria-label={label}
+      // Shown fullscreen, the element holds its own menu but not the tooltips, which are drawn on the page behind it.
+      title={container ? label : undefined}
+      className={cn(
+        "flex size-(--kago-control-h) shrink-0 items-center justify-center kago-flat rounded-md text-muted outline-none hover:text-ink focus-visible:ring-2 focus-visible:ring-accent/50 data-[popup-open]:text-ink",
+        className
+      )}
+    >
+      {children}
+    </Menu.Trigger>
+  );
   return (
     <Menu.Root onOpenChange={onOpenChange}>
-      <Menu.Trigger
-        aria-label={label}
-        title={label}
-        className={cn(
-          "flex size-(--kago-control-h) shrink-0 items-center justify-center kago-flat rounded-md text-muted outline-none hover:text-ink focus-visible:ring-2 focus-visible:ring-accent/50 data-[popup-open]:text-ink",
-          className
-        )}
-      >
-        {children}
-      </Menu.Trigger>
+      {container ? trigger : <KagoTooltip label={label}>{trigger}</KagoTooltip>}
       <Menu.Portal container={container ?? undefined}>
         <Menu.Positioner side={side} sideOffset={4} align={align} collisionPadding={8} className="z-[800] outline-none">
           <Menu.Popup className="kago-glass kago-pop max-h-(--available-height) min-w-44 cursor-default overflow-y-auto overscroll-contain rounded-lg p-1 outline-none select-none">{menu}</Menu.Popup>

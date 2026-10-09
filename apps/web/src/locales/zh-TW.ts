@@ -1071,5 +1071,15 @@ export const zhTW: Dictionary = {
   "The transfer was refused for lack of permission at one end. An administrator needs to check the account Kago runs as, or the one a remote location signs in with.": "傳輸因為其中一端權限不足而被拒絕。請管理員檢查執行 Kago 的系統帳號，或遠端位置登入用的帳號。",
   "No permission to read": "沒有讀取權限",
   "No permission to write": "沒有寫入權限",
-  "Kago runs on the server as UID {uid}, GID {gid}, and the disk doesn’t let that account into the folders marked above. On the host, give it access to them, or set PUID / PGID to the account that owns them. A location that is only meant to be read can be made read-only instead.": "Kago 在伺服器上以 UID {uid}、GID {gid} 執行，而磁碟不允許這個帳號存取上面標示的資料夾。請在主機上讓它能存取這些資料夾，或把 PUID / PGID 改成擁有它們的帳號。只打算讀取的位置也可以改設為唯讀。"
+  "Kago runs on the server as UID {uid}, GID {gid}, and the disk doesn’t let that account into the folders marked above. On the host, give it access to them, or set PUID / PGID to the account that owns them. A location that is only meant to be read can be made read-only instead.": "Kago 在伺服器上以 UID {uid}、GID {gid} 執行，而磁碟不允許這個帳號存取上面標示的資料夾。請在主機上讓它能存取這些資料夾，或把 PUID / PGID 改成擁有它們的帳號。只打算讀取的位置也可以改設為唯讀。",
+  "Recent folders": "最近去過的資料夾",
+  "to move": "選擇",
+  "to open": "開啟",
+  "to close": "關閉",
+  "Caps Lock is on": "大寫鎖定已開啟",
+  "Show password": "顯示密碼",
+  "Hide password": "隱藏密碼",
+  "Drop to upload": "放開即可上傳",
+  "Ask whoever sent it for a new one.": "請向分享的人要一個新的連結。",
+  "Show the folders above": "顯示上層的資料夾"
 };

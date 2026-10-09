@@ -1071,5 +1071,15 @@ export const ja: Dictionary = {
   "The transfer was refused for lack of permission at one end. An administrator needs to check the account Kago runs as, or the one a remote location signs in with.": "どちらか一方で権限が不足しているため、転送は拒否されました。管理者が Kago を実行しているシステムアカウント、またはリモートの場所へのログインに使うアカウントを確認する必要があります。",
   "No permission to read": "読み取り権限がありません",
   "No permission to write": "書き込み権限がありません",
-  "Kago runs on the server as UID {uid}, GID {gid}, and the disk doesn’t let that account into the folders marked above. On the host, give it access to them, or set PUID / PGID to the account that owns them. A location that is only meant to be read can be made read-only instead.": "Kago はサーバー上で UID {uid}、GID {gid} として動作しており、ディスクはこのアカウントに上で印の付いたフォルダへのアクセスを許可していません。ホスト側でアクセスできるようにするか、PUID / PGID をフォルダを所有するアカウントに変更してください。読み取るだけの場所は、代わりに読み取り専用にすることもできます。"
+  "Kago runs on the server as UID {uid}, GID {gid}, and the disk doesn’t let that account into the folders marked above. On the host, give it access to them, or set PUID / PGID to the account that owns them. A location that is only meant to be read can be made read-only instead.": "Kago はサーバー上で UID {uid}、GID {gid} として動作しており、ディスクはこのアカウントに上で印の付いたフォルダへのアクセスを許可していません。ホスト側でアクセスできるようにするか、PUID / PGID をフォルダを所有するアカウントに変更してください。読み取るだけの場所は、代わりに読み取り専用にすることもできます。",
+  "Recent folders": "最近開いたフォルダ",
+  "to move": "移動",
+  "to open": "開く",
+  "to close": "閉じる",
+  "Caps Lock is on": "Caps Lock がオンです",
+  "Show password": "パスワードを表示",
+  "Hide password": "パスワードを隠す",
+  "Drop to upload": "ドロップしてアップロード",
+  "Ask whoever sent it for a new one.": "共有した人に新しいリンクをもらってください。",
+  "Show the folders above": "上の階層のフォルダを表示"
 };

@@ -32,33 +32,43 @@ const groups: Array<{ label: string; adminOnly?: boolean; sections: Array<{ sect
 /** Body of the settings window: a category list on the left, the chosen section on the right. */
 export function SettingsLayout({ section, isAdmin, onSection, children }: { section: SettingsSection; isAdmin: boolean; onSection: (section: SettingsSection) => void; children: ReactNode }) {
   const visible = groups.filter((group) => isAdmin || !group.adminOnly);
+  // Lying across the top, the list can be longer than the window is wide: the section being shown is kept in sight.
+  const reveal = (button: HTMLButtonElement | null) => button?.scrollIntoView({ block: "nearest", inline: "nearest" });
 
   return (
-    <div className="flex min-h-0 flex-1">
-      {visible.some((group) => group.sections.length > 1) || visible.length > 1 ? (
-        <nav aria-label={t("Settings sections")} className="flex w-44 shrink-0 flex-col gap-3 overflow-y-auto border-r border-line bg-elevated p-2">
-          {visible.map((group) => (
-            <div key={group.label} role="group" aria-label={group.label} className="flex flex-col gap-px">
-              <span className="px-2 pt-1 pb-1 text-xs font-medium text-faint">{group.label}</span>
-              {group.sections.map((item) => (
-                <button
-                  key={item.section}
-                  aria-current={section === item.section ? "page" : undefined}
-                  className={cn(
-                    "flex h-7 shrink-0 items-center gap-2 rounded-md px-2 text-left outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-accent/50 [&>.lucide]:text-muted",
-                    section === item.section && "kago-selection kago-selection-raised font-medium hover:bg-transparent [&>.lucide]:text-inherit"
-                  )}
-                  onClick={() => onSection(item.section)}
-                >
-                  {item.icon}
-                  {item.label}
-                </button>
-              ))}
-            </div>
-          ))}
-        </nav>
-      ) : null}
-      {children}
+    // In a window too narrow for a column of its own, the list lies across the top instead and scrolls sideways.
+    <div className="@container flex min-h-0 flex-1 flex-col">
+      <div className="flex min-h-0 flex-1 flex-col @xl:flex-row">
+        {visible.some((group) => group.sections.length > 1) || visible.length > 1 ? (
+          <nav
+            aria-label={t("Settings sections")}
+            className="flex shrink-0 gap-1 overflow-x-auto border-b border-line bg-elevated p-1.5 [scrollbar-width:none] @xl:w-44 @xl:flex-col @xl:gap-3 @xl:overflow-x-visible @xl:overflow-y-auto @xl:border-r @xl:border-b-0 @xl:p-2"
+          >
+            {visible.map((group, index) => (
+              <div key={group.label} role="group" aria-label={group.label} className="flex shrink-0 items-center gap-1 @xl:flex-col @xl:items-stretch @xl:gap-px">
+                {index > 0 ? <span aria-hidden className="mx-1 h-4 w-px shrink-0 bg-line-strong/70 @xl:hidden" /> : null}
+                <span className="hidden px-2 pt-1 pb-1 text-xs font-medium text-faint @xl:block">{group.label}</span>
+                {group.sections.map((item) => (
+                  <button
+                    key={item.section}
+                    ref={section === item.section ? reveal : undefined}
+                    aria-current={section === item.section ? "page" : undefined}
+                    className={cn(
+                      "flex h-7 shrink-0 items-center gap-2 rounded-md px-2 text-left whitespace-nowrap outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-accent/50 [&>.lucide]:text-muted",
+                      section === item.section && "kago-selection kago-selection-raised font-medium hover:bg-transparent [&>.lucide]:text-inherit"
+                    )}
+                    onClick={() => onSection(item.section)}
+                  >
+                    {item.icon}
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            ))}
+          </nav>
+        ) : null}
+        {children}
+      </div>
     </div>
   );
 }

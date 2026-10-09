@@ -11,6 +11,7 @@ import { extensionOf, kindOfExtension, thumbnailKind, type FileKind } from "@/fe
 import { KAGO_DRAG_TYPE, readDraggedFiles } from "@/features/files/useFileActions";
 import { displayPath, ensureZipName, joinLogicalPath } from "@/lib/paths";
 import { run } from "@/lib/run";
+import { useCompact } from "@/lib/useCompact";
 import { isInteractiveTarget, usePointerDrag } from "@/lib/usePointerDrag";
 import { cn } from "@/lib/utils";
 import { promptCompress, type CompressChoice } from "@/features/files/CompressDialog";
@@ -33,6 +34,7 @@ const TYPES: Partial<Record<FileKind, string>> = { image: "image/*", video: "vid
  */
 export function Shelf() {
   const queryClient = useQueryClient();
+  const compact = useCompact();
   const shelves = useShelves();
   const roots = useRoots().data;
   const shelfState = useWorkspaceStore((state) => state.shelf);
@@ -82,9 +84,10 @@ export function Shelf() {
     x: Math.round(Math.max(MARGIN, Math.min(x, canvas.width - size.width - MARGIN))),
     y: Math.round(Math.max(MARGIN, Math.min(y, canvas.height - size.height - MARGIN)))
   });
-  // Until the user drags it, the shelf rests in the bottom-right corner of the canvas.
+  // Until the user drags it, the shelf rests in the bottom-right corner of the canvas. On a phone every window
+  // reaches that corner, so it rests a bar higher, clear of the actions at the foot of the window.
   const placed = shelfState.x !== undefined && shelfState.y !== undefined;
-  const style = placed ? (({ x, y }) => ({ left: x, top: y }))(clamp(shelfState.x!, shelfState.y!)) : { right: MARGIN, bottom: MARGIN };
+  const style = placed ? (({ x, y }) => ({ left: x, top: y }))(clamp(shelfState.x!, shelfState.y!)) : { right: MARGIN, bottom: compact ? MARGIN + 32 : MARGIN };
 
   // The shelf is moved by whatever part of it does nothing else: not its controls, nor the items, which are dragged out of it.
   // Its menu is mounted elsewhere in the document, and what happens there still reaches these handlers.

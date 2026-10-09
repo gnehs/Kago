@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { ExternalApp, FileItem, FileTab, FileWindow, Root, WorkspaceState } from "../types/kago";
 import { ghostWindowOut } from "../lib/motion";
 import { baseName } from "../lib/paths";
+import { isCompact } from "../lib/useCompact";
 import { randomId } from "../lib/utils";
 import { toast } from "./toast";
 import { t } from "../lib/i18n";
@@ -118,6 +119,9 @@ export function fitAspectSize(aspect: number, width: number, maxWidth = canvas.w
 }
 
 function initialGeometry(index: number, width = 920, height = 620) {
+  // A phone shows every window full screen whatever its size, so one opened there is given the size it would have
+  // on a desk, for the day it is seen on one, rather than being squeezed to fit a screen that does not use it.
+  if (isCompact()) return { width, height, x: 32 + (index % 6) * 28, y: 24 + (index % 6) * 28 };
   const size = clampWindowSize(Math.min(width, canvas.width - 64), Math.min(height, canvas.height - 64));
   const offset = (index % 6) * 28;
   return { ...size, ...clampWindowPosition((canvas.width - size.width) / 2 + offset, Math.max(16, (canvas.height - size.height) / 2 - 16) + offset, size.width) };
@@ -125,6 +129,8 @@ function initialGeometry(index: number, width = 920, height = 620) {
 
 /** Restored windows are pulled fully into view; only dragging may push one partly off-canvas. */
 function fitGeometry<T extends WindowFrame>(window: T): T {
+  // On a phone the frame is not what is drawn; it is left as the wider screen it came from had it.
+  if (isCompact()) return window;
   const size = window.aspect ? fitAspectSize(window.aspect, window.width) : clampWindowSize(window.width, window.height);
   return {
     ...window,
@@ -223,7 +229,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     set((state) => {
       // A remote update only describes file windows; an app or preview window keeps focus, and stays in front, if it had it.
       const appFocused = [...state.appWindows, ...state.previewWindows].some((window) => window.id === state.activeWindowId);
-      const activeWindowId = appFocused ? state.activeWindowId : workspace.activeWindowId;
+      // The window in front when it was saved may have been one that is not saved (settings, a preview). The desktop
+      // does not come back with nothing in front for that: the file window that was on top takes its place.
+      const onTop = workspace.windows.filter((window) => !window.minimized).sort((a, b) => b.zIndex - a.zIndex)[0];
+      const activeWindowId = appFocused ? state.activeWindowId : (workspace.activeWindowId ?? onTop?.id ?? null);
       return { ...workspace, activeWindowId, ...restack({ windows: workspace.windows.map((window) => withTabs(fitGeometry(window))), appWindows: state.appWindows, previewWindows: state.previewWindows }, appFocused ? activeWindowId : undefined, activeWindowId), hydrated: true };
     }),
   refitWindows: () =>

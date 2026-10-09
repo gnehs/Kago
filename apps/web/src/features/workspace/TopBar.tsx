@@ -7,6 +7,7 @@ import { useRoots, useTasks } from "@/api/hooks";
 import { avatarUrl, KagoAvatar } from "@/components/kago/avatar";
 import { KagoSpinner } from "@/components/kago/empty-state";
 import { KagoDropdownMenu, KagoMenuItem, KagoMenuSeparator } from "@/components/kago/menu";
+import { KagoTooltip } from "@/components/kago/tooltip";
 import { Button } from "@/components/ui/button";
 import { BrandMark } from "@/features/auth/AuthCard";
 import { markSignedOut } from "@/features/auth/sso";
@@ -55,32 +56,30 @@ export function TopBar({ user, onOpenPalette }: { user: Actor; onOpenPalette: ()
 
   return (
     <header className="kago-chrome z-[1] flex h-10 shrink-0 items-center gap-1 border-b border-line-strong px-2">
-      <button
-        className="flex h-7 shrink-0 items-center gap-2 rounded-md pr-2.5 pl-1.5 font-semibold outline-none kago-flat focus-visible:ring-2 focus-visible:ring-accent/50"
-        title={anyVisible ? t("Show desktop") : t("Restore all windows")}
-        onClick={toggleDesktop}
-      >
-        <BrandMark className="size-5" />
-        Kago
-      </button>
+      <KagoTooltip label={anyVisible ? t("Show desktop") : t("Restore all windows")}>
+        <button className="flex h-7 shrink-0 items-center gap-2 rounded-md pr-2.5 pl-1.5 font-semibold outline-none kago-flat focus-visible:ring-2 focus-visible:ring-accent/50" onClick={toggleDesktop}>
+          <BrandMark className="size-5" />
+          Kago
+        </button>
+      </KagoTooltip>
 
       <nav aria-label={t("Open windows")} className="flex h-full min-w-0 flex-1 items-center gap-1 overflow-hidden px-1">
         {ordered.map((window) => (
-          <button
-            key={window.id}
-            data-dock={window.id}
-            title={"rootSlug" in window ? displayPath(rootName(window.rootSlug), window.logicalPath) : "preview" in window ? displayPath(rootName(window.preview.rootSlug), window.preview.item.path) : window.title}
-            aria-pressed={window.focused && !window.minimized}
-            className={cn(
-              "flex h-7 max-w-40 min-w-0 items-center gap-1.5 rounded-md px-2 outline-none focus-visible:ring-2 focus-visible:ring-accent/50",
-              window.focused && !window.minimized ? "kago-raised" : "kago-flat text-muted",
-              window.minimized && "opacity-60"
-            )}
-            onClick={() => activate(window)}
-          >
-            {"app" in window ? (window.app === "external" ? <ExternalAppGlyph icon={window.external.icon} /> : appIcons[window.app]) : "preview" in window ? <FileIcon item={window.preview.item} /> : <FileIcon item={{ kind: "folder", type: "", name: "" }} />}
-            <span className="truncate">{window.title}</span>
-          </button>
+          <KagoTooltip key={window.id} label={"rootSlug" in window ? displayPath(rootName(window.rootSlug), window.logicalPath) : "preview" in window ? displayPath(rootName(window.preview.rootSlug), window.preview.item.path) : window.title}>
+            <button
+              data-dock={window.id}
+              aria-pressed={window.focused && !window.minimized}
+              className={cn(
+                "flex h-7 max-w-40 min-w-0 items-center gap-1.5 rounded-md px-2 outline-none focus-visible:ring-2 focus-visible:ring-accent/50",
+                window.focused && !window.minimized ? "kago-raised" : "kago-flat text-muted",
+                window.minimized && "opacity-60"
+              )}
+              onClick={() => activate(window)}
+            >
+              {"app" in window ? (window.app === "external" ? <ExternalAppGlyph icon={window.external.icon} /> : appIcons[window.app]) : "preview" in window ? <FileIcon item={window.preview.item} /> : <FileIcon item={{ kind: "folder", type: "", name: "" }} />}
+              <span className="truncate">{window.title}</span>
+            </button>
+          </KagoTooltip>
         ))}
       </nav>
 
@@ -149,16 +148,17 @@ function TaskStatus() {
 
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
-      <Popover.Trigger
-        aria-label={label}
-        title={label}
-        className={cn(
-          "flex size-7 shrink-0 items-center justify-center kago-flat rounded-md text-muted outline-none hover:text-ink focus-visible:ring-2 focus-visible:ring-accent/50",
-          activeCount > 0 && "text-accent hover:text-accent"
-        )}
-      >
-        {activeCount > 0 ? <KagoSpinner className="text-accent" /> : <ListChecks />}
-      </Popover.Trigger>
+      <KagoTooltip label={label}>
+        <Popover.Trigger
+          aria-label={label}
+          className={cn(
+            "flex size-7 shrink-0 items-center justify-center kago-flat rounded-md text-muted outline-none hover:text-ink focus-visible:ring-2 focus-visible:ring-accent/50",
+            activeCount > 0 && "text-accent hover:text-accent"
+          )}
+        >
+          {activeCount > 0 ? <KagoSpinner className="text-accent" /> : <ListChecks />}
+        </Popover.Trigger>
+      </KagoTooltip>
       <Popover.Portal>
         <Popover.Positioner sideOffset={6} align="end" className="z-[700]">
           <Popover.Popup className="kago-glass kago-pop flex w-80 flex-col rounded-lg outline-none">

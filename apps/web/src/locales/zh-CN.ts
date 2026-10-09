@@ -1071,5 +1071,15 @@ export const zhCN: Dictionary = {
   "The transfer was refused for lack of permission at one end. An administrator needs to check the account Kago runs as, or the one a remote location signs in with.": "传输因为其中一端权限不足而被拒绝。请管理员检查运行 Kago 的系统账号，或远程位置登录用的账号。",
   "No permission to read": "没有读取权限",
   "No permission to write": "没有写入权限",
-  "Kago runs on the server as UID {uid}, GID {gid}, and the disk doesn’t let that account into the folders marked above. On the host, give it access to them, or set PUID / PGID to the account that owns them. A location that is only meant to be read can be made read-only instead.": "Kago 在服务器上以 UID {uid}、GID {gid} 运行，而磁盘不允许这个账号访问上面标示的文件夹。请在宿主机上让它能访问这些文件夹，或把 PUID / PGID 改成拥有它们的账号。只打算读取的位置也可以改设为只读。"
+  "Kago runs on the server as UID {uid}, GID {gid}, and the disk doesn’t let that account into the folders marked above. On the host, give it access to them, or set PUID / PGID to the account that owns them. A location that is only meant to be read can be made read-only instead.": "Kago 在服务器上以 UID {uid}、GID {gid} 运行，而磁盘不允许这个账号访问上面标示的文件夹。请在宿主机上让它能访问这些文件夹，或把 PUID / PGID 改成拥有它们的账号。只打算读取的位置也可以改设为只读。",
+  "Recent folders": "最近去过的文件夹",
+  "to move": "选择",
+  "to open": "打开",
+  "to close": "关闭",
+  "Caps Lock is on": "大写锁定已开启",
+  "Show password": "显示密码",
+  "Hide password": "隐藏密码",
+  "Drop to upload": "松开即可上传",
+  "Ask whoever sent it for a new one.": "请向分享的人要一个新的链接。",
+  "Show the folders above": "显示上层的文件夹"
 };

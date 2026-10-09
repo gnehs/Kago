@@ -36,6 +36,15 @@ export function Workspace({ user }: { user: Actor }) {
     void loadSettings();
   }, [user.id]);
 
+  // The browser's tab is named after the window in front, as a taskbar entry would be.
+  const frontTitle = useWorkspaceStore((state) => [...state.windows, ...state.appWindows, ...state.previewWindows].find((window) => window.id === state.activeWindowId && !window.minimized)?.title);
+  useEffect(() => {
+    document.title = frontTitle ? `${frontTitle} — Kago` : "Kago";
+    return () => {
+      document.title = "Kago";
+    };
+  }, [frontTitle]);
+
   useRealtime(user.id, sync.onRemoteChange);
   useShortcuts({ enabled: !paletteOpen, onOpenPalette: openPalette });
 
@@ -57,7 +66,7 @@ export function Workspace({ user }: { user: Actor }) {
           <Canvas roots={rootList} user={user} />
         )}
       </main>
-      {paletteOpen ? <CommandPalette roots={rootList} isAdmin={isAdmin} onClose={() => setPaletteOpen(false)} /> : null}
+      <CommandPalette open={paletteOpen} roots={rootList} isAdmin={isAdmin} onClose={() => setPaletteOpen(false)} />
       <ExternalAppDialogHost isAdmin={isAdmin} />
     </div>
   );

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Archive, ArchiveRestore, CircleUserRound, ClipboardPaste, Copy, Download, ExternalLink, Folder, FolderOpen, FolderPlus, FolderUp, Inbox, Info, PanelTop, Pencil, Play, Plus, RefreshCw, Scissors, SquareArrowOutUpRight, Trash2, Upload, Wallpaper } from "lucide-react";
+import { Archive, ArchiveRestore, Ban, CircleUserRound, ClipboardPaste, Copy, Download, ExternalLink, Folder, FolderOpen, FolderPlus, FolderUp, Inbox, Info, PanelTop, Pencil, Play, Plus, RefreshCw, Scissors, SquareArrowOutUpRight, Trash2, Upload, Wallpaper } from "lucide-react";
 import { useFileList, useFolderContents } from "@/api/hooks";
 import { KagoBadge } from "@/components/kago/badge";
 import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
@@ -69,7 +69,8 @@ export function FileWindowView({ window: frame, roots, isAdmin }: { window: File
   const [search, setSearch] = useState("");
   const [anchorPath, setAnchorPath] = useState<string | null>(null);
   const [menuItem, setMenuItem] = useState<FileItem | null>(null);
-  const [dropActive, setDropActive] = useState(false);
+  // What is being held over the window: files from outside the browser, which would be uploaded, or items of Kago's own.
+  const [dropActive, setDropActive] = useState<false | "files" | "items">(false);
   const [dropChoice, setDropChoice] = useState<{ sources: FileRef[]; destination: FileRef; x: number; y: number } | null>(null);
   const clip = useClipboardStore((state) => state.clip);
   // Every tab has been to places of its own.
@@ -404,7 +405,7 @@ export function FileWindowView({ window: frame, roots, isAdmin }: { window: File
       }
       onDragOver={(event) => {
         event.preventDefault();
-        setDropActive(true);
+        setDropActive(event.dataTransfer.types.includes("Files") ? "files" : "items");
       }}
       onDragLeave={(event) => !event.currentTarget.contains(event.relatedTarget as Node | null) && setDropActive(false)}
       onDrop={(event) => dropInto(event, win.logicalPath)}
@@ -482,7 +483,17 @@ export function FileWindowView({ window: frame, roots, isAdmin }: { window: File
         )}
       </footer>
 
-      {dropActive && !readonly && !error ? <div className="pointer-events-none absolute inset-0 z-20 rounded-[inherit] ring-2 ring-accent ring-inset" /> : null}
+      {dropActive && !error ? (
+        <div className={cn("pointer-events-none absolute inset-0 z-20 rounded-[inherit]", !readonly && "ring-2 ring-accent ring-inset")}>
+          {/* Files brought from outside are told what letting go will do, or why it will do nothing. */}
+          {dropActive === "files" ? (
+            <span className="absolute bottom-11 left-1/2 flex h-8 max-w-[calc(100%-24px)] -translate-x-1/2 items-center gap-2 kago-glass rounded-full pr-3.5 pl-3 font-medium whitespace-nowrap">
+              {readonly ? <Ban className="text-muted" /> : <Upload className="text-accent" />}
+              <span className="truncate">{readonly ? t("This location is read-only.") : t("Drop to upload")}</span>
+            </span>
+          ) : null}
+        </div>
+      ) : null}
       {dropChoice ? (
         <>
           <div className="absolute inset-0 z-20" onClick={() => setDropChoice(null)} />
