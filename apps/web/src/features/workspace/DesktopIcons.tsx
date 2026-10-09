@@ -135,7 +135,7 @@ const GLYPHS = {
   )
 };
 
-const ICON_CLASS = "group flex w-20 flex-col items-center gap-1.5 rounded-lg px-1 py-2 text-inherit no-underline outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-accent/50";
+const ICON_CLASS = "kago-desktop-icon group flex w-20 flex-col items-center gap-1.5 rounded-lg px-1 py-2 text-inherit no-underline outline-none focus-visible:ring-2 focus-visible:ring-accent/50";
 
 function DesktopIcon({ icon, label, tone, ...props }: React.ComponentProps<"button"> & { icon: ReactNode; label: string; /** The colour of the tile. */ tone: string }) {
   return (

@@ -732,6 +732,29 @@
     filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.3)) drop-shadow(0 3px 4px rgb(0 0 0 / 0.16));
   }
 
+  /*
+   * An icon on the desktop under the pointer. On the plain canvas it is a tinted plate with an edge; over a picture,
+   * where no one tint shows against every photograph, it is a pane of frosted glass with a lit rim.
+   */
+  .kago-desktop-icon:hover {
+    background: color-mix(in srgb, var(--kago-text) 9%, transparent);
+    box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--kago-text) 16%, transparent);
+  }
+
+  .kago-desktop-icon:active {
+    background: color-mix(in srgb, var(--kago-text) 14%, transparent);
+  }
+
+  [data-wallpaper] .kago-desktop-icon:hover {
+    background: rgb(255 255 255 / 0.2);
+    box-shadow: inset 0 0 0 0.5px rgb(255 255 255 / 0.55), inset 0 1px 0 rgb(255 255 255 / 0.25), 0 2px 8px rgb(0 0 0 / 0.22);
+    backdrop-filter: blur(16px) saturate(1.5) brightness(0.9);
+  }
+
+  [data-wallpaper] .kago-desktop-icon:active {
+    background: rgb(255 255 255 / 0.3);
+  }
+
   /* The mark on a shortcut's corner lies on top of its icon. */
   .kago-shortcut-mark {
     filter: drop-shadow(0 0.5px 1px rgb(0 0 0 / 0.3));
