@@ -26,7 +26,7 @@ export type StorageInfo = { available: boolean; providers: RemoteProvider[]; roo
 export type SyncEndpoint = { kind: "location"; rootSlug: string; path: string } | { kind: "rsync"; remote: string; port?: number };
 export type SyncSchedule = { kind: "interval"; minutes: number } | { kind: "daily"; time: string } | { kind: "weekly"; weekday: number; time: string };
 export type SyncChange = { action: "copy" | "delete" | "mkdir" | "rmdir" | "touch"; path: string; size?: number };
-/** How much a trial run would have changed; `truncated` when it names fewer changes than it counted. */
+/** How much a run changed, or a trial run would have; `truncated` when it names fewer changes than it counted. */
 export type SyncTrialSummary = Record<SyncChange["action"], number> & { bytes: number; truncated: boolean };
 /** What the changes add up to, counted over all of them and not only the ones that are listed. */
 export type SyncTrialStats = {
@@ -36,7 +36,7 @@ export type SyncTrialStats = {
   moreFolders: number;
 };
 export type SyncTrial = SyncTrialSummary & { stats: SyncTrialStats; changes: SyncChange[] };
-/** One run of a sync job: `bytes` is what a real run brought across, `summary` what a trial run would have changed. */
+/** One run of a sync job: `bytes` is what a real run sent, `summary` how much it changed, or would have when it was a trial. */
 export type SyncRun = {
   task_id: string;
   started_at: number;

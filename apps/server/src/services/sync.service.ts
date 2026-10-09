@@ -57,7 +57,7 @@ type SyncRun = {
   scheduled: boolean;
   /** What a run that was not a trial brought across. */
   bytes: number;
-  /** What a trial run would have changed. */
+  /** How much the run changed, or would have changed when it was a trial; known only of a run that ended well. */
   summary: (SyncSummary & { truncated: boolean }) | null;
 };
 
@@ -152,7 +152,8 @@ export class SyncService {
   /** What the job's last run would have changed, when that was a trial run. */
   trial(actor: Actor, jobId: string) {
     const job = this.getForActor(actor, jobId);
-    const report = job.last_task_id
+    // A run that was not a trial leaves a report too, of what it did.
+    const report = this.lastRun(job)?.dry_run
       ? row<{ summary_json: string; stats_json: string; changes_json: string }>(this.db.prepare("SELECT summary_json, stats_json, changes_json FROM task_reports WHERE task_id = ?").get(job.last_task_id))
       : null;
     if (!report) throw new AppError(404, "This sync has no trial run to show", "SYNC_NO_TRIAL");
@@ -294,8 +295,7 @@ export class SyncService {
   }
 
   private publicJob(job: SyncJobRow) {
-    const last = job.last_task_id ? row<{ status: string; error_message: string | null; finished_at: number | null }>(this.db.prepare("SELECT status, error_message, finished_at FROM tasks WHERE id = ?").get(job.last_task_id)) : null;
-    const trial = last?.status === "done" ? row<{ summary_json: string }>(this.db.prepare("SELECT summary_json FROM task_reports WHERE task_id = ?").get(job.last_task_id)) : null;
+    const last = this.lastRun(job);
     return {
       id: job.id,
       name: job.name,
@@ -308,7 +308,7 @@ export class SyncService {
       last_run_at: job.last_run_at,
       last_status: last?.status ?? null,
       last_error: last?.error_message ?? null,
-      last_trial: trial ? (JSON.parse(trial.summary_json) as SyncSummary & { truncated: boolean }) : null,
+      last_trial: last?.dry_run ? last.summary : null,
       created_by: job.created_by
     };
   }

@@ -7,7 +7,7 @@ import { AppError } from "../lib/errors.js";
 import { logger } from "../lib/logger.js";
 
 export type RcloneItem = { Path: string; Name: string; Size: number; ModTime: string; IsDir: boolean };
-export type RcloneStats = { bytes: number; totalBytes: number; transfers: number; totalTransfers: number; errors: number; lastError?: string; transferring?: Array<{ name: string }> };
+export type RcloneStats = { bytes: number; totalBytes: number; transfers: number; totalTransfers: number; deletes?: number; deletedDirs?: number; errors: number; lastError?: string; transferring?: Array<{ name: string }> };
 type JobStatus = { finished: boolean; success: boolean; error: string };
 
 /** What rclone answered when it refused a call; `status` is the HTTP status it gave. */

@@ -1351,8 +1351,9 @@ export class TaskService {
     const mirror = spec.options.mode === "mirror";
     const stopped = () => this.isCancelled(task.id);
     const onBytes = transferProgress((bytes) => this.countBytes(task.id, bytes));
-    // A trial run changes nothing; what it would have changed is what it leaves behind.
-    const report = spec.options.dryRun ? new SyncReport() : null;
+    // A trial run changes nothing; what it would have changed is what it leaves behind. Of a real run only the counts are kept.
+    const trial = spec.options.dryRun;
+    const report = trial ? new SyncReport() : new SyncReport(0);
 
     if (source && destination) {
       const from = this.rcloneAddress(source);
@@ -1363,7 +1364,7 @@ export class TaskService {
       // A remote location's trash is Kago's own business at either end.
       const excluded = [`/${REMOTE_TRASH}/**`, `/*/${REMOTE_TRASH}/**`];
       try {
-        if (report) {
+        if (trial) {
           await runRclone(
             this.appDataDir,
             [
@@ -1395,6 +1396,8 @@ export class TaskService {
                 this.setTotalBytes(task.id, total);
               }
               onBytes(stats);
+              // The last of these is the whole of the job.
+              report.countRcloneStats(stats);
             },
             stopped
           );
@@ -1408,13 +1411,15 @@ export class TaskService {
       const local = ensureTrailingSlash((source ?? destination)!.absolutePath);
       // The key is the one the form showed; a job made some other way still finds one to offer.
       await ensureSshKey(this.appDataDir).catch(() => undefined);
-      const progress = !report && (await rsyncReportsProgress());
+      const progress = !trial && (await rsyncReportsProgress());
       let reported = 0;
+      const onLine = byLine((line) => report.addRsyncLine(line));
       await runRsync(
         [
           "-a",
           ...(mirror ? ["--delete"] : []),
-          ...(report ? ["--dry-run", "--out-format=%i %l %n"] : []),
+          ...(trial ? ["--dry-run"] : []),
+          "--out-format=%i %l %n",
           ...(progress ? ["--info=progress2", "--no-inc-recursive"] : []),
           "-e",
           sshCommand(this.appDataDir, remote.port),
@@ -1422,25 +1427,24 @@ export class TaskService {
           ...(source ? [local, ensureTrailingSlash(remote.remote)] : [ensureTrailingSlash(remote.remote), local])
         ],
         stopped,
-        report
-          ? byLine((line) => report.addRsyncLine(line))
-          : (text) => {
-              // "  1,234,567  45%  1.20MB/s  0:00:03": the bytes sent so far, over and over on one line.
-              for (const match of text.matchAll(/(?:^|[\r\n])\s*([\d,]+)\s+\d+%/g)) {
-                const bytes = Number(match[1]!.replaceAll(",", ""));
-                if (bytes > reported) {
-                  this.countBytes(task.id, bytes - reported);
-                  reported = bytes;
-                }
-              }
+        (text) => {
+          // Each change is a line of its own; the progress is written over and over on a line that starts with a return.
+          onLine(text);
+          if (!progress) return;
+          // "  1,234,567  45%  1.20MB/s  0:00:03": the bytes sent so far.
+          for (const match of text.matchAll(/(?:^|[\r\n])\s*([\d,]+)\s+\d+%/g)) {
+            const bytes = Number(match[1]!.replaceAll(",", ""));
+            if (bytes > reported) {
+              this.countBytes(task.id, bytes - reported);
+              reported = bytes;
             }
+          }
+        }
       );
     }
-    if (report) {
-      this.db
-        .prepare("INSERT OR REPLACE INTO task_reports (task_id, summary_json, stats_json, changes_json) VALUES (?, ?, ?, ?)")
-        .run(task.id, JSON.stringify({ ...report.summary, truncated: report.truncated }), JSON.stringify(report.stats()), JSON.stringify(report.changes));
-    }
+    this.db
+      .prepare("INSERT OR REPLACE INTO task_reports (task_id, summary_json, stats_json, changes_json) VALUES (?, ?, ?, ?)")
+      .run(task.id, JSON.stringify({ ...report.summary, truncated: report.truncated }), JSON.stringify(report.stats()), JSON.stringify(report.changes));
     const location = (destination ?? source)!;
     this.audit.write({
       actorType: "user",

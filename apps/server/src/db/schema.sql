@@ -98,7 +98,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 CREATE INDEX IF NOT EXISTS idx_tasks_status_created
 ON tasks(status, created_at);
 
--- What a trial run of a sync would have changed.
+-- What a run of a sync changed, or what a trial run would have: of a real run only the counts.
 CREATE TABLE IF NOT EXISTS task_reports (
   task_id TEXT PRIMARY KEY,
   summary_json TEXT NOT NULL,

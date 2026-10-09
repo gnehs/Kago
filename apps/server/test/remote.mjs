@@ -280,10 +280,11 @@ test("a remote location behaves like a local one", { skip: remote ? false : "KAG
     assert.equal((await api.get("/api/sync-jobs")).json[0].last_trial, null);
     assert.equal((await api.get(`/api/sync-jobs/${job.json.id}/trial`)).json.code, "SYNC_NO_TRIAL");
     assert.equal((await api.get(`/api/fs/preview?${q("/backup/c.txt")}`)).text, "CCC");
-    // How the runs before the last one ended is remembered, the trial ones with what they would have changed.
+    // How the runs before the last one ended is remembered: the trial ones with what they would have changed, the others with what they did.
     const runs = (await api.get(`/api/sync-jobs/${job.json.id}/runs`)).json;
     assert.deepEqual(runs.map((run) => `${run.status} ${run.dry_run}`), ["done false", "done true", "done true", "done false", "done false", "done false"]);
     assert.deepEqual(runs[1].summary, { copy: 1, delete: 1, mkdir: 0, rmdir: 0, touch: 0, bytes: 4, truncated: false });
+    assert.deepEqual(runs.map((run) => `${run.summary.copy} ${run.summary.delete} ${run.summary.bytes}`), ["0 1 0", "1 1 4", "0 1 0", "1 0 3", "1 0 3", "2 0 3"]);
     assert.ok(runs.every((run) => run.finished_at >= run.started_at && !run.scheduled));
 
     // And back again, from the remote to a local folder.
@@ -302,6 +303,9 @@ test("a remote location behaves like a local one", { skip: remote ? false : "KAG
       const pulled = await api.post("/api/sync-jobs", { name: "Pull", source: { kind: "rsync", remote: process.env.KAGO_TEST_RSYNC }, destination: { kind: "location", rootSlug: "local", path: "/pulled" } });
       assert.equal((await runJob(pulled.json.id)).status, "done");
       assert.deepEqual((await readdir(path.join(dataDir, "local", "pulled"), { recursive: true })).sort(), ["c.txt", "deep", "deep/b.txt"]);
+      // rsync names every change as it makes it, so its run is counted in full.
+      assert.deepEqual((await api.get(`/api/sync-jobs/${pulled.json.id}/runs`)).json[0].summary, { copy: 2, delete: 0, mkdir: 1, rmdir: 0, touch: 0, bytes: 5, truncated: true });
+      assert.equal((await api.get("/api/sync-jobs")).json.find((item) => item.id === pulled.json.id).last_trial, null);
     }
 
     assert.equal((await api.delete(`/api/sync-jobs/${back.json.id}`)).status, 200);

@@ -24,7 +24,7 @@ const rcloneActions: Record<string, SyncChange["action"]> = {
   "update modification time": "touch"
 };
 
-/** What a trial run of a sync would have done, gathered from what rclone or rsync said as it went. */
+/** What a run of a sync did, or a trial run would have done, gathered from what rclone or rsync said as it went. */
 export class SyncReport {
   readonly summary: SyncSummary = { copy: 0, delete: 0, mkdir: 0, rmdir: 0, touch: 0, bytes: 0 };
   readonly changes: SyncChange[] = [];
@@ -32,13 +32,16 @@ export class SyncReport {
   private readonly extensions = new Map<string, { count: number; bytes: number }>();
   private readonly folders = new Map<string, { copy: number; delete: number; bytes: number }>();
 
+  /** `listed` is how many of the changes are named; a run that was not a trial is only counted. */
+  constructor(private readonly listed = LISTED_CHANGES) {}
+
   get truncated(): boolean {
     return this.changes.length < this.summary.copy + this.summary.delete + this.summary.mkdir + this.summary.rmdir + this.summary.touch;
   }
 
   add(change: SyncChange): void {
     this.summary[change.action] += 1;
-    if (this.changes.length < LISTED_CHANGES) this.changes.push(change);
+    if (this.changes.length < this.listed) this.changes.push(change);
     if (change.action !== "copy" && change.action !== "delete") return;
     const size = change.size ?? 0;
     const slash = change.path.indexOf("/");
@@ -82,6 +85,14 @@ export class SyncReport {
     const action = typeof entry.skipped === "string" ? rcloneActions[entry.skipped] : undefined;
     if (!action || typeof entry.object !== "string") return;
     this.add({ action, path: entry.object, ...(typeof entry.size === "number" && entry.size >= 0 ? { size: entry.size } : {}) });
+  }
+
+  /** What a job of rclone's daemon adds up to once it has ended. It tells of no folder it made and no time it set. */
+  countRcloneStats(stats: { transfers: number; bytes: number; deletes?: number; deletedDirs?: number }): void {
+    this.summary.copy = stats.transfers;
+    this.summary.bytes = stats.bytes;
+    this.summary.delete = stats.deletes ?? 0;
+    this.summary.rmdir = stats.deletedDirs ?? 0;
   }
 
   /** One line of rsync's `--out-format=%i %l %n`: `>f+++++++++ 4 deep/b.txt`, `cd+++++++++ 4096 deep/`, `*deleting   0 old/`. */

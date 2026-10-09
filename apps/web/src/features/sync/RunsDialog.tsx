@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { taskErrorLabel, taskStatus } from "@/features/tasks/taskUtils";
 import { formatDuration, formatSize, formatUnixDate } from "@/lib/format";
 import { t } from "@/lib/i18n";
-import type { FileTask, SyncJob, SyncRun } from "@/types/kago";
+import type { FileTask, SyncJob, SyncRun, SyncTrialSummary } from "@/types/kago";
 import { describeTrial } from "./TrialDialog";
 
 /** What there is to say of a run beyond when it was and how it ended. */
@@ -16,12 +16,25 @@ function describeRun(run: SyncRun) {
   return [
     run.scheduled ? t("On schedule") : t("Started by hand"),
     run.finished_at ? t("Took {duration}", { duration: formatDuration(run.finished_at - run.started_at) }) : null,
-    // rsync does not always say how much it sent, so nothing is said of a run that reports none.
-    !run.dry_run && run.bytes > 0 ? t("{size} transferred", { size: formatSize(run.bytes) }) : null
+    // What a run changed says how much it copied; of one that left no such count, only what it sent is known, if that.
+    !run.summary && !run.dry_run && run.bytes > 0 ? t("{size} transferred", { size: formatSize(run.bytes) }) : null
   ].filter(Boolean).join(" · ");
 }
 
-/** The job's last runs: when each was, how it ended, and what it brought across. */
+/** How much a run that was not a trial changed, in a few words. */
+function describeChanges(summary: SyncTrialSummary) {
+  const parts = [
+    summary.copy ? t("{count} copied ({size})", { count: summary.copy, size: formatSize(summary.bytes) }) : null,
+    summary.touch ? t("{count} re-dated", { count: summary.touch }) : null,
+    summary.delete ? t("{count} deleted", { count: summary.delete }) : null,
+    summary.mkdir ? t("{count} folder made | {count} folders made", { count: summary.mkdir }) : null,
+    summary.rmdir ? t("{count} folder removed | {count} folders removed", { count: summary.rmdir }) : null
+  ].filter(Boolean);
+  // A sync between two locations does not say what folders it made or which times it set.
+  return parts.length > 0 ? parts.join(" · ") : t("Nothing was copied or deleted");
+}
+
+/** The job's last runs: when each was, how it ended, and what it changed. */
 export function RunsDialog({ job, onClose }: { job: SyncJob | null; onClose: () => void }) {
   // The last job stays on show while its dialog fades out, and so do its runs.
   const [shown, setShown] = useState(job);
@@ -42,7 +55,7 @@ export function RunsDialog({ job, onClose }: { job: SyncJob | null; onClose: () 
                   <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                     <span className="font-medium tabular-nums">{formatUnixDate(run.started_at)}</span>
                     <span className="text-xs text-muted">{describeRun(run)}</span>
-                    {run.summary ? <span className="text-xs text-muted">{describeTrial(run.summary)}</span> : null}
+                    {run.summary ? <span className="text-xs text-muted">{run.dry_run ? describeTrial(run.summary) : describeChanges(run.summary)}</span> : null}
                     {run.error_message ? <span className="text-xs break-words text-danger">{taskErrorLabel(run.error_message)}</span> : null}
                   </div>
                   {run.dry_run ? <KagoBadge tone="neutral">{t("Trial run")}</KagoBadge> : null}
