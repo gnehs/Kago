@@ -115,29 +115,44 @@ export function KagoAppIcon({ texture, className, children }: { texture: keyof t
 }
 
 /**
- * An app icon made of a picture that is someone else's: the same tile in paper white, in either theme, holding the
- * picture as it is. A logo is drawn for a light ground far more often than for a dark one.
+ * An app icon made of a picture that is someone else's: the same tile, in white, in either theme, as a logo is
+ * drawn for a light ground far more often than for a dark one. The white takes on the picture's own colour, evenly
+ * and lightly: the picture blurred until nothing of its shapes is left, so that each shortcut has a tile of its
+ * own and none is the bare white of a blank. The picture itself is left as it was made, with only a faint shadow
+ * to lift it off the tile.
  */
 export function KagoAppImage({ src, className, onError }: { src: string; className?: string; onError?: () => void }) {
   const id = useId();
   return (
     <svg viewBox="0 0 96 96" aria-hidden className={cn("kago-app-icon shrink-0", className)}>
       <defs>
-        <linearGradient id={`${id}-tile`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#ffffff" />
-          <stop offset="1" stopColor="#e6e8ec" />
+        {/* What is left of a picture's colour once it is spread over the whole tile; the edges, where it thins out, are filled back in. */}
+        <filter id={`${id}-tint`} x="-100%" y="-100%" width="300%" height="300%" colorInterpolationFilters="sRGB">
+          <feGaussianBlur stdDeviation="46" />
+          <feColorMatrix type="saturate" values="1.5" />
+          <feComponentTransfer>
+            <feFuncA type="linear" slope={6} />
+          </feComponentTransfer>
+        </filter>
+        <filter id={`${id}-lift`} x="-20%" y="-20%" width="140%" height="150%">
+          <feDropShadow dx="0" dy="1.6" stdDeviation="1.6" floodColor="#000000" floodOpacity={0.16} />
+        </filter>
+        <linearGradient id={`${id}-light`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#ffffff" stopOpacity={0.55} />
+          <stop offset="1" stopColor="#ffffff" stopOpacity={0} />
         </linearGradient>
-        <linearGradient id={`${id}-rim`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#ffffff" stopOpacity={1} />
-          <stop offset="0.4" stopColor="#ffffff" stopOpacity={0.2} />
-          <stop offset="1" stopColor="#000000" stopOpacity={0.08} />
-        </linearGradient>
+        <clipPath id={`${id}-clip`}>
+          <path d={TILE} />
+        </clipPath>
       </defs>
-      <path d={TILE} fill={`url(#${id}-tile)`} />
+      <path d={TILE} fill="#ffffff" />
+      <g clipPath={`url(#${id}-clip)`}>
+        <image href={src} x="8" y="8" width="80" height="80" filter={`url(#${id}-tint)`} opacity={0.28} />
+        <rect width="96" height="96" fill={`url(#${id}-light)`} />
+      </g>
       {/* Drawn as a picture, whatever it is: an SVG shown this way runs nothing and fetches nothing. */}
-      <image href={src} x="17" y="17" width="62" height="62" preserveAspectRatio="xMidYMid meet" onError={onError} />
-      <path d={TILE} fill="none" stroke={`url(#${id}-rim)`} strokeWidth={1.1} transform="translate(0.7 0.7) scale(0.9854)" />
-      <path d={TILE} fill="none" stroke="#000000" strokeOpacity={0.22} strokeWidth={0.6} />
+      <image href={src} x="14" y="14" width="68" height="68" preserveAspectRatio="xMidYMid meet" filter={`url(#${id}-lift)`} onError={onError} />
+      <path d={TILE} fill="none" stroke="#000000" strokeOpacity={0.12} strokeWidth={0.6} />
     </svg>
   );
 }
