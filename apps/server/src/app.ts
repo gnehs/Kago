@@ -79,7 +79,7 @@ export async function buildApp(env: Env) {
   const oidc = new OidcService(db, secrets, auth, audit, events);
   const media = new MediaService(env.appDataDir);
   const iconLibrary = new IconLibraryService(env.appDataDir);
-  const apps = new ExternalAppService(db, env.appDataDir, iconLibrary, events, audit);
+  const apps = new ExternalAppService(db, env.appDataDir, iconLibrary, events, audit, secrets);
   const workers = new WorkerManager(tasks, env, events);
 
   await app.register(cookie, { secret: env.sessionSecret });
@@ -669,6 +669,13 @@ function registerApi(app: FastifyInstance, services: Services) {
     // An icon may be an SVG. It was rewritten when it was taken in, and is still sent as something that cannot run.
     sandboxContent(reply);
     return sendFile(request, reply, icon.file, stat, icon.contentType);
+  });
+  // Opening a shortcut that has a sign-in goes through here: the browser is sent on to the address with the sign-in in it.
+  app.get("/api/external-apps/:id/open", async (request, reply) => {
+    const target = services.apps.openTarget(requireActor(request), z.object({ id: z.string() }).parse(request.params).id);
+    reply.header("Cache-Control", "no-store");
+    reply.header("Referrer-Policy", "no-referrer");
+    return reply.redirect(target);
   });
   // Whether a service lets itself be shown inside Kago, asked of the service itself before a blank window says so.
   // The page the question is for is named by the browser, not by the request's own say-so.

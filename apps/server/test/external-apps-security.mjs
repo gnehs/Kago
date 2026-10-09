@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, readdir, readFile, rm } from "node:fs/promises";
 import http from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { buildApp } from "../dist/app.js";
 import { FrameProbe, framingVerdict, mayBeAsked, probeFraming } from "../src/lib/frame-probe.ts";
@@ -381,6 +382,56 @@ test("a shortcut is its maker's own unless an administrator shares it", async ()
     assert.equal((await alice.put(`/api/external-apps/${framed.json.id}`, { name: "Framed", url: framed.json.url, embed: false })).json.embed, false);
     assert.equal((await alice.get(`/api/external-apps/${framed.json.id}/frame`)).statusCode, 404);
     assert.equal((await alice.delete(`/api/external-apps/${framed.json.id}`)).statusCode, 200);
+
+    // A sign-in for a service that asks with the browser's own box is kept sealed, and leaves the server only as the shortcut is opened.
+    const password = "p@ss word/ö:#1";
+    const signed = await alice.post("/api/external-apps", { name: "Signed", url: "http://nas.local:8096/web/?a=1", embed: true, auth: { username: "alice smith", password } });
+    assert.equal(signed.statusCode, 200, signed.payload);
+    assert.equal(signed.json.authUser, "alice smith");
+    assert.equal(signed.payload.includes(password), false);
+    assert.equal((await alice.get("/api/external-apps")).payload.includes(password), false);
+    const signedIn = async (who, id = signed.json.id) => {
+      const response = await who.get(`/api/external-apps/${id}/open`);
+      if (response.statusCode !== 302) return response.statusCode;
+      const target = new URL(response.headers.location);
+      return [decodeURIComponent(target.username), decodeURIComponent(target.password), target.host + target.pathname + target.search];
+    };
+    assert.deepEqual(await signedIn(alice), ["alice smith", password, "nas.local:8096/web/?a=1"]);
+    const opened = await alice.get(`/api/external-apps/${signed.json.id}/open`);
+    assert.equal(opened.headers["cache-control"], "no-store");
+    assert.equal(opened.headers["referrer-policy"], "no-referrer");
+    // A browser takes no sign-in into a frame, so the frame is never given one.
+    const signedFrame = await alice.get(`/api/external-apps/${signed.json.id}/frame`);
+    assert.ok(signedFrame.payload.includes('src="http://nas.local:8096/web/?a=1"'), signedFrame.payload);
+    for (const other of [bob, admin, stranger]) assert.notEqual((await other.get(`/api/external-apps/${signed.json.id}/open`)).statusCode, 302);
+    // A change that names no password keeps the one there was; one that names no sign-in at all keeps both.
+    assert.equal((await alice.put(`/api/external-apps/${signed.json.id}`, { name: "Signed", url: signed.json.url, auth: { username: "alice2" } })).json.authUser, "alice2");
+    assert.deepEqual(await signedIn(alice), ["alice2", password, "nas.local:8096/web/?a=1"]);
+    assert.equal((await alice.put(`/api/external-apps/${signed.json.id}`, { name: "Renamed", url: signed.json.url })).json.authUser, "alice2");
+    assert.deepEqual(await signedIn(alice), ["alice2", password, "nas.local:8096/web/?a=1"]);
+    assert.equal((await alice.put(`/api/external-apps/${signed.json.id}`, { name: "Renamed", url: signed.json.url, auth: { username: "alice2", password: "" } })).statusCode, 200);
+    assert.deepEqual(await signedIn(alice), ["alice2", "", "nas.local:8096/web/?a=1"]);
+    for (const auth of [{ username: "a:b", password: "x" }, { username: "", password: "x" }, { username: "a", password: "x\ny" }, { username: "a\u0000" }, "alice:secret"]) {
+      assert.equal((await alice.put(`/api/external-apps/${signed.json.id}`, { name: "Renamed", url: signed.json.url, auth })).statusCode, 400, JSON.stringify(auth));
+    }
+    // A sign-in still has no place in the address itself, where it would be shown and logged.
+    assert.equal((await alice.put(`/api/external-apps/${signed.json.id}`, { name: "Renamed", url: "http://alice2:secret@nas.local:8096/" })).statusCode, 400);
+    assert.equal((await alice.put(`/api/external-apps/${signed.json.id}`, { name: "Renamed", url: signed.json.url, auth: null })).json.authUser, null);
+    assert.deepEqual(await signedIn(alice), ["", "", "nas.local:8096/web/?a=1"]);
+    assert.equal((await alice.delete(`/api/external-apps/${signed.json.id}`)).statusCode, 200);
+    // One an administrator shares signs everyone who has it in; nobody but an administrator can change what it signs in as.
+    const sharedSignIn = await admin.post("/api/external-apps", { name: "Shared sign-in", url: "http://nas.local:9000", shared: true, auth: { username: "household", password } });
+    assert.deepEqual(await signedIn(bob, sharedSignIn.json.id), ["household", password, "nas.local:9000/"]);
+    assert.equal((await bob.put(`/api/external-apps/${sharedSignIn.json.id}`, { name: "Shared sign-in", url: "http://evil.example", auth: { username: "household" } })).statusCode, 403);
+    // The password is in neither the audit log nor the database as it was typed.
+    assert.equal((await admin.get("/api/audit")).payload.includes(password), false);
+    const database = new DatabaseSync(path.join(fixture.appDataDir, "app.db"), { readOnly: true });
+    const stored = database.prepare("SELECT auth_user, auth_secret FROM external_apps WHERE id = ?").get(sharedSignIn.json.id);
+    database.close();
+    assert.equal(stored.auth_user, "household");
+    assert.match(stored.auth_secret, /^v1:/);
+    assert.equal(stored.auth_secret.includes(password), false);
+    assert.equal((await admin.delete(`/api/external-apps/${sharedSignIn.json.id}`)).statusCode, 200);
 
     // Sharing with everyone is an administrator's to do, whether at the start or later.
     assert.equal((await alice.post("/api/external-apps", { name: "Mine for all", url: "http://nas.local", shared: true })).statusCode, 403);

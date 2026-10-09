@@ -143,6 +143,7 @@ docker exec -it kago kago-entrypoint node dist/recover.js you@example.com
 
 - 捷徑預設在新分頁開啟。網址只接受 `http://` 與 `https://`。
 - 「開啟方式」可以改成「Kago 的視窗」，把服務嵌在桌面的視窗裡。許多服務的設定不允許被嵌入其他網頁（`X-Frame-Options`、CSP `frame-ancestors`）；Kago 會先向那個服務確認，不允許時在表單與視窗裡直接告訴你，而不是留下一片空白。伺服器連不到那個網址時無法確認，有些服務即使允許嵌入，登入狀態也留不住。Kago 以 HTTPS 開啟而服務是 HTTP 時，瀏覽器一定會擋。視窗的標題列隨時可以改在新分頁開啟。
+- 服務用瀏覽器的登入框（HTTP Basic）把關時，可以把帳號密碼填在捷徑的「進階選項」裡，以新分頁開啟時就不必再輸入。這有風險：密碼加密保存，但每次開啟都會交給瀏覽器，能使用這個捷徑的人就有辦法得知它，`http://` 的網址還會讓它以明碼經過網路，請使用專為此建立的帳號。分享給所有人的捷徑，每個人都會以同一個帳號登入，也都有辦法得知密碼。開在 Kago 視窗裡時瀏覽器不接受這種登入方式，會自己跳出登入框。
 - 輸入名稱時，Kago 會從 [Dashboard Icons](https://github.com/homarr-labs/dashboard-icons) 與 [selfh.st Icons](https://selfh.st/icons/) 找出同名的圖示。查詢與下載都是伺服器向 `cdn.jsdelivr.net` 進行的，你的瀏覽器不會連到第三方；選定的圖示會存一份在 `/app-data/app-icons`，之後不再需要網路。
 - 伺服器連不上外網時不會有推薦，仍然可以自己上傳 PNG、JPEG、WebP 或 SVG（1 MB 以內），或直接使用預設圖示。
 - Kago 不會從你填的網址抓任何東西（例如它的 favicon）：圖示只來自上面兩個圖示庫，或你上傳的檔案。唯一會連過去的時候，是你選了「Kago 的視窗」：伺服器對那個網址發一個請求，只讀回應的標頭，用來判斷它允不允許被嵌入。

@@ -6,6 +6,7 @@ import { row, rows } from "../db/db.js";
 import { AppError } from "../lib/errors.js";
 import { ICON_MAX_BYTES, ICON_TYPES, readIcon, type IconImage, type IconType } from "../lib/icon-image.js";
 import { id, now } from "../lib/ids.js";
+import type { SecretBox } from "../lib/secret-box.js";
 import type { EventPublisher } from "../ws/events.js";
 import type { AuditService } from "./audit.service.js";
 import type { IconLibraryService } from "./icon-library.service.js";
@@ -23,6 +24,14 @@ export const externalAppSchema = z.object({
   shared: z.boolean().optional(),
   /** Shown in a frame inside a window of Kago's, rather than in a tab of its own. Left out, it opens as it did. */
   embed: z.boolean().optional(),
+  /**
+   * How to sign in to a service that asks with the browser's own box (HTTP Basic). `null` takes it away and left
+   * out it stays; a password left out stays as it was. A name cannot hold a colon, which is what ends it.
+   */
+  auth: z
+    .object({ username: z.string().min(1).max(255).regex(/^[^:\x00-\x1f\x7f]+$/), password: z.string().max(1024).regex(/^[^\x00-\x1f\x7f]*$/).optional() })
+    .nullable()
+    .optional(),
   /** Left out, the icon stays as it is. */
   icon: z
     .discriminatedUnion("kind", [
@@ -35,7 +44,7 @@ export const externalAppSchema = z.object({
 });
 
 type ExternalAppInput = z.infer<typeof externalAppSchema>;
-type AppRow = { id: string; owner_id: string | null; name: string; url: string; icon_type: IconType | null; icon_version: number | null; embed: number; created_at: number; updated_at: number };
+type AppRow = { id: string; owner_id: string | null; name: string; url: string; icon_type: IconType | null; icon_version: number | null; embed: number; auth_user: string | null; auth_secret: string | null; created_at: number; updated_at: number };
 
 /**
  * Where a shortcut leads, as it is kept. It becomes a link on someone's desktop, so it is a web address and
@@ -67,7 +76,8 @@ export class ExternalAppService {
     appDataDir: string,
     private readonly library: IconLibraryService,
     private readonly events: EventPublisher,
-    private readonly audit: AuditService
+    private readonly audit: AuditService,
+    private readonly secrets: SecretBox
   ) {
     this.dir = path.join(appDataDir, "app-icons", "apps");
   }
@@ -86,12 +96,12 @@ export class ExternalAppService {
     if (count >= MAX_APPS) throw new AppError(400, "There are too many apps already", "TOO_MANY_APPS");
     const icon = await this.readChoice(input.icon);
     const ts = now();
-    const app: AppRow = { id: id("app"), owner_id: ownerId, name: input.name, url, icon_type: icon?.type ?? null, icon_version: icon ? Date.now() : null, embed: input.embed ? 1 : 0, created_at: ts, updated_at: ts };
+    const app: AppRow = { id: id("app"), owner_id: ownerId, name: input.name, url, icon_type: icon?.type ?? null, icon_version: icon ? Date.now() : null, embed: input.embed ? 1 : 0, ...this.signIn(input.auth, null), created_at: ts, updated_at: ts };
     if (icon) await this.writeIcon(app.id, icon);
     this.db
-      .prepare("INSERT INTO external_apps (id, owner_id, name, url, icon_type, icon_version, embed, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-      .run(app.id, app.owner_id, app.name, app.url, app.icon_type, app.icon_version, app.embed, app.created_at, app.updated_at);
-    this.audit.write({ actorType: "user", actorId: actor.id, action: "external_app_create", target: { appId: app.id, name: app.name, url: app.url, shared, embed: Boolean(app.embed) }, result: "success" });
+      .prepare("INSERT INTO external_apps (id, owner_id, name, url, icon_type, icon_version, embed, auth_user, auth_secret, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(app.id, app.owner_id, app.name, app.url, app.icon_type, app.icon_version, app.embed, app.auth_user, app.auth_secret, app.created_at, app.updated_at);
+    this.audit.write({ actorType: "user", actorId: actor.id, action: "external_app_create", target: { appId: app.id, name: app.name, url: app.url, shared, embed: Boolean(app.embed), auth: app.auth_user !== null }, result: "success" });
     this.announce(app.owner_id);
     return this.publicApp(actor, app);
   }
@@ -111,14 +121,15 @@ export class ExternalAppService {
       url,
       ...(icon === undefined ? {} : { icon_type: icon?.type ?? null, icon_version: icon ? Date.now() : null }),
       embed: input.embed === undefined ? previous.embed : input.embed ? 1 : 0,
+      ...this.signIn(input.auth, previous),
       updated_at: now()
     };
     if (icon) await this.writeIcon(app.id, icon);
     this.db
-      .prepare("UPDATE external_apps SET owner_id = ?, name = ?, url = ?, icon_type = ?, icon_version = ?, embed = ?, updated_at = ? WHERE id = ?")
-      .run(app.owner_id, app.name, app.url, app.icon_type, app.icon_version, app.embed, app.updated_at, app.id);
+      .prepare("UPDATE external_apps SET owner_id = ?, name = ?, url = ?, icon_type = ?, icon_version = ?, embed = ?, auth_user = ?, auth_secret = ?, updated_at = ? WHERE id = ?")
+      .run(app.owner_id, app.name, app.url, app.icon_type, app.icon_version, app.embed, app.auth_user, app.auth_secret, app.updated_at, app.id);
     if (icon === null) await this.removeIcon(app.id);
-    this.audit.write({ actorType: "user", actorId: actor.id, action: "external_app_update", target: { appId: app.id, name: app.name, url: app.url, shared, embed: Boolean(app.embed) }, result: "success" });
+    this.audit.write({ actorType: "user", actorId: actor.id, action: "external_app_update", target: { appId: app.id, name: app.name, url: app.url, shared, embed: Boolean(app.embed), auth: app.auth_user !== null }, result: "success" });
     this.announce(previous.owner_id);
     if (app.owner_id !== previous.owner_id) this.announce(app.owner_id);
     return this.publicApp(actor, app);
@@ -137,6 +148,26 @@ export class ExternalAppService {
     const app = this.visible(actor, appId);
     if (!app.icon_type) throw new AppError(404, "Icon not found", "ICON_NOT_FOUND");
     return { file: this.iconPath(app.id, app.icon_type), contentType: ICON_TYPES[app.icon_type] };
+  }
+
+  /**
+   * Where the browser is sent to open a shortcut the caller can see: its address, with the sign-in written into it
+   * when it has one. That is the only form a browser takes a sign-in in, and this is the only time the password
+   * leaves the server: it is in no list, no link on the page and no log.
+   */
+  openTarget(actor: Actor, appId: string): string {
+    const app = this.visible(actor, appId);
+    const url = new URL(appUrl(app.url));
+    if (app.auth_user !== null) {
+      try {
+        const password = app.auth_secret ? this.secrets.open(app.auth_secret) : "";
+        url.username = app.auth_user;
+        url.password = password;
+      } catch {
+        // Sealed with a key that is gone: the service asks for the sign-in itself.
+      }
+    }
+    return url.href;
   }
 
   /** Where a shortcut the caller can see leads, when it is one that is shown inside Kago. Any other has no frame to ask for. */
@@ -168,6 +199,8 @@ export class ExternalAppService {
       url: app.url,
       shared: app.owner_id === null,
       embed: Boolean(app.embed),
+      /** The name it signs in with, when it has a sign-in. The password is never part of this. */
+      authUser: app.auth_user,
       /** Whether the caller may change or remove it. */
       editable: app.owner_id === actor.id || (app.owner_id === null && actor.role === "ADMIN"),
       // The address names the icon's version, so a new one is never answered from the browser's cache.
@@ -194,6 +227,14 @@ export class ExternalAppService {
     if (actor.role === "ADMIN") return;
     this.audit.write({ actorType: "user", actorId: actor.id, action: "permission_denied", target: { action: "shared_external_app" }, result: "denied" });
     throw new AppError(403, "Admin required", "ADMIN_REQUIRED");
+  }
+
+  /** The sign-in a request asks for, as it is kept: the password sealed, and the one there was kept when none was given. */
+  private signIn(auth: ExternalAppInput["auth"], previous: AppRow | null): Pick<AppRow, "auth_user" | "auth_secret"> {
+    if (auth === undefined) return { auth_user: previous?.auth_user ?? null, auth_secret: previous?.auth_secret ?? null };
+    if (auth === null) return { auth_user: null, auth_secret: null };
+    const kept = auth.password === undefined && previous?.auth_user != null ? previous.auth_secret : null;
+    return { auth_user: auth.username, auth_secret: kept ?? this.secrets.seal(auth.password ?? "") };
   }
 
   /** The picture a request chose, already read and made safe; null for no icon, undefined to leave the icon alone. */

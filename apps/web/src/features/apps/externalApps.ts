@@ -10,7 +10,9 @@ import type { ExternalApp } from "@/types/kago";
  * Where a shortcut leads, when that is somewhere a link may lead. The server keeps only web addresses; the
  * interface still checks before it makes a link of one, as an address of another kind would run as script.
  */
-export const appHref = (app: Pick<ExternalApp, "url">) => (/^https?:\/\//i.test(app.url) ? app.url : undefined);
+export const appHref = (app: Pick<ExternalApp, "id" | "url" | "authUser">) =>
+  // One with a sign-in is opened through Kago, which sends the browser on with the sign-in; the page never holds the password.
+  !/^https?:\/\//i.test(app.url) ? undefined : app.authUser === null ? app.url : `/api/external-apps/${encodeURIComponent(app.id)}/open`;
 
 /** The machine a shortcut leads to, which is what tells two services apart at a glance. */
 export function appHost(app: Pick<ExternalApp, "url">) {
@@ -28,7 +30,7 @@ export function appHost(app: Pick<ExternalApp, "url">) {
 export const blockedAsMixedContent = (app: Pick<ExternalApp, "url">) => location.protocol === "https:" && /^http:\/\/(?!(?:localhost|127\.0\.0\.1|\[::1\])(?:[:/?#]|$))/i.test(app.url);
 
 /** Opens a shortcut in a tab of its own, which learns nothing of the one it came from. */
-export function openInNewTab(app: Pick<ExternalApp, "url">) {
+export function openInNewTab(app: Pick<ExternalApp, "id" | "url" | "authUser">) {
   const href = appHref(app);
   if (href) window.open(href, "_blank", "noopener,noreferrer");
 }
