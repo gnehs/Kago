@@ -129,6 +129,22 @@ CREATE TABLE IF NOT EXISTS shelf_items (
   FOREIGN KEY (root_id) REFERENCES roots(id) ON DELETE CASCADE
 );
 
+-- Shortcuts on the desktop to other services. One without an owner is everyone's, and an administrator's to change.
+CREATE TABLE IF NOT EXISTS external_apps (
+  id TEXT PRIMARY KEY,
+  owner_id TEXT,
+  name TEXT NOT NULL,
+  url TEXT NOT NULL,
+  icon_type TEXT,
+  icon_version INTEGER,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_external_apps_owner
+ON external_apps(owner_id, created_at);
+
 CREATE TABLE IF NOT EXISTS tags (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,

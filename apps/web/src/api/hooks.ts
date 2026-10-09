@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { api, previewUrl } from "./client";
 import { decodeSubtitle } from "../lib/subtitles";
 import { isTrashing, useTrashingStore } from "../stores/trashing";
-import type { Actor, AuditLog, FileItem, FileList, FileMeta, FileTask, Group, ImageMetadata, MediaInfo, PermissionRule, Root, ShareLink, Shelf, SqlitePage, SqliteTable, StorageInfo, SubtitleList, SyncJob, SyncRun, SyncTrial, Tag, TrashItem, UserAccount, WorkspaceState } from "../types/kago";
+import type { Actor, AuditLog, ExternalApp, FileItem, FileList, FileMeta, FileTask, Group, ImageMetadata, LibraryIcon, MediaInfo, PermissionRule, Root, ShareLink, Shelf, SqlitePage, SqliteTable, StorageInfo, SubtitleList, SyncJob, SyncRun, SyncTrial, Tag, TrashItem, UserAccount, WorkspaceState } from "../types/kago";
 
 export function useSetupStatus() {
   return useQuery({ queryKey: ["auth", "setup"], queryFn: () => api<{ needsSetup: boolean }>("/api/auth/setup") });
@@ -230,6 +230,23 @@ export function usePathPermissions(rootSlug: string, path: string, enabled = tru
 
 export function useTasks() {
   return useQuery({ queryKey: ["tasks"], queryFn: () => api<FileTask[]>("/api/tasks"), refetchInterval: 4000 });
+}
+
+export function useExternalApps() {
+  return useQuery({ queryKey: ["external-apps"], queryFn: () => api<ExternalApp[]>("/api/external-apps") });
+}
+
+/** The library icons that answer to a name. `available` is false when the server could reach no library. */
+export function useIconSuggestions(name: string) {
+  return useQuery({
+    queryKey: ["app-icons", name],
+    queryFn: () => api<{ available: boolean; items: LibraryIcon[] }>(`/api/app-icons?${new URLSearchParams({ q: name }).toString()}`),
+    enabled: name.length > 0,
+    retry: false,
+    staleTime: 5 * 60_000,
+    // The suggestions for what was typed so far stay while the next ones are looked up.
+    placeholderData: keepPreviousData
+  });
 }
 
 export function useShelves() {

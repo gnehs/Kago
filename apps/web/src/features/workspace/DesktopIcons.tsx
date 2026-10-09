@@ -1,17 +1,27 @@
 import type { ReactNode } from "react";
-import { ExternalLink, HardDrive, Server } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { Copy, ExternalLink, HardDrive, Pencil, Plus, Server, Trash2 } from "lucide-react";
+import { useExternalApps } from "@/api/hooks";
 import { KagoAppIcon } from "@/components/kago/app-icon";
 import { KagoContextMenu, KagoMenuItem, KagoMenuSeparator } from "@/components/kago/menu";
+import { editExternalApp } from "@/features/apps/ExternalAppDialog";
+import { ExternalAppIcon } from "@/features/apps/ExternalAppIcon";
+import { appHref, openExternalApp, removeExternalApp } from "@/features/apps/externalApps";
+import { copyText } from "@/lib/utils";
 import { useWorkspaceStore } from "@/stores/workspace";
 import type { FileWindow, Root } from "@/types/kago";
 import { t } from "@/lib/i18n";
+import { run } from "@/lib/run";
 
 /**
  * Desktop shortcuts: the places you go to. They sit underneath every window.
  * Files stands for every location: which of them a window shows is picked in the window, from the tree down its side.
+ * After Kago's own come the other services of the machine, each a link that opens in a tab of its own.
  */
 export function DesktopIcons({ roots, isAdmin }: { roots: Root[]; isAdmin: boolean }) {
   const store = useWorkspaceStore.getState;
+  const queryClient = useQueryClient();
+  const apps = useExternalApps().data ?? [];
   // A new window starts in a location on this machine when there is one: it answers at once and is always there.
   const home = roots.find((root) => root.provider === "local") ?? roots[0];
   const openNew = (root: Root) => store().openWindow({ rootSlug: root.slug, logicalPath: "/", title: root.name });
@@ -48,6 +58,31 @@ export function DesktopIcons({ roots, isAdmin }: { roots: Root[]; isAdmin: boole
       ) : null}
       <DesktopIcon icon={GLYPHS.shares} tone="var(--kago-app-share)" label={t("Shares")} onClick={() => store().openApp("shares")} />
       <DesktopIcon icon={GLYPHS.trash} tone="var(--kago-app-trash)" label={t("Trash")} onClick={() => store().openApp("trash")} />
+      {apps.map((app) => (
+        <KagoContextMenu
+          key={app.id}
+          menu={
+            <>
+              <KagoMenuItem icon={<ExternalLink />} onClick={() => openExternalApp(app)}>{t("Open in new tab")}</KagoMenuItem>
+              <KagoMenuItem icon={<Copy />} onClick={() => void run(() => copyText(app.url))}>{t("Copy address")}</KagoMenuItem>
+              <KagoMenuSeparator />
+              {app.editable ? (
+                <>
+                  <KagoMenuItem icon={<Pencil />} onClick={() => editExternalApp(app)}>{t("Edit…")}</KagoMenuItem>
+                  <KagoMenuItem icon={<Trash2 />} destructive onClick={() => void removeExternalApp(queryClient, app)}>{t("Remove")}</KagoMenuItem>
+                  <KagoMenuSeparator />
+                </>
+              ) : null}
+              <KagoMenuItem icon={<Plus />} onClick={() => editExternalApp("new")}>{t("Add app…")}</KagoMenuItem>
+            </>
+          }
+        >
+          {/* A link, so that the browser's own ways of opening one (middle click, the address on hover) all work. */}
+          <a href={appHref(app)} target="_blank" rel="noopener noreferrer" draggable={false} className={ICON_CLASS}>
+            <DesktopIconBody icon={<ExternalAppIcon name={app.name} icon={app.icon} className="size-full" />} label={app.name} />
+          </a>
+        </KagoContextMenu>
+      ))}
       {home ? null : (
         <p className="m-0 w-20 px-1 pt-2 text-center text-xs text-muted">{isAdmin ? t("No folders under /data yet") : t("No locations available. Contact an administrator")}</p>
       )}
@@ -86,12 +121,23 @@ const GLYPHS = {
   )
 };
 
+const ICON_CLASS = "group flex w-20 flex-col items-center gap-1.5 rounded-lg px-1 py-2 text-inherit no-underline outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-accent/50";
+
 function DesktopIcon({ icon, label, tone, ...props }: React.ComponentProps<"button"> & { icon: ReactNode; label: string; /** The colour of the tile. */ tone: string }) {
   return (
-    <button type="button" className="group flex w-20 flex-col items-center gap-1.5 rounded-lg px-1 py-2 outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-accent/50" {...props}>
+    <button type="button" className={ICON_CLASS} {...props}>
+      <DesktopIconBody icon={icon} label={label} tone={tone} />
+    </button>
+  );
+}
+
+/** What every desktop icon is made of, whether it is a button of Kago's or a link out of it. */
+function DesktopIconBody({ icon, label, tone }: { icon: ReactNode; label: string; tone?: string }) {
+  return (
+    <>
       <span className="flex size-12 transition-transform group-active:scale-95" style={{ color: tone }}>{icon}</span>
       {/* Over a picture the name has to carry its own contrast. */}
       <span className="line-clamp-2 max-w-full text-center leading-tight break-words group-data-[wallpaper]/canvas:text-white group-data-[wallpaper]/canvas:[text-shadow:0_1px_3px_rgb(0_0_0/0.85)]">{label}</span>
-    </button>
+    </>
   );
 }

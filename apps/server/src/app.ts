@@ -17,6 +17,7 @@ import { logger } from "./lib/logger.js";
 import { randomToken } from "./lib/crypto.js";
 import { SecretBox } from "./lib/secret-box.js";
 import { sendFile, sendSource } from "./lib/send-file.js";
+import { ICON_TYPES } from "./lib/icon-image.js";
 import { ensureSshKey } from "./lib/ssh-key.js";
 import { zipStream } from "./lib/zip-stream.js";
 import { isBrowserViewable } from "./lib/viewable.js";
@@ -24,7 +25,9 @@ import { AuditService } from "./services/audit.service.js";
 import { AuthService, MAX_PASSWORD, changePasswordSchema, createUserSchema, loginSchema, patchUserSchema, resetPasswordSchema, setupAdminSchema } from "./services/auth.service.js";
 import { FsService, finderTagsSchema, fsQuerySchema, maxUploadFiles, mkdirSchema, renameSchema, sqliteRowsSchema, writeTextSchema, zipQuerySchema } from "./services/fs.service.js";
 import { ImageService } from "./services/image.service.js";
+import { externalAppSchema, ExternalAppService } from "./services/external-app.service.js";
 import { createGroupSchema, GroupService } from "./services/group.service.js";
+import { IconLibraryService } from "./services/icon-library.service.js";
 import { MediaService, mediaAudioSchema, mediaSessionSchema, mediaStreamSchema } from "./services/media.service.js";
 import { PathService } from "./services/path.service.js";
 import { permissionInputSchema, permissionSetSchema, PermissionService } from "./services/permission.service.js";
@@ -71,6 +74,8 @@ export async function buildApp(env: Env) {
   const sync = new SyncService(db, tasks, auth, audit);
   const groups = new GroupService(db);
   const media = new MediaService(env.appDataDir);
+  const iconLibrary = new IconLibraryService(env.appDataDir);
+  const apps = new ExternalAppService(db, env.appDataDir, iconLibrary, events, audit);
   const workers = new WorkerManager(tasks, env, events);
 
   await app.register(cookie, { secret: env.sessionSecret });
@@ -125,7 +130,7 @@ export async function buildApp(env: Env) {
   await auth.ensureInitialAdminFromEnv();
   roots.syncFromDataDir();
   await remotes.start();
-  registerApi(app, { auth, audit, roots, paths, permissions, fsService, workspace, preferences, tasks, shelves, tags, shares, groups, media, images, events, db, storage, remotes, sync, env });
+  registerApi(app, { auth, audit, roots, paths, permissions, fsService, workspace, preferences, tasks, shelves, tags, shares, groups, media, images, apps, iconLibrary, events, db, storage, remotes, sync, env });
 
   app.get("/ws", {
     websocket: true,
@@ -169,9 +174,10 @@ export async function buildApp(env: Env) {
   pruning.unref();
   void remote.pruneLocalCopies().catch(() => undefined);
   const prunePictures = () =>
-    void Promise.all([fsService.pruneThumbnails(), images.prune()]).then(
-      ([thumbnails, renditions]) => {
+    void Promise.all([fsService.pruneThumbnails(), images.prune(), iconLibrary.prune(), apps.prune()]).then(
+      ([thumbnails, renditions, libraryIcons, appIcons]) => {
         if (thumbnails + renditions > 0) logger.info(`removed ${thumbnails} thumbnails and ${renditions} converted pictures unused for a month`);
+        if (libraryIcons + appIcons > 0) logger.info(`removed ${libraryIcons + appIcons} app icons no longer in use`);
       },
       () => undefined
     );
@@ -264,6 +270,8 @@ type Services = {
   groups: GroupService;
   media: MediaService;
   images: ImageService;
+  apps: ExternalAppService;
+  iconLibrary: IconLibraryService;
   events: EventHub;
   db: ReturnType<typeof openDb>;
   storage: StorageService;
@@ -527,6 +535,40 @@ function registerApi(app: FastifyInstance, services: Services) {
     const actor = requireActor(request);
     await services.fsService.clearWallpaper(actor);
     return services.preferences.setWallpaper(actor.id, false);
+  });
+
+  // Shortcuts on the desktop to other services: one's own, and the ones an administrator shares with everyone.
+  app.get("/api/external-apps", async (request) => services.apps.list(requireActor(request)));
+  app.post("/api/external-apps", async (request) => services.apps.create(requireActor(request), externalAppSchema.parse(request.body)));
+  app.put("/api/external-apps/:id", async (request) => {
+    const params = z.object({ id: z.string() }).parse(request.params);
+    return services.apps.update(requireActor(request), params.id, externalAppSchema.parse(request.body));
+  });
+  app.delete("/api/external-apps/:id", async (request) => {
+    await services.apps.remove(requireActor(request), z.object({ id: z.string() }).parse(request.params).id);
+    return { ok: true };
+  });
+  app.get("/api/external-apps/:id/icon", async (request, reply) => {
+    const icon = services.apps.iconFile(requireActor(request), z.object({ id: z.string() }).parse(request.params).id);
+    const stat = await fs.promises.stat(icon.file).catch(() => null);
+    if (!stat) throw new AppError(404, "Icon not found", "ICON_NOT_FOUND");
+    reply.header("Cache-Control", "private, max-age=31536000, immutable");
+    // An icon may be an SVG. It was rewritten when it was taken in, and is still sent as something that cannot run.
+    sandboxContent(reply);
+    return sendFile(request, reply, icon.file, stat, icon.contentType);
+  });
+  // The icon libraries, asked by this server so that no browser has to: which icons answer to a name, and what one looks like.
+  app.get("/api/app-icons", async (request) => {
+    requireActor(request);
+    return services.iconLibrary.search(z.object({ q: z.string().max(80) }).parse(request.query).q);
+  });
+  app.get("/api/app-icons/:source/:name", async (request, reply) => {
+    requireActor(request);
+    const params = z.object({ source: z.string().max(40), name: z.string().max(80) }).parse(request.params);
+    const icon = await services.iconLibrary.icon(params.source, params.name);
+    reply.header("Cache-Control", "private, max-age=86400");
+    sandboxContent(reply);
+    return sendFile(request, reply, icon.file, await fs.promises.stat(icon.file), ICON_TYPES[icon.type]);
   });
 
   app.get("/api/fs/list", async (request) => {

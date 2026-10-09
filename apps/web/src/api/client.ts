@@ -52,6 +52,9 @@ export const thumbnailUrl = (rootSlug: string, path: string) =>
 /** A JPEG the server makes from a picture the browser cannot decode. */
 export const imageUrl = (rootSlug: string, path: string) => `/api/fs/image?${new URLSearchParams({ rootSlug, path }).toString()}`;
 
+/** An icon of one of the icon libraries, as this server fetched and keeps it. */
+export const libraryIconUrl = (source: string, name: string) => `/api/app-icons/${encodeURIComponent(source)}/${encodeURIComponent(name)}`;
+
 export const previewUrl = (rootSlug: string, path: string) =>
   `/api/fs/preview?${new URLSearchParams({ rootSlug, path }).toString()}`;
 

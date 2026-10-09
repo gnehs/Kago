@@ -11,6 +11,7 @@ export type ServerEvent =
   | { type: "settings.updated"; userId: string }
   | { type: "permission.updated"; userId?: string }
   | { type: "roots.updated" }
+  | { type: "apps.updated"; userId?: string }
   | { type: "share.updated"; userId: string };
 
 type ClientContext = Pick<Actor, "id" | "role">;
@@ -75,6 +76,8 @@ export class EventHub implements EventPublisher {
 function canReceive(actor: ClientContext, event: ServerEvent): boolean {
   // Which locations there are is no secret among those signed in; each still sees only the ones it may list.
   if (event.type === "roots.updated") return true;
+  // A shortcut with no owner is on everyone's desktop.
+  if (event.type === "apps.updated" && !event.userId) return true;
   if (actor.role === "ADMIN") return true;
   if ("userId" in event) return event.userId === actor.id;
   return false;

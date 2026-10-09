@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { useRoots } from "@/api/hooks";
 import { KagoLoading } from "@/components/kago/empty-state";
+import { ExternalAppDialogHost } from "@/features/apps/ExternalAppDialog";
 import { FileWindowView } from "@/features/files/FileWindow";
 import { Shelf } from "@/features/shelves/Shelf";
 import { PreviewWindowView } from "@/features/files/PreviewWindow";
@@ -56,6 +57,7 @@ export function Workspace({ user }: { user: Actor }) {
         )}
       </main>
       {paletteOpen ? <CommandPalette roots={rootList} isAdmin={isAdmin} onClose={() => setPaletteOpen(false)} /> : null}
+      <ExternalAppDialogHost isAdmin={isAdmin} />
     </div>
   );
 }

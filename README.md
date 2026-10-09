@@ -29,6 +29,7 @@
 - **Uploads of any size**: drop files or whole folders to upload them. They are streamed straight to disk, with progress, speed and time remaining.
 - **Remote locations**: folders on SMB, SFTP, WebDAV and FTP can be added as locations and browsed, played and shared just like local ones. The container needs no extra privileges.
 - **Sync**: sync folders between locations, by hand or on a schedule.
+- **App shortcuts**: put the other services on your NAS (Jellyfin, Immich, Home Assistant…) on the desktop and open them in a new tab with one click. Type a name and icons are suggested from Dashboard Icons and selfh.st Icons, or upload your own. An administrator can put a shortcut on everyone's desktop.
 - **macOS Finder tags**: the colored tags you set on your Mac can be both read and changed.
 - **Trash**: deleted files go to the Trash first and can be restored.
 - **Languages**: the interface comes in English, 繁體中文, 简体中文 and 日本語. It follows the browser language by default and can be switched in Settings → General.
@@ -114,6 +115,15 @@ Settings → Sync stores sync jobs: bring the contents of one folder to another,
 - "Copy new and changed files" never deletes anything at the destination. "Make the destination identical" deletes what the source no longer has, and needs permission to delete at the destination. When in doubt, tick "Trial run" first; it only reports what would change.
 - Creating and running a sync needs permission to sync the folders at both ends. A scheduled sync runs as the person who created it; when that person is disabled or loses permission, the run is skipped and noted in the audit log.
 - Schedules follow the server's time zone, which you can set with the `TZ` environment variable (for example `TZ=Asia/Taipei`).
+
+### App shortcuts
+
+Settings → Apps puts the address of another service on the desktop; you can also right-click a shortcut on the desktop to add, edit or remove one. Everyone manages their own shortcuts, and nobody else sees them. When an administrator ticks "Show on everyone's desktop", the shortcut appears on every desktop and only administrators can change it.
+
+- A shortcut always opens in a new tab. It is never embedded in Kago, so a service that refuses to be framed works all the same. Only `http://` and `https://` addresses are accepted.
+- As you type a name, Kago looks for an icon by that name in [Dashboard Icons](https://github.com/homarr-labs/dashboard-icons) and [selfh.st Icons](https://selfh.st/icons/). The server does the looking and the downloading, from `cdn.jsdelivr.net`; your browser never contacts a third party. The icon you pick is copied to `/app-data/app-icons` and needs no network after that.
+- When the server can't reach the internet there are no suggestions, and you can still upload a PNG, JPEG, WebP or SVG of up to 1 MB, or keep the default icon.
+- Kago never contacts the address you enter (to fetch its favicon, say): icons come only from the two libraries above, or from the file you upload.
 
 ### File ownership (PUID / PGID)
 

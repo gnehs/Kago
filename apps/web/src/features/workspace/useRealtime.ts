@@ -65,6 +65,7 @@ export function useRealtime(userId: string, onRemoteWorkspaceChange: () => void)
       }
       if (type === "shelf.updated") invalidate("shelves");
       if (type === "share.updated") invalidate("shares");
+      if (type === "apps.updated") invalidate("external-apps");
       if (type === "permission.updated") invalidate("permissions", "roots", "fs");
       if (type === "roots.updated") invalidate("roots", "storage", "fs");
       if (type === "settings.updated" && message.userId === userId) void loadSettings();
@@ -85,7 +86,7 @@ export function useRealtime(userId: string, onRemoteWorkspaceChange: () => void)
           void loadSettings();
         }
         retryCount = 0;
-        invalidate("tasks", "shelves", "shares", "permissions", "roots");
+        invalidate("tasks", "shelves", "shares", "permissions", "roots", "external-apps");
         // Whatever settled while the socket was away went unheard.
         if (Object.keys(useTrashingStore.getState().tasks).length > 0) void queryClient.invalidateQueries({ queryKey: ["fs"] }).finally(() => showTrashing());
       };

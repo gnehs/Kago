@@ -22,6 +22,13 @@ const WEAVE = (() => {
   return d;
 })();
 
+/** Points set out in rows and columns, as places on a map are. */
+const DOTS = (() => {
+  let d = "";
+  for (let y = 4; y < 96; y += 8) for (let x = 4; x < 96; x += 8) d += `M${x - 1.1} ${y}a1.1 1.1 0 1 0 2.2 0a1.1 1.1 0 1 0-2.2 0`;
+  return d;
+})();
+
 /** What is printed on the tile behind the glyph, so that no two kinds of tile are the same surface. */
 const TEXTURES = {
   /** Strips woven over and under each other, as the side of a basket (a kago) is. */
@@ -33,6 +40,8 @@ const TEXTURES = {
       <path d="M13.2 0v96M29.2 0v96M45.2 0v96M61.2 0v96M77.2 0v96M93.2 0v96" stroke="#ffffff" strokeOpacity={0.12} strokeWidth={1} />
     </g>
   ),
+  /** A field of points: somewhere else, out on the network. */
+  dots: <path d={DOTS} fill="#ffffff" fillOpacity={0.2} />,
   /** Rings going out from the middle, as of something being sent. */
   rings: (
     <g fill="none" stroke="#ffffff">
@@ -101,6 +110,34 @@ export function KagoAppIcon({ texture, className, children }: { texture: keyof t
       {glyph(shade(18), 2.4)}
       {glyph(tint(50), 1.2)}
       {glyph(`url(#${id}-face)`, 0)}
+    </svg>
+  );
+}
+
+/**
+ * An app icon made of a picture that is someone else's: the same tile in paper white, in either theme, holding the
+ * picture as it is. A logo is drawn for a light ground far more often than for a dark one.
+ */
+export function KagoAppImage({ src, className, onError }: { src: string; className?: string; onError?: () => void }) {
+  const id = useId();
+  return (
+    <svg viewBox="0 0 96 96" aria-hidden className={cn("kago-app-icon shrink-0", className)}>
+      <defs>
+        <linearGradient id={`${id}-tile`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#ffffff" />
+          <stop offset="1" stopColor="#e6e8ec" />
+        </linearGradient>
+        <linearGradient id={`${id}-rim`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#ffffff" stopOpacity={1} />
+          <stop offset="0.4" stopColor="#ffffff" stopOpacity={0.2} />
+          <stop offset="1" stopColor="#000000" stopOpacity={0.08} />
+        </linearGradient>
+      </defs>
+      <path d={TILE} fill={`url(#${id}-tile)`} />
+      {/* Drawn as a picture, whatever it is: an SVG shown this way runs nothing and fetches nothing. */}
+      <image href={src} x="17" y="17" width="62" height="62" preserveAspectRatio="xMidYMid meet" onError={onError} />
+      <path d={TILE} fill="none" stroke={`url(#${id}-rim)`} strokeWidth={1.1} transform="translate(0.7 0.7) scale(0.9854)" />
+      <path d={TILE} fill="none" stroke="#000000" strokeOpacity={0.22} strokeWidth={0.6} />
     </svg>
   );
 }

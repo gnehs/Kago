@@ -1,12 +1,14 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { Dialog } from "@base-ui/react/dialog";
-import { Clock, Folder, HardDrive, KeyRound, RefreshCw, ScrollText, Search, UserRound, UsersRound } from "lucide-react";
+import { Clock, Folder, Globe, HardDrive, KeyRound, LayoutGrid, RefreshCw, ScrollText, Search, UserRound, UsersRound } from "lucide-react";
+import { useExternalApps } from "@/api/hooks";
+import { appHost, openExternalApp } from "@/features/apps/externalApps";
 import { appIcons } from "@/features/windows/AppWindow";
 import { baseName, displayPath, nfc, normalizeLogicalPath } from "@/lib/paths";
 import { cn } from "@/lib/utils";
 import { useRecentStore, type RecentFolder } from "@/stores/recent";
 import { useWorkspaceStore, type AppKind, type SettingsSection } from "@/stores/workspace";
-import type { Root } from "@/types/kago";
+import type { ExternalApp, Root } from "@/types/kago";
 import { t } from "@/lib/i18n";
 
 type Target = { key: string; label: string; hint: string; icon: ReactNode; open: () => void };
@@ -17,6 +19,7 @@ const apps: Array<{ app: AppKind; section?: SettingsSection; label: string; icon
   { app: "trash", label: t("Trash"), icon: appIcons.trash },
   { app: "tasks", label: t("Tasks"), icon: appIcons.tasks },
   { app: "settings", section: "general", label: t("Settings"), icon: appIcons.settings },
+  { app: "settings", section: "apps", label: t("Apps"), icon: <LayoutGrid /> },
   { app: "settings", section: "sync", label: t("Sync"), icon: <RefreshCw /> },
   { app: "settings", section: "locations", label: t("Locations"), icon: <HardDrive />, adminOnly: true },
   { app: "settings", section: "users", label: t("Users"), icon: <UserRound />, adminOnly: true },
@@ -25,7 +28,7 @@ const apps: Array<{ app: AppKind; section?: SettingsSection; label: string; icon
   { app: "settings", section: "audit", label: t("Audit log"), icon: <ScrollText />, adminOnly: true }
 ];
 
-function suggestions(query: string, roots: Root[], activeRootSlug: string | undefined, recent: RecentFolder[], isAdmin: boolean): Target[] {
+function suggestions(query: string, roots: Root[], activeRootSlug: string | undefined, recent: RecentFolder[], isAdmin: boolean, externalApps: ExternalApp[]): Target[] {
   const trimmed = query.trim();
   const results = new Map<string, Target>();
   const pushFolder = (rootSlug: string, logicalPath: string, label: string, icon: ReactNode) => {
@@ -59,6 +62,11 @@ function suggestions(query: string, roots: Root[], activeRootSlug: string | unde
     if (!roots.some((root) => root.slug === folder.rootSlug)) continue;
     if (!lower || label.toLowerCase().includes(lower)) pushFolder(folder.rootSlug, folder.path, label, <Clock />);
   }
+  // The other services on the desktop are places to go as well; they open in a tab of their own.
+  for (const item of externalApps) {
+    if (lower && !item.name.toLowerCase().includes(lower)) continue;
+    results.set(`external:${item.id}`, { key: `external:${item.id}`, label: item.name, hint: appHost(item), icon: <Globe />, open: () => openExternalApp(item) });
+  }
   for (const item of apps) {
     if ((item.adminOnly && !isAdmin) || (lower && !item.label.toLowerCase().includes(lower))) continue;
     const key = `app:${item.app}:${item.section ?? ""}`;
@@ -72,7 +80,8 @@ export function CommandPalette({ roots, isAdmin, onClose }: { roots: Root[]; isA
   const [index, setIndex] = useState(0);
   const activeRootSlug = useWorkspaceStore((state) => state.windows.find((window) => window.id === state.activeWindowId)?.rootSlug);
   const recent = useRecentStore((state) => state.folders);
-  const items = useMemo(() => suggestions(query, roots, activeRootSlug, recent, isAdmin), [query, roots, activeRootSlug, recent, isAdmin]);
+  const externalApps = useExternalApps().data;
+  const items = useMemo(() => suggestions(query, roots, activeRootSlug, recent, isAdmin, externalApps ?? []), [query, roots, activeRootSlug, recent, isAdmin, externalApps]);
 
   function open(target: Target | undefined) {
     if (!target) return;
