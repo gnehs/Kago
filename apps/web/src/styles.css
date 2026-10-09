@@ -11,7 +11,8 @@
   /* The line that divides paper. It is what `--kago-border` means everywhere but on glass, which has a line of its own. */
   --kago-border-paper: #dde0e5;
   --kago-border: var(--kago-border-paper);
-  --kago-border-strong: #c5cad2;
+  --kago-border-strong-paper: #c5cad2;
+  --kago-border-strong: var(--kago-border-strong-paper);
   --kago-text: #1c2026;
   --kago-text-muted: #667080;
   --kago-text-faint: #98a0ac;
@@ -119,7 +120,7 @@
   --kago-surface: #1e2125;
   --kago-surface-elevated: #25282d;
   --kago-border-paper: #32363c;
-  --kago-border-strong: #474c54;
+  --kago-border-strong-paper: #474c54;
   --kago-text: #e7e9ec;
   --kago-text-muted: #9ca3ae;
   --kago-text-faint: #6c7480;
@@ -584,6 +585,8 @@
      * a sheet of paper is lighter than a picture seen through the glass, and lies on it like a scratch.
      */
     --kago-border: var(--kago-seam);
+    /* The firmer line is drawn in the colour of the text, thinned: dark on light glass and light on dark, whatever is behind. */
+    --kago-border-strong: color-mix(in srgb, var(--kago-text) 36%, transparent);
     background: var(--kago-glass);
     box-shadow: var(--kago-shadow-popup), var(--kago-glass-edge);
     backdrop-filter: blur(24px) saturate(1.8);
@@ -593,6 +596,7 @@
   .kago-card {
     /* A sheet laid on glass is paper again, and is ruled as paper is. */
     --kago-border: var(--kago-border-paper);
+    --kago-border-strong: var(--kago-border-strong-paper);
     background: var(--kago-surface);
     box-shadow: var(--kago-card-shadow);
   }
@@ -618,8 +622,14 @@
     box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.18);
   }
 
-  /* Chosen for good rather than passed over, as a section in a sidebar: it stands a little off the surface. */
-  .kago-selection-raised {
+  /*
+   * A chosen row that stands alone stands a little off the surface, with a rim and a shadow of its own: the section
+   * of a sidebar, and the one row of a menu under the pointer. They are the same thing wherever they are met.
+   * Rows chosen side by side in a list of files stay flat, where a rim round each would rule lines between them.
+   */
+  .kago-selection-raised,
+  .kago-menu-item[data-highlighted],
+  button.kago-menu-item:focus {
     box-shadow:
       0 0 0 0.5px var(--kago-primary-ring),
       0 1px 2.5px rgb(8 30 90 / 0.3),

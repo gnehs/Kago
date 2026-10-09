@@ -7,6 +7,7 @@ import { KagoLoading } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { Button } from "@/components/ui/button";
 import { Checkbox, Field, Input, Select } from "@/components/ui/input";
+import { KagoPasswordInput } from "@/components/kago/password-input";
 import { Card, Page, SettingRow } from "@/features/workspace/Page";
 import { t } from "@/lib/i18n";
 import { run } from "@/lib/run";
@@ -102,7 +103,7 @@ export function SsoPage() {
             </Field>
             <Field label={t("Client secret")} hint={hasSecret ? t("One is saved. Type a new one to replace it.") : t("Leave empty for a public client, which PKCE alone protects.")}>
               <div className="flex gap-2">
-                <Input type="password" autoComplete="new-password" placeholder={hasSecret ? "••••••••" : ""} value={secret} onChange={(event) => setSecret(event.target.value)} />
+                <KagoPasswordInput autoComplete="new-password" placeholder={hasSecret ? "••••••••" : ""} value={secret} onChange={(event) => setSecret(event.target.value)} />
                 {hasSecret && !secret ? <Button onClick={() => setForgetSecret(true)}>{t("Remove")}</Button> : null}
               </div>
             </Field>

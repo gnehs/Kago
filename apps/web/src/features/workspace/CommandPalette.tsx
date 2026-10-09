@@ -191,7 +191,7 @@ function Palette({ roots, isAdmin, onClose }: { roots: Root[]; isAdmin: boolean;
                 aria-selected={itemIndex === index}
                 data-row={itemIndex}
                 tabIndex={-1}
-                className={cn("flex h-8 w-full items-center gap-2 rounded-[calc(var(--kago-radius-md)+1px)] [corner-shape:squircle] px-2 text-left outline-none [&>.lucide]:text-muted", itemIndex === index && "kago-selection [&>.lucide]:text-inherit")}
+                className={cn("flex h-8 w-full items-center gap-2 rounded-[calc(var(--kago-radius-md)+1px)] [corner-shape:squircle] px-2 text-left outline-none [&>.lucide]:text-muted", itemIndex === index && "kago-selection kago-selection-raised [&>.lucide]:text-inherit")}
                 onMouseMove={() => itemIndex !== index && setIndex(itemIndex)}
                 onClick={() => open(item)}
               >

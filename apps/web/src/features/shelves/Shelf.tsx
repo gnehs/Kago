@@ -189,10 +189,11 @@ export function Shelf() {
       {...dragHandlers}
     >
       {itemCount === 0 ? (
-        <p className={cn("m-2 flex w-48 flex-col items-center rounded-md border border-dashed border-line-strong px-3 py-5 text-center text-muted", dropActive && "border-accent bg-accent/10 text-accent")}>
-          <ArrowDownToLine className="mb-2 size-5" />
+        // Whatever is behind shows through here, so what it says is written in ink and in the second tone of text, not the faintest.
+        <p className={cn("m-2 flex w-48 flex-col items-center rounded-md border border-dashed border-line-strong px-3 py-5 text-center font-medium text-ink", dropActive && "border-accent bg-accent/10 text-accent")}>
+          <ArrowDownToLine className={cn("mb-2 size-5", dropActive ? null : "text-muted")} />
           {t("Drag files here to hold them")}
-          <span className={cn("mt-0.5 text-xs", dropActive ? "opacity-70" : "text-faint")}>{t("Only their location is kept; nothing is copied")}</span>
+          <span className={cn("mt-0.5 text-xs font-normal", dropActive ? "opacity-80" : "text-muted")}>{t("Only their location is kept; nothing is copied")}</span>
         </p>
       ) : collapsed ? (
         <div className="relative flex w-32 touch-none flex-col items-center px-2 pt-4 pb-1.5">

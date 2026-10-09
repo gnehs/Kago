@@ -9,6 +9,7 @@ import { KagoLoading } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/input";
+import { KagoPasswordInput } from "@/components/kago/password-input";
 import { Card, Page, Row, RowList } from "@/features/workspace/Page";
 import { run } from "@/lib/run";
 import { confirmAction, promptText } from "@/stores/dialogs";
@@ -83,7 +84,7 @@ export function UsersPage({ currentUserId }: { currentUserId: string }) {
         <form className="grid grid-cols-2 gap-3" onSubmit={create}>
           <Field label="Email"><Input autoFocus type="email" autoComplete="off" value={email} onChange={(event) => setEmail(event.target.value)} /></Field>
           <Field label={t("Display name")}><Input autoComplete="off" value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></Field>
-          <Field label={t("Initial password")} hint={t("At least 8 characters")}><Input type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} /></Field>
+          <Field label={t("Initial password")} hint={t("At least 8 characters")}><KagoPasswordInput autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} /></Field>
           <Field label={t("Role")}>
             <Select value={role} onChange={(event) => setRole(event.target.value as Role)}>
               {(Object.keys(roleLabels) as Role[]).map((value) => <option key={value} value={value}>{roleLabels[value]}</option>)}

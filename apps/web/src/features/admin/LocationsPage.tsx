@@ -8,6 +8,7 @@ import { KagoEmptyState } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { Button } from "@/components/ui/button";
 import { Checkbox, Field, Input, Select } from "@/components/ui/input";
+import { KagoPasswordInput } from "@/components/kago/password-input";
 import { Card, Page, Row, RowList, Section } from "@/features/workspace/Page";
 import { run } from "@/lib/run";
 import { confirmAction } from "@/stores/dialogs";
@@ -202,11 +203,12 @@ function RemoteForm({ providers, root, onSaved }: { providers: RemoteProvider[];
               <Select value={String(params[field.key] ?? field.options?.[0]?.value ?? "")} onChange={(event) => set(field.key, event.target.value)}>
                 {field.options?.map((option) => <option key={option.value} value={option.value}>{label(option.label)}</option>)}
               </Select>
+            ) : field.kind === "secret" ? (
+              <KagoPasswordInput autoComplete="new-password" value={String(params[field.key] ?? "")} placeholder={kept(field) ? t("Unchanged") : field.placeholder} onChange={(event) => set(field.key, event.target.value)} />
             ) : (
               <Input
-                type={field.kind === "secret" ? "password" : "text"}
                 inputMode={field.kind === "number" ? "numeric" : undefined}
-                autoComplete={field.kind === "secret" ? "new-password" : "off"}
+                autoComplete="off"
                 value={String(params[field.key] ?? "")}
                 placeholder={kept(field) ? t("Unchanged") : field.placeholder}
                 onChange={(event) => set(field.key, event.target.value)}

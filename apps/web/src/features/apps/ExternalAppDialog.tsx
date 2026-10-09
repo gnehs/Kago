@@ -8,6 +8,7 @@ import { KagoDialog } from "@/components/kago/dialog";
 import { KagoTooltip } from "@/components/kago/tooltip";
 import { Button } from "@/components/ui/button";
 import { Checkbox, Field, Input, Select } from "@/components/ui/input";
+import { KagoPasswordInput } from "@/components/kago/password-input";
 import { t } from "@/lib/i18n";
 import { run } from "@/lib/run";
 import { cn } from "@/lib/utils";
@@ -250,7 +251,7 @@ function AppForm({ app, isAdmin }: { app: ExternalApp | null; isAdmin: boolean }
             <span className="text-xs font-medium text-muted">{t("Sign-in (HTTP Basic), if the service asks for one")}</span>
             <div className="grid grid-cols-2 gap-3">
               <Input aria-label={t("Username")} value={authUser} maxLength={255} autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false} placeholder={t("Username")} onChange={(event) => setAuthUser(event.target.value)} />
-              <Input aria-label={t("Password")} type="password" value={authPassword} maxLength={1024} autoComplete="new-password" disabled={!authUser.trim()} placeholder={hadAuth && authUser.trim() ? t("Unchanged") : t("Password")} onChange={(event) => setAuthPassword(event.target.value)} />
+              <KagoPasswordInput aria-label={t("Password")} value={authPassword} maxLength={1024} autoComplete="new-password" disabled={!authUser.trim()} placeholder={hadAuth && authUser.trim() ? t("Unchanged") : t("Password")} onChange={(event) => setAuthPassword(event.target.value)} />
             </div>
             <span className="flex gap-1.5 text-xs text-warning">
               <TriangleAlert className="mt-px size-3.5 shrink-0" />

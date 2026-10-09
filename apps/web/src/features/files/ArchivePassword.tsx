@@ -4,7 +4,8 @@ import { create } from "zustand";
 import { api } from "@/api/client";
 import { KagoDialog } from "@/components/kago/dialog";
 import { Button } from "@/components/ui/button";
-import { Checkbox, Field, Input } from "@/components/ui/input";
+import { Checkbox, Field } from "@/components/ui/input";
+import { KagoPasswordInput } from "@/components/kago/password-input";
 import { t } from "@/lib/i18n";
 import { run } from "@/lib/run";
 import type { FileRef } from "@/stores/clipboard";
@@ -96,7 +97,7 @@ export function ArchivePasswordDialogHost() {
       >
         <p className="m-0 truncate text-muted">{prompt.name}</p>
         <Field label={t("Password")}>
-          <Input autoFocus type="password" autoComplete="off" value={password} onChange={(event) => setPassword(event.target.value)} />
+          <KagoPasswordInput autoFocus autoComplete="off" value={password} onChange={(event) => setPassword(event.target.value)} />
         </Field>
         <Checkbox label={t("Remember this password for other archives")} checked={remember} onChange={(event) => setRemember(event.target.checked)} />
         <div className="flex justify-end gap-2 pt-1">

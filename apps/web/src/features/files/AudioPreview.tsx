@@ -653,7 +653,7 @@ function TrackList({
               <button
                 type="button"
                 aria-current={chosen || undefined}
-                className={cn("flex h-8 w-full items-center gap-2 rounded-md px-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-accent/50", chosen ? (focused ? "kago-selection" : "bg-accent-soft") : "hover:bg-hover")}
+                className={cn("flex h-8 w-full items-center gap-2 rounded-md px-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-accent/50", chosen ? (focused ? "kago-selection kago-selection-raised" : "bg-accent-soft") : "hover:bg-hover")}
                 onClick={(event) => {
                   onSelect(index);
                   if (event.detail > 0) returnFocus();

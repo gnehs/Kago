@@ -6,7 +6,8 @@ import { useIdentities } from "@/api/hooks";
 import { avatarUrl, KagoAvatar } from "@/components/kago/avatar";
 import { KagoBadge } from "@/components/kago/badge";
 import { Button } from "@/components/ui/button";
-import { Field, Input } from "@/components/ui/input";
+import { Field } from "@/components/ui/input";
+import { KagoPasswordInput } from "@/components/kago/password-input";
 import { roleLabels } from "@/features/admin/UsersPage";
 import { Card, Page, SettingRow } from "@/features/workspace/Page";
 import { t } from "@/lib/i18n";
@@ -111,16 +112,16 @@ export function AccountPage({ user }: { user: Actor }) {
         <form className="grid grid-cols-2 gap-3" onSubmit={submit}>
           {hasPassword ? (
             <Field label={t("Current password")} className="col-span-2 @md:col-span-1">
-              <Input type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} />
+              <KagoPasswordInput autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} />
             </Field>
           ) : (
             <p className="col-span-2 m-0 text-xs text-muted">{t("This account has no password yet: it is signed in to through single sign-on only. Setting one gives it a second way in.")}</p>
           )}
           <Field label={t("New password")} hint={tooShort ? t("At least 8 characters") : undefined} className="col-start-1">
-            <Input type="password" autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} />
+            <KagoPasswordInput autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} />
           </Field>
           <Field label={t("Confirm new password")} hint={mismatch ? t("The passwords don’t match") : undefined}>
-            <Input type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} />
+            <KagoPasswordInput autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} />
           </Field>
           <div className="col-span-2 flex items-center justify-between gap-3">
             <span className="text-xs text-muted">{t("Other devices are signed out after the change.")}</span>

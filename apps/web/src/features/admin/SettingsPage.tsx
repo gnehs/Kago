@@ -4,6 +4,7 @@ import { Columns3, KeyRound, LayoutGrid, List, Monitor, Moon, PanelLeft, PanelRi
 import { api } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/input";
+import { KagoPasswordInput } from "@/components/kago/password-input";
 import { firstDirection, sortColumns } from "@/features/files/FileList";
 import { BASE_VIEW } from "@/features/files/folderView";
 import { Card, Page, SettingRow } from "@/features/workspace/Page";
@@ -179,7 +180,7 @@ function ArchivePasswords() {
         ) : null}
         <form className="grid grid-cols-2 items-end gap-3" onSubmit={add}>
           <Field label={t("Password")}>
-            <Input type="password" autoComplete="off" value={password} onChange={(event) => setPassword(event.target.value)} />
+            <KagoPasswordInput autoComplete="off" value={password} onChange={(event) => setPassword(event.target.value)} />
           </Field>
           <Field label={t("Note")}>
             <Input autoComplete="off" maxLength={80} value={note} placeholder={t("What it is for")} onChange={(event) => setNote(event.target.value)} />

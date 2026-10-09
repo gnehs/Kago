@@ -3,6 +3,7 @@ import { create } from "zustand";
 import { KagoDialog } from "@/components/kago/dialog";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/input";
+import { KagoPasswordInput } from "@/components/kago/password-input";
 import { t } from "@/lib/i18n";
 
 export type CompressLevel = "store" | "fast" | "normal" | "best";
@@ -72,12 +73,12 @@ export function CompressDialogHost() {
           </Select>
         </Field>
         <Field label={t("Password")} hint={password ? undefined : t("Leave empty for an archive anyone can open")}>
-          <Input type="password" autoComplete="new-password" value={password} placeholder={t("No password")} onChange={(event) => setPassword(event.target.value)} />
+          <KagoPasswordInput autoComplete="new-password" value={password} placeholder={t("No password")} onChange={(event) => setPassword(event.target.value)} />
         </Field>
         {password ? (
           <>
             <Field label={t("Repeat password")} hint={repeated && mismatch ? t("The passwords don’t match") : undefined}>
-              <Input type="password" autoComplete="new-password" value={repeated} onChange={(event) => setRepeated(event.target.value)} />
+              <KagoPasswordInput autoComplete="new-password" value={repeated} onChange={(event) => setRepeated(event.target.value)} />
             </Field>
             <Field
               label={t("Encryption")}

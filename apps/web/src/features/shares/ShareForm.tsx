@@ -4,6 +4,7 @@ import { Check, Copy } from "lucide-react";
 import { api } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/input";
+import { KagoPasswordInput } from "@/components/kago/password-input";
 import { normalizeLogicalPath } from "@/lib/paths";
 import { run } from "@/lib/run";
 import { cn, copyText } from "@/lib/utils";
@@ -84,7 +85,7 @@ export function ShareForm({ target, roots = [], compact }: { target?: { rootSlug
         <Input type="number" min="1" value={maxDownloads} onChange={(event) => setMaxDownloads(event.target.value)} placeholder={t("Unlimited")} />
       </Field>
       <Field label={t("Password (optional)")} hint={passwordInvalid ? t("At least 8 characters") : undefined} className="col-span-2">
-        <Input type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} />
+        <KagoPasswordInput autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} />
       </Field>
       <div className={cn("flex items-end", compact ? "col-span-2" : "")}>
         <Button type="submit" variant="default" className="w-full" disabled={!canSubmit}>{t("Create share link")}</Button>
