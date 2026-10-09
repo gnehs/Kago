@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { History, Plus, RefreshCw, X } from "lucide-react";
+import { Ellipsis, History, Pencil, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import { api } from "@/api/client";
 import { useSyncJobs } from "@/api/hooks";
 import { KagoBadge } from "@/components/kago/badge";
 import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
+import { KagoDropdownMenu, KagoMenuItem, KagoMenuSeparator } from "@/components/kago/menu";
 import { Button } from "@/components/ui/button";
 import { Checkbox, Field, Input, Select } from "@/components/ui/input";
 import { taskErrorLabel, taskStatus } from "@/features/tasks/taskUtils";
@@ -105,10 +106,21 @@ export function SyncPage({ roots, user }: { roots: Root[]; user: Actor }) {
               >
                 {last ? <KagoBadge tone={last.tone}>{last.label}</KagoBadge> : null}
                 {job.last_trial ? <Button onClick={() => setTrialOf(job.id)}>{t("See changes")}</Button> : null}
-                {job.last_run_at ? <KagoIconButton label={t("History")} onClick={() => setRunsOf(job.id)}><History /></KagoIconButton> : null}
                 <Button disabled={running} onClick={() => void start(job)}>{t("Run now")}</Button>
-                <Button onClick={() => setEditing(job)}>{t("Edit")}</Button>
-                <Button variant="destructive" onClick={() => void remove(job)}>{t("Delete")}</Button>
+                {/* Running it is what a row is for; the rest is asked for now and then, and waits in the menu. */}
+                <KagoDropdownMenu
+                  label={t("More actions")}
+                  menu={
+                    <>
+                      <KagoMenuItem icon={<History />} disabled={!job.last_run_at} onClick={() => setRunsOf(job.id)}>{t("History")}</KagoMenuItem>
+                      <KagoMenuItem icon={<Pencil />} onClick={() => setEditing(job)}>{t("Edit")}</KagoMenuItem>
+                      <KagoMenuSeparator />
+                      <KagoMenuItem icon={<Trash2 />} destructive onClick={() => void remove(job)}>{t("Delete")}</KagoMenuItem>
+                    </>
+                  }
+                >
+                  <Ellipsis />
+                </KagoDropdownMenu>
               </Row>
             );
           })}

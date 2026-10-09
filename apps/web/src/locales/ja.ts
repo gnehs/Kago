@@ -789,6 +789,7 @@ export const ja: Dictionary = {
   "What {name} would change": "「{name}」で変更される項目",
   "Couldn’t load the trial run": "試行の結果を読み込めませんでした",
   "History": "履歴",
+  "More actions": "その他の操作",
   "Runs of {name}": "「{name}」の実行履歴",
   "Couldn’t load the runs": "実行履歴を読み込めませんでした",
   "No runs yet": "実行履歴はまだありません",

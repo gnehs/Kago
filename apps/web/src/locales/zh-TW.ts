@@ -789,6 +789,7 @@ export const zhTW: Dictionary = {
   "What {name} would change": "「{name}」會變更的項目",
   "Couldn’t load the trial run": "無法載入試跑結果",
   "History": "紀錄",
+  "More actions": "更多動作",
   "Runs of {name}": "「{name}」的執行紀錄",
   "Couldn’t load the runs": "無法載入執行紀錄",
   "No runs yet": "還沒有執行紀錄",

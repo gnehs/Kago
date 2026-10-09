@@ -789,6 +789,7 @@ export const zhCN: Dictionary = {
   "What {name} would change": "“{name}”会更改的项目",
   "Couldn’t load the trial run": "无法加载试运行结果",
   "History": "记录",
+  "More actions": "更多操作",
   "Runs of {name}": "“{name}”的执行记录",
   "Couldn’t load the runs": "无法加载执行记录",
   "No runs yet": "还没有执行记录",
