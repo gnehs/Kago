@@ -126,6 +126,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   updated_at INTEGER NOT NULL,
   started_at INTEGER,
   finished_at INTEGER,
+  -- Cleared from the task list, and kept only because a sync job still reads its last run from it.
+  cleared INTEGER NOT NULL DEFAULT 0,
   FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
 );
 

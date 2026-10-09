@@ -659,6 +659,20 @@ test("download archives stay out of the data dir and running tasks can be cancel
     assert.deepEqual((await admin.delete("/api/tasks")).json, { cleared: listed.length });
     assert.deepEqual((await admin.get("/api/tasks")).json, []);
     assert.deepEqual(await readdir(path.join(fixture.appDataDir, "temp", "downloads")), []);
+
+    // A sync job goes on telling how its last run ended after that run is cleared from the list.
+    const job = await admin.post("/api/sync-jobs", { name: "Backup", source: { kind: "location", rootSlug: "photos", path: "/public" }, destination: { kind: "location", rootSlug: "photos", path: "/2026" } });
+    const lastStatus = async () => (await admin.get("/api/sync-jobs")).json[0].last_status;
+    const firstRun = await waitTask(admin, (await admin.post(`/api/sync-jobs/${job.json.id}/run`)).json.id);
+    assert.deepEqual((await admin.delete("/api/tasks")).json, { cleared: 1 });
+    assert.deepEqual((await admin.get("/api/tasks")).json, []);
+    assert.equal(await lastStatus(), firstRun.status);
+    assert.deepEqual((await admin.delete("/api/tasks")).json, { cleared: 0 });
+    // The job's next run takes its place, and the cleared one is forgotten with whatever is cleared next.
+    await waitTask(admin, (await admin.post(`/api/sync-jobs/${job.json.id}/run`)).json.id);
+    assert.equal((await admin.get("/api/tasks")).json.length, 1);
+    assert.deepEqual((await admin.delete("/api/tasks")).json, { cleared: 1 });
+    assert.equal((await admin.get(`/api/tasks/${firstRun.id}`)).statusCode, 404);
   } finally {
     await app.close();
     await rm(fixture.baseDir, { recursive: true, force: true });
