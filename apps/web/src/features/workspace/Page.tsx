@@ -42,6 +42,22 @@ export function Card({ title, description, action, className, children }: { titl
   );
 }
 
+/** A titled part of a page that lists more than one kind of thing. `action` sits at the right of the title. */
+export function Section({ title, description, action, children }: { title: string; description?: string; action?: ReactNode; children: ReactNode }) {
+  return (
+    <section className="flex flex-col gap-3 not-first-of-type:mt-2">
+      <header className="flex min-h-(--kago-control-h) items-center gap-4">
+        <div className="min-w-0 flex-1">
+          <h2 className="m-0 font-semibold">{title}</h2>
+          {description ? <p className="m-0 text-xs text-muted">{description}</p> : null}
+        </div>
+        {action}
+      </header>
+      {children}
+    </section>
+  );
+}
+
 /** One setting inside a card: what it is on the left, its control on the right. */
 export function SettingRow({ label, description, children }: { label: string; description?: string; children: ReactNode }) {
   return (

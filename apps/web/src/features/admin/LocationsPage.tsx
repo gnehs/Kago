@@ -9,7 +9,7 @@ import { KagoIconButton } from "@/components/kago/icon-button";
 import { Button } from "@/components/ui/button";
 import { Checkbox, Field, Input, Select } from "@/components/ui/input";
 import { SshKeyNote } from "@/features/sync/SshKeyNote";
-import { Card, Page, Row, RowList } from "@/features/workspace/Page";
+import { Card, Page, Row, RowList, Section } from "@/features/workspace/Page";
 import { run } from "@/lib/run";
 import { confirmAction } from "@/stores/dialogs";
 import { toast } from "@/stores/toast";
@@ -60,40 +60,62 @@ export function LocationsPage({ roots }: { roots: Root[] }) {
     });
   }
 
+  const local = roots.filter((root) => root.provider === "local");
+  const remote = roots.filter((root) => root.provider !== "local");
+  const addButton = canAdd && !editing ? <Button variant="default" onClick={() => setEditing(true)}><Plus />{t("Add remote location")}</Button> : null;
+  const readonlyControls = (root: Root) => (
+    <>
+      {root.readonly ? <KagoBadge>{t("Read-only")}</KagoBadge> : null}
+      <Button onClick={() => void setRootReadonly(root, !root.readonly)}>{root.readonly ? t("Allow writing") : t("Make read-only")}</Button>
+    </>
+  );
+
   return (
-    <Page
-      title={t("Locations")}
-      description={t("Every folder mounted under /data becomes a location. Folders on other machines can be added as remote locations.")}
-      actions={canAdd && !editing ? <Button variant="default" onClick={() => setEditing(true)}><Plus />{t("Add remote location")}</Button> : null}
-    >
-      {storage.data && !storage.data.available ? <p className="m-0 text-muted">{t("Remote locations need rclone, which this server does not have.")}</p> : null}
-      {editing ? (
-        <Card
-          title={editing === true ? t("Add remote location") : t("Connection of {name}", { name: editing.name })}
-          action={<KagoIconButton label={t("Close")} onClick={() => setEditing(null)}><X /></KagoIconButton>}
-        >
-          <RemoteForm key={editing === true ? "new" : editing.id} providers={providers} root={editing === true ? null : editing} onSaved={async () => { setEditing(null); await refresh(); }} />
-        </Card>
-      ) : null}
-      {roots.length > 0 ? (
-        <RowList>
-          {roots.map((root) => {
-            const remote = storage.data?.roots.find((item) => item.id === root.id);
-            return (
-              <Row key={root.id} icon={root.provider === "local" ? <HardDrive /> : <Server />} title={root.name} subtitle={root.provider === "local" ? root.slug : `${providerLabel(root.provider)} · ${remoteAddress(remote)}`}>
-                {root.readonly ? <KagoBadge>{t("Read-only")}</KagoBadge> : null}
-                <Button onClick={() => void setRootReadonly(root, !root.readonly)}>{root.readonly ? t("Allow writing") : t("Make read-only")}</Button>
-                {remote ? <Button onClick={() => setEditing(remote)}>{t("Edit")}</Button> : null}
-                {root.provider !== "local" ? <Button variant="destructive" onClick={() => void remove(root)}>{t("Remove")}</Button> : null}
+    <Page title={t("Locations")}>
+      {/* A local location is a folder the server already has: it comes and goes with /data, and only how it is used is set here. */}
+      <Section title={t("Local locations")} description={t("Every folder mounted under /data becomes a location.")}>
+        {local.length > 0 ? (
+          <RowList>
+            {local.map((root) => (
+              <Row key={root.id} icon={<HardDrive />} title={root.name} subtitle={root.slug}>
+                {readonlyControls(root)}
               </Row>
-            );
-          })}
-        </RowList>
-      ) : (
-        <KagoEmptyState icon={<HardDrive />} title={t("No locations yet")} description={t("Create or mount a folder under /data and it will show up here.")}>
-          {canAdd && !editing ? <Button variant="default" onClick={() => setEditing(true)}><Plus />{t("Add remote location")}</Button> : null}
-        </KagoEmptyState>
-      )}
+            ))}
+          </RowList>
+        ) : (
+          <KagoEmptyState className="kago-card rounded-lg border border-line" icon={<HardDrive />} title={t("No local locations yet")} description={t("Create or mount a folder under /data and it will show up here.")} />
+        )}
+      </Section>
+      {/* A remote location is a connection Kago keeps: it is added, edited and removed here. */}
+      <Section title={t("Remote locations")} description={t("Folders on other machines, reached over the network.")} action={remote.length > 0 ? addButton : null}>
+        {storage.data && !storage.data.available ? <p className="m-0 text-muted">{t("Remote locations need rclone, which this server does not have.")}</p> : null}
+        {editing ? (
+          <Card
+            title={editing === true ? t("Add remote location") : t("Connection of {name}", { name: editing.name })}
+            action={<KagoIconButton label={t("Close")} onClick={() => setEditing(null)}><X /></KagoIconButton>}
+          >
+            <RemoteForm key={editing === true ? "new" : editing.id} providers={providers} root={editing === true ? null : editing} onSaved={async () => { setEditing(null); await refresh(); }} />
+          </Card>
+        ) : null}
+        {remote.length > 0 ? (
+          <RowList>
+            {remote.map((root) => {
+              const connection = storage.data?.roots.find((item) => item.id === root.id);
+              return (
+                <Row key={root.id} icon={<Server />} title={root.name} subtitle={[providerLabel(root.provider), remoteAddress(connection)].filter(Boolean).join(" · ")}>
+                  {readonlyControls(root)}
+                  {connection ? <Button onClick={() => setEditing(connection)}>{t("Edit")}</Button> : null}
+                  <Button variant="destructive" onClick={() => void remove(root)}>{t("Remove")}</Button>
+                </Row>
+              );
+            })}
+          </RowList>
+        ) : canAdd && !editing ? (
+          <KagoEmptyState className="kago-card rounded-lg border border-line" icon={<Server />} title={t("No remote locations yet")} description={t("Add a folder on another machine and it opens like any other location.")}>
+            {addButton}
+          </KagoEmptyState>
+        ) : null}
+      </Section>
     </Page>
   );
 }
