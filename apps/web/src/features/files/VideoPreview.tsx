@@ -432,7 +432,7 @@ function VideoInfoPanel({ groups, onClose }: { groups: VideoInfoGroup[]; onClose
         <strong className="flex-1 font-semibold">{t("Video info")}</strong>
         <KagoIconButton label={t("Close")} className={`size-6 ${PLAYER_CONTROL_CLASS}`} onClick={onClose}><X /></KagoIconButton>
       </header>
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3 select-text">
+      <div className="min-h-0 flex-1 scroll-fade overflow-y-auto px-3 pb-3 select-text">
         {groups.map((group) => (
           <section key={group.title} className="mt-3 first:mt-0">
             <h3 className="m-0 mb-1 font-medium text-white/60">{group.title}</h3>

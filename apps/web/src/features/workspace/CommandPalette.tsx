@@ -178,7 +178,7 @@ function Palette({ roots, isAdmin, onClose }: { roots: Root[]; isAdmin: boolean;
           }}
         />
       </label>
-      <ul ref={list} id="kago-palette-list" role="listbox" aria-label={t("Quick open")} className="m-0 min-h-0 flex-1 list-none scroll-py-1 overflow-y-auto overscroll-contain p-1 select-none">
+      <ul ref={list} id="kago-palette-list" role="listbox" aria-label={t("Quick open")} className="m-0 min-h-0 flex-1 scroll-fade list-none scroll-py-9 overflow-y-auto overscroll-contain p-1 select-none">
         {items.length === 0 ? <li className="px-3 py-8 text-center text-muted">{t("Nothing to open")}</li> : null}
         {items.map((item, itemIndex) => (
           <Fragment key={item.key}>

@@ -169,7 +169,7 @@ function TaskStatus() {
           {visible.length === 0 ? (
             <KagoEmptyState className="px-4 pt-2 pb-4" icon={<ListChecks />} title={t("No tasks right now")} />
           ) : (
-            <div className="flex max-h-96 flex-col gap-1.5 overflow-y-auto">
+            <div className="flex max-h-96 scroll-fade flex-col gap-1.5 overflow-y-auto">
               {visible.map((task) => <TaskRow key={task.id} task={task} />)}
             </div>
           )}

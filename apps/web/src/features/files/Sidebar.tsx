@@ -135,7 +135,7 @@ export function Sidebar({
   return (
     <nav aria-label={t("Folders")} className="relative hidden max-w-[50%] shrink-0 border-r border-line bg-elevated select-none @lg/body:flex" style={{ width }}>
       <div className="absolute inset-y-0 -right-1 z-10 w-2 cursor-ew-resize touch-none" {...resizeHandlers} />
-      <div className="flex min-w-0 flex-1 flex-col overflow-y-auto p-1.5">
+      <div className="flex min-w-0 flex-1 scroll-fade scroll-py-9 flex-col overflow-y-auto p-1.5">
         {sections.map((section, index) =>
           section.roots.length === 0 ? null : (
             <div key={section.label} className={cn("flex flex-col", index > 0 && "mt-2")}>

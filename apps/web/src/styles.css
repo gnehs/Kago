@@ -1206,6 +1206,85 @@
   }
 }
 
+/*
+ * Scroll fade: a list that goes on past an edge of its box dissolves into that edge instead of being cut off by
+ * it, and an edge the list has reached is crisp. At rest that is a fade at the far end only; it says there is
+ * more, where the scrollbar is thin, hidden, or not drawn until something moves. The names are those of
+ * shadcn/ui's scroll-fade: `scroll-fade` for a list that scrolls down, `scroll-fade-x` for one that scrolls
+ * sideways, `scroll-fade-<n>` for how deep the fade is and `scroll-fade-none` to take it away.
+ *
+ * It is a mask, so it dissolves the box itself: the background and border belong on a wrapper, and anything
+ * that sticks to the top of the list would fade with it. The depth of each end follows the scroll position
+ * through a scroll timeline, which is the only way to know that there is anything to scroll to; a browser
+ * without one draws no fade at all rather than one that is always there.
+ */
+@property --scroll-fade-start {
+  syntax: "<length-percentage>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --scroll-fade-end {
+  syntax: "<length-percentage>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --scroll-fade-mask {
+  syntax: "*";
+  inherits: false;
+}
+
+@keyframes kago-scroll-fade-start {
+  to {
+    --scroll-fade-start: var(--scroll-fade-size, 32px);
+  }
+}
+
+@keyframes kago-scroll-fade-end {
+  from {
+    --scroll-fade-end: var(--scroll-fade-size, 32px);
+  }
+}
+
+@utility scroll-fade {
+  @supports (animation-timeline: scroll()) {
+    mask-image: var(--scroll-fade-mask, linear-gradient(to bottom, transparent, #000 var(--scroll-fade-start), #000 calc(100% - var(--scroll-fade-end)), transparent));
+    animation:
+      kago-scroll-fade-start linear both,
+      kago-scroll-fade-end linear both;
+    animation-timeline: scroll(self y);
+    animation-range:
+      0 var(--scroll-fade-reveal, 64px),
+      calc(100% - var(--scroll-fade-reveal, 64px)) 100%;
+    /* Not motion: it moves only as far as the list is scrolled. The rules below that stop every animation are outranked from inside a layer. */
+    animation-duration: 1ms !important;
+  }
+}
+
+@utility scroll-fade-x {
+  @supports (animation-timeline: scroll()) {
+    mask-image: var(--scroll-fade-mask, linear-gradient(to right, transparent, #000 var(--scroll-fade-start), #000 calc(100% - var(--scroll-fade-end)), transparent));
+    animation:
+      kago-scroll-fade-start linear both,
+      kago-scroll-fade-end linear both;
+    animation-timeline: scroll(self x);
+    animation-range:
+      0 var(--scroll-fade-reveal, 64px),
+      calc(100% - var(--scroll-fade-reveal, 64px)) 100%;
+    animation-duration: 1ms !important;
+  }
+}
+
+@utility scroll-fade-* {
+  --scroll-fade-size: calc(var(--spacing) * --value(integer));
+  --scroll-fade-size: --value([length], [percentage]);
+}
+
+@utility scroll-fade-none {
+  --scroll-fade-mask: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

@@ -229,7 +229,8 @@ export function Shelf() {
               <ChevronDown />
             </KagoIconButton>
           </header>
-          <ul className={cn("m-0 grid max-h-80 w-64 list-none gap-2 overflow-y-auto p-2 pt-0", itemCount === 1 ? "grid-cols-1" : "grid-cols-2")}>
+          {/* Two rows and half of the next: a longer list is cut across its pictures at either end, where it fades, and never along an edge of one. */}
+          <ul className={cn("m-0 grid max-h-72 w-64 scroll-fade list-none gap-2 overflow-y-auto p-2 pt-0", itemCount === 1 ? "grid-cols-1" : "grid-cols-2")}>
             {items.map((item) => (
               <li key={item.id} draggable className="group relative flex min-w-0 flex-col gap-1" title={where(item)} onDragStart={(event) => dragOut(event, [item])}>
                 {/* The rim takes the shape of the corners as well as their radius, which is not handed down: a round rim inside a squircle leaves the picture showing past it at each corner. */}

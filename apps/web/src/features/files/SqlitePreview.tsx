@@ -56,20 +56,22 @@ export function SqlitePreviewWindow({ window }: { window: PreviewWindow }) {
         <KagoEmptyState className="min-h-0 flex-1" icon={<Database />} title={t("This database has no tables")} />
       ) : (
         <div className="flex min-h-0 flex-1">
-          <nav aria-label={t("Tables")} className="flex w-44 shrink-0 flex-col gap-px overflow-y-auto border-r border-line bg-elevated p-1.5">
-            {tables.map((entry) => (
-              <button
-                key={entry.name}
-                type="button"
-                aria-current={entry.name === table.name}
-                title={entry.name}
-                className={cn("flex h-(--kago-row-h) shrink-0 items-center gap-2 rounded-sm px-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-accent/50", entry.name === table.name ? "bg-accent-soft" : "hover:bg-hover")}
-                onClick={() => setSelected({ table: entry.name, offset: 0 })}
-              >
-                {entry.type === "view" ? <Eye className="text-muted" /> : <Table2 className="text-muted" />}
-                <span className="truncate">{entry.name}</span>
-              </button>
-            ))}
+          <nav aria-label={t("Tables")} className="flex w-44 shrink-0 border-r border-line bg-elevated">
+            <div className="flex min-w-0 flex-1 scroll-fade flex-col gap-px overflow-y-auto p-1.5">
+              {tables.map((entry) => (
+                <button
+                  key={entry.name}
+                  type="button"
+                  aria-current={entry.name === table.name}
+                  title={entry.name}
+                  className={cn("flex h-(--kago-row-h) shrink-0 items-center gap-2 rounded-sm px-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-accent/50", entry.name === table.name ? "bg-accent-soft" : "hover:bg-hover")}
+                  onClick={() => setSelected({ table: entry.name, offset: 0 })}
+                >
+                  {entry.type === "view" ? <Eye className="text-muted" /> : <Table2 className="text-muted" />}
+                  <span className="truncate">{entry.name}</span>
+                </button>
+              ))}
+            </div>
           </nav>
           <SqliteRows key={table.name} rootSlug={rootSlug} path={item.path} table={table} offset={offset} onOffset={(next) => setSelected({ table: table.name, offset: next })} />
         </div>

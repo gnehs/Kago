@@ -76,7 +76,7 @@ export default function SheetView({ data, onError }: { data: ArrayBuffer; onErro
         )}
       </div>
       <KagoStatusBar className="px-1.5">
-        <div role="tablist" aria-label={t("Sheets")} className="flex min-w-0 flex-1 gap-px overflow-x-auto">
+        <div role="tablist" aria-label={t("Sheets")} className="flex min-w-0 flex-1 scroll-fade-x scroll-fade-6 gap-px overflow-x-auto">
           {names.map((sheet, index) => (
             <button
               key={sheet}

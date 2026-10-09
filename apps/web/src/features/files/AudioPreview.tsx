@@ -641,7 +641,7 @@ function TrackList({
           <div className="truncate text-xs text-muted">{heading.performer}</div>
         </header>
       ) : null}
-      <ol ref={list} className="m-0 min-h-0 flex-1 list-none overflow-y-auto p-1">
+      <ol ref={list} className="m-0 min-h-0 flex-1 scroll-fade list-none scroll-py-9 overflow-y-auto p-1">
         {tracks.map((track, index) => {
           const length = lengthOf(track);
           const chosen = index === current;
