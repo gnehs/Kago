@@ -43,6 +43,9 @@ export const externalAppSchema = z.object({
     .optional()
 });
 
+/** The shortcuts of a desktop in the order its owner wants them. */
+export const externalAppOrderSchema = z.object({ ids: z.array(z.string().max(64)).max(MAX_APPS * 2) });
+
 type ExternalAppInput = z.infer<typeof externalAppSchema>;
 type AppRow = { id: string; owner_id: string | null; name: string; url: string; icon_type: IconType | null; icon_version: number | null; embed: number; auth_user: string | null; auth_secret: string | null; created_at: number; updated_at: number };
 
@@ -83,8 +86,39 @@ export class ExternalAppService {
   }
 
   list(actor: Actor) {
-    // Everyone's first, then one's own, each in the order they were added.
-    return rows<AppRow>(this.db.prepare("SELECT * FROM external_apps WHERE owner_id IS NULL OR owner_id = ? ORDER BY owner_id IS NOT NULL, created_at ASC, id ASC").all(actor.id)).map((app) => this.publicApp(actor, app));
+    // As the person arranged them; the ones not yet placed follow, everyone's first and then one's own, in the order they were added.
+    return rows<AppRow>(
+      this.db
+        .prepare(
+          `SELECT external_apps.* FROM external_apps
+          LEFT JOIN external_app_positions AS placed ON placed.app_id = external_apps.id AND placed.user_id = ?
+          WHERE owner_id IS NULL OR owner_id = ?
+          ORDER BY placed.position IS NULL, placed.position ASC, owner_id IS NOT NULL, created_at ASC, external_apps.rowid ASC`
+        )
+        .all(actor.id, actor.id)
+    ).map((app) => this.publicApp(actor, app));
+  }
+
+  /**
+   * Puts the caller's shortcuts in the order given. The order is the caller's own, of their own desktop: it moves
+   * nothing for anyone else, the shortcuts an administrator shares included. What the caller cannot see is passed over.
+   */
+  arrange(actor: Actor, ids: string[]) {
+    const visible = new Set(rows<{ id: string }>(this.db.prepare("SELECT id FROM external_apps WHERE owner_id IS NULL OR owner_id = ?").all(actor.id)).map((app) => app.id));
+    const order = [...new Set(ids)].filter((appId) => visible.has(appId));
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      this.db.prepare("DELETE FROM external_app_positions WHERE user_id = ?").run(actor.id);
+      const place = this.db.prepare("INSERT INTO external_app_positions (user_id, app_id, position) VALUES (?, ?, ?)");
+      order.forEach((appId, position) => place.run(actor.id, appId, position));
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+    // The same desktop, open somewhere else.
+    this.announce(actor.id);
+    return this.list(actor);
   }
 
   async create(actor: Actor, input: ExternalAppInput) {

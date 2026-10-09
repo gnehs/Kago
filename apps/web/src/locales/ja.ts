@@ -177,6 +177,7 @@ export const ja: Dictionary = {
   "Apps": "アプリ",
   "Add app": "アプリを追加",
   "Add app…": "アプリを追加…",
+  "Couldn’t save the order": "並び順を保存できませんでした",
   "Sign-in (HTTP Basic), if the service asks for one": "サインイン（HTTP Basic、サービスが求める場合のみ）",
   "Advanced options": "詳細オプション",
   "Keeping a sign-in here is a risk. The password is handed to the browser each time the shortcut is opened, so whoever can use the shortcut can find it out, and over http:// it crosses the network unencrypted. Use an account made for this, not one that matters.": "ここにサインイン情報を保存することにはリスクがあります。ショートカットを開くたびにパスワードがブラウザーへ渡されるため、このショートカットを使える人なら誰でも知ることができ、http:// では暗号化されずにネットワークを流れます。重要なアカウントではなく、このために作ったアカウントを使ってください。",

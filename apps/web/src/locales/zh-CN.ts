@@ -177,6 +177,7 @@ export const zhCN: Dictionary = {
   "Apps": "应用",
   "Add app": "添加应用",
   "Add app…": "添加应用…",
+  "Couldn’t save the order": "保存顺序失败",
   "Sign-in (HTTP Basic), if the service asks for one": "登录账号（HTTP Basic，服务有要求时才需要）",
   "Advanced options": "高级选项",
   "Keeping a sign-in here is a risk. The password is handed to the browser each time the shortcut is opened, so whoever can use the shortcut can find it out, and over http:// it crosses the network unencrypted. Use an account made for this, not one that matters.": "把账号密码存在这里有风险：每次打开快捷方式，密码都会交给浏览器，所以能使用这个快捷方式的人都有办法得知它；网址是 http:// 时，它在网络上是以明文传输的。请使用专为此创建的账号，不要用重要的账号。",

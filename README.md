@@ -139,7 +139,7 @@ It gives that account a new password and makes it an enabled administrator (crea
 
 ### App shortcuts
 
-Settings → Apps puts the address of another service on the desktop; you can also right-click a shortcut on the desktop to add, edit or remove one. Everyone manages their own shortcuts, and nobody else sees them. When an administrator ticks "Show on everyone's desktop", the shortcut appears on every desktop and only administrators can change it.
+Settings → Apps puts the address of another service on the desktop; you can also right-click a shortcut on the desktop to add, edit or remove one, and drag the shortcuts on the desktop into the order you like, which is yours alone. Everyone manages their own shortcuts, and nobody else sees them. When an administrator ticks "Show on everyone's desktop", the shortcut appears on every desktop and only administrators can change it.
 
 - A shortcut opens in a new tab by default. Only `http://` and `https://` addresses are accepted.
 - "Opens in" can be set to "A window in Kago", which shows the service inside a window on the desktop. Many services are set up to refuse being shown inside another page (`X-Frame-Options`, CSP `frame-ancestors`). Kago asks the service first and, when it refuses, says so in the form and in the window instead of leaving a blank one. When the server can't reach the address it can't tell, and some services that do allow it still can't keep you signed in there. When Kago is served over HTTPS and the service is not, the browser always refuses. The window's title bar can open the service in a new tab at any time.

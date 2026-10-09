@@ -182,6 +182,16 @@ CREATE TABLE IF NOT EXISTS external_apps (
 CREATE INDEX IF NOT EXISTS idx_external_apps_owner
 ON external_apps(owner_id, created_at);
 
+-- Where each person put each shortcut on their own desktop. One nobody has placed yet comes after the ones that were.
+CREATE TABLE IF NOT EXISTS external_app_positions (
+  user_id TEXT NOT NULL,
+  app_id TEXT NOT NULL,
+  position INTEGER NOT NULL,
+  PRIMARY KEY (user_id, app_id),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (app_id) REFERENCES external_apps(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS tags (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,

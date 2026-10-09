@@ -26,7 +26,7 @@ import { AuditService } from "./services/audit.service.js";
 import { AuthService, MAX_PASSWORD, changePasswordSchema, createUserSchema, loginSchema, patchUserSchema, resetPasswordSchema, setupAdminSchema } from "./services/auth.service.js";
 import { FsService, finderTagsSchema, fsQuerySchema, maxUploadFiles, mkdirSchema, renameSchema, sqliteRowsSchema, writeTextSchema, zipQuerySchema } from "./services/fs.service.js";
 import { ImageService } from "./services/image.service.js";
-import { appUrl, externalAppSchema, ExternalAppService } from "./services/external-app.service.js";
+import { appUrl, externalAppOrderSchema, externalAppSchema, ExternalAppService } from "./services/external-app.service.js";
 import { createGroupSchema, GroupService } from "./services/group.service.js";
 import { IconLibraryService } from "./services/icon-library.service.js";
 import { MediaService, mediaAudioSchema, mediaSessionSchema, mediaStreamSchema } from "./services/media.service.js";
@@ -653,6 +653,7 @@ function registerApi(app: FastifyInstance, services: Services) {
   // Shortcuts on the desktop to other services: one's own, and the ones an administrator shares with everyone.
   app.get("/api/external-apps", async (request) => services.apps.list(requireActor(request)));
   app.post("/api/external-apps", async (request) => services.apps.create(requireActor(request), externalAppSchema.parse(request.body)));
+  app.put("/api/external-apps/order", async (request) => services.apps.arrange(requireActor(request), externalAppOrderSchema.parse(request.body).ids));
   app.put("/api/external-apps/:id", async (request) => {
     const params = z.object({ id: z.string() }).parse(request.params);
     return services.apps.update(requireActor(request), params.id, externalAppSchema.parse(request.body));

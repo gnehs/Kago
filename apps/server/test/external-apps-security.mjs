@@ -458,6 +458,32 @@ test("a shortcut is its maker's own unless an administrator shares it", async ()
     assert.equal(bare.json.icon, null);
     assert.equal((await bob.get(shared.json.icon)).statusCode, 404);
 
+    // Each person arranges their own desktop, the shared shortcuts on it included, and moves nobody else's.
+    const second = await alice.post("/api/external-apps", { name: "Second", url: "http://nas.local:2" });
+    assert.deepEqual(await names(alice), ["Home", "Jellyfin", "Second"]);
+    const arranged = await alice.put("/api/external-apps/order", { ids: [second.json.id, shared.json.id, mine.json.id] });
+    assert.equal(arranged.statusCode, 200, arranged.payload);
+    assert.deepEqual(arranged.json.map((item) => item.name), ["Second", "Home", "Jellyfin"]);
+    assert.deepEqual(await names(alice), ["Second", "Home", "Jellyfin"]);
+    assert.deepEqual(await names(bob), ["Home"]);
+    assert.deepEqual(await names(admin), ["Home"]);
+    // What is named twice counts once; what is not the caller's to see, or is not there at all, is passed over.
+    const bobs = await bob.post("/api/external-apps", { name: "Bob's", url: "http://nas.local:3" });
+    assert.deepEqual((await alice.put("/api/external-apps/order", { ids: [bobs.json.id, mine.json.id, "app_nothing", mine.json.id, "order"] })).json.map((item) => item.name), ["Jellyfin", "Home", "Second"]);
+    assert.deepEqual(await names(bob), ["Home", "Bob's"]);
+    assert.deepEqual((await bob.put("/api/external-apps/order", { ids: [bobs.json.id, shared.json.id] })).json.map((item) => item.name), ["Bob's", "Home"]);
+    assert.deepEqual(await names(alice), ["Jellyfin", "Home", "Second"]);
+    // One added later comes after the ones already placed, and one removed leaves no gap behind.
+    const third = await alice.post("/api/external-apps", { name: "Third", url: "http://nas.local:4" });
+    assert.deepEqual(await names(alice), ["Jellyfin", "Home", "Second", "Third"]);
+    assert.equal((await alice.delete(`/api/external-apps/${second.json.id}`)).statusCode, 200);
+    assert.deepEqual(await names(alice), ["Jellyfin", "Home", "Third"]);
+    assert.equal((await alice.put("/api/external-apps/order", { ids: "not a list" })).statusCode, 400);
+    assert.equal((await stranger.put("/api/external-apps/order", { ids: [] })).statusCode, 401);
+    for (const [who, id] of [[alice, third.json.id], [bob, bobs.json.id]]) assert.equal((await who.delete(`/api/external-apps/${id}`)).statusCode, 200);
+    assert.equal((await alice.put("/api/external-apps/order", { ids: [] })).statusCode, 200);
+    assert.deepEqual(await names(alice), ["Home", "Jellyfin"]);
+
     // Taken back from everyone, it is the administrator's alone.
     assert.equal((await admin.put(`/api/external-apps/${shared.json.id}`, { name: "Home", url: "https://ha.example.test", shared: false })).json.shared, false);
     assert.deepEqual(await names(bob), []);

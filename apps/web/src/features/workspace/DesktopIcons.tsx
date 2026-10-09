@@ -1,16 +1,18 @@
 import type { ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { AppWindow, Copy, ExternalLink, HardDrive, Pencil, Plus, Server, Trash2 } from "lucide-react";
+import { api } from "@/api/client";
 import { useExternalApps } from "@/api/hooks";
 import { KagoAppIcon } from "@/components/kago/app-icon";
 import { KagoContextMenu, KagoMenuItem, KagoMenuSeparator } from "@/components/kago/menu";
 import { editExternalApp } from "@/features/apps/ExternalAppDialog";
 import { ExternalAppIcon } from "@/features/apps/ExternalAppIcon";
 import { appHref, openExternalApp, openInNewTab, removeExternalApp } from "@/features/apps/externalApps";
-import { copyText } from "@/lib/utils";
+import { cn, copyText } from "@/lib/utils";
 import { useWorkspaceStore } from "@/stores/workspace";
-import type { FileWindow, Root } from "@/types/kago";
+import type { ExternalApp, FileWindow, Root } from "@/types/kago";
 import { t } from "@/lib/i18n";
+import { useDragOrder } from "./useDragOrder";
 import { run } from "@/lib/run";
 
 /**
@@ -22,6 +24,15 @@ export function DesktopIcons({ roots, isAdmin }: { roots: Root[]; isAdmin: boole
   const store = useWorkspaceStore.getState;
   const queryClient = useQueryClient();
   const apps = useExternalApps().data ?? [];
+  // The shortcuts can be dragged into another order. It is shown at once and kept for this person alone.
+  const reorder = useDragOrder(
+    apps.map((app) => app.id),
+    (ids) => {
+      queryClient.setQueryData<ExternalApp[]>(["external-apps"], (current) => current && ids.flatMap((id) => current.find((app) => app.id === id) ?? []));
+      void run(() => api("/api/external-apps/order", { method: "PUT", body: JSON.stringify({ ids }) }), t("Couldn’t save the order")).finally(() => queryClient.invalidateQueries({ queryKey: ["external-apps"] }));
+    }
+  );
+  const shown = reorder.order.flatMap((id) => apps.find((app) => app.id === id) ?? []);
   // A new window starts in a location on this machine when there is one: it answers at once and is always there.
   const home = roots.find((root) => root.provider === "local") ?? roots[0];
   const openNew = (root: Root) => store().openWindow({ rootSlug: root.slug, logicalPath: "/", title: root.name });
@@ -58,9 +69,12 @@ export function DesktopIcons({ roots, isAdmin }: { roots: Root[]; isAdmin: boole
       ) : null}
       <DesktopIcon icon={GLYPHS.shares} tone="var(--kago-app-share)" label={t("Shares")} onClick={() => store().openApp("shares")} />
       <DesktopIcon icon={GLYPHS.trash} tone="var(--kago-app-trash)" label={t("Trash")} onClick={() => store().openApp("trash")} />
-      {apps.map((app) => (
+      {shown.map((app) => (
         <KagoContextMenu
           key={app.id}
+          // The one being dragged rides above the others, which do not answer to the pointer passing over them.
+          className={cn("touch-none data-[dragging]:relative data-[dragging]:z-10 data-[dragging]:cursor-grabbing data-[dragging]:opacity-90", reorder.draggingId && "pointer-events-none data-[dragging]:pointer-events-auto")}
+          {...reorder.item(app.id)}
           menu={
             <>
               {app.embed ? <KagoMenuItem icon={<AppWindow />} onClick={() => openExternalApp(app)}>{t("Open")}</KagoMenuItem> : null}

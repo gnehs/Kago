@@ -177,6 +177,7 @@ export const zhTW: Dictionary = {
   "Apps": "應用程式",
   "Add app": "新增應用程式",
   "Add app…": "新增應用程式…",
+  "Couldn’t save the order": "儲存順序失敗",
   "Sign-in (HTTP Basic), if the service asks for one": "登入帳號（HTTP Basic，服務有要求時才需要）",
   "Advanced options": "進階選項",
   "Keeping a sign-in here is a risk. The password is handed to the browser each time the shortcut is opened, so whoever can use the shortcut can find it out, and over http:// it crosses the network unencrypted. Use an account made for this, not one that matters.": "把帳號密碼存在這裡有風險：每次開啟捷徑，密碼都會交給瀏覽器，所以能使用這個捷徑的人都有辦法得知它；網址是 http:// 時，它在網路上是以明碼傳送的。請使用專為此建立的帳號，不要用重要的帳號。",
