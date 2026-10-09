@@ -212,10 +212,10 @@ function Report({ trial }: { trial: SyncTrial }) {
 
 /** What the job's last trial run would have changed: what it adds up to, and every change of it. */
 export function TrialDialog({ job, onClose }: { job: SyncJob | null; onClose: () => void }) {
-  const trial = useSyncTrial(job);
-  // The last job stays on show while its dialog fades out.
+  // The last job stays on show while its dialog fades out, and so does what was fetched of it.
   const [shown, setShown] = useState(job);
   if (job && job !== shown) setShown(job);
+  const trial = useSyncTrial(shown, job !== null);
   return (
     <KagoDialog open={job !== null} onClose={onClose} title={t("What {name} would change", { name: shown?.name ?? "" })} className="w-[min(720px,calc(100vw-32px))]">
       <div className="flex min-h-0 flex-col gap-4 overflow-y-auto p-4 pt-3">

@@ -23,10 +23,10 @@ function describeRun(run: SyncRun) {
 
 /** The job's last runs: when each was, how it ended, and what it brought across. */
 export function RunsDialog({ job, onClose }: { job: SyncJob | null; onClose: () => void }) {
-  const runs = useSyncRuns(job);
-  // The last job stays on show while its dialog fades out.
+  // The last job stays on show while its dialog fades out, and so do its runs.
   const [shown, setShown] = useState(job);
   if (job && job !== shown) setShown(job);
+  const runs = useSyncRuns(shown, job !== null);
   return (
     <KagoDialog open={job !== null} onClose={onClose} title={t("Runs of {name}", { name: shown?.name ?? "" })} className="w-[min(560px,calc(100vw-32px))]">
       <div className="flex min-h-0 flex-col gap-4 overflow-y-auto p-4 pt-3">

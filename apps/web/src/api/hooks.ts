@@ -39,14 +39,14 @@ export function useSyncJobs() {
   return useQuery({ queryKey: ["sync-jobs"], queryFn: () => api<SyncJob[]>("/api/sync-jobs"), refetchInterval: 10_000 });
 }
 
-/** What a job's last trial run would have changed; asked for again whenever that run is another one. */
-export function useSyncTrial(job: SyncJob | null) {
-  return useQuery({ queryKey: ["sync-trial", job?.id, job?.last_run_at], queryFn: () => api<SyncTrial>(`/api/sync-jobs/${job!.id}/trial`), enabled: job !== null });
+/** What a job's last trial run would have changed; asked for again whenever that run is another one. What was fetched stays while `enabled` is off. */
+export function useSyncTrial(job: SyncJob | null, enabled = true) {
+  return useQuery({ queryKey: ["sync-trial", job?.id, job?.last_run_at], queryFn: () => api<SyncTrial>(`/api/sync-jobs/${job!.id}/trial`), enabled: enabled && job !== null });
 }
 
-/** A job's last runs, asked for again when another one starts and while one is still going. */
-export function useSyncRuns(job: SyncJob | null) {
-  return useQuery({ queryKey: ["sync-runs", job?.id, job?.last_run_at, job?.last_status], queryFn: () => api<SyncRun[]>(`/api/sync-jobs/${job!.id}/runs`), enabled: job !== null });
+/** A job's last runs, asked for again when another one starts and while one is still going. What was fetched stays while `enabled` is off. */
+export function useSyncRuns(job: SyncJob | null, enabled = true) {
+  return useQuery({ queryKey: ["sync-runs", job?.id, job?.last_run_at, job?.last_status], queryFn: () => api<SyncRun[]>(`/api/sync-jobs/${job!.id}/runs`), enabled: enabled && job !== null });
 }
 
 export function useSshKey(enabled = true) {
