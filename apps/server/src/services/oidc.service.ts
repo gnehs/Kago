@@ -65,8 +65,6 @@ export const oidcConfigSchema = z.object({
   scopes: z.string().trim().max(512).default("openid profile email"),
   /** Whether someone the provider vouches for, and Kago has never seen, is given an account. */
   autoCreate: z.boolean().default(false),
-  /** Never an administrator: what the provider says decides who someone is, not what they may do. */
-  defaultRole: z.enum(["USER", "GUEST"]).default("USER"),
   /** Whether someone not signed in is sent straight to the provider. */
   autoRedirect: z.boolean().default(false),
   syncGroups: z.boolean().default(false),
@@ -540,7 +538,7 @@ export class OidcService {
     if (!profile.email) throw new AppError(403, "The identity provider did not share an email address", "OIDC_EMAIL_MISSING");
     this.db.exec("BEGIN IMMEDIATE");
     try {
-      const user = this.auth.createExternalUser({ email: profile.email, displayName: profile.displayName, role: config.defaultRole });
+      const user = this.auth.createExternalUser({ email: profile.email, displayName: profile.displayName });
       const identity = this.insertIdentity(user.id, profile);
       this.db.exec("COMMIT");
       return { identity, created: true, merged: false };

@@ -14,7 +14,6 @@ import { t } from "@/lib/i18n";
 import { run } from "@/lib/run";
 import { toast } from "@/stores/toast";
 import type { SsoConfig } from "@/types/kago";
-import { roleLabels } from "./UsersPage";
 
 type Form = Omit<SsoConfig, "hasClientSecret" | "redirectUri">;
 
@@ -126,17 +125,9 @@ export function SsoPage() {
 
         <Card title={t("Accounts")} description={t("An identity signs in to the Kago account it is linked to. One seen for the first time is linked to the account with the same email address, if the provider says the address is verified.")}>
           <div className="flex flex-col gap-4">
-            <SettingRow label={t("Create accounts for new people")} description={t("Off, only people who already have a Kago account can sign in this way. On, anyone else the provider lets through gets a new one.")}>
+            <SettingRow label={t("Create accounts for new people")} description={t("Off, only people who already have a Kago account can sign in this way. On, anyone else the provider lets through gets a new one as a standard user; nobody becomes an administrator this way.")}>
               <Checkbox label={t("Create automatically")} checked={form.autoCreate} onChange={(event) => set({ autoCreate: event.target.checked })} />
             </SettingRow>
-            {form.autoCreate ? (
-              <SettingRow label={t("Role of new accounts")} description={t("Nobody becomes an administrator this way; that is given by hand under Users.")}>
-                <Select aria-label={t("Role of new accounts")} className="w-40" value={form.defaultRole} onChange={(event) => set({ defaultRole: event.target.value as Form["defaultRole"] })}>
-                  <option value="USER">{roleLabels.USER}</option>
-                  <option value="GUEST">{roleLabels.GUEST}</option>
-                </Select>
-              </SettingRow>
-            ) : null}
             <SettingRow label={t("Go straight to the provider")} description={t("Someone who is not signed in is sent to the provider without seeing Kago’s sign-in page. The password form stays at /login?local=1.")}>
               <Checkbox label={t("Redirect automatically")} checked={form.autoRedirect} onChange={(event) => set({ autoRedirect: event.target.checked })} />
             </SettingRow>

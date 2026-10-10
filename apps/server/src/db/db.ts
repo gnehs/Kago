@@ -26,6 +26,8 @@ export function openDb(env: Env, options: { interruptRunningTasks?: boolean } = 
   addMissingColumns(db, "tasks", { cleared: "INTEGER NOT NULL DEFAULT 0" });
   migratePermissionLevels(db);
   migratePermissionLocations(db);
+  // There was once a guest role, which was allowed exactly what a standard user is.
+  db.exec("UPDATE users SET role = 'USER' WHERE role = 'GUEST'");
   dropRsync(db);
   if (options.interruptRunningTasks ?? true) {
     db.prepare(

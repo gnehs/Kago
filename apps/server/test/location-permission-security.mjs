@@ -162,6 +162,29 @@ test("rules once written for a folder are dropped, not widened to its location",
   await rm(fixture.baseDir, { recursive: true, force: true });
 });
 
+test("an account that was a guest becomes a standard user, and no new one can be made", async () => {
+  const fixture = await createFixture("kago-guest-role.");
+  const dbPath = path.join(fixture.appDataDir, "app.db");
+  const first = await buildApp(testEnv(fixture));
+  assert.equal((await client(first).post("/api/auth/setup", { email: "admin@example.test", password: "fake-admin-password-123", displayName: "Test Admin" })).statusCode, 200);
+  await first.close();
+  const old = new DatabaseSync(dbPath);
+  old.prepare("INSERT INTO users (id, email, password_hash, display_name, role, disabled, created_at, updated_at) VALUES ('user-guest', 'guest@example.test', 'x', 'Guest', 'GUEST', 0, 1, 1)").run();
+  old.close();
+
+  const app = await buildApp(testEnv(fixture));
+  const admin = client(app);
+  try {
+    await app.ready();
+    assert.equal((await admin.post("/api/auth/login", { email: "admin@example.test", password: "fake-admin-password-123" })).statusCode, 200);
+    assert.equal((await admin.get("/api/users")).json.find((user) => user.id === "user-guest").role, "USER");
+    assert.equal((await admin.post("/api/users", { email: "new@example.test", password: "fake-user-password-123", displayName: "New", role: "GUEST" })).statusCode, 400);
+  } finally {
+    await app.close();
+    await rm(fixture.baseDir, { recursive: true, force: true });
+  }
+});
+
 function testEnv(fixture) {
   return { port: 0, dataDir: fixture.dataDir, appDataDir: fixture.appDataDir, sessionSecret: "location-acl-test-session-secret", nodeEnv: "test" };
 }

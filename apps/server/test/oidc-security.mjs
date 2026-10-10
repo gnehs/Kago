@@ -494,7 +494,7 @@ async function harness(t) {
   const published = [];
   const auth = new AuthService(db, {});
   const oidc = new OidcService(db, new SecretBox(dir), auth, new AuditService(db), { publish: (event) => published.push(event) });
-  const settings = { enabled: true, name: "Test ID", issuer: provider.issuer, clientId, publicUrl, scopes: "openid profile email", autoCreate: false, defaultRole: "USER", autoRedirect: false, syncGroups: false, groupsClaim: "groups", groupMappings: [] };
+  const settings = { enabled: true, name: "Test ID", issuer: provider.issuer, clientId, publicUrl, scopes: "openid profile email", autoCreate: false, autoRedirect: false, syncGroups: false, groupsClaim: "groups", groupMappings: [] };
   const kago = {
     db,
     auth,

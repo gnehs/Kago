@@ -30,7 +30,7 @@ export const createUserSchema = z.object({
   email: z.string().email().max(MAX_EMAIL),
   password: z.string().min(8).max(MAX_PASSWORD),
   displayName: z.string().min(1).max(120),
-  role: z.enum(["ADMIN", "USER", "GUEST"]).default("USER")
+  role: z.enum(["ADMIN", "USER"]).default("USER")
 });
 
 export const setupAdminSchema = createUserSchema.extend({
@@ -39,7 +39,7 @@ export const setupAdminSchema = createUserSchema.extend({
 
 export const patchUserSchema = z.object({
   displayName: z.string().min(1).max(120).optional(),
-  role: z.enum(["ADMIN", "USER", "GUEST"]).optional(),
+  role: z.enum(["ADMIN", "USER"]).optional(),
   disabled: z.boolean().optional()
 });
 
@@ -123,11 +123,12 @@ export class AuthService {
 
   /**
    * An account for someone the identity provider vouched for. It has no password: it is entered through the provider
-   * until its owner, or an administrator, gives it one.
+   * until its owner, or an administrator, gives it one. Never an administrator: what the provider says decides who
+   * someone is, not what they may do.
    */
-  createExternalUser(input: { email: string; displayName: string; role: "USER" | "GUEST" }): User {
+  createExternalUser(input: { email: string; displayName: string }): User {
     const ts = now();
-    const user: User = { id: id("user"), email: input.email.toLowerCase(), password_hash: NO_PASSWORD, display_name: input.displayName, role: input.role, disabled: 0, avatar_at: null, created_at: ts, updated_at: ts };
+    const user: User = { id: id("user"), email: input.email.toLowerCase(), password_hash: NO_PASSWORD, display_name: input.displayName, role: "USER", disabled: 0, avatar_at: null, created_at: ts, updated_at: ts };
     this.db
       .prepare("INSERT INTO users (id, email, password_hash, display_name, role, disabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
       .run(user.id, user.email, user.password_hash, user.display_name, user.role, user.disabled, user.created_at, user.updated_at);

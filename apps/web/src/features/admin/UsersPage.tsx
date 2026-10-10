@@ -17,7 +17,7 @@ import type { UserAccount } from "@/types/kago";
 import { t } from "@/lib/i18n";
 
 type Role = UserAccount["role"];
-export const roleLabels: Record<Role, string> = { ADMIN: t("Administrator"), USER: t("Standard user"), GUEST: t("Guest") };
+export const roleLabels: Record<Role, string> = { ADMIN: t("Administrator"), USER: t("Standard user") };
 
 export function UsersPage({ currentUserId }: { currentUserId: string }) {
   const queryClient = useQueryClient();
@@ -75,7 +75,7 @@ export function UsersPage({ currentUserId }: { currentUserId: string }) {
   return (
     <Page
       title={t("Users")}
-      description={t("Administrators can reach every location; other roles need permission rules.")}
+      description={t("Administrators can reach every location; everyone else needs permission rules.")}
       actions={creating ? null : <Button variant="default" onClick={() => setCreating(true)}><Plus />{t("Add user")}</Button>}
     >
       {creating ? (

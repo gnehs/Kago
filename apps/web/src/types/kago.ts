@@ -2,7 +2,7 @@ export type Actor = {
   id: string;
   email: string;
   displayName: string;
-  role: "ADMIN" | "USER" | "GUEST";
+  role: "ADMIN" | "USER";
   disabled: boolean;
   /** When their profile picture was last set, which names the picture to ask for. Absent without one. */
   avatar?: number | null;
@@ -80,7 +80,7 @@ export type UserAccount = {
   id: string;
   email: string;
   display_name: string;
-  role: "ADMIN" | "USER" | "GUEST";
+  role: "ADMIN" | "USER";
   disabled: number;
   /** When their profile picture was last set. Null without one. */
   avatar_at: number | null;
@@ -116,7 +116,6 @@ export type SsoConfig = {
   redirectUri: string | null;
   scopes: string;
   autoCreate: boolean;
-  defaultRole: "USER" | "GUEST";
   autoRedirect: boolean;
   syncGroups: boolean;
   groupsClaim: string;
