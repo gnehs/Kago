@@ -129,7 +129,7 @@ Kago container
   │   ├─ restore-trash
   │   ├─ compress
   │   ├─ extract
-  │   ├─ rsync
+  │   ├─ sync
   │   └─ thumbnail
   ├─ /data
   └─ /app-data
@@ -223,7 +223,7 @@ kago/
             restore-trash.job.ts
             compress.job.ts
             extract.job.ts
-            rsync.job.ts
+            sync.job.ts
             thumbnail.job.ts
 
         ws/
@@ -1296,8 +1296,7 @@ move
 compress
 download_zip
 extract
-rsync_pull
-rsync_push
+sync
 delete_to_trash
 restore_trash
 thumbnail
@@ -1599,8 +1598,7 @@ delete to trash
 restore trash
 compress
 extract
-rsync pull
-rsync push
+sync
 thumbnail generation
 ```
 
@@ -1763,7 +1761,7 @@ delete
 rename
 move
 extract
-rsync
+sync
 edit permissions
 ```
 
@@ -1829,38 +1827,96 @@ XattrTagProvider 可先留 interface
 UI 可顯示 Finder tag sync error
 ```
 
-## 42. rsync
+## 42. 同步
 
-rsync 不當成掛載功能。
+Kago 不提供 rsync。早期版本有 `rsync_pull` / `rsync_push` 兩種 task，同步也能以 rsync + SSH 連到另一台機器，這些都已經移除：SFTP 遠端位置透過 rclone 做得到同樣的事，而 rsync 是用伺服器唯一的那把 SSH 金鑰登入，等於讓能用它的人碰得到那把金鑰打得開的所有地方。映像檔不再安裝 rsync 與 openssh-client。升級時，有一端是 rsync 的同步工作、它們的執行紀錄與 task 會在伺服器啟動時刪除。
 
-Kago 只提供 rsync task：
+取而代之的是「同步」：把一個位置裡的資料夾帶到另一個位置裡的資料夾。
+
+### 兩端都是位置
 
 ```txt
-rsync_pull
-rsync_push
+同步的兩端只能是 root 裡的資料夾，本機或遠端皆可
+要與另一台機器同步，先把它加成遠端位置（SMB、SFTP、WebDAV、FTP）
+同步本身不接受主機、帳號或密碼
 ```
 
-範例：
+```json
+{ "kind": "location", "rootSlug": "photos", "path": "/2026" }
+```
+
+連線資訊屬於遠端位置，不屬於同步。整份連線設定加密後存進 `roots.config`，密碼不會送回瀏覽器。SFTP 也可以用 Kago 自己的 SSH 金鑰（`/app-data/ssh/id_ed25519`，第一次用到時產生），公鑰只有 ADMIN 讀得到。
+
+### 同步工作
+
+一筆同步工作是「從哪裡、到哪裡、做什麼、何時」：
 
 ```json
 {
-  "type": "rsync_pull",
-  "remote": "user@example.com:/home/user/photos/",
-  "destination": {
-    "rootSlug": "photos",
-    "path": "/incoming"
-  },
-  "options": {
-    "archive": true,
-    "delete": false,
-    "dryRun": false
-  }
+  "name": "照片備份",
+  "source": { "kind": "location", "rootSlug": "photos", "path": "/" },
+  "destination": { "kind": "location", "rootSlug": "backup", "path": "/photos" },
+  "options": { "mode": "copy", "dryRun": false },
+  "schedule": { "kind": "daily", "time": "03:00" },
+  "enabled": true
 }
 ```
 
-第一版可以先不做 credential vault。
+`options.mode`：
 
-如果需要密碼或 SSH key，先設計資料表與 UI，但不要硬塞明文密碼。
+```txt
+copy     複製新增與變更過的檔案，不刪除目的地的任何東西
+mirror   讓目的地與來源完全一致，會刪除來源已經沒有的項目
+```
+
+`options.dryRun` 為 true 時是試跑：不變更任何東西，只留下一份「會變更什麼」的報告。
+
+`schedule`：
+
+```txt
+null                               只手動執行
+{ kind: "interval", minutes }      每隔一段時間，5 分鐘到 30 天
+{ kind: "daily", time }            每天，HH:MM
+{ kind: "weekly", weekday, time }  每週，weekday 0–6
+```
+
+時間以伺服器的時區為準，由 `TZ` 環境變數決定。
+
+### 執行
+
+```txt
+每一次執行都是一個 type 為 sync 的 task，進度、取消與結果都在任務清單裡
+由映像檔內建的 rclone 執行，全程在使用者空間，不需要掛載
+同一筆同步工作同時只會有一次執行
+來源與目的地不能是同一個 root 裡互相包含的資料夾
+遠端位置的垃圾桶資料夾不參與同步
+每筆同步工作保留最近 20 次執行的結果
+```
+
+### 權限
+
+```txt
+來源所在的位置：view
+目的地所在的位置：edit
+儲存同步工作時就檢查，不等到執行時才失敗
+每次執行前重新檢查
+```
+
+每個人管理自己的同步工作，ADMIN 看得到所有人的。
+
+排程的執行以建立者的身分進行。建立者被停用或失去權限時，那一次執行會略過，並寫進 audit log。
+
+### API
+
+```txt
+GET    /api/sync-jobs
+POST   /api/sync-jobs
+PUT    /api/sync-jobs/:id
+DELETE /api/sync-jobs/:id
+POST   /api/sync-jobs/:id/run
+GET    /api/sync-jobs/:id/runs
+GET    /api/sync-jobs/:id/trial
+```
 
 ## 43. API 初版規格
 
