@@ -22,7 +22,7 @@ Kago 的使用體驗接近瀏覽器中的桌面檔案管理環境。使用者登
 * 資料庫使用 Node.js 內建 `node:sqlite`。
 * 不使用 Redis、不使用 BullMQ、不使用外部資料庫。
 * 使用者只需要掛載資料夾即可使用。
-* 支援多人帳號、群組、路徑級權限與分享連結。
+* 支援多人帳號、群組、以位置（root）為單位的權限與分享連結。
 * 支援背景任務，前端關閉後任務仍繼續執行。
 * 支援同一個網頁畫布中多開檔案視窗。
 * 支援類似 Dropover 的中轉區。
@@ -774,9 +774,9 @@ Cancel
 權限：
 
 ```txt
-加入中轉區時，至少需要 list
-從中轉區建立 copy task 時，重新檢查 source read 和 destination upload
-從中轉區建立 move task 時，重新檢查 source move/delete 和 destination upload
+加入中轉區時，至少需要 view
+從中轉區建立 copy task 時，重新檢查 source view 和 destination edit
+從中轉區建立 move task 時，重新檢查 source edit 和 destination edit
 ```
 
 ## 22. 跨瀏覽器視窗同步
@@ -1213,47 +1213,30 @@ CREATE TABLE permission_rules (
   principal_id TEXT NOT NULL,
 
   root_id TEXT NOT NULL,
-  path_prefix TEXT NOT NULL,
-
-  allow_json TEXT NOT NULL,
-  deny_json TEXT NOT NULL DEFAULT '[]',
-
-  recursive INTEGER NOT NULL DEFAULT 1,
+  level TEXT NOT NULL,
 
   created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
-);
+  updated_at INTEGER NOT NULL,
 
-CREATE INDEX idx_permission_rules_lookup
-ON permission_rules(principal_type, principal_id, root_id, path_prefix);
+  UNIQUE (principal_type, principal_id, root_id),
+  FOREIGN KEY (root_id) REFERENCES roots(id) ON DELETE CASCADE
+);
 ```
+
+一個 principal 在一個 root 最多一條規則。規則沒有路徑：它涵蓋整個 root。
 
 `principal_type`：
 
 ```txt
 user
 group
-share_link
 ```
 
-權限 actions：
+`level`：
 
 ```txt
-list
-read
-download
-upload
-create_folder
-rename
-move
-copy
-delete
-share
-manage_tags
-manage_permissions
-run_rsync
-compress
-extract
+view   列出、預覽、下載、分享
+edit   view 的全部，加上上傳、建立資料夾、改名、搬移、刪除、標籤
 ```
 
 ### user_workspaces
@@ -1441,16 +1424,36 @@ CREATE TABLE audit_logs (
 
 ## 33. 權限模型
 
-Kago 使用 app-level ACL，不依賴 Linux user 權限作為產品權限系統。
+Kago 使用 app-level 權限，不依賴 Linux user 權限作為產品權限系統。
 
 底層 Docker user 只是最後防線。實際產品權限由 Kago 的 users、groups、roots、permission_rules 決定。
+
+### 權限以位置為單位
+
+一條規則給一個 user 或 group 在一個 root 的 `view` 或 `edit`，root 裡的所有東西一體適用。
+
+```txt
+沒有只給某個子資料夾的規則
+沒有把某個子資料夾排除在外的規則
+沒有 deny
+```
+
+Kago 是家庭與小型辦公室的檔案管理器，不是企業級 ACL。規則不跟著路徑，搬移、改名、複製、壓縮就不必推算誰在半路上看得到什麼，管理員也一眼看得出誰能進哪裡。
+
+代價：
+
+```txt
+不想讓同一批人看到的東西，必須放在另一個 root
+同一批檔案不能同時從另一個已授權的 root 進得去
+只想給外人一個檔案時，使用公開分享連結
+```
 
 ### 權限判斷函式
 
 必須實作：
 
 ```ts
-can(actor, action, rootId, path): {
+can(actor, level, root): {
   allowed: boolean;
   reason?: string;
 }
@@ -1460,79 +1463,90 @@ can(actor, action, rootId, path): {
 
 ```txt
 1. disabled user 永遠拒絕
-2. ADMIN 預設允許，但仍受 root readonly 限制
-3. user direct permission 優先
-4. group permission 次之
-5. share token permission 作為 pseudo-principal
-6. path prefix match
-7. deny 優先於 allow
-8. 沒有明確 allow 就拒絕
+2. root readonly 時，edit 永遠拒絕，ADMIN 也一樣
+3. ADMIN 其餘一律允許
+4. user 自己的規則與所屬 group 的規則相加，取最高的 level
+5. edit 包含 view
+6. 沒有規則就拒絕，連這個 root 都看不到
 ```
 
-所有 API 必須呼叫 `can()`。
+`require(actor, level, root, path)` 是會丟出 403 的版本。`path` 只用來寫進 audit log，不影響判斷結果。
 
-所有 worker 在真正執行 task 前，也必須重新呼叫 `can()`。
+所有 API 必須呼叫 `can()` 或 `require()`。
+
+所有 worker 在真正執行 task 前，也必須重新檢查。
 
 不能只在建立 task 時檢查一次，因為 task 排隊期間權限可能被移除。
+
+### 從路徑級規則升級
+
+舊版的規則帶有 `path_prefix` 與 `recursive`。升級時：
+
+```txt
+path_prefix 不是 / 的規則：移除
+recursive = 0 的規則：移除
+每移除一條，寫一筆 actor 為 system 的 permission_change audit log
+同一個 principal 在同一個 root 剩下多條時，留下 level 最高的那條
+```
+
+被移除的規則不得放大成整個 root 的權限。
 
 ## 34. 檔案操作權限對照
 
 ```txt
 list folder:
-  list
+  view
 
 preview file:
-  read
+  view
 
-download file:
-  download
+download file / download zip:
+  view
 
 upload file:
-  upload
+  edit
 
 create folder:
-  create_folder
+  edit
 
 rename:
-  rename
+  edit
 
 copy:
-  source: read
-  destination: upload
+  source: view
+  destination: edit
 
 move:
-  source: move 或 delete
-  destination: upload
+  source: edit
+  destination: edit
 
-delete to trash:
-  delete
+delete to trash / restore:
+  edit
 
 create share:
-  share
+  view_only / download: view
+  upload_only: edit
+
+read tags:
+  view
 
 edit tags:
-  manage_tags
+  edit
 
 edit permissions:
-  manage_permissions
+  ADMIN only
 
 compress:
-  source: read
-  destination: upload
-  extra: compress
+  source: view
+  destination: edit
 
 extract:
-  archive: read
-  destination: upload
-  extra: extract
+  archive: view
+  destination: edit
 
-rsync pull:
-  destination: upload
-  extra: run_rsync
-
-rsync push:
-  source: read
-  extra: run_rsync
+sync:
+  source: view
+  destination: edit
 ```
 
 ## 35. 路徑安全
@@ -1704,9 +1718,9 @@ WebSocket 只是通知，不是狀態來源。
 
 ### 內部分享
 
-可以分享檔案或資料夾給 user 或 group。
+沒有針對單一檔案或資料夾的內部分享。
 
-內部分享本質上是建立 permission rule。
+要讓 user 或 group 看到東西，就給他們那個 root 的 permission rule；只想給出一個檔案時，使用公開分享連結。
 
 ### 公開分享連結
 
@@ -1750,7 +1764,7 @@ rename
 move
 extract
 rsync
-manage_permissions
+edit permissions
 ```
 
 ## 40. Trash
@@ -1927,9 +1941,20 @@ DELETE /api/groups/:id/members/:userId
 ### Permissions
 
 ```txt
-GET    /api/permissions?rootSlug=photos&path=/Japan
-POST   /api/permissions
-DELETE /api/permissions/:id
+GET    /api/permissions?rootId=...
+PUT    /api/permissions
+```
+
+`PUT` 設定一個 principal 在一個 root 的 level：
+
+```json
+{ "principalType": "group", "principalId": "...", "rootId": "...", "level": "view" }
+```
+
+`level` 為 `null` 時移除規則。
+
+```txt
+只有 ADMIN 可以呼叫
 ```
 
 ### Roots
@@ -2051,7 +2076,7 @@ root slug
 workspace restore
 window manager
 multi FileWindow canvas
-path ACL
+location permissions
 file list
 upload
 download
@@ -2173,8 +2198,8 @@ drop 後顯示 Copy here / Move here / Cancel
 可以下載檔案
 可以建立資料夾
 可以建立使用者與群組
-可以設定某群組只能讀取 photos:/public
-沒有權限的使用者無法列出 photos:/private
+可以設定某群組只能檢視 photos 這個位置
+沒有規則的使用者看不到也無法列出 private 這個位置
 可以建立公開下載分享連結
 audit log 能看到登入、下載、建立 task、權限拒絕紀錄
 ```
