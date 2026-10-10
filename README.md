@@ -24,7 +24,7 @@
 - **Subtitles and audio tracks**: `.ass` / `.srt` / `.sup` / `.idx` files named after the video, subtitles embedded in an mkv (including Blu-ray and DVD image subtitles) and extra audio tracks are all listed automatically, and the subtitle in your language is loaded for you. ASS styling and positioning are rendered in full.
 - **Video player**: the window follows the video's aspect ratio, and you can go full screen, picture in picture, or play in a new tab. When a folder holds several videos, you can jump straight to the previous or next one.
 - **Share links**: downloadable, view-only, or a drop box that lets other people upload files to you. Every link can have an expiry date, a password and a download limit. The limit counts visitors, not requests: looking at the file and downloading it within 12 hours, from the same address and browser, count once.
-- **Multiple users and permissions**: users and groups, with View and Edit permissions set down to a single folder. Everything that happens is kept in the audit log.
+- **Multiple users and permissions**: users and groups, with View or Edit permission for each location. A location is shared whole, so what should stay private goes in a location of its own. Everything that happens is kept in the audit log.
 - **Background tasks**: copying, moving, compressing and extracting all run on the server and carry on after you close the browser. Compressing lets you pick how hard to squeeze and set a password (AES-256 or ZipCrypto); extracting a locked zip first tries the passwords saved in Settings, and only asks when none opens it.
 - **Uploads of any size**: drop files or whole folders to upload them. They are streamed straight to disk, with progress, speed and time remaining.
 - **Remote locations**: folders on SMB, SFTP, WebDAV and FTP can be added as locations and browsed, played and shared just like local ones. The container needs no extra privileges.
@@ -39,7 +39,7 @@
 | | |
 | --- | --- |
 | ![The video player and its subtitle menu](docs/screenshots/video.png) **Live video transcoding**, with subtitles loaded automatically | ![Managing share links](docs/screenshots/shares.png) **Share links** with an expiry date, password and download limit |
-| ![Setting permissions](docs/screenshots/permissions.png) **Folder-level permissions** for users or groups | ![Dark mode and Quick open](docs/screenshots/dark.png) **Dark mode** and <kbd>⌘K</kbd> Quick open |
+| ![Setting permissions](docs/screenshots/permissions.png) **Permissions for each location**, by user or group | ![Dark mode and Quick open](docs/screenshots/dark.png) **Dark mode** and <kbd>⌘K</kbd> Quick open |
 
 ## Quick start
 
@@ -112,8 +112,8 @@ Folders that aren't on this machine can be locations too. In Settings → Locati
 Settings → Sync stores sync jobs: bring the contents of one folder to another, by hand, or automatically at an interval, every day or every week. Each run is a task, so its progress, cancellation and result are in the task list, and it is recorded in the audit log.
 
 - The two sides can be any two locations, local or remote. To sync with another machine, add it as a remote location first.
-- "Copy new and changed files" never deletes anything at the destination. "Make the destination identical" deletes what the source no longer has, and needs permission to delete at the destination. When in doubt, tick "Trial run" first; it only reports what would change.
-- Creating and running a sync needs permission to sync the folders at both ends. A scheduled sync runs as the person who created it; when that person is disabled or loses permission, the run is skipped and noted in the audit log.
+- "Copy new and changed files" never deletes anything at the destination. "Make the destination identical" deletes what the source no longer has. When in doubt, tick "Trial run" first; it only reports what would change.
+- Creating and running a sync needs View permission for the source's location and Edit permission for the destination's. A scheduled sync runs as the person who created it; when that person is disabled or loses permission, the run is skipped and noted in the audit log.
 - Schedules follow the server's time zone, which you can set with the `TZ` environment variable (for example `TZ=Asia/Taipei`).
 
 ### Single sign-on (OIDC)
@@ -264,7 +264,7 @@ Tags live in a file's extended attributes (xattr). The underlying filesystem has
 In Settings → Locations, press that location's "Connection" and then "Test connection" to see the reason the other side reports (wrong user name or password, share not found, host unreachable and so on). The container has to be able to reach that machine: on a bridge network, enter an IP or a host name the container can resolve; `.local` names usually don't resolve.
 
 **A subtitle doesn't appear in the menu.**
-Check that the subtitle file is in the same folder as the video, that its name starts with exactly the video's name (the part before the extension), and that you have permission to read the subtitle file. See [Subtitles and audio tracks](#subtitles-and-audio-tracks).
+Check that the subtitle file is in the same folder as the video, that its name starts with exactly the video's name (the part before the extension). See [Subtitles and audio tracks](#subtitles-and-audio-tracks).
 
 **A video has no quality menu or won't play.**
 Look for `video transcoding uses ...` in the startup log to confirm that ffmpeg is working and which encoder is actually in use.

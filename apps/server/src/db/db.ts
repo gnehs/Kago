@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { Env } from "../config/env.js";
-import { now } from "../lib/ids.js";
+import { id, now } from "../lib/ids.js";
 
 export type Db = DatabaseSync;
 
@@ -25,6 +25,7 @@ export function openDb(env: Env, options: { interruptRunningTasks?: boolean } = 
   addMissingColumns(db, "group_members", { source: "TEXT" });
   addMissingColumns(db, "tasks", { cleared: "INTEGER NOT NULL DEFAULT 0" });
   migratePermissionLevels(db);
+  migratePermissionLocations(db);
   dropRsync(db);
   if (options.interruptRunningTasks ?? true) {
     db.prepare(
@@ -73,6 +74,60 @@ function migratePermissionLevels(db: Db): void {
       }
       db.exec("ALTER TABLE permission_rules DROP COLUMN allow_json");
       db.exec("ALTER TABLE permission_rules DROP COLUMN deny_json");
+    }
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+/**
+ * Rules used to be written for a path inside a location; each is now for a whole location. A rule for a subfolder
+ * is dropped rather than widened to the location around it, which would hand out more than it ever granted, and so
+ * is one kept to a folder without what is under it. Each rule dropped is written to the audit log. Of several rules
+ * a user or group is left with in one location, the highest stays.
+ */
+function migratePermissionLocations(db: Db): void {
+  const columns = () => new Set((db.prepare("PRAGMA table_info(permission_rules)").all() as Array<{ name: string }>).map((column) => column.name));
+  if (!columns().has("path_prefix")) return;
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    // The task worker opens the database at the same moment and may have migrated it while this waited for the lock.
+    if (columns().has("path_prefix")) {
+      const audit = db.prepare(
+        "INSERT INTO audit_logs (id, actor_type, action, root_id, path, target_json, result, created_at) VALUES (?, 'system', 'permission_change', ?, ?, ?, 'success', ?)"
+      );
+      const narrow = db.prepare("SELECT * FROM permission_rules WHERE path_prefix != '/' OR recursive = 0").all() as Array<{
+        principal_type: string;
+        principal_id: string;
+        root_id: string;
+        path_prefix: string;
+        level: string;
+      }>;
+      for (const rule of narrow) {
+        const target = { principalType: rule.principal_type, principalId: rule.principal_id, level: rule.level, deleted: true, note: "Permissions are set per location" };
+        audit.run(id("audit"), rule.root_id, rule.path_prefix.slice(0, 2048), JSON.stringify(target), now());
+      }
+      db.exec(`
+        CREATE TABLE permission_rules_per_location (
+          id TEXT PRIMARY KEY,
+          principal_type TEXT NOT NULL,
+          principal_id TEXT NOT NULL,
+          root_id TEXT NOT NULL,
+          level TEXT NOT NULL,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          UNIQUE (principal_type, principal_id, root_id),
+          FOREIGN KEY (root_id) REFERENCES roots(id) ON DELETE CASCADE
+        );
+        INSERT OR IGNORE INTO permission_rules_per_location (id, principal_type, principal_id, root_id, level, created_at, updated_at)
+          SELECT id, principal_type, principal_id, root_id, level, created_at, updated_at FROM permission_rules
+          WHERE path_prefix = '/' AND recursive != 0
+          ORDER BY level = 'edit' DESC, created_at DESC;
+        DROP TABLE permission_rules;
+        ALTER TABLE permission_rules_per_location RENAME TO permission_rules;
+      `);
     }
     db.exec("COMMIT");
   } catch (error) {

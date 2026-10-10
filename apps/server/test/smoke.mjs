@@ -221,18 +221,11 @@ test("minimum file-manager demo flow", async () => {
     assert.deepEqual((await admin.get("/api/groups")).json.map((item) => ({ name: item.name, members: item.members })), [
       { name: "public-readers", members: [{ id: reader.json.id, email: "reader@example.test", display_name: "Reader", avatar_at: null }] }
     ]);
-    assert.equal((await admin.post("/api/permissions", {
-      principalType: "group",
-      principalId: group.json.id,
-      rootId: root.json.id,
-      pathPrefix: "/public",
-      level: "view",
-      recursive: true
-    })).statusCode, 200);
+    assert.equal((await admin.put("/api/permissions", { principalType: "group", principalId: group.json.id, rootId: root.json.id, level: "view" })).statusCode, 200);
 
-    // The permissions page ticks one principal at one path: each tick replaces the rule there, and no tick leaves none.
-    const tick = (level) => admin.put("/api/permissions", { principalType: "user", principalId: reader.json.id, rootId: root.json.id, pathPrefix: "/ticked", level });
-    const ticked = async () => (await admin.get(`/api/permissions?rootId=${root.json.id}`)).json.filter((item) => item.path_prefix === "/ticked").map((item) => item.level);
+    // The permissions page ticks one principal in one location: each tick replaces the rule there, and no tick leaves none.
+    const tick = (level) => admin.put("/api/permissions", { principalType: "user", principalId: reader.json.id, rootId: root.json.id, level });
+    const ticked = async () => (await admin.get(`/api/permissions?rootId=${root.json.id}`)).json.filter((item) => item.principal_type === "user").map((item) => item.level);
     assert.equal((await tick("view")).json.rule.level, "view");
     assert.equal((await tick("edit")).json.rule.level, "edit");
     assert.deepEqual(await ticked(), ["edit"]);
@@ -383,7 +376,9 @@ test("minimum file-manager demo flow", async () => {
     assert.deepEqual(tidyList.filter((name) => litter.includes(name)), []);
     assert.ok(tidyList.includes("thumbs.db.txt"));
     assert.equal((await admin.get("/api/fs/download?rootSlug=photos&path=/public/Thumbs.db")).payload, "litter");
-    assert.equal((await scopedUser.get("/api/fs/list?rootSlug=photos&path=/private")).statusCode, 403);
+    // A rule is for the whole location: what it lets someone see in one folder it lets them see in every other.
+    assert.equal((await scopedUser.get("/api/fs/list?rootSlug=photos&path=/private")).statusCode, 200);
+    assert.equal((await scopedUser.post("/api/fs/mkdir", { rootSlug: "photos", path: "/public", name: "not-allowed" })).statusCode, 403);
 
     const audit = await admin.get("/api/audit");
     const actions = new Set(audit.json.map((entry) => entry.action));

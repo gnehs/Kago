@@ -32,7 +32,7 @@ import { IconLibraryService } from "./services/icon-library.service.js";
 import { MediaService, mediaAudioSchema, mediaSessionSchema, mediaStreamSchema } from "./services/media.service.js";
 import { oidcConfigSchema, OidcService } from "./services/oidc.service.js";
 import { PathService } from "./services/path.service.js";
-import { permissionInputSchema, permissionSetSchema, PermissionService } from "./services/permission.service.js";
+import { permissionSetSchema, PermissionService } from "./services/permission.service.js";
 import { folderViewQuerySchema, folderViewSchema, PreferenceService, settingsSchema } from "./services/preference.service.js";
 import { remoteRootPatchSchema, remoteRootSchema, rootPatchSchema, RootService } from "./services/root.service.js";
 import { SHARE_VISIT_SECONDS, ShareService, shareSchema, type ShareVisitor } from "./services/share.service.js";
@@ -511,10 +511,7 @@ function registerApi(app: FastifyInstance, services: Services) {
     const actor = requireActor(request);
     return services.roots
       .listMounted()
-      .filter((root) =>
-        services.permissions.can(actor, "view", root, "/").allowed ||
-        services.permissions.canReachDescendant(actor, root, "/")
-      )
+      .filter((root) => services.permissions.can(actor, "view", root).allowed)
       .map((root) => services.roots.publicRoot(root));
   });
   app.patch("/api/roots/:id", async (request) => {
@@ -1064,44 +1061,17 @@ function registerApi(app: FastifyInstance, services: Services) {
 
   app.get("/api/permissions", async (request) => {
     requireAdmin(request);
-    const query = z.object({
-      rootId: z.string().optional(),
-      rootSlug: z.string().optional(),
-      path: z.string().optional()
-    }).parse(request.query);
-    const rootId = query.rootSlug ? services.roots.getBySlug(query.rootSlug).id : query.rootId;
-    if (query.path && !rootId) throw new AppError(400, "rootId or rootSlug is required for path lookups", "ROOT_REQUIRED");
-    if (query.path && rootId) return services.permissions.listForPath(rootId, services.paths.normalizeLogicalPath(query.path));
-    return services.permissions.list(rootId);
-  });
-  app.post("/api/permissions", async (request) => {
-    const actor = requireAdmin(request);
-    const input = permissionInputSchema.parse(request.body);
-    services.roots.getById(input.rootId);
-    const pathPrefix = services.paths.normalizeLogicalPath(input.pathPrefix);
-    const item = services.permissions.create({ ...input, pathPrefix });
-    services.audit.write({ actorType: "user", actorId: actor.id, action: "permission_change", rootId: item.root_id, target: item, result: "success" });
-    publishPermissionUpdated(actor, item.principal_type, item.principal_id);
-    return item;
+    const query = z.object({ rootId: z.string().optional() }).parse(request.query);
+    return services.permissions.list(query.rootId);
   });
   app.put("/api/permissions", async (request) => {
     const actor = requireAdmin(request);
     const input = permissionSetSchema.parse(request.body);
     services.roots.getById(input.rootId);
-    const pathPrefix = services.paths.normalizeLogicalPath(input.pathPrefix);
-    const item = services.permissions.set({ ...input, pathPrefix });
-    services.audit.write({ actorType: "user", actorId: actor.id, action: "permission_change", rootId: input.rootId, path: pathPrefix, target: item ?? { principalType: input.principalType, principalId: input.principalId, deleted: true }, result: "success" });
+    const item = services.permissions.set(input);
+    services.audit.write({ actorType: "user", actorId: actor.id, action: "permission_change", rootId: input.rootId, target: item ?? { principalType: input.principalType, principalId: input.principalId, deleted: true }, result: "success" });
     publishPermissionUpdated(actor, input.principalType, input.principalId);
     return { rule: item };
-  });
-  app.delete("/api/permissions/:id", async (request) => {
-    const actor = requireAdmin(request);
-    const params = z.object({ id: z.string() }).parse(request.params);
-    const rule = services.permissions.get(params.id);
-    services.permissions.delete(params.id);
-    services.audit.write({ actorType: "user", actorId: actor.id, action: "permission_change", target: { ruleId: params.id, deleted: true }, result: "success" });
-    publishPermissionUpdated(actor, rule.principal_type, rule.principal_id);
-    return { ok: true };
   });
 
   app.get("/api/shares", async (request) => services.shares.list(requireActor(request)));

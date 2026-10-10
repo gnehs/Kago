@@ -56,7 +56,7 @@ type Place = { rootSlug: string; path: string };
 
 const isInside = (path: string, folder: string) => (folder === "/" ? path !== "/" : path.startsWith(`${folder}/`));
 
-export function FileWindowView({ window: frame, roots, isAdmin }: { window: FileWindow; roots: Root[]; isAdmin: boolean }) {
+export function FileWindowView({ window: frame, roots }: { window: FileWindow; roots: Root[] }) {
   const store = useWorkspaceStore.getState;
   const rootName = roots.find((root) => root.slug === frame.rootSlug)?.name ?? frame.rootSlug;
   const fileList = useFileList(frame.rootSlug, frame.logicalPath);
@@ -469,7 +469,7 @@ export function FileWindowView({ window: frame, roots, isAdmin }: { window: File
             </div>
           </KagoContextMenu>
         )}
-        {win.inspectorOpen ? <Inspector window={win} isAdmin={isAdmin} /> : null}
+        {win.inspectorOpen ? <Inspector window={win} /> : null}
       </div>
 
       <footer className="kago-toolbar flex h-8 shrink-0 items-center gap-1 border-t border-line-strong px-3 text-xs text-muted">

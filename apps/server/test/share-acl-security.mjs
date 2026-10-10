@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { buildApp } from "../dist/app.js";
 
-test("share links stay within the creator's current path permissions", async () => {
+test("share links stay within what their creator may currently do in the location", async () => {
   const fixture = await createFixture();
   const app = await buildApp(testEnv(fixture));
   const admin = client(app);
@@ -33,14 +33,9 @@ test("share links stay within the creator's current path permissions", async () 
       password: "fake-owner-password-123"
     })).statusCode, 200);
 
-    const addRule = async (pathPrefix, level) => {
-      const response = await admin.post("/api/permissions", { principalType: "user", principalId: ownerId, rootId: root.id, recursive: true, pathPrefix, level });
+    const setLevel = async (level) => {
+      const response = await admin.put("/api/permissions", { principalType: "user", principalId: ownerId, rootId: root.id, level });
       assert.equal(response.statusCode, 200, JSON.stringify(response.json));
-      return response.json.id;
-    };
-    const removeRule = async (ruleId) => {
-      const response = await admin.delete(`/api/permissions/${ruleId}`);
-      assert.equal(response.statusCode, 200);
     };
     const createShare = (pathName, mode) => owner.post("/api/shares", {
       rootSlug: "photos",
@@ -52,27 +47,21 @@ test("share links stay within the creator's current path permissions", async () 
     assert.equal(withoutAnyRule.statusCode, 403);
     assert.equal(withoutAnyRule.json.code, "FORBIDDEN");
 
-    // Whoever can view a file can hand it out, and nothing next to it.
-    const viewReadable = await addRule("/shared/readable.txt", "view");
+    // Whoever can view a location can hand out a file in it.
+    await setLevel("view");
     const viewShare = await createShare("/shared/readable.txt", "view_only");
     assert.equal(viewShare.statusCode, 200);
     assert.equal(JSON.parse(viewShare.json.permission_json).mode, "view_only");
-    const unviewableDownload = await createShare("/shared/secret.txt", "download");
-    assert.equal(unviewableDownload.statusCode, 403);
-    assert.equal(unviewableDownload.json.code, "FORBIDDEN");
-    assert.equal((await createShare("/shared/secret.txt", "view_only")).statusCode, 403);
 
     // Taking uploads changes the folder, so it takes edit.
-    const viewFolder = await addRule("/shared", "view");
     const uploadWithoutEdit = await createShare("/shared", "upload_only");
     assert.equal(uploadWithoutEdit.statusCode, 403);
     assert.equal(uploadWithoutEdit.json.code, "FORBIDDEN");
     const folderDownload = await createShare("/shared", "download");
     assert.equal(folderDownload.statusCode, 400);
     assert.equal(folderDownload.json.code, "SHARE_TARGET_NOT_FILE");
-    await removeRule(viewFolder);
 
-    const editFolder = await addRule("/shared", "edit");
+    await setLevel("edit");
     const folderUpload = await createShare("/shared", "upload_only");
     assert.equal(folderUpload.statusCode, 200);
     const folderInfo = await app.inject({ method: "GET", url: `/s/${folderUpload.json.token}`, headers: { accept: "application/json" } });
@@ -85,25 +74,25 @@ test("share links stay within the creator's current path permissions", async () 
     const folderPreviewAttempt = await app.inject({ method: "GET", url: `/s/${folderUpload.json.token}/preview` });
     assert.equal(folderPreviewAttempt.statusCode, 403);
     assert.equal(folderPreviewAttempt.json().code, "SHARE_PREVIEW_FORBIDDEN");
-    await removeRule(editFolder);
 
+    // A link gives out no more than its maker may still see.
     const revokedShare = await createShare("/shared/readable.txt", "download");
     assert.equal(revokedShare.statusCode, 200);
-    await removeRule(viewReadable);
+    await setLevel(null);
     const afterRevocation = await app.inject({ method: "GET", url: `/s/${revokedShare.json.token}/download` });
     assert.equal(afterRevocation.statusCode, 403);
     assert.equal(afterRevocation.json().code, "FORBIDDEN");
     assert.equal((await admin.get("/api/shares")).json.find((item) => item.id === revokedShare.json.id).download_count, 0);
 
-    const restored = await addRule("/shared/readable.txt", "view");
+    await setLevel("view");
     const reactivationShare = await createShare("/shared/readable.txt", "download");
     assert.equal(reactivationShare.statusCode, 200);
     assert.equal((await owner.patch(`/api/shares/${reactivationShare.json.id}`, { disabled: true })).statusCode, 200);
-    await removeRule(restored);
+    await setLevel(null);
     const reactivationWithoutView = await owner.patch(`/api/shares/${reactivationShare.json.id}`, { disabled: false });
     assert.equal(reactivationWithoutView.statusCode, 403);
     assert.equal(reactivationWithoutView.json.code, "FORBIDDEN");
-    await addRule("/shared/readable.txt", "view");
+    await setLevel("view");
     assert.equal((await owner.patch(`/api/shares/${reactivationShare.json.id}`, { disabled: false })).statusCode, 200);
 
     const disabledOwnerShare = await createShare("/shared/readable.txt", "download");
@@ -149,8 +138,8 @@ function client(app) {
   return {
     get: (url) => request("GET", url),
     post: (url, body) => request("POST", url, body),
+    put: (url, body) => request("PUT", url, body),
     patch: (url, body) => request("PATCH", url, body),
-    delete: (url) => request("DELETE", url),
   };
 
   async function request(method, url, body) {

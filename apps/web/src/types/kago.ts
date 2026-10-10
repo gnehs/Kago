@@ -320,9 +320,7 @@ export type PermissionRule = {
   principal_type: "user" | "group";
   principal_id: string;
   root_id: string;
-  path_prefix: string;
   level: "view" | "edit";
-  recursive: number;
   created_at: number;
   updated_at: number;
 };

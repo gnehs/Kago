@@ -1,12 +1,11 @@
 import { useState, type ReactNode } from "react";
 import { Link2, X } from "lucide-react";
-import { useFileMeta, useImageMetadata, useMediaInfo, usePathPermissions, useRoots, useShares } from "@/api/hooks";
+import { useFileMeta, useImageMetadata, useMediaInfo, useRoots, useShares } from "@/api/hooks";
 import { KagoBadge } from "@/components/kago/badge";
 import { Detail, DetailList, DetailSection } from "@/components/kago/details";
 import { KagoLoading } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { Button } from "@/components/ui/button";
-import { RuleList } from "@/features/permissions/RuleList";
 import { ShareForm } from "@/features/shares/ShareForm";
 import { parseShareMode, shareModeLabel } from "@/features/shares/shareUtils";
 import { FinderTagEditor } from "@/features/tags/FinderTagEditor";
@@ -24,7 +23,7 @@ const MIN_WIDTH = 260;
 const MAX_WIDTH = 440;
 
 /** Panel inside a file window describing its selection, or its folder when nothing is selected. */
-export function Inspector({ window: activeWindow, isAdmin }: { window: FileWindow; isAdmin: boolean }) {
+export function Inspector({ window: activeWindow }: { window: FileWindow }) {
   const width = useWorkspaceStore((state) => Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, state.inspector.width ?? 300)));
   const store = useWorkspaceStore.getState;
   const rootSlug = activeWindow.rootSlug;
@@ -33,7 +32,6 @@ export function Inspector({ window: activeWindow, isAdmin }: { window: FileWindo
   const meta = useFileMeta(rootSlug, path, true);
   const roots = useRoots();
   const shares = useShares();
-  const permissions = usePathPermissions(rootSlug, path, isAdmin);
   // A picture without shooting data, or a server that cannot read it, simply has no such section.
   const photo = useImageMetadata(rootSlug, path, Boolean(meta.data && isPicture(meta.data))).data;
   // Likewise a video the server cannot probe.
@@ -132,13 +130,6 @@ export function Inspector({ window: activeWindow, isAdmin }: { window: FileWindo
             )}
             {pathShares.length > 0 ? <Button className="mt-2 w-full" onClick={() => store().openApp("shares")}>{t("Manage all shares")}</Button> : null}
           </DetailSection>
-
-          {isAdmin ? (
-            <DetailSection title={t("Permission rules")}>
-              {permissions.data?.length ? <RuleList rules={permissions.data} /> : <span className="text-faint">{t("No rules apply to this path")}</span>}
-              <Button className="mt-2 w-full" onClick={() => store().openApp("settings", "permissions")}>{t("Manage permissions")}</Button>
-            </DetailSection>
-          ) : null}
         </div>
       )}
     </aside>

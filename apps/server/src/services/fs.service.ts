@@ -134,11 +134,8 @@ export class FsService {
 
   async list(actor: Actor, rootSlug: string, logicalPath: string) {
     const safe = await this.paths.resolveExisting(rootSlug, logicalPath);
-    const canListCurrent = this.permissions.can(actor, "view", safe.root, safe.logicalPath).allowed;
-    if (!canListCurrent && !this.permissions.canReachDescendant(actor, safe.root, safe.logicalPath)) {
-      this.permissions.require(actor, "view", safe.root, safe.logicalPath);
-    }
-    if (this.storage.isRemote(safe)) return this.listRemote(actor, safe);
+    this.permissions.require(actor, "view", safe.root, safe.logicalPath);
+    if (this.storage.isRemote(safe)) return this.listRemote(safe);
     const stat = await fsp.stat(safe.absolutePath);
     if (!stat.isDirectory()) throw new AppError(400, "Path is not a folder", "NOT_FOLDER");
 
@@ -152,12 +149,6 @@ export class FsService {
           const itemStat = await fsp.lstat(itemPath);
           if (itemStat.isSymbolicLink()) return null;
           const itemLogicalPath = path.posix.join(safe.logicalPath, entry.name);
-          if (
-            !this.permissions.can(actor, "view", safe.root, itemLogicalPath).allowed &&
-            !this.permissions.canReachDescendant(actor, safe.root, itemLogicalPath)
-          ) {
-            return null;
-          }
           return {
             // `path` keeps the on-disk spelling and stays the item's identity; `name` is only for display.
             name: nfc(entry.name),
@@ -176,7 +167,7 @@ export class FsService {
     return { rootSlug: safe.root.slug, path: safe.logicalPath, readonly: Boolean(safe.root.readonly), items };
   }
 
-  private async listRemote(actor: Actor, safe: SafePath) {
+  private async listRemote(safe: SafePath) {
     if (!(await this.storage.stat(safe)).isDirectory()) throw new AppError(400, "Path is not a folder", "NOT_FOLDER");
     // Where the folders listed are a server's shares, nothing can be added beside them or done to them.
     const readonly = Boolean(safe.root.readonly) || this.storage.remote.isFixed(safe.root, path.posix.join(safe.logicalPath, "child"));
@@ -184,7 +175,6 @@ export class FsService {
       .filter((entry) => !entry.name.includes("\0") && !isSystemFile(entry.name))
       .map((entry) => {
         const itemLogicalPath = path.posix.join(safe.logicalPath, entry.name);
-        if (!this.permissions.can(actor, "view", safe.root, itemLogicalPath).allowed && !this.permissions.canReachDescendant(actor, safe.root, itemLogicalPath)) return null;
         return {
           name: nfc(entry.name),
           path: itemLogicalPath,
@@ -293,31 +283,21 @@ export class FsService {
       result: "success"
     });
 
-    const permissions = this.permissions;
     const storage = this.storage;
     async function* walkRemote(safe: SafePath, name: string): AsyncGenerator<ZipEntry> {
       const stat = await storage.stat(safe);
-      const allowed = (logicalPath: string) => permissions.can(actor, "view", safe.root, logicalPath).allowed;
-      if (!allowed(safe.logicalPath)) return;
       const open = (logicalPath: string) => () => storage.remote.open(safe.root, logicalPath);
       yield { name, open: open(safe.logicalPath), directory: stat.isDirectory(), size: stat.size, mtime: stat.mtime };
       if (!stat.isDirectory()) return;
-      // What sits under a folder the actor may not download is left out along with it.
-      const denied: string[] = [];
       for (const entry of await storage.remote.walk(safe.root, safe.logicalPath)) {
         const logicalPath = path.posix.join(safe.logicalPath, entry.path);
-        if (entry.path.includes("\0") || denied.some((prefix) => logicalPath.startsWith(prefix))) continue;
-        if (!allowed(logicalPath)) {
-          denied.push(`${logicalPath}/`);
-          continue;
-        }
+        if (entry.path.includes("\0")) continue;
         yield { name: `${name}/${nfc(entry.path)}`, open: open(logicalPath), directory: entry.directory, size: entry.size, mtime: new Date(entry.mtimeMs) };
       }
     }
     async function* walk(absolutePath: string, logicalPath: string, name: string): AsyncGenerator<ZipEntry> {
       const stat = await fsp.lstat(absolutePath);
       if (stat.isSymbolicLink() || (!stat.isFile() && !stat.isDirectory())) return;
-      if (!permissions.can(actor, "view", sources[0]!.root, logicalPath).allowed) return;
       yield { name, open: () => fs.createReadStream(absolutePath), directory: stat.isDirectory(), size: stat.size, mtime: stat.mtime };
       if (!stat.isDirectory()) return;
       for (const child of (await fsp.readdir(absolutePath)).sort()) {
@@ -395,10 +375,10 @@ export class FsService {
     return sqliteRows(file.localPath, file.stat.size, input.table, input.offset, input.limit);
   }
 
-  /** The subtitle files lying next to a video that are named after it and that the actor may read. */
+  /** The subtitle files lying next to a video that are named after it. */
   async subtitles(actor: Actor, rootSlug: string, logicalPath: string) {
     const video = await this.preview(actor, rootSlug, logicalPath);
-    if (this.storage.isRemote(video.safe)) return this.remoteSubtitles(actor, video.safe);
+    if (this.storage.isRemote(video.safe)) return this.remoteSubtitles(video.safe);
     const folder = path.dirname(video.safe.absolutePath);
     const videoName = path.basename(video.safe.absolutePath);
     const names = await fsp.readdir(folder);
@@ -407,7 +387,6 @@ export class FsService {
         const parsed = parseSubtitleName(videoName, name);
         if (!parsed) return null;
         const itemLogicalPath = path.posix.join(path.posix.dirname(video.safe.logicalPath), name);
-        if (!this.permissions.can(actor, "view", video.safe.root, itemLogicalPath).allowed) return null;
         const stat = await fsp.lstat(path.join(folder, name));
         if (!stat.isFile()) return null;
         const picture = isPictureFormat(parsed.format);
@@ -416,7 +395,7 @@ export class FsService {
         if (parsed.format === "vobsub") {
           // The index is only a table of contents: the pictures are in the `.sub` of the same name, which is read with it.
           const data = `${name.slice(0, -3)}sub`;
-          if (!names.includes(data) || !this.permissions.can(actor, "view", video.safe.root, path.posix.join(path.posix.dirname(video.safe.logicalPath), data)).allowed) return null;
+          if (!names.includes(data)) return null;
         }
         return { path: itemLogicalPath, name: nfc(name), ...parsed, ...(picture ? { absolutePath: path.join(folder, name), stat } : {}) };
       })
@@ -424,7 +403,7 @@ export class FsService {
     return found.filter((item) => item !== null).sort((a, b) => Number(b.default) - Number(a.default) || a.name.localeCompare(b.name));
   }
 
-  private async remoteSubtitles(actor: Actor, video: SafePath) {
+  private async remoteSubtitles(video: SafePath) {
     const folderPath = path.posix.dirname(video.logicalPath);
     const videoName = path.posix.basename(video.logicalPath);
     const found = await Promise.all(
@@ -432,7 +411,6 @@ export class FsService {
         const parsed = parseSubtitleName(videoName, entry.name);
         if (!parsed || entry.directory) return null;
         const itemLogicalPath = path.posix.join(folderPath, entry.name);
-        if (!this.permissions.can(actor, "view", video.root, itemLogicalPath).allowed) return null;
         const picture = isPictureFormat(parsed.format);
         if (!picture && entry.size > MAX_SUBTITLE_BYTES) return null;
         // A DVD index is read together with the file beside it, which a copy fetched on its own does not have.
@@ -472,31 +450,18 @@ export class FsService {
     this.permissions.require(actor, "edit", source.root, source.logicalPath);
     const targetLogical = path.posix.join(path.posix.dirname(source.logicalPath), name);
     const target = await this.paths.resolveForCreate(rootSlug, targetLogical);
-    const rebaseRenameState = () => this.permissions.rebasePathRules(
-      source.root.id,
-      source.logicalPath,
-      target.root.id,
-      target.logicalPath,
-      () => {
-        this.preferences.moved(source.root.id, source.logicalPath, target.root.id, target.logicalPath);
-        this.audit.write({
-          actorType: "user",
-          actorId: actor.id,
-          action: "rename",
-          rootId: source.root.id,
-          path: source.logicalPath,
-          target: { to: target.logicalPath },
-          result: "success"
-        });
-      }
-    );
-    const renameResult = async () => {
-      // A rename grant can be independent from read. Avoid reporting a failure after the rename
-      // has committed just because the moved path remains unreadable under its preserved ACL.
-      if (this.permissions.can(actor, "view", target.root, target.logicalPath).allowed) {
-        return this.meta(actor, rootSlug, target.logicalPath);
-      }
-      return { rootSlug, path: target.logicalPath, name: nfc(path.posix.basename(target.logicalPath)) };
+    const renamed = () => {
+      this.preferences.moved(source.root.id, source.logicalPath, target.root.id, target.logicalPath);
+      this.audit.write({
+        actorType: "user",
+        actorId: actor.id,
+        action: "rename",
+        rootId: source.root.id,
+        path: source.logicalPath,
+        target: { to: target.logicalPath },
+        result: "success"
+      });
+      return this.meta(actor, rootSlug, target.logicalPath);
     };
     if (this.storage.isRemote(source)) {
       if (source.logicalPath === "/") throw new AppError(400, "Invalid path", "INVALID_PATH");
@@ -506,24 +471,8 @@ export class FsService {
       await this.storage.assertNameAvailable(parent, this.storage.name(target), target.logicalPath === source.logicalPath ? undefined : this.storage.name(source));
       if (target.logicalPath !== source.logicalPath && (await this.storage.remote.stat(target.root, target.logicalPath))) throw new AppError(409, "Target already exists", "TARGET_EXISTS");
       const directory = (await this.storage.stat(source)).isDirectory();
-      const moved = target.logicalPath !== source.logicalPath;
-      if (moved) await this.storage.remote.move(source.root, source.logicalPath, target.logicalPath, directory);
-      try {
-        rebaseRenameState();
-      } catch (error) {
-        if (moved) {
-          try {
-            if (await this.storage.remote.stat(source.root, source.logicalPath)) {
-              throw new Error("The original remote path is occupied");
-            }
-            await this.storage.remote.move(source.root, target.logicalPath, source.logicalPath, directory);
-          } catch {
-            throw new AppError(500, "Permission update failed and the remote rename could not be rolled back", "RENAME_ROLLBACK_FAILED");
-          }
-        }
-        throw error;
-      }
-      return renameResult();
+      if (target.logicalPath !== source.logicalPath) await this.storage.remote.move(source.root, source.logicalPath, target.logicalPath, directory);
+      return renamed();
     }
     const sourceStat = await fsp.lstat(source.absolutePath);
     await assertNameAvailable(path.dirname(target.absolutePath), path.basename(target.absolutePath), path.basename(source.absolutePath));
@@ -533,28 +482,7 @@ export class FsService {
       throw new AppError(409, "Target already exists", "TARGET_EXISTS");
     }
     await fsp.rename(source.absolutePath, target.absolutePath);
-    try {
-      rebaseRenameState();
-    } catch (error) {
-      try {
-        const movedEntry = await fsp.lstat(target.absolutePath);
-        if (movedEntry.dev !== sourceStat.dev || movedEntry.ino !== sourceStat.ino) {
-          throw new Error("The renamed path no longer refers to the source entry");
-        }
-        const sourceOccupant = await fsp.lstat(source.absolutePath).catch((sourceError: unknown) => {
-          if (isMissingFsEntry(sourceError)) return null;
-          throw sourceError;
-        });
-        if (sourceOccupant && (sourceOccupant.dev !== sourceStat.dev || sourceOccupant.ino !== sourceStat.ino)) {
-          throw new Error("The original path is occupied");
-        }
-        await fsp.rename(target.absolutePath, source.absolutePath);
-      } catch {
-        throw new AppError(500, "Permission update failed and the filesystem rename could not be rolled back", "RENAME_ROLLBACK_FAILED");
-      }
-      throw error;
-    }
-    return renameResult();
+    return renamed();
   }
 
   async upload(actor: Actor, rootSlug: string, parentPath: string, fileName: string, stream: NodeJS.ReadableStream) {
@@ -774,10 +702,6 @@ const folderIdentity = (dir: string) =>
     (stat) => `${stat.dev}:${stat.ino}`,
     () => null
   );
-
-function isMissingFsEntry(error: unknown): boolean {
-  return Boolean(error && typeof error === "object" && "code" in error && error.code === "ENOENT");
-}
 
 async function readTextExcerptFrom(stream: Readable): Promise<string | null> {
   const chunks: Buffer[] = [];

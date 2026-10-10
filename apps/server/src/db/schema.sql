@@ -86,16 +86,12 @@ CREATE TABLE IF NOT EXISTS permission_rules (
   principal_type TEXT NOT NULL,
   principal_id TEXT NOT NULL,
   root_id TEXT NOT NULL,
-  path_prefix TEXT NOT NULL,
   level TEXT NOT NULL,
-  recursive INTEGER NOT NULL DEFAULT 1,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
+  UNIQUE (principal_type, principal_id, root_id),
   FOREIGN KEY (root_id) REFERENCES roots(id) ON DELETE CASCADE
 );
-
-CREATE INDEX IF NOT EXISTS idx_permission_rules_lookup
-ON permission_rules(principal_type, principal_id, root_id, path_prefix);
 
 CREATE TABLE IF NOT EXISTS user_workspaces (
   user_id TEXT PRIMARY KEY,

@@ -54,7 +54,7 @@ export class ShelfService {
       for (const item of rawItems) {
         const safe = await this.resolveShelfItem(item.root_slug, item.path);
         if (!safe) continue;
-        if (!this.permissions.can(actor, "view", safe.root, safe.logicalPath).allowed) continue;
+        if (!this.permissions.can(actor, "view", safe.root).allowed) continue;
         items.push(item);
       }
       shelves.push({ ...shelf, items });

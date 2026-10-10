@@ -107,7 +107,7 @@ function Canvas({ roots, user }: { roots: Root[]; user: Actor }) {
       {wallpaper ? <img key={wallpaper} alt="" aria-hidden draggable={false} src={wallpaperUrl(wallpaper)} className="pointer-events-none absolute inset-0 size-full object-cover select-none" /> : null}
       <DesktopIcons roots={roots} isAdmin={user.role === "ADMIN"} />
       {windows.map((window) => (
-        <FileWindowView key={window.id} window={window} isAdmin={user.role === "ADMIN"} roots={roots} />
+        <FileWindowView key={window.id} window={window} roots={roots} />
       ))}
       {appWindows.map((window) => (window.app === "external" ? <ExternalAppWindow key={window.id} window={window} /> : <AppWindowView key={window.id} window={window} roots={roots} user={user} />))}
       {previewWindows.map((window) => (

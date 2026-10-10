@@ -33,12 +33,12 @@ test("extract rejects a small stored archive with a forged huge size without wri
   }
 });
 
-test("background ZIPs omit descendants no rule grants and stop serving an artifact after a child permission is revoked", async () => {
+test("background ZIPs leave symlinks out and stop serving an artifact once its location is taken away", async () => {
   const fixture = await createFixture("kago-zip-acl.");
   const publicDir = path.join(fixture.dataDir, "photos", "public");
-  await mkdir(path.join(publicDir, "private"), { recursive: true });
+  await mkdir(path.join(publicDir, "inner"), { recursive: true });
   await writeFile(path.join(publicDir, "visible.txt"), "visible canary");
-  await writeFile(path.join(publicDir, "private", "hidden.txt"), "hidden canary");
+  await writeFile(path.join(publicDir, "inner", "deep.txt"), "deep canary");
   await symlink(path.join(publicDir, "visible.txt"), path.join(publicDir, "visible-link.txt"));
   const app = await buildApp(testEnv(fixture));
   const admin = client(app);
@@ -49,25 +49,26 @@ test("background ZIPs omit descendants no rule grants and stop serving an artifa
     const root = (await admin.get("/api/roots")).json.find((item) => item.slug === "photos");
     const user = await admin.post("/api/users", { email: "zip-user@example.test", password: "fake-user-password-123", displayName: "Zip User", role: "USER" });
     assert.equal(user.statusCode, 200);
-    const rule = (pathPrefix, recursive) => admin.post("/api/permissions", { principalType: "user", principalId: user.json.id, rootId: root.id, pathPrefix, level: "view", recursive });
-    assert.equal((await rule("/public", false)).statusCode, 200);
-    const visibleRule = await rule("/public/visible.txt", true);
-    assert.equal(visibleRule.statusCode, 200);
-    assert.equal((await rule("/public/visible-link.txt", true)).statusCode, 200);
+    const grant = (level) => admin.put("/api/permissions", { principalType: "user", principalId: user.json.id, rootId: root.id, level });
 
     const member = client(app);
     assert.equal((await member.post("/api/auth/login", { email: "zip-user@example.test", password: "fake-user-password-123" })).statusCode, 200);
-    const created = await member.post("/api/tasks", { type: "download_zip", sources: [{ rootSlug: "photos", path: "/public" }] });
+    const zip = () => member.post("/api/tasks", { type: "download_zip", sources: [{ rootSlug: "photos", path: "/public" }] });
+    const refused = await zip();
+    assert.ok(refused.statusCode === 403 || (await waitTask(member, refused.json.id)).status === "failed");
+
+    assert.equal((await grant("view")).statusCode, 200);
+    const created = await zip();
     assert.equal(created.statusCode, 200);
     assert.equal((await waitTask(member, created.json.id)).status, "done");
     const archive = await member.get(`/api/tasks/${created.json.id}/download`, { accept: "*/*" });
     assert.equal(archive.statusCode, 200);
     const names = new AdmZip(archive.raw).getEntries().map((entry) => entry.entryName);
     assert.ok(names.includes("public/visible.txt"));
+    assert.ok(names.includes("public/inner/deep.txt"));
     assert.equal(names.includes("public/visible-link.txt"), false);
-    assert.equal(names.some((name) => name.includes("private") || name.includes("hidden.txt")), false);
 
-    assert.equal((await admin.delete(`/api/permissions/${visibleRule.json.id}`)).statusCode, 200);
+    assert.equal((await grant(null)).statusCode, 200);
     assert.equal((await member.get(`/api/tasks/${created.json.id}/download`, { accept: "*/*" })).statusCode, 403);
   } finally {
     await app.close();
@@ -148,7 +149,7 @@ function client(app) {
   return {
     get: (url, options = {}) => request("GET", url, undefined, options.accept),
     post: (url, body) => request("POST", url, body),
-    delete: (url) => request("DELETE", url)
+    put: (url, body) => request("PUT", url, body)
   };
 }
 
