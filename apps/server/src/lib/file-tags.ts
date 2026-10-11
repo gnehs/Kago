@@ -21,6 +21,7 @@ export const fileTagSchema = z.object({
 const ATTRIBUTE = "com.apple.metadata:_kMDItemUserTags";
 const CHUNK_SIZE = 500;
 const TIMEOUT_MS = 10_000;
+const CONCURRENT_READS = 4;
 
 // Node has no xattr API, so the platform's own tool reads them. Set once it turns out to be missing.
 let unavailable = false;
@@ -37,18 +38,23 @@ export async function readFileTags(directory: string, names: string[]): Promise<
 
   const chunks: string[][] = [];
   for (let index = 0; index < readable.length; index += CHUNK_SIZE) chunks.push(readable.slice(index, index + CHUNK_SIZE));
+  // A few at a time: starting a tool holds the server up for a moment, and one for every chunk of a large folder at once holds it for seconds.
+  const next = chunks[Symbol.iterator]();
   await Promise.all(
-    chunks.map(async (chunk) => {
-      try {
-        const values = process.platform === "darwin" ? await readDarwin(directory, chunk) : await readLinux(directory, chunk);
-        for (const [name, value] of values) {
-          const tags = decodeFileTags(value);
-          if (tags.length > 0) result.set(name, tags);
-        }
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-          if (!unavailable) logger.warn("File tags are unavailable: the xattr tool is not installed");
-          unavailable = true;
+    Array.from({ length: CONCURRENT_READS }, async () => {
+      for (const chunk of next) {
+        if (unavailable) return;
+        try {
+          const values = process.platform === "darwin" ? await readDarwin(directory, chunk) : await readLinux(directory, chunk);
+          for (const [name, value] of values) {
+            const tags = decodeFileTags(value);
+            if (tags.length > 0) result.set(name, tags);
+          }
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+            if (!unavailable) logger.warn("File tags are unavailable: the xattr tool is not installed");
+            unavailable = true;
+          }
         }
       }
     })

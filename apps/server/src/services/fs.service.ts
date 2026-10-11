@@ -1,4 +1,4 @@
-import fs from "node:fs";
+import fs, { type Stats } from "node:fs";
 import fsp from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
@@ -115,10 +115,13 @@ export const maxUploadFiles = 20;
 
 /** How many files of a folder being measured are asked about at once. */
 const SIZE_STAT_BATCH = 64;
+/** How many entries of a folder being listed are asked about at once. */
+const LIST_STAT_BATCH = 16;
 
 export class FsService {
   private readonly thumbnailer: Thumbnailer;
   private keptPictureDirs?: Promise<Set<string>>;
+  private readonly listings = new Map<string, Promise<Awaited<ReturnType<FsService["listLocal"]>>>>();
 
   constructor(
     private readonly paths: PathService,
@@ -137,33 +140,45 @@ export class FsService {
     const safe = await this.paths.resolveExisting(rootSlug, logicalPath);
     this.permissions.require(actor, "view", safe.root, safe.logicalPath);
     if (this.storage.isRemote(safe)) return this.listRemote(safe);
+    // A folder of very many files takes long to read: whoever asks meanwhile waits for the one reading, and starts no other.
+    const key = `${safe.root.id}:${safe.logicalPath}`;
+    let listing = this.listings.get(key);
+    if (!listing) {
+      listing = this.listLocal(safe).finally(() => this.listings.delete(key));
+      this.listings.set(key, listing);
+    }
+    return listing;
+  }
+
+  private async listLocal(safe: SafePath) {
     const stat = await fsp.stat(safe.absolutePath);
     if (!stat.isDirectory()) throw new AppError(400, "Path is not a folder", "NOT_FOLDER");
 
-    const entries = await fsp.readdir(safe.absolutePath, { withFileTypes: true });
-    const tags = await readFileTags(safe.absolutePath, entries.map((entry) => entry.name));
-    const listedItems = await Promise.all(
-      entries
-        .filter((entry) => !entry.name.includes("\0") && !isSystemFile(entry.name))
-        .map(async (entry) => {
-          const itemPath = path.join(safe.absolutePath, entry.name);
-          const itemStat = await fsp.lstat(itemPath);
-          if (itemStat.isSymbolicLink()) return null;
-          const itemLogicalPath = path.posix.join(safe.logicalPath, entry.name);
-          return {
-            // `path` keeps the on-disk spelling and stays the item's identity; `name` is only for display.
-            name: nfc(entry.name),
-            path: itemLogicalPath,
-            kind: entry.isDirectory() ? "folder" : "file",
-            size: itemStat.size,
-            mtime: itemStat.mtimeMs,
-            type: entry.isDirectory() ? "folder" : lookup(entry.name) || "application/octet-stream",
-            readonly: Boolean(safe.root.readonly),
-            tags: tags.get(entry.name) ?? []
-          };
-        })
-    );
-    const items = listedItems.filter((item) => item !== null);
+    const entries = (await fsp.readdir(safe.absolutePath, { withFileTypes: true })).filter((entry) => !entry.name.includes("\0") && !isSystemFile(entry.name));
+    const reading = readFileTags(safe.absolutePath, entries.map((entry) => entry.name));
+    // Asked about a few at a time: every file operation of the server shares a handful of threads, and
+    // a folder's worth of questions put to them at once keeps everything else waiting until the last is answered.
+    const stats: Array<Stats | null> = [];
+    for (let start = 0; start < entries.length; start += LIST_STAT_BATCH) {
+      stats.push(...(await Promise.all(entries.slice(start, start + LIST_STAT_BATCH).map((entry) => fsp.lstat(path.join(safe.absolutePath, entry.name)).catch(() => null)))));
+    }
+    const tags = await reading;
+    const items = entries.flatMap((entry, index) => {
+      const itemStat = stats[index];
+      // What went away while the folder was being read is not in it; a symlink is never shown.
+      if (!itemStat || itemStat.isSymbolicLink()) return [];
+      return {
+        // `path` keeps the on-disk spelling and stays the item's identity; `name` is only for display.
+        name: nfc(entry.name),
+        path: path.posix.join(safe.logicalPath, entry.name),
+        kind: entry.isDirectory() ? "folder" : "file",
+        size: itemStat.size,
+        mtime: itemStat.mtimeMs,
+        type: entry.isDirectory() ? "folder" : lookup(entry.name) || "application/octet-stream",
+        readonly: Boolean(safe.root.readonly),
+        tags: tags.get(entry.name) ?? []
+      };
+    });
 
     return { rootSlug: safe.root.slug, path: safe.logicalPath, readonly: Boolean(safe.root.readonly), items };
   }
