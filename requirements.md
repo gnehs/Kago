@@ -2427,6 +2427,7 @@ PUT    /api/fs/finder-tags
 POST   /api/fs/upload
 POST   /api/fs/mkdir
 POST   /api/fs/rename
+POST   /api/fs/rename-many         批次重新命名：一次最多 1000 個，名稱可互換，全部成功或全部不動
 ```
 
 ### Media

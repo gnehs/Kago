@@ -11,6 +11,7 @@ import { followTask } from "@/features/tasks/taskToast";
 import { isUploadCancelled, uploadForm, uploadLabel } from "@/stores/uploads";
 import { folderTitle, useWorkspaceStore } from "@/stores/workspace";
 import { startExtract } from "./ArchivePassword";
+import { MAX_BATCH_RENAME, promptBatchRename } from "./BatchRenameDialog";
 import { promptCompress } from "./CompressDialog";
 import type { FileItem, FileTask, FileWindow } from "@/types/kago";
 import { t } from "@/lib/i18n";
@@ -188,6 +189,19 @@ export function useFileActions(window: FileWindow) {
         else toast(folder ? t("Created {count} folder in “{folder}” | Created {count} folders in “{folder}”", { count: tree.dirs.length, folder }) : t("Created {count} folder | Created {count} folders", { count: tree.dirs.length }));
       }, t("Upload failed")),
     rename: (item: FileItem) => renameFile(queryClient, { rootSlug: window.rootSlug, path: item.path, name: item.name }, clearSelection),
+    /** Asks for a pattern and names the items by it. `listed` is what is shown beside them, whose names are taken. */
+    renameMany: (items: FileItem[], listed: FileItem[]) =>
+      run(async () => {
+        if (items.length > MAX_BATCH_RENAME) throw new Error(t("At most {max} items can be renamed at once", { max: MAX_BATCH_RENAME }));
+        const names = await promptBatchRename({ rootSlug: window.rootSlug, items, existing: listed.map((item) => item.path) });
+        if (!names) return;
+        const renamed = await api<{ items: Array<{ from: string; path: string }> }>("/api/fs/rename-many", { method: "POST", body: JSON.stringify({ rootSlug: window.rootSlug, items: names }) });
+        // They stay selected under their new names; the rest of the selection is where it was.
+        const moved = new Map(renamed.items.map((item) => [item.from, item.path]));
+        useWorkspaceStore.getState().selectItems(window.id, items.map((item) => moved.get(item.path) ?? item.path));
+        await refreshRoot();
+        toast(t("Renamed {count} item | Renamed {count} items", { count: names.length }));
+      }, t("Couldn’t rename")),
     trash: async (paths: string[]) => {
       if (await trashFiles(queryClient, refs(paths))) clearSelection();
     },

@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import fsp from "node:fs/promises";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -62,6 +62,12 @@ export const renameSchema = z.object({
   rootSlug: z.string().min(1),
   path: z.string().min(1),
   name: z.string().min(1).max(255).refine((value) => !value.includes("/") && value !== ".." && !value.includes("\0"))
+});
+
+/** Several entries of one location and the name each is to have. */
+export const renameManySchema = z.object({
+  rootSlug: z.string().min(1),
+  items: z.array(renameSchema.omit({ rootSlug: true })).min(1).max(1000)
 });
 
 // Object references in the stored list are one byte, and the path limit of a name is plenty for a tag.
@@ -525,6 +531,116 @@ export class FsService {
     }
     await fsp.rename(source.absolutePath, target.absolutePath);
     return renamed();
+  }
+
+  /**
+   * Renames several entries of a location at once, each inside the folder it is in. Names may be handed around
+   * (one takes the name another is giving up), so only what stays where it is can be in the way.
+   * Either all of them are renamed or none is.
+   */
+  async renameMany(actor: Actor, rootSlug: string, items: Array<{ path: string; name: string }>) {
+    // `id` tells an entry from the others, and `at` is where it is for now.
+    type Move = { source: SafePath; target: SafePath; id: string; at: string; directory: boolean };
+    const moves: Move[] = [];
+    for (const item of items) {
+      const source = await this.paths.resolveExisting(rootSlug, item.path);
+      this.permissions.require(actor, "edit", source.root, source.logicalPath);
+      if (source.logicalPath === "/") throw new AppError(400, "Invalid path", "INVALID_PATH");
+      const target = await this.paths.resolveForCreate(rootSlug, path.posix.join(path.posix.dirname(source.logicalPath), item.name));
+      moves.push({ source, target, id: source.logicalPath, at: source.logicalPath, directory: false });
+    }
+    const remote = this.storage.isRemote(moves[0]!.source);
+    // On disk an entry is known by what it is rather than by its spelling, which a volume may take more than one of.
+    const identity = async (absolutePath: string) => {
+      const stat = await fsp.lstat(absolutePath).catch(() => null);
+      return stat && `${stat.dev}:${stat.ino}`;
+    };
+    /** What is at a move's target now, as the `id` it would have as a source; null when the name is free. */
+    const occupant = async (target: SafePath) => (remote ? ((await this.storage.remote.stat(target.root, target.logicalPath)) ? target.logicalPath : null) : identity(target.absolutePath));
+    for (const move of moves) {
+      if (remote) {
+        if (this.storage.remote.isFixed(move.source.root, move.source.logicalPath)) throw sharesAreFixed();
+        move.directory = (await this.storage.stat(move.source)).isDirectory();
+      } else {
+        move.id = (await identity(move.source.absolutePath)) ?? move.id;
+        move.at = move.source.absolutePath;
+      }
+    }
+    const ids = new Set(moves.map((move) => move.id));
+    if (ids.size < moves.length) throw new AppError(400, "Invalid path", "INVALID_PATH");
+
+    // Folder by folder: no two may end up with one name, and none with the name of an entry that is staying.
+    const folders = new Map<string, Move[]>();
+    for (const move of moves) {
+      const folder = path.posix.dirname(move.source.logicalPath);
+      folders.set(folder, [...(folders.get(folder) ?? []), move]);
+    }
+    for (const [folder, inFolder] of folders) {
+      const leaving = new Set(inFolder.map((move) => this.storage.name(move.source)));
+      const staying = (await this.storage.names(await this.paths.resolveExisting(rootSlug, folder))).filter((name) => !leaving.has(name));
+      const taken = new Set<string>();
+      for (const move of inFolder) {
+        const name = nfc(this.storage.name(move.target));
+        if (taken.has(name)) throw new AppError(409, "Multiple sources resolve to the same target", "TARGET_COLLISION");
+        taken.add(name);
+        if (staying.some((entry) => nfc(entry) === name)) throw new AppError(409, "Target already exists", "TARGET_EXISTS");
+        if (!remote) {
+          const there = await occupant(move.target);
+          if (there !== null && !ids.has(there)) throw new AppError(409, "Target already exists", "TARGET_EXISTS");
+        }
+      }
+    }
+
+    const relocate = (move: Move, from: string, to: string) => (remote ? this.storage.remote.move(move.source.root, from, to, move.directory) : fsp.rename(from, to));
+    const destination = (move: Move) => (remote ? move.target.logicalPath : move.target.absolutePath);
+    const changed = moves.filter((move) => move.target.logicalPath !== move.source.logicalPath);
+    const pending = new Map(changed.map((move) => [move.id, move]));
+    const done: Array<{ move: Move; from: string; to: string }> = [];
+    const aside = new Set<Move>();
+    const step = async (move: Move, to: string) => {
+      const from = move.at;
+      await relocate(move, from, to);
+      done.push({ move, from, to });
+      move.at = to;
+    };
+    try {
+      while (pending.size > 0) {
+        let progressed = false;
+        for (const move of [...pending.values()]) {
+          const there = await occupant(move.target);
+          if (there !== null && there !== move.id) {
+            // Whoever has the name is about to give it up.
+            if (pending.has(there)) continue;
+            throw new AppError(409, "Target already exists", "TARGET_EXISTS");
+          }
+          await step(move, destination(move));
+          pending.delete(move.id);
+          progressed = true;
+        }
+        if (progressed) continue;
+        // The names left go round in a ring: one entry steps aside under a name of its own, which frees the next.
+        const move = [...pending.values()].find((candidate) => !aside.has(candidate))!;
+        aside.add(move);
+        await step(move, path.join(path.dirname(destination(move)), `.kago-rename-${randomUUID()}`));
+      }
+    } catch (error) {
+      for (const { move, from, to } of done.reverse()) await relocate(move, to, from).catch(() => undefined);
+      throw error;
+    }
+
+    for (const move of changed) {
+      this.preferences.moved(move.source.root.id, move.source.logicalPath, move.target.root.id, move.target.logicalPath);
+      this.audit.write({
+        actorType: "user",
+        actorId: actor.id,
+        action: "rename",
+        rootId: move.source.root.id,
+        path: move.source.logicalPath,
+        target: { to: move.target.logicalPath },
+        result: "success"
+      });
+    }
+    return { items: moves.map((move) => ({ from: move.source.logicalPath, path: move.target.logicalPath })) };
   }
 
   async upload(actor: Actor, rootSlug: string, parentPath: string, fileName: string, stream: NodeJS.ReadableStream) {

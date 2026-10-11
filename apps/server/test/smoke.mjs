@@ -901,6 +901,22 @@ test("filenames are written in NFC while existing names keep their on-disk form"
 
     // Renaming onto another entry is still refused.
     assert.equal((await admin.post("/api/fs/rename", { rootSlug: "photos", path: "/public/が.txt", name: nfd("café.txt") })).statusCode, 409);
+
+    // Several are renamed in one go, and may hand their names around: a and b swap while c takes a new one.
+    const batchDir = path.join(fixture.dataDir, "photos", "batch");
+    await mkdir(batchDir);
+    for (const name of ["a.txt", "b.txt", "c.txt", "kept.txt"]) await writeFile(path.join(batchDir, name), name);
+    const renameMany = (items) => admin.post("/api/fs/rename-many", { rootSlug: "photos", items });
+    const batchContents = async () => Object.fromEntries(await Promise.all((await readdir(batchDir)).sort().map(async (name) => [name, await readFile(path.join(batchDir, name), "utf8")])));
+    const swapped = await renameMany([{ path: "/batch/a.txt", name: "b.txt" }, { path: "/batch/b.txt", name: "a.txt" }, { path: "/batch/c.txt", name: "001.txt" }]);
+    assert.equal(swapped.statusCode, 200);
+    assert.deepEqual(swapped.json.items, [{ from: "/batch/a.txt", path: "/batch/b.txt" }, { from: "/batch/b.txt", path: "/batch/a.txt" }, { from: "/batch/c.txt", path: "/batch/001.txt" }]);
+    assert.deepEqual(await batchContents(), { "001.txt": "c.txt", "a.txt": "b.txt", "b.txt": "a.txt", "kept.txt": "kept.txt" });
+    // A name that an entry outside the batch keeps, or that two of the batch would share, stops all of it.
+    assert.equal((await renameMany([{ path: "/batch/001.txt", name: "002.txt" }, { path: "/batch/a.txt", name: "kept.txt" }])).statusCode, 409);
+    assert.equal((await renameMany([{ path: "/batch/a.txt", name: "same.txt" }, { path: "/batch/b.txt", name: "same.txt" }])).statusCode, 409);
+    assert.equal((await renameMany([{ path: "/batch/a.txt", name: "x/y.txt" }])).statusCode, 400);
+    assert.deepEqual(Object.keys(await batchContents()), ["001.txt", "a.txt", "b.txt", "kept.txt"]);
   } finally {
     await app.close();
     await rm(fixture.baseDir, { recursive: true, force: true });

@@ -9,6 +9,7 @@ import { Login } from "./features/auth/Login";
 import { SetupAdmin } from "./features/auth/SetupAdmin";
 import { useSsoNotice } from "./features/auth/sso";
 import { ArchivePasswordDialogHost } from "./features/files/ArchivePassword";
+import { BatchRenameDialogHost } from "./features/files/BatchRenameDialog";
 import { CompressDialogHost } from "./features/files/CompressDialog";
 import { VideoPage } from "./features/files/VideoPage";
 import { PublicSharePage } from "./features/shares/PublicSharePage";
@@ -27,6 +28,7 @@ export function App() {
       </Routes>
       <KagoDialogHost />
       <CompressDialogHost />
+      <BatchRenameDialogHost />
       <ArchivePasswordDialogHost />
       <AvatarDialogHost />
       <KagoToaster />
