@@ -8,7 +8,7 @@ import { lookup } from "mime-types";
 import { z } from "zod";
 import { AppError } from "../lib/errors.js";
 import { assertNameAvailable, nfc } from "../lib/filename.js";
-import { fileTagSchema, readFileTags, writeFileTags } from "../lib/file-tags.js";
+import { fileTagSchema, readFileTags, writeFileTags, type FileTag } from "../lib/file-tags.js";
 import { MAX_SQLITE_PAGE, sqliteOverview, sqliteRows } from "../lib/sqlite-preview.js";
 import { isPictureFormat, parseSubtitleName } from "../lib/subtitles.js";
 import { isSystemFile } from "../lib/system-files.js";
@@ -116,12 +116,20 @@ export const maxUploadFiles = 20;
 /** How many files of a folder being measured are asked about at once. */
 const SIZE_STAT_BATCH = 64;
 /** How many entries of a folder being listed are asked about at once. */
-const LIST_STAT_BATCH = 16;
+const LIST_STAT_BATCH = 8;
+/** How many entries of a folder are handed over together, and how long the first of them waits for the rest. */
+const LIST_BATCH = 500;
+const LIST_BATCH_MS = 200;
+/** How many batches may be waiting on what was asked about their entries while the folder is read further. */
+const LIST_BATCHES_AHEAD = 3;
+
+export type ListedItem = { name: string; path: string; kind: "folder" | "file"; size: number; mtime: number; type: string; readonly: boolean; tags: FileTag[] };
+type Listing = { rootSlug: string; path: string; readonly: boolean; items: ListedItem[] };
 
 export class FsService {
   private readonly thumbnailer: Thumbnailer;
   private keptPictureDirs?: Promise<Set<string>>;
-  private readonly listings = new Map<string, Promise<Awaited<ReturnType<FsService["listLocal"]>>>>();
+  private readonly listings = new Map<string, Promise<Listing>>();
 
   constructor(
     private readonly paths: PathService,
@@ -137,74 +145,113 @@ export class FsService {
   }
 
   async list(actor: Actor, rootSlug: string, logicalPath: string) {
-    const safe = await this.paths.resolveExisting(rootSlug, logicalPath);
-    this.permissions.require(actor, "view", safe.root, safe.logicalPath);
-    if (this.storage.isRemote(safe)) return this.listRemote(safe);
+    const { safe, readonly } = await this.listable(actor, rootSlug, logicalPath);
     // A folder of very many files takes long to read: whoever asks meanwhile waits for the one reading, and starts no other.
     const key = `${safe.root.id}:${safe.logicalPath}`;
     let listing = this.listings.get(key);
     if (!listing) {
-      listing = this.listLocal(safe).finally(() => this.listings.delete(key));
+      listing = (async () => {
+        const items: ListedItem[] = [];
+        for await (const batch of this.batches(safe, readonly)) items.push(...batch);
+        return { rootSlug: safe.root.slug, path: safe.logicalPath, readonly, items };
+      })().finally(() => this.listings.delete(key));
       this.listings.set(key, listing);
     }
     return listing;
   }
 
-  private async listLocal(safe: SafePath) {
-    const stat = await fsp.stat(safe.absolutePath);
-    if (!stat.isDirectory()) throw new AppError(400, "Path is not a folder", "NOT_FOLDER");
+  /**
+   * A folder's listing handed over as it is read, a few entries at a time: the first of a very large folder
+   * are there long before the last. `signal` is for whoever stopped waiting, and the reading stops with them.
+   */
+  async listStream(actor: Actor, rootSlug: string, logicalPath: string, signal?: AbortSignal) {
+    const { safe, readonly } = await this.listable(actor, rootSlug, logicalPath);
+    return { rootSlug: safe.root.slug, path: safe.logicalPath, readonly, batches: this.batches(safe, readonly, signal) };
+  }
 
-    const entries = (await fsp.readdir(safe.absolutePath, { withFileTypes: true })).filter((entry) => !entry.name.includes("\0") && !isSystemFile(entry.name));
-    const reading = readFileTags(safe.absolutePath, entries.map((entry) => entry.name));
+  private async listable(actor: Actor, rootSlug: string, logicalPath: string): Promise<{ safe: SafePath; readonly: boolean }> {
+    const safe = await this.paths.resolveExisting(rootSlug, logicalPath);
+    this.permissions.require(actor, "view", safe.root, safe.logicalPath);
+    if (!(await this.storage.stat(safe)).isDirectory()) throw new AppError(400, "Path is not a folder", "NOT_FOLDER");
+    // Where the folders listed are a server's shares, nothing can be added beside them or done to them.
+    const fixed = this.storage.isRemote(safe) && this.storage.remote.isFixed(safe.root, path.posix.join(safe.logicalPath, "child"));
+    return { safe, readonly: Boolean(safe.root.readonly) || fixed };
+  }
+
+  private batches(safe: SafePath, readonly: boolean, signal?: AbortSignal): AsyncGenerator<ListedItem[]> {
+    return this.storage.isRemote(safe) ? this.remoteBatches(safe, readonly) : this.localBatches(safe, readonly, signal);
+  }
+
+  private async *localBatches(safe: SafePath, readonly: boolean, signal?: AbortSignal): AsyncGenerator<ListedItem[]> {
+    const dir = await fsp.opendir(safe.absolutePath, { bufferSize: 256 });
+    try {
+      // Reading goes on while the last few batches are still being asked about, and they are handed over in the order read.
+      const described: Array<Promise<ListedItem[]>> = [];
+      let batch: string[] = [];
+      let started = 0;
+      for (;;) {
+        signal?.throwIfAborted();
+        const entry = await dir.read();
+        if (entry && !entry.name.includes("\0") && !isSystemFile(entry.name)) {
+          if (batch.length === 0) started = Date.now();
+          batch.push(entry.name);
+        }
+        const full = batch.length >= LIST_BATCH;
+        // A folder slow to give up its names still shows what it has given so far.
+        if (batch.length > 0 && (!entry || full || Date.now() - started >= LIST_BATCH_MS)) {
+          described.push(this.describe(safe, readonly, batch));
+          batch = [];
+          while (described.length > (full ? LIST_BATCHES_AHEAD : 0)) yield await described.shift()!;
+        }
+        if (!entry) break;
+      }
+      while (described.length > 0) yield await described.shift()!;
+    } finally {
+      await dir.close().catch(() => undefined);
+    }
+  }
+
+  private async describe(safe: SafePath, readonly: boolean, names: string[]): Promise<ListedItem[]> {
+    const reading = readFileTags(safe.absolutePath, names);
     // Asked about a few at a time: every file operation of the server shares a handful of threads, and
     // a folder's worth of questions put to them at once keeps everything else waiting until the last is answered.
     const stats: Array<Stats | null> = [];
-    for (let start = 0; start < entries.length; start += LIST_STAT_BATCH) {
-      stats.push(...(await Promise.all(entries.slice(start, start + LIST_STAT_BATCH).map((entry) => fsp.lstat(path.join(safe.absolutePath, entry.name)).catch(() => null)))));
+    for (let start = 0; start < names.length; start += LIST_STAT_BATCH) {
+      stats.push(...(await Promise.all(names.slice(start, start + LIST_STAT_BATCH).map((name) => fsp.lstat(path.join(safe.absolutePath, name)).catch(() => null)))));
     }
     const tags = await reading;
-    const items = entries.flatMap((entry, index) => {
-      const itemStat = stats[index];
+    return names.flatMap((name, index) => {
+      const stat = stats[index];
       // What went away while the folder was being read is not in it; a symlink is never shown.
-      if (!itemStat || itemStat.isSymbolicLink()) return [];
+      if (!stat || stat.isSymbolicLink()) return [];
       return {
         // `path` keeps the on-disk spelling and stays the item's identity; `name` is only for display.
-        name: nfc(entry.name),
-        path: path.posix.join(safe.logicalPath, entry.name),
-        kind: entry.isDirectory() ? "folder" : "file",
-        size: itemStat.size,
-        mtime: itemStat.mtimeMs,
-        type: entry.isDirectory() ? "folder" : lookup(entry.name) || "application/octet-stream",
-        readonly: Boolean(safe.root.readonly),
-        tags: tags.get(entry.name) ?? []
+        name: nfc(name),
+        path: path.posix.join(safe.logicalPath, name),
+        kind: stat.isDirectory() ? "folder" : "file",
+        size: stat.size,
+        mtime: stat.mtimeMs,
+        type: stat.isDirectory() ? "folder" : lookup(name) || "application/octet-stream",
+        readonly,
+        tags: tags.get(name) ?? []
       };
     });
-
-    return { rootSlug: safe.root.slug, path: safe.logicalPath, readonly: Boolean(safe.root.readonly), items };
   }
 
-  private async listRemote(safe: SafePath) {
-    if (!(await this.storage.stat(safe)).isDirectory()) throw new AppError(400, "Path is not a folder", "NOT_FOLDER");
-    // Where the folders listed are a server's shares, nothing can be added beside them or done to them.
-    const readonly = Boolean(safe.root.readonly) || this.storage.remote.isFixed(safe.root, path.posix.join(safe.logicalPath, "child"));
+  // A remote answers with the whole folder at once.
+  private async *remoteBatches(safe: SafePath, readonly: boolean): AsyncGenerator<ListedItem[]> {
     const entries = (await this.storage.remote.list(safe.root, safe.logicalPath)).filter((entry) => !entry.name.includes("\0") && !isSystemFile(entry.name));
     const tags = await this.storage.remote.fileTags(safe.root, safe.logicalPath, entries.map((entry) => entry.name));
-    const items = entries
-      .map((entry) => {
-        const itemLogicalPath = path.posix.join(safe.logicalPath, entry.name);
-        return {
-          name: nfc(entry.name),
-          path: itemLogicalPath,
-          kind: entry.directory ? "folder" : "file",
-          size: entry.size,
-          mtime: entry.mtimeMs,
-          type: entry.directory ? "folder" : lookup(entry.name) || "application/octet-stream",
-          readonly,
-          tags: tags.get(entry.name) ?? []
-        };
-      })
-      .filter((item) => item !== null);
-    return { rootSlug: safe.root.slug, path: safe.logicalPath, readonly, items };
+    yield entries.map((entry) => ({
+      name: nfc(entry.name),
+      path: path.posix.join(safe.logicalPath, entry.name),
+      kind: entry.directory ? "folder" : "file",
+      size: entry.size,
+      mtime: entry.mtimeMs,
+      type: entry.directory ? "folder" : lookup(entry.name) || "application/octet-stream",
+      readonly,
+      tags: tags.get(entry.name) ?? []
+    }));
   }
 
   async meta(actor: Actor, rootSlug: string, logicalPath: string) {

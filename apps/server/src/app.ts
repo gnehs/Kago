@@ -729,10 +729,32 @@ function registerApi(app: FastifyInstance, services: Services) {
     return sendFile(request, reply, icon.file, await fs.promises.stat(icon.file), ICON_TYPES[icon.type]);
   });
 
-  app.get("/api/fs/list", async (request) => {
+  app.get("/api/fs/list", async (request, reply) => {
     const actor = requireActor(request);
     const query = fsQuerySchema.parse(request.query);
-    return services.fsService.list(actor, query.rootSlug, query.path);
+    if (!request.headers.accept?.includes("application/x-ndjson")) return services.fsService.list(actor, query.rootSlug, query.path);
+    // Asked for line by line, a folder is sent as it is read: what it is, then its entries a few at a time, then that it is whole.
+    const gone = new AbortController();
+    reply.raw.on("close", () => gone.abort());
+    const { batches, ...folder } = await services.fsService.listStream(actor, query.rootSlug, query.path, gone.signal);
+    const line = (value: unknown) => Buffer.from(`${JSON.stringify(value)}\n`);
+    reply.header("Content-Type", "application/x-ndjson; charset=utf-8");
+    reply.header("X-Accel-Buffering", "no");
+    return reply.send(
+      Readable.from(
+        (async function* () {
+          yield line(folder);
+          try {
+            for await (const items of batches) yield line({ items });
+            yield line({ done: true });
+          } catch (error) {
+            if (gone.signal.aborted) return;
+            // The answer has begun and can no longer be turned into a refusal; its last line says what went wrong.
+            yield line(publicError(error).body);
+          }
+        })()
+      )
+    );
   });
   app.get("/api/fs/meta", async (request) => {
     const actor = requireActor(request);

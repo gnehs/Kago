@@ -486,7 +486,7 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
             <KagoIconButton label={t("Move to Trash")} className="size-6" disabled={readonly} onClick={() => void actions.trash(selectedPaths)}><Trash2 /></KagoIconButton>
           </>
         ) : (
-          <span className="truncate">{error ? t("Couldn’t load") : search ? t("{count} of {total} items match", { count: items.length, total: allItems.length }) : summary}</span>
+          <span className="truncate">{error ? t("Couldn’t load") : search ? t("{count} of {total} items match", { count: items.length, total: allItems.length }) : summary}{!error && fileList.data?.partial ? ` · ${t("Loading…")}` : ""}</span>
         )}
       </footer>
 

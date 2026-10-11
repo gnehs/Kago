@@ -25,13 +25,30 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     }
   });
 
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: response.statusText, code: "REQUEST_FAILED" }));
-    throw new ApiError(serverMessage(error.error), error.code ?? "REQUEST_FAILED", response.status);
-  }
+  if (!response.ok) throw await refusal(response);
 
   if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
+}
+
+async function refusal(response: Response): Promise<ApiError> {
+  const error = await response.json().catch(() => ({ error: response.statusText, code: "REQUEST_FAILED" }));
+  return new ApiError(serverMessage(error.error), error.code ?? "REQUEST_FAILED", response.status);
+}
+
+/** An answer the server sends a line at a time, each line handed over as it arrives. */
+export async function* apiLines<T>(path: string, signal?: AbortSignal): AsyncGenerator<T> {
+  const response = await fetch(path, { credentials: "include", headers: { Accept: "application/x-ndjson" }, signal });
+  if (!response.ok) throw await refusal(response);
+  const reader = response.body!.pipeThrough(new TextDecoderStream()).getReader();
+  let rest = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    const lines = (rest + (value ?? "")).split("\n");
+    rest = done ? "" : lines.pop()!;
+    for (const line of lines) if (line) yield JSON.parse(line) as T;
+    if (done) return;
+  }
 }
 
 export const downloadUrl = (rootSlug: string, path: string) =>

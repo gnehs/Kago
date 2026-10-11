@@ -1,6 +1,6 @@
-import { keepPreviousData, useMutation, useQueries, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQueries, useQuery, useQueryClient, type QueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { api, previewUrl } from "./client";
+import { api, apiLines, ApiError, previewUrl, serverMessage } from "./client";
 import { decodeSubtitle } from "../lib/subtitles";
 import { withSpeeds } from "../lib/taskSpeed";
 import { isTrashing, useTrashingStore } from "../stores/trashing";
@@ -82,14 +82,45 @@ function useWithoutTrashing() {
     Object.keys(trashing).length === 0 ? list : { ...list, items: list.items.filter((item) => !isTrashing(trashing, list.rootSlug, item.path)) };
 }
 
+type FileListLine = Omit<FileList, "items"> | { items: FileItem[] } | { done: true } | { error: string; code?: string };
+
+/**
+ * A folder's listing, read as the server sends it. One opened for the first time fills while it is read, so the
+ * first of a very large folder is there long before the last; one already shown stays as it is until its new listing is whole.
+ */
+function fileListQuery(client: QueryClient, rootSlug: string, path: string) {
+  const queryKey = ["fs", "list", rootSlug, path];
+  return {
+    queryKey,
+    queryFn: async ({ signal }: { signal: AbortSignal }): Promise<FileList> => {
+      const filling = client.getQueryData<FileList>(queryKey)?.partial !== false;
+      const items: FileItem[] = [];
+      let folder: Omit<FileList, "items"> | undefined;
+      let whole = false;
+      let shown = 0;
+      for await (const line of apiLines<FileListLine>(`/api/fs/list?${new URLSearchParams({ rootSlug, path }).toString()}`, signal)) {
+        if ("error" in line) throw new ApiError(serverMessage(line.error), line.code ?? "REQUEST_FAILED", 500);
+        if ("done" in line) whole = true;
+        else if (!("items" in line)) folder = line;
+        else {
+          for (const item of line.items) items.push(item);
+          // Every showing sorts the folder again, so the more there is, the longer until the next.
+          if (filling && folder && performance.now() - shown >= Math.max(250, items.length / 100)) {
+            client.setQueryData<FileList>(queryKey, { ...folder, items: [...items], partial: true });
+            shown = performance.now();
+          }
+        }
+      }
+      // An answer cut short has no last line.
+      if (!folder || !whole) throw new ApiError(serverMessage(undefined), "REQUEST_FAILED", 500);
+      return { ...folder, items, partial: false };
+    }
+  };
+}
+
 export function useFileList(rootSlug: string, path: string, enabled = true) {
   const select = useWithoutTrashing();
-  return useQuery({
-    queryKey: ["fs", "list", rootSlug, path],
-    queryFn: () => api<FileList>(`/api/fs/list?${new URLSearchParams({ rootSlug, path }).toString()}`),
-    select,
-    enabled
-  });
+  return useQuery({ ...fileListQuery(useQueryClient(), rootSlug, path), select, enabled });
 }
 
 const folderContents = (results: UseQueryResult<FileList>[]) => results.map((result) => result.data?.items);
@@ -97,13 +128,10 @@ const folderContents = (results: UseQueryResult<FileList>[]) => results.map((res
 /** The contents of several folders at once, in the order asked; a folder still loading has none yet. */
 export function useFolderContents(rootSlug: string, paths: string[]) {
   const select = useWithoutTrashing();
+  const client = useQueryClient();
   return useQueries({
     // Same keys as `useFileList`, so whatever refreshes a folder's window refreshes it here too.
-    queries: paths.map((path) => ({
-      queryKey: ["fs", "list", rootSlug, path],
-      queryFn: () => api<FileList>(`/api/fs/list?${new URLSearchParams({ rootSlug, path }).toString()}`),
-      select
-    })),
+    queries: paths.map((path) => ({ ...fileListQuery(client, rootSlug, path), select })),
     combine: folderContents
   });
 }

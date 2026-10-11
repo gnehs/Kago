@@ -401,6 +401,12 @@ test("minimum file-manager demo flow", async () => {
     const tidyList = (await admin.get("/api/fs/list?rootSlug=photos&path=/public")).json.items.map((item) => item.name);
     assert.deepEqual(tidyList.filter((name) => litter.includes(name)), []);
     assert.ok(tidyList.includes("thumbs.db.txt"));
+    // Asked for line by line, the same folder comes as what it is, its entries, and a last line saying it is whole.
+    const streamed = (await admin.get("/api/fs/list?rootSlug=photos&path=/public", { headers: { accept: "application/x-ndjson" } })).payload.trim().split("\n").map((line) => JSON.parse(line));
+    assert.equal(streamed[0].path, "/public");
+    assert.deepEqual(streamed.at(-1), { done: true });
+    assert.deepEqual(streamed.slice(1, -1).flatMap((line) => line.items).map((item) => item.name).sort(), [...tidyList].sort());
+    assert.equal((await admin.get("/api/fs/list?rootSlug=photos&path=/missing", { headers: { accept: "application/x-ndjson" } })).statusCode, 404);
     assert.equal((await admin.get("/api/fs/download?rootSlug=photos&path=/public/Thumbs.db")).payload, "litter");
     // A folder's size is everything inside it, however deep, counted as it is listed: without what the system left behind.
     await mkdir(path.join(fixture.dataDir, "photos", "sized", "inner", "deeper"), { recursive: true });

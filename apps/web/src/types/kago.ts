@@ -221,6 +221,8 @@ export type FileList = {
   path: string;
   readonly: boolean;
   items: FileItem[];
+  /** Whether the folder is still being read, and these are only the items that have arrived so far. */
+  partial: boolean;
 };
 
 export type SqliteTable = { name: string; type: "table" | "view"; columns: Array<{ name: string; type: string; pk: boolean; notNull: boolean }> };
