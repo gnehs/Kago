@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, ChevronRight } from "lucide-react";
 import { KagoLoading } from "@/components/kago/empty-state";
-import { FinderTagDots } from "@/features/tags/FinderTags";
+import { TagDots } from "@/features/tags/TagDots";
 import { formatDate, formatSize, kindLabel } from "@/lib/format";
 import { baseName } from "@/lib/paths";
 import { cn } from "@/lib/utils";
@@ -150,7 +150,7 @@ function ListView(props: ViewProps) {
                 ) : null}
                 <FileIcon item={item} />
                 <span className="truncate">{item.name}</span>
-                <FinderTagDots tags={item.finderTags} />
+                <TagDots tags={item.tags} />
               </span>
               <span className={cn("hidden w-36 truncate tabular-nums @md:block", !selected && "text-muted")}>{formatDate(item.mtime)}</span>
               <span className={cn("w-20 text-right tabular-nums", !selected && "text-muted")}>{item.kind === "folder" ? "—" : formatSize(item.size)}</span>
@@ -215,7 +215,7 @@ function GridView(props: ViewProps) {
               <FileThumbnail rootSlug={window.rootSlug} item={item} size={icon} />
             </div>
             <span className={cn("line-clamp-2 max-w-full rounded-sm px-1.5 text-center leading-4 break-words", selectedClass(window, selected))}>
-              <FinderTagDots tags={item.finderTags} className="mr-1 inline-flex align-[-1px]" />
+              <TagDots tags={item.tags} className="mr-1 inline-flex align-[-1px]" />
               {item.name}
             </span>
           </div>
@@ -315,7 +315,7 @@ function Column({ column, index, opened, revealers, onSelect, onSelectColumn, on
               <div key={item.path} role="option" data-run={selectionRun(items, range.start + offset, shared.selectedPaths)} className={cn("mx-1 flex h-(--kago-row-h) items-center gap-2 rounded-sm px-2", selected ? selectedClass(window, true) : item.path === opened ? "bg-accent-soft" : "hover:bg-hover", stateClass(view, item))} {...itemProps(view, item, range.start + offset)}>
                 <FileIcon item={item} />
                 <span className="min-w-0 flex-1 truncate">{item.name}</span>
-                <FinderTagDots tags={item.finderTags} />
+                <TagDots tags={item.tags} />
                 {item.kind === "folder" ? <ChevronRight className={cn("size-3.5 shrink-0", !selected && "text-faint")} /> : null}
               </div>
             );

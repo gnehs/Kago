@@ -24,7 +24,7 @@ import { zipStream } from "./lib/zip-stream.js";
 import { isBrowserViewable } from "./lib/viewable.js";
 import { AuditService } from "./services/audit.service.js";
 import { AuthService, MAX_PASSWORD, changePasswordSchema, createUserSchema, loginSchema, patchUserSchema, resetPasswordSchema, setupAdminSchema } from "./services/auth.service.js";
-import { FsService, avatarSchema, finderTagsSchema, fsQuerySchema, maxUploadFiles, mkdirSchema, renameManySchema, renameSchema, sqliteRowsSchema, thumbnailQuerySchema, writeTextSchema, zipQuerySchema } from "./services/fs.service.js";
+import { FsService, avatarSchema, fileTagsSchema, fsQuerySchema, maxUploadFiles, mkdirSchema, renameManySchema, renameSchema, sqliteRowsSchema, thumbnailQuerySchema, writeTextSchema, zipQuerySchema } from "./services/fs.service.js";
 import { ImageService } from "./services/image.service.js";
 import { appUrl, externalAppOrderSchema, externalAppSchema, ExternalAppService } from "./services/external-app.service.js";
 import { createGroupSchema, GroupService } from "./services/group.service.js";
@@ -968,7 +968,7 @@ function registerApi(app: FastifyInstance, services: Services) {
     const input = renameManySchema.parse(request.body);
     return services.fsService.renameMany(actor, input.rootSlug, input.items);
   });
-  app.put("/api/fs/finder-tags", async (request) => services.fsService.setFinderTags(requireActor(request), finderTagsSchema.parse(request.body)));
+  app.put("/api/fs/tags", async (request) => services.fsService.setFileTags(requireActor(request), fileTagsSchema.parse(request.body)));
   app.post("/api/fs/upload", async (request) => {
     const actor = requireActor(request);
     // Files are streamed straight to their destination, so an upload is bounded by free disk space rather than by a temp copy.

@@ -31,6 +31,11 @@ export function openDb(env: Env, options: { interruptRunningTasks?: boolean } = 
   dropRsync(db);
   // Kago once kept tags of its own beside the ones kept on the files. Only the latter are left.
   db.exec("DROP TABLE IF EXISTS file_tags; DROP TABLE IF EXISTS tags");
+  // A person's list of tags was first kept under another name.
+  db.exec(`
+    UPDATE user_settings SET settings_json = json_remove(json_set(settings_json, '$.tags', json_extract(settings_json, '$.finderTags')), '$.finderTags')
+    WHERE json_type(settings_json, '$.finderTags') IS NOT NULL
+  `);
   if (options.interruptRunningTasks ?? true) {
     db.prepare(
       "UPDATE tasks SET status = 'interrupted', updated_at = ?, finished_at = ? WHERE status = 'running'"

@@ -5,15 +5,15 @@ import { z } from "zod";
 import { logger } from "./logger.js";
 
 /** A tag kept on the file itself, the way macOS Finder keeps its own. */
-export type FinderTag = { name: string; color: FinderTagColor | null };
+export type FileTag = { name: string; color: FileTagColor | null };
 
-export type FinderTagColor = (typeof colors)[number];
+export type FileTagColor = (typeof colors)[number];
 
 // Finder stores each tag as "name\n<index>", the index pointing into this list (0 is no colour).
 const colors = ["gray", "green", "purple", "blue", "yellow", "red", "orange"] as const;
 
 // Object references in the stored list are one byte, and the path limit of a name is plenty for a tag.
-export const finderTagSchema = z.object({
+export const fileTagSchema = z.object({
   name: z.string().trim().min(1).max(255).refine((value) => !/[\n\r\0]/.test(value)),
   color: z.enum(colors).nullable()
 });
@@ -26,11 +26,11 @@ const TIMEOUT_MS = 10_000;
 let unavailable = false;
 
 /**
- * Finder tags of the named entries of a directory. Entries without tags are left out.
+ * Tags of the named entries of a directory. Entries without tags are left out.
  * Never throws: a volume without xattr support, or a missing tool, only means no tags.
  */
-export async function readFinderTags(directory: string, names: string[]): Promise<Map<string, FinderTag[]>> {
-  const result = new Map<string, FinderTag[]>();
+export async function readFileTags(directory: string, names: string[]): Promise<Map<string, FileTag[]>> {
+  const result = new Map<string, FileTag[]>();
   // A newline in a name cannot be told apart from the tool's own line breaks.
   const readable = names.filter((name) => !name.includes("\n"));
   if (unavailable || readable.length === 0) return result;
@@ -42,7 +42,7 @@ export async function readFinderTags(directory: string, names: string[]): Promis
       try {
         const values = process.platform === "darwin" ? await readDarwin(directory, chunk) : await readLinux(directory, chunk);
         for (const [name, value] of values) {
-          const tags = decodeFinderTags(value);
+          const tags = decodeFileTags(value);
           if (tags.length > 0) result.set(name, tags);
         }
       } catch (error) {
@@ -136,7 +136,7 @@ const SAMBA_EVIDENCE = "^user\\.DosStream\\.|^user\\.DOSATTRIB$";
 const EVIDENCE_NAMES = 200;
 
 /** Finder info with the label set to that of `tags`, or null when it already is. */
-export function relabel(info: Buffer, offset: number, tags: FinderTag[]): Buffer | null {
+export function relabel(info: Buffer, offset: number, tags: FileTag[]): Buffer | null {
   if (info.length < offset + FINDER_INFO_SIZE) return null;
   const color = tags.filter((tag) => tag.color).at(-1)?.color;
   const next = Buffer.from(info);
@@ -158,14 +158,14 @@ async function servedBySamba(directory: string, boundary: string): Promise<boole
 }
 
 /**
- * Replaces the Finder tags of one entry of a directory; an empty list removes the attribute, as Finder does.
+ * Replaces the tags of one entry of a directory; an empty list removes the attribute, as Finder does.
  * `boundary` is the folder not to look above when working out how the volume stores them.
  * Throws when the volume refuses the change.
  */
-export async function writeFinderTags(directory: string, name: string, tags: FinderTag[], boundary = directory): Promise<void> {
+export async function writeFileTags(directory: string, name: string, tags: FileTag[], boundary = directory): Promise<void> {
   if (name.includes("\n")) throw new Error("Name cannot be tagged");
   const file = `./${name}`;
-  const value = encodeFinderTags(tags);
+  const value = encodeFileTags(tags);
 
   if (process.platform === "darwin") {
     if (tags.length > 0) await run("/usr/bin/xattr", ["-wx", ATTRIBUTE, value.toString("hex"), file], directory, true);
@@ -199,7 +199,7 @@ export async function writeFinderTags(directory: string, name: string, tags: Fin
 }
 
 /** Tags as the value Finder keeps them in. */
-export function encodeFinderTags(tags: FinderTag[]): Buffer {
+export function encodeFileTags(tags: FileTag[]): Buffer {
   return encodeStringArray(tags.map((tag) => (tag.color ? `${tag.name}\n${colors.indexOf(tag.color) + 1}` : tag.name)));
 }
 
@@ -224,10 +224,10 @@ function unescapeOctal(value: string): string {
 }
 
 /** The tags in the value Finder keeps them as; none when it is not one. */
-export function decodeFinderTags(value: Buffer): FinderTag[] {
+export function decodeFileTags(value: Buffer): FileTag[] {
   // Samba stores stream data with a trailing NUL, which would shift the plist trailer.
   const entries = parseStringArray(value) ?? (value.at(-1) === 0 ? parseStringArray(value.subarray(0, -1)) : null) ?? [];
-  const tags: FinderTag[] = [];
+  const tags: FileTag[] = [];
   for (const entry of entries) {
     const [name, index] = entry.split("\n");
     if (!name || tags.some((tag) => tag.name === name)) continue;

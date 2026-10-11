@@ -75,11 +75,11 @@ test("minimum file-manager demo flow", async () => {
 
     // The tags a person keeps at hand are a list of their own, replaced whole and never two of one name.
     const handy = [{ name: "Work", color: "red", shape: "star" }, { name: "Later", color: null }];
-    assert.deepEqual((await admin.patch("/api/settings", { finderTags: handy })).json.settings.finderTags, handy);
-    assert.equal((await admin.patch("/api/settings", { finderTags: [...handy, { name: "Work", color: "blue" }] })).statusCode, 400);
-    assert.equal((await admin.patch("/api/settings", { finderTags: [{ name: "Work", color: "pink" }] })).statusCode, 400);
-    assert.equal((await admin.patch("/api/settings", { finderTags: [{ name: "Work", color: "red", shape: "blob" }] })).statusCode, 400);
-    assert.equal((await admin.patch("/api/settings", { finderTags: [] })).statusCode, 200);
+    assert.deepEqual((await admin.patch("/api/settings", { tags: handy })).json.settings.tags, handy);
+    assert.equal((await admin.patch("/api/settings", { tags: [...handy, { name: "Work", color: "blue" }] })).statusCode, 400);
+    assert.equal((await admin.patch("/api/settings", { tags: [{ name: "Work", color: "pink" }] })).statusCode, 400);
+    assert.equal((await admin.patch("/api/settings", { tags: [{ name: "Work", color: "red", shape: "blob" }] })).statusCode, 400);
+    assert.equal((await admin.patch("/api/settings", { tags: [] })).statusCode, 200);
 
     // A folder's view is kept part by part, and goes with the folder when Kago renames or moves it.
     await mkdir(path.join(fixture.dataDir, "photos", "views", "inner"), { recursive: true });

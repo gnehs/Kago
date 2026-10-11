@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { AFP_INFO_OFFSET, decodeFinderTags, encodeFinderTags, relabel, type FinderTag } from "../lib/finder-tags.js";
+import { AFP_INFO_OFFSET, decodeFileTags, encodeFileTags, relabel, type FileTag } from "../lib/file-tags.js";
 import { logger } from "../lib/logger.js";
 import type { RemoteConfig } from "./providers.js";
 
@@ -73,11 +73,11 @@ function missing(error: unknown): boolean {
 }
 
 /**
- * Finder tags of the named entries of a folder in an SMB location. Entries without tags are left out.
+ * Tags of the named entries of a folder in an SMB location. Entries without tags are left out.
  * Never throws: a server that is slow, or keeps no streams, only means no tags.
  */
-export async function readSmbFinderTags(config: RemoteConfig, logicalPath: string, names: string[]): Promise<Map<string, FinderTag[]>> {
-  const result = new Map<string, FinderTag[]>();
+export async function readSmbTags(config: RemoteConfig, logicalPath: string, names: string[]): Promise<Map<string, FileTag[]>> {
+  const result = new Map<string, FileTag[]>();
   const to = target(config, logicalPath);
   const readable = names.filter(plain);
   if (unavailable || !to || readable.length === 0) return result;
@@ -88,7 +88,7 @@ export async function readSmbFinderTags(config: RemoteConfig, logicalPath: strin
       await Promise.all(
         readable.map(async (name, index) => {
           const value = await fsp.readFile(path.join(dir, String(index))).catch(() => null);
-          const tags = value ? decodeFinderTags(value) : [];
+          const tags = value ? decodeFileTags(value) : [];
           if (tags.length > 0) result.set(name, tags);
         })
       );
@@ -100,10 +100,10 @@ export async function readSmbFinderTags(config: RemoteConfig, logicalPath: strin
 }
 
 /**
- * Replaces the Finder tags of one entry of an SMB location, the way a Mac connected to the server would.
+ * Replaces the tags of one entry of an SMB location, the way a Mac connected to the server would.
  * Throws when the server refuses, or when there is no client to ask it.
  */
-export async function writeSmbFinderTags(config: RemoteConfig, logicalPath: string, tags: FinderTag[]): Promise<void> {
+export async function writeSmbTags(config: RemoteConfig, logicalPath: string, tags: FileTag[]): Promise<void> {
   const to = target(config, path.posix.dirname(logicalPath));
   const name = path.posix.basename(logicalPath);
   if (!to || !plain(name)) throw new Error("Path cannot be tagged");
@@ -112,7 +112,7 @@ export async function writeSmbFinderTags(config: RemoteConfig, logicalPath: stri
     const info = await fsp.readFile(path.join(dir, "info")).catch(() => null);
     const relabelled = info && relabel(info, AFP_INFO_OFFSET, tags);
     // The client cannot remove a stream; an empty one reads as no attribute at all.
-    await fsp.writeFile(path.join(dir, "tags"), tags.length > 0 ? encodeFinderTags(tags) : Buffer.alloc(0));
+    await fsp.writeFile(path.join(dir, "tags"), tags.length > 0 ? encodeFileTags(tags) : Buffer.alloc(0));
     const commands = [`lcd "${dir}"`, `put tags ${remotePath(to.folder, name, TAGS_STREAM)}`];
     if (relabelled) {
       await fsp.writeFile(path.join(dir, "info"), relabelled);

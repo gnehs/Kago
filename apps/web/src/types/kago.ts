@@ -189,8 +189,8 @@ export type AccountSettings = {
   /** Whether a folder of pictures and videos opens as icons before anyone has said how to show it. On unless turned off. */
   smartView?: boolean;
   defaultView?: Partial<FolderView>;
-  /** The Finder tags kept at hand to put on files. Only its owner writes it. */
-  finderTags?: ListedTag[];
+  /** The tags kept at hand to put on files. Only its owner writes it. */
+  tags?: ListedTag[];
   /** When the desktop background was last set, which names the picture to ask for. Absent without one. */
   wallpaper?: number | null;
 };
@@ -213,7 +213,7 @@ export type FileItem = {
   mtime: number;
   type: string;
   readonly: boolean;
-  finderTags?: FinderTag[];
+  tags?: FileTag[];
 };
 
 export type FileList = {
@@ -283,14 +283,14 @@ export type FileMeta = {
   size: number;
   mtime: number;
   type: string;
-  finderTags?: FinderTag[];
+  tags?: FileTag[];
 };
 
 /** Everything inside a folder, however deep: the bytes of its files, and how many files there are. */
 export type FolderSize = { bytes: number; count: number };
 
 /** A tag kept on the file itself. */
-export type FinderTag = {
+export type FileTag = {
   name: string;
   color: "gray" | "green" | "purple" | "blue" | "yellow" | "red" | "orange" | null;
 };
@@ -298,7 +298,7 @@ export type FinderTag = {
 export type TagShape = "circle" | "triangle" | "diamond" | "square" | "pentagon" | "hexagon" | "star";
 
 /** A tag in a person's own list. The shape is theirs: without one, the tag is drawn in the shape of its colour. */
-export type ListedTag = FinderTag & { shape?: TagShape };
+export type ListedTag = FileTag & { shape?: TagShape };
 
 export type ShareLink = {
   id: string;

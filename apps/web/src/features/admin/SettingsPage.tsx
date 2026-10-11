@@ -7,7 +7,7 @@ import { Field, Input, Select } from "@/components/ui/input";
 import { KagoPasswordInput } from "@/components/kago/password-input";
 import { firstDirection, sortColumns } from "@/features/files/FileList";
 import { BASE_VIEW } from "@/features/files/folderView";
-import { FinderTagList } from "@/features/tags/FinderTagEditor";
+import { TagList } from "@/features/tags/TagEditor";
 import { Card, Page, Row, RowList, SettingRow } from "@/components/kago/page";
 import { KagoSegmented } from "@/components/kago/segmented";
 import { formatUnixDate } from "@/lib/format";
@@ -118,7 +118,7 @@ export function SettingsPage() {
           </SettingRow>
         </div>
       </Card>
-      <FinderTagList />
+      <TagList />
       <ArchivePasswords />
     </Page>
   );

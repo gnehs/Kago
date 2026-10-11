@@ -2213,7 +2213,7 @@ ADMIN 清掉所有人的
 本機：以平台自己的工具讀寫檔案的 extended attribute（com.apple.metadata:_kMDItemUserTags）
 SMB：以 smbclient 讀寫檔案的具名串流，伺服器怎麼存由它自己決定
 隨檔案清單一起讀出來
-寫入：PUT /api/fs/finder-tags，需要 edit
+寫入：PUT /api/fs/tags，需要 edit
 ```
 
 ### 標籤的形狀
@@ -2232,7 +2232,7 @@ SMB：以 smbclient 讀寫檔案的具名串流，伺服器怎麼存由它自己
 ### 個人標籤清單
 
 ```txt
-每個人一份，存在個人設定裡（settings.finderTags），最多 100 個，名稱不重複
+每個人一份，存在個人設定裡（settings.tags），最多 100 個，名稱不重複
 每一筆只有名稱、顏色與形狀（可省略），不記是誰建的、從哪裡來的
 只在「設定 → 一般」由本人新增與移除
 不從檔案掃描或匯入；替檔案加標籤不會改到清單
@@ -2409,7 +2409,7 @@ GET    /api/fs/exif
 GET    /api/fs/sqlite
 GET    /api/fs/sqlite/rows
 PUT    /api/fs/content               儲存文字檔
-PUT    /api/fs/finder-tags
+PUT    /api/fs/tags
 POST   /api/fs/upload
 POST   /api/fs/mkdir
 POST   /api/fs/rename
@@ -2718,7 +2718,7 @@ Kago 不會從使用者填的網址抓東西，唯一的例外是確認它允不
   thumbnail
   tag_create
   tag_update
-  finder_tag_update
+  tag_update
 
 任務與同步
   create_task

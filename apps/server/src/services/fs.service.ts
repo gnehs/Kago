@@ -8,7 +8,7 @@ import { lookup } from "mime-types";
 import { z } from "zod";
 import { AppError } from "../lib/errors.js";
 import { assertNameAvailable, nfc } from "../lib/filename.js";
-import { finderTagSchema, readFinderTags, writeFinderTags } from "../lib/finder-tags.js";
+import { fileTagSchema, readFileTags, writeFileTags } from "../lib/file-tags.js";
 import { MAX_SQLITE_PAGE, sqliteOverview, sqliteRows } from "../lib/sqlite-preview.js";
 import { isPictureFormat, parseSubtitleName } from "../lib/subtitles.js";
 import { isSystemFile } from "../lib/system-files.js";
@@ -70,10 +70,10 @@ export const renameManySchema = z.object({
   items: z.array(renameSchema.omit({ rootSlug: true })).min(1).max(1000)
 });
 
-export const finderTagsSchema = z.object({
+export const fileTagsSchema = z.object({
   rootSlug: z.string().min(1),
   path: z.string().min(1),
-  tags: z.array(finderTagSchema).max(100)
+  tags: z.array(fileTagSchema).max(100)
 });
 
 /** A thumbnail is either a file on disk (a drawn picture, or the original) or a few bytes of text. */
@@ -141,7 +141,7 @@ export class FsService {
     if (!stat.isDirectory()) throw new AppError(400, "Path is not a folder", "NOT_FOLDER");
 
     const entries = await fsp.readdir(safe.absolutePath, { withFileTypes: true });
-    const finderTags = await readFinderTags(safe.absolutePath, entries.map((entry) => entry.name));
+    const tags = await readFileTags(safe.absolutePath, entries.map((entry) => entry.name));
     const listedItems = await Promise.all(
       entries
         .filter((entry) => !entry.name.includes("\0") && !isSystemFile(entry.name))
@@ -159,7 +159,7 @@ export class FsService {
             mtime: itemStat.mtimeMs,
             type: entry.isDirectory() ? "folder" : lookup(entry.name) || "application/octet-stream",
             readonly: Boolean(safe.root.readonly),
-            finderTags: finderTags.get(entry.name) ?? []
+            tags: tags.get(entry.name) ?? []
           };
         })
     );
@@ -173,7 +173,7 @@ export class FsService {
     // Where the folders listed are a server's shares, nothing can be added beside them or done to them.
     const readonly = Boolean(safe.root.readonly) || this.storage.remote.isFixed(safe.root, path.posix.join(safe.logicalPath, "child"));
     const entries = (await this.storage.remote.list(safe.root, safe.logicalPath)).filter((entry) => !entry.name.includes("\0") && !isSystemFile(entry.name));
-    const finderTags = await this.storage.remote.finderTags(safe.root, safe.logicalPath, entries.map((entry) => entry.name));
+    const tags = await this.storage.remote.fileTags(safe.root, safe.logicalPath, entries.map((entry) => entry.name));
     const items = entries
       .map((entry) => {
         const itemLogicalPath = path.posix.join(safe.logicalPath, entry.name);
@@ -185,7 +185,7 @@ export class FsService {
           mtime: entry.mtimeMs,
           type: entry.directory ? "folder" : lookup(entry.name) || "application/octet-stream",
           readonly,
-          finderTags: finderTags.get(entry.name) ?? []
+          tags: tags.get(entry.name) ?? []
         };
       })
       .filter((item) => item !== null);
@@ -198,7 +198,7 @@ export class FsService {
     if (this.storage.isRemote(safe)) {
       const remote = await this.storage.stat(safe);
       const remoteName = this.storage.name(safe);
-      const finderTags = await this.storage.remote.finderTags(safe.root, path.posix.dirname(safe.logicalPath), [remoteName]);
+      const tags = await this.storage.remote.fileTags(safe.root, path.posix.dirname(safe.logicalPath), [remoteName]);
       return {
         rootSlug,
         path: safe.logicalPath,
@@ -207,12 +207,12 @@ export class FsService {
         size: remote.size,
         mtime: remote.mtimeMs,
         type: remote.isDirectory() ? "folder" : lookup(remoteName) || "application/octet-stream",
-        finderTags: finderTags.get(remoteName) ?? []
+        tags: tags.get(remoteName) ?? []
       };
     }
     const stat = await fsp.lstat(safe.absolutePath);
     const name = path.basename(safe.absolutePath);
-    const finderTags = await readFinderTags(path.dirname(safe.absolutePath), [name]);
+    const tags = await readFileTags(path.dirname(safe.absolutePath), [name]);
     return {
       rootSlug,
       path: safe.logicalPath,
@@ -221,7 +221,7 @@ export class FsService {
       size: stat.size,
       mtime: stat.mtimeMs,
       type: stat.isDirectory() ? "folder" : lookup(safe.absolutePath) || "application/octet-stream",
-      finderTags: finderTags.get(name) ?? []
+      tags: tags.get(name) ?? []
     };
   }
 
@@ -262,21 +262,21 @@ export class FsService {
     return total;
   }
 
-  async setFinderTags(actor: Actor, input: z.infer<typeof finderTagsSchema>) {
+  async setFileTags(actor: Actor, input: z.infer<typeof fileTagsSchema>) {
     const safe = await this.paths.resolveExisting(input.rootSlug, input.path);
     this.permissions.require(actor, "edit", safe.root, safe.logicalPath);
     const tags = input.tags.filter((tag, index) => input.tags.findIndex((other) => other.name === tag.name) === index);
     try {
-      // Finder tags are kept on the file itself. Of the remotes, only an SMB server has a place for them.
-      if (this.storage.isRemote(safe)) await this.storage.remote.setFinderTags(safe.root, safe.logicalPath, tags);
-      else await writeFinderTags(path.dirname(safe.absolutePath), path.basename(safe.absolutePath), tags, await fsp.realpath(safe.root.base_path));
+      // Tags are kept on the file itself. Of the remotes, only an SMB server has a place for them.
+      if (this.storage.isRemote(safe)) await this.storage.remote.setFileTags(safe.root, safe.logicalPath, tags);
+      else await writeFileTags(path.dirname(safe.absolutePath), path.basename(safe.absolutePath), tags, await fsp.realpath(safe.root.base_path));
     } catch {
-      throw new AppError(500, "This location cannot store tags", "FINDER_TAGS_UNSUPPORTED");
+      throw new AppError(500, "This location cannot store tags", "TAGS_UNSUPPORTED");
     }
     this.audit.write({
       actorType: "user",
       actorId: actor.id,
-      action: "finder_tag_update",
+      action: "tag_update",
       rootId: safe.root.id,
       path: safe.logicalPath,
       target: { tags: tags.map((tag) => tag.name) },
@@ -391,7 +391,7 @@ export class FsService {
     if (input.mtime !== undefined && Math.abs(stat.mtimeMs - input.mtime) >= 1) {
       throw new AppError(409, "The file was changed by someone else", "FILE_CHANGED");
     }
-    // Written in place rather than swapped in: the file keeps its owner, mode, hard links and the Finder tags stored on it.
+    // Written in place rather than swapped in: the file keeps its owner, mode, hard links and the tags stored on it.
     if (this.storage.isRemote(safe)) await this.storage.remote.write(safe.root, safe.logicalPath, Readable.from([Buffer.from(input.content, "utf8")]));
     else await fsp.writeFile(safe.absolutePath, input.content, "utf8");
     this.audit.write({

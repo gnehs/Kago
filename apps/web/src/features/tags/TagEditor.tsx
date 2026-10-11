@@ -10,16 +10,16 @@ import { Field, FieldGroup, Input } from "@/components/ui/input";
 import { run } from "@/lib/run";
 import { saveSettings, useSettingsStore } from "@/stores/settings";
 import { cn } from "@/lib/utils";
-import type { FileMeta, FinderTag, ListedTag, TagShape } from "@/types/kago";
-import { colorShape, TagDot } from "./FinderTags";
+import type { FileMeta, FileTag, ListedTag, TagShape } from "@/types/kago";
+import { colorShape, TagDot } from "./TagDots";
 import { t } from "@/lib/i18n";
 
-type Color = NonNullable<FinderTag["color"]>;
+type Color = NonNullable<FileTag["color"]>;
 
 /** As many as the account keeps in a list. */
 const MAX_TAGS = 100;
 
-// In Finder's own order, with the names it gives its colour tags.
+// In the order the colours are listed everywhere, each with the name a tag of that colour alone goes by.
 const colors: Array<{ color: Color; name: string }> = [
   { color: "red", name: t("Red") },
   { color: "orange", name: t("Orange") },
@@ -40,7 +40,7 @@ const shapes: Array<{ shape: TagShape; name: string }> = [
   { shape: "star", name: t("Star") }
 ];
 
-const dot = (tag: FinderTag) => <TagDot tag={tag} className="size-2.5" />;
+const dot = (tag: FileTag) => <TagDot tag={tag} className="size-2.5" />;
 
 const choice = "kago-tag-dot size-5 outline-2 outline-offset-2 outline-transparent focus-visible:outline-accent";
 
@@ -113,24 +113,24 @@ function TagForm({ tag, taken, onSave, onClose }: { tag: ListedTag | null; /** T
 }
 
 /** A list of tags with `tag` in it: one of that name already there is replaced where it stands. */
-const withFinderTag = <T extends FinderTag>(tags: T[], tag: T) => (tags.some((item) => item.name === tag.name) ? tags.map((item) => (item.name === tag.name ? tag : item)) : [...tags, tag]);
+const withTag = <T extends FileTag>(tags: T[], tag: T) => (tags.some((item) => item.name === tag.name) ? tags.map((item) => (item.name === tag.name ? tag : item)) : [...tags, tag]);
 
-/** Finder tags of one file or folder, stored on the file itself so Finder shows the same ones. */
-export function FinderTagEditor({ rootSlug, path, tags, readonly }: { rootSlug: string; path: string; tags: FinderTag[]; readonly: boolean }) {
+/** The tags of one file or folder, stored on the file itself. */
+export function TagEditor({ rootSlug, path, tags, readonly }: { rootSlug: string; path: string; tags: FileTag[]; readonly: boolean }) {
   const queryClient = useQueryClient();
   // The only tags there are to put on: the ones kept at hand in the settings. Putting one on a file never adds to them.
-  const mine = useSettingsStore((state) => state.settings.finderTags) ?? [];
+  const mine = useSettingsStore((state) => state.settings.tags) ?? [];
   const handy = mine.filter((tag) => !tags.some((item) => item.name === tag.name));
 
-  const save = (next: FinderTag[], fallback: string) =>
+  const save = (next: FileTag[], fallback: string) =>
     run(async () => {
-      const meta = await api<FileMeta>("/api/fs/finder-tags", { method: "PUT", body: JSON.stringify({ rootSlug, path, tags: next }) });
+      const meta = await api<FileMeta>("/api/fs/tags", { method: "PUT", body: JSON.stringify({ rootSlug, path, tags: next }) });
       queryClient.setQueryData(["fs", "meta", rootSlug, path], meta);
       await queryClient.invalidateQueries({ queryKey: ["fs", "list", rootSlug] });
       return meta;
     }, fallback);
   // The file keeps a name and a colour; the shape stays in the list.
-  const add = ({ name, color }: ListedTag) => save(withFinderTag(tags, { name, color }), t("Couldn’t add the tag"));
+  const add = ({ name, color }: ListedTag) => save(withTag(tags, { name, color }), t("Couldn’t add the tag"));
 
   return (
     <div className="flex flex-col gap-2">
@@ -170,8 +170,8 @@ export function FinderTagEditor({ rootSlug, path, tags, readonly }: { rootSlug: 
 }
 
 /** The tags a person keeps at hand, as a card of the settings. They write it themselves: it is not gathered from files, and it lists no files. */
-export function FinderTagList() {
-  const tags = useSettingsStore((state) => state.settings.finderTags) ?? [];
+export function TagList() {
+  const tags = useSettingsStore((state) => state.settings.tags) ?? [];
   const [editing, setEditing] = useState<ListedTag | "new" | null>(null);
   // The last tag stays on show while its dialog fades out.
   const [shown, setShown] = useState(editing);
@@ -194,7 +194,7 @@ export function FinderTagList() {
           {tags.map((tag) => (
             <Row key={tag.name} icon={<TagDot tag={tag} className="mx-0.5 size-4" />} title={tag.name} subtitle={describe(tag)}>
               <Button onClick={() => setEditing(tag)}>{t("Edit")}</Button>
-              <Button variant="destructive" onClick={() => void saveSettings({ finderTags: tags.filter((item) => item.name !== tag.name) })}>{t("Remove")}</Button>
+              <Button variant="destructive" onClick={() => void saveSettings({ tags: tags.filter((item) => item.name !== tag.name) })}>{t("Remove")}</Button>
             </Row>
           ))}
         </RowList>
@@ -206,7 +206,7 @@ export function FinderTagList() {
           key={current?.name ?? "new"}
           tag={current}
           taken={tags.filter((item) => item.name !== current?.name).map((item) => item.name)}
-          onSave={(tag) => void saveSettings({ finderTags: current ? tags.map((item) => (item.name === current.name ? tag : item)) : [...tags, tag] })}
+          onSave={(tag) => void saveSettings({ tags: current ? tags.map((item) => (item.name === current.name ? tag : item)) : [...tags, tag] })}
           onClose={() => setEditing(null)}
         />
       </KagoDialog>

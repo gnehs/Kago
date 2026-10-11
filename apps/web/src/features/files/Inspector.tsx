@@ -8,7 +8,7 @@ import { KagoIconButton } from "@/components/kago/icon-button";
 import { Button } from "@/components/ui/button";
 import { ShareForm } from "@/features/shares/ShareForm";
 import { parseShareMode, shareModeLabel } from "@/features/shares/shareUtils";
-import { FinderTagEditor } from "@/features/tags/FinderTagEditor";
+import { TagEditor } from "@/features/tags/TagEditor";
 import { formatDate, formatSize, isPicture, isVideoType, kindLabel } from "@/lib/format";
 import { displayPath } from "@/lib/paths";
 import { usePointerDrag } from "@/lib/usePointerDrag";
@@ -103,9 +103,9 @@ export function Inspector({ window: activeWindow }: { window: FileWindow }) {
             : null}
 
           {/* Tags are kept on the file itself: on the server's own disk, or on an SMB server. Other locations have no place for them. */}
-          {(readonly && !meta.data.finderTags?.length) || (root && root.provider !== "local" && root.provider !== "smb") ? null : (
+          {(readonly && !meta.data.tags?.length) || (root && root.provider !== "local" && root.provider !== "smb") ? null : (
             <DetailSection title={t("Tags")}>
-              <FinderTagEditor rootSlug={rootSlug} path={path} tags={meta.data.finderTags ?? []} readonly={readonly} />
+              <TagEditor rootSlug={rootSlug} path={path} tags={meta.data.tags ?? []} readonly={readonly} />
             </DetailSection>
           )}
 
