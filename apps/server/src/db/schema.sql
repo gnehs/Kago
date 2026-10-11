@@ -192,26 +192,6 @@ CREATE TABLE IF NOT EXISTS external_app_positions (
   FOREIGN KEY (app_id) REFERENCES external_apps(id) ON DELETE CASCADE
 );
 
-CREATE TABLE IF NOT EXISTS tags (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  color TEXT,
-  owner_id TEXT,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL,
-  FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE
-);
-
-CREATE TABLE IF NOT EXISTS file_tags (
-  root_id TEXT NOT NULL,
-  path TEXT NOT NULL,
-  tag_id TEXT NOT NULL,
-  created_at INTEGER NOT NULL,
-  PRIMARY KEY (root_id, path, tag_id),
-  FOREIGN KEY (root_id) REFERENCES roots(id) ON DELETE CASCADE,
-  FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
-);
-
 CREATE TABLE IF NOT EXISTS share_links (
   id TEXT PRIMARY KEY,
   token_hash TEXT UNIQUE NOT NULL,

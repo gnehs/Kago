@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { Db } from "../db/db.js";
 import { row, rows } from "../db/db.js";
+import { finderTagSchema } from "../lib/finder-tags.js";
 import { now } from "../lib/ids.js";
 import type { EventPublisher } from "../ws/events.js";
 import type { PathService } from "./path.service.js";
@@ -30,7 +31,9 @@ export const settingsSchema = z
     /** Whether a folder of pictures and videos opens as icons before anyone has said how to show it. */
     smartView: z.boolean(),
     /** How folders are shown where nothing else says. */
-    defaultView: viewSchema
+    defaultView: viewSchema,
+    /** The Finder tags a person keeps at hand to put on files. Only they write it: nothing is added from the files they see or tag. */
+    finderTags: z.array(finderTagSchema).max(100).refine((tags) => new Set(tags.map((tag) => tag.name)).size === tags.length)
   })
   .partial()
   .strict();

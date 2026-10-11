@@ -29,6 +29,8 @@ export function openDb(env: Env, options: { interruptRunningTasks?: boolean } = 
   // There was once a guest role, which was allowed exactly what a standard user is.
   db.exec("UPDATE users SET role = 'USER' WHERE role = 'GUEST'");
   dropRsync(db);
+  // Kago once kept tags of its own beside the ones kept on the files. Only the latter are left.
+  db.exec("DROP TABLE IF EXISTS file_tags; DROP TABLE IF EXISTS tags");
   if (options.interruptRunningTasks ?? true) {
     db.prepare(
       "UPDATE tasks SET status = 'interrupted', updated_at = ?, finished_at = ? WHERE status = 'running'"

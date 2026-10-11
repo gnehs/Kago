@@ -67,7 +67,7 @@ async function withScratch<T>(work: (dir: string) => Promise<T>): Promise<T> {
 
 function missing(error: unknown): boolean {
   if ((error as NodeJS.ErrnoException).code !== "ENOENT") return false;
-  if (!unavailable) logger.warn("Finder tags of SMB locations are unavailable: smbclient is not installed");
+  if (!unavailable) logger.warn("File tags of SMB locations are unavailable: smbclient is not installed");
   unavailable = true;
   return true;
 }
@@ -94,7 +94,7 @@ export async function readSmbFinderTags(config: RemoteConfig, logicalPath: strin
       );
     });
   } catch (error) {
-    if (!missing(error)) logger.warn("Finder tags of an SMB folder could not be read", error instanceof Error ? error.message : error);
+    if (!missing(error)) logger.warn("File tags of an SMB folder could not be read", error instanceof Error ? error.message : error);
   }
   return result;
 }

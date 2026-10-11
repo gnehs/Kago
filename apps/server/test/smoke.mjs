@@ -73,6 +73,13 @@ test("minimum file-manager demo flow", async () => {
     assert.deepEqual(settings.json.settings, { motion: "off", locale: "ja", defaultView: { viewMode: "grid", sortBy: "mtime", sortDirection: "desc" } });
     assert.equal((await admin.patch("/api/settings", { theme: "sepia" })).statusCode, 400);
 
+    // The tags a person keeps at hand are a list of their own, replaced whole and never two of one name.
+    const handy = [{ name: "Work", color: "red" }, { name: "Later", color: null }];
+    assert.deepEqual((await admin.patch("/api/settings", { finderTags: handy })).json.settings.finderTags, handy);
+    assert.equal((await admin.patch("/api/settings", { finderTags: [...handy, { name: "Work", color: "blue" }] })).statusCode, 400);
+    assert.equal((await admin.patch("/api/settings", { finderTags: [{ name: "Work", color: "pink" }] })).statusCode, 400);
+    assert.equal((await admin.patch("/api/settings", { finderTags: [] })).statusCode, 200);
+
     // A folder's view is kept part by part, and goes with the folder when Kago renames or moves it.
     await mkdir(path.join(fixture.dataDir, "photos", "views", "inner"), { recursive: true });
     await mkdir(path.join(fixture.dataDir, "photos", "views-kept"), { recursive: true });
@@ -198,17 +205,6 @@ test("minimum file-manager demo flow", async () => {
     assert.equal((await admin.get("/api/fs/sqlite?rootSlug=photos&path=/public/uploaded.txt")).json.code, "NOT_SQLITE");
     assert.deepEqual((await readdir(path.dirname(sampleDb))).filter((name) => name.startsWith("sample.db")), ["sample.db"]);
     await rm(sampleDb);
-
-    const tag = await admin.post("/api/tags", { name: "Reviewed", color: "lavender" });
-    assert.equal(tag.statusCode, 200);
-    const setTags = await admin.put("/api/tags/file", {
-      rootSlug: "photos",
-      path: "/public/uploaded.txt",
-      tagIds: [tag.json.id]
-    });
-    assert.equal(setTags.statusCode, 200);
-    const fileTags = await admin.get("/api/tags/file?rootSlug=photos&path=/public/uploaded.txt");
-    assert.deepEqual(fileTags.json.map((item) => item.id), [tag.json.id]);
 
     const reader = await admin.post("/api/users", {
       email: "reader@example.test",
@@ -402,8 +398,6 @@ test("minimum file-manager demo flow", async () => {
       "restore_trash",
       "compress",
       "extract",
-      "tag_create",
-      "tag_update",
       "thumbnail",
       "permission_denied"
     ]) {

@@ -4,7 +4,7 @@ import { api, previewUrl } from "./client";
 import { decodeSubtitle } from "../lib/subtitles";
 import { withSpeeds } from "../lib/taskSpeed";
 import { isTrashing, useTrashingStore } from "../stores/trashing";
-import type { Actor, AuditLog, ExternalApp, FileItem, FileList, FileMeta, FileTask, FolderSize, FrameVerdict, Group, ImageMetadata, LibraryIcon, MediaInfo, PermissionRule, Root, ShareLink, Shelf, SqlitePage, SsoConfig, SsoIdentity, SsoInfo, SqliteTable, StorageInfo, SubtitleList, SyncJob, SyncRun, SyncTrial, Tag, TrashItem, UserAccount, WorkspaceState } from "../types/kago";
+import type { Actor, AuditLog, ExternalApp, FileItem, FileList, FileMeta, FileTask, FolderSize, FrameVerdict, Group, ImageMetadata, LibraryIcon, MediaInfo, PermissionRule, Root, ShareLink, Shelf, SqlitePage, SsoConfig, SsoIdentity, SsoInfo, SqliteTable, StorageInfo, SubtitleList, SyncJob, SyncRun, SyncTrial, TrashItem, UserAccount, WorkspaceState } from "../types/kago";
 
 export function useSetupStatus() {
   return useQuery({ queryKey: ["auth", "setup"], queryFn: () => api<{ needsSetup: boolean; oidc: SsoInfo | null }>("/api/auth/setup") });
@@ -219,14 +219,6 @@ export function useTextFile(rootSlug: string, file: Pick<FileItem, "path" | "mti
     enabled: item !== undefined,
     retry: false,
     staleTime: 60_000
-  });
-}
-
-export function useFileTags(rootSlug: string, path: string, enabled = true) {
-  return useQuery({
-    queryKey: ["tags", "file", rootSlug, path],
-    queryFn: () => api<Tag[]>(`/api/tags/file?${new URLSearchParams({ rootSlug, path }).toString()}`),
-    enabled
   });
 }
 

@@ -82,14 +82,6 @@ test("a rule covers a whole location, and a location without one cannot be reach
     assert.equal((await member.put("/api/permissions", { principalType: "user", principalId: user.json.id, rootId: roots.private.id, level: "edit" })).statusCode, 403);
     assert.equal((await grant("user", "user_missing", "family", "view")).statusCode, 400);
 
-    // A tag is its maker's own, also on a file both can reach.
-    const tag = await admin.post("/api/tags", { name: "Admin only" });
-    assert.equal((await admin.put("/api/tags/file", { rootSlug: "family", path: "/inbox/film.txt", tagIds: [tag.json.id] })).statusCode, 200);
-    assert.deepEqual((await member.get("/api/tags/file?rootSlug=family&path=/inbox/film.txt")).json, []);
-    assert.equal((await member.put("/api/tags/file", { rootSlug: "family", path: "/inbox/film.txt", tagIds: [tag.json.id] })).statusCode, 400);
-    assert.equal((await member.put("/api/tags/file", { rootSlug: "family", path: "/inbox/film.txt", tagIds: [] })).statusCode, 200);
-    assert.equal((await admin.get("/api/tags/file?rootSlug=family&path=/inbox/film.txt")).json.length, 1);
-
     // A sync is a copy by another name: it takes nothing out of a location a copy could not.
     const sync = (source, destination) => member.post("/api/sync-jobs", { name: "Sync", source, destination });
     assert.equal((await sync({ kind: "location", rootSlug: "private", path: "/" }, { kind: "location", rootSlug: "family", path: "/inbox" })).statusCode, 403);

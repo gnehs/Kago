@@ -189,6 +189,8 @@ export type AccountSettings = {
   /** Whether a folder of pictures and videos opens as icons before anyone has said how to show it. On unless turned off. */
   smartView?: boolean;
   defaultView?: Partial<FolderView>;
+  /** The Finder tags kept at hand to put on files. Only its owner writes it. */
+  finderTags?: FinderTag[];
   /** When the desktop background was last set, which names the picture to ask for. Absent without one. */
   wallpaper?: number | null;
 };
@@ -287,19 +289,10 @@ export type FileMeta = {
 /** Everything inside a folder, however deep: the bytes of its files, and how many files there are. */
 export type FolderSize = { bytes: number; count: number };
 
-/** A tag set in macOS Finder, read from the file itself. Read-only in Kago. */
+/** A tag kept on the file itself. */
 export type FinderTag = {
   name: string;
   color: "gray" | "green" | "purple" | "blue" | "yellow" | "red" | "orange" | null;
-};
-
-export type Tag = {
-  id: string;
-  name: string;
-  color: string | null;
-  owner_id: string | null;
-  created_at: number;
-  updated_at: number;
 };
 
 export type ShareLink = {

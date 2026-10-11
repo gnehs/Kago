@@ -217,13 +217,6 @@
   --color-kind-slides: var(--kago-kind-slides);
   --color-kind-code: var(--kago-kind-code);
   --color-overlay: var(--kago-overlay);
-  --color-tag-gray: var(--kago-tag-gray);
-  --color-tag-green: var(--kago-tag-green);
-  --color-tag-purple: var(--kago-tag-purple);
-  --color-tag-blue: var(--kago-tag-blue);
-  --color-tag-yellow: var(--kago-tag-yellow);
-  --color-tag-red: var(--kago-tag-red);
-  --color-tag-orange: var(--kago-tag-orange);
   --radius-sm: var(--kago-radius-sm);
   --radius-md: var(--kago-radius-md);
   --radius-lg: var(--kago-radius-lg);
@@ -615,6 +608,31 @@
       0 0 0 0.5px color-mix(in srgb, currentColor 40%, var(--kago-surface)),
       var(--kago-badge-edge);
   }
+
+  /* A tag's colour, as a button barely raised: a little lighter at the top, with a faint shine and the thinnest of shadows. Without a colour it is a hollow in the surface. */
+  .kago-tag-dot {
+    flex-shrink: 0;
+    border-radius: 999px;
+    background: var(--kago-sunk);
+    box-shadow: var(--kago-sunk-shadow);
+  }
+
+  .kago-tag-dot[data-color] {
+    --tag: var(--kago-tag-gray);
+    background:
+      radial-gradient(80% 45% at 50% 8%, rgb(255 255 255 / 0.3), rgb(255 255 255 / 0) 80%),
+      linear-gradient(color-mix(in oklab, var(--tag), white 8%), color-mix(in oklab, var(--tag), black 7%));
+    box-shadow:
+      inset 0 0 0 0.5px color-mix(in oklab, var(--tag), black 22%),
+      0 0.5px 0.5px rgb(15 23 42 / 0.2);
+  }
+
+  .kago-tag-dot[data-color="green"] { --tag: var(--kago-tag-green); }
+  .kago-tag-dot[data-color="purple"] { --tag: var(--kago-tag-purple); }
+  .kago-tag-dot[data-color="blue"] { --tag: var(--kago-tag-blue); }
+  .kago-tag-dot[data-color="yellow"] { --tag: var(--kago-tag-yellow); }
+  .kago-tag-dot[data-color="red"] { --tag: var(--kago-tag-red); }
+  .kago-tag-dot[data-color="orange"] { --tag: var(--kago-tag-orange); }
 
   /*
    * The far end of a row that says how it stands: a plate tinted with the colour of its state, as a badge is,

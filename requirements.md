@@ -29,7 +29,7 @@ Kago 的使用體驗接近瀏覽器中的桌面檔案管理環境。使用者登
 * 支援類似 Dropover 的中轉區。
 * 支援在瀏覽器裡預覽與播放：圖片、影片（必要時即時轉檔）、音樂、文字、PDF、Office 文件。
 * 支援高度客製化 UI，使用 Base UI、Tailwind CSS 與專案自己持有的元件。
-* 支援 Kago 自己的標籤，也讀寫 macOS Finder 標籤。
+* 支援存在檔案上的標籤，以及每個人自己的常用標籤清單。
 * 介面有 English、繁體中文、简体中文、日本語。
 
 ## 3. 非目標
@@ -54,7 +54,7 @@ Kago 的使用體驗接近瀏覽器中的桌面檔案管理環境。使用者登
 ```txt
 影片轉檔
 單一登入（OIDC）
-macOS Finder 標籤的讀寫
+檔案標籤的讀寫
 WebDAV（作為遠端位置的一種）
 ```
 
@@ -84,7 +84,7 @@ WebDAV（作為遠端位置的一種）
 * Zod
 * sharp、MuPDF、ExifTool（縮圖與影像資訊）
 * rclone（遠端位置與同步）
-* smbclient（SMB 位置的 Finder 標籤）
+* smbclient（SMB 位置的標籤）
 * jellyfin-ffmpeg（影片轉檔、媒體資訊、縮圖）
 
 ### Container
@@ -256,7 +256,6 @@ kago/
           task.service.ts
           sync.service.ts
           shelf.service.ts
-          tag.service.ts
           share.service.ts
           audit.service.ts
           workspace.service.ts
@@ -1009,7 +1008,7 @@ backup
 
 移除遠端位置只移除 Kago 裡的紀錄，檔案留在原處；指向它的分享連結、權限規則與標籤會一併移除。
 
-位置在介面上與在分享、權限裡不分本機與遠端，某種位置才有的東西（Finder 標籤只在本機與 SMB 位置）在其他位置不出現。
+位置在介面上與在分享、權限裡不分本機與遠端，某種位置才有的東西（標籤只在本機與 SMB 位置）在其他位置不出現。
 
 「設定 → 位置」會標出最上層資料夾就讀不到或寫不進去的本機位置，並顯示 Kago 實際使用的 UID 與 GID。
 
@@ -1179,7 +1178,7 @@ Inspector（每個檔案視窗各自開關）
   - 圖示、名稱、種類與大小
   - 一般（資料夾的大小在這裡：選到才算，換選別的就停）
   - 拍攝資訊 / 影片資訊
-  - 標籤（Finder 與 Kago）
+  - 標籤
   - 分享連結
 
 App windows（每種只會開一個）
@@ -1607,30 +1606,6 @@ CREATE TABLE shelf_items (
   added_at INTEGER NOT NULL,
   FOREIGN KEY (shelf_id) REFERENCES shelves(id) ON DELETE CASCADE,
   FOREIGN KEY (root_id) REFERENCES roots(id) ON DELETE CASCADE
-);
-```
-
-### tags
-
-```sql
-CREATE TABLE tags (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  color TEXT,
-  owner_id TEXT,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL,
-  FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE
-);
-
-CREATE TABLE file_tags (
-  root_id TEXT NOT NULL,
-  path TEXT NOT NULL,
-  tag_id TEXT NOT NULL,
-  created_at INTEGER NOT NULL,
-  PRIMARY KEY (root_id, path, tag_id),
-  FOREIGN KEY (root_id) REFERENCES roots(id) ON DELETE CASCADE,
-  FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
 );
 ```
 
@@ -2231,29 +2206,25 @@ ADMIN 清掉所有人的
 
 ## 41. Tags
 
-有兩種標籤，在 Inspector 的同一區裡，以存放的地方區分：
-
-```txt
-Kago 標籤     只存在 Kago 的資料庫裡
-Finder 標籤   存在檔案上，macOS Finder 也看得到
-```
-
-### Kago 標籤
-
-```txt
-標籤屬於建立它的人
-別人看不到它，也不能把它貼到檔案上或撕下來，即使兩個人都能存取同一個檔案
-讀取檔案的標籤需要 view，設定需要 edit
-```
-
-### Finder 標籤
+標籤只有一種：存在檔案上的，有名稱與七種顏色之一（或沒有顏色）。
 
 ```txt
 本機位置與 SMB 位置有
 本機：以平台自己的工具讀寫檔案的 extended attribute（com.apple.metadata:_kMDItemUserTags）
-SMB：以 smbclient 讀寫檔案的具名串流，和 Mac 連上同一台伺服器時的做法相同，伺服器怎麼存由它自己決定
+SMB：以 smbclient 讀寫檔案的具名串流，伺服器怎麼存由它自己決定
 隨檔案清單一起讀出來
 寫入：PUT /api/fs/finder-tags，需要 edit
+```
+
+### 個人標籤清單
+
+```txt
+每個人一份，存在個人設定裡（settings.finderTags），最多 100 個，名稱不重複
+每一筆只有名稱與顏色，不記是誰建的、從哪裡來的
+只在「設定 → 一般」由本人新增與移除
+不從檔案掃描或匯入；替檔案加標籤（不論是點清單裡的還是自己輸入的）不會改到清單
+Inspector 把清單裡這個檔案還沒有的標籤列出來，點一下就加上
+沒有依標籤列出檔案的地方，側邊欄也沒有標籤；標籤只在看到檔案時顯示
 ```
 
 如果讀寫失敗（磁碟不支援、工具不存在、伺服器沒有回應），不可以讓檔案管理功能失效：那只代表沒有標籤。
@@ -2264,7 +2235,7 @@ SMB：以 smbclient 讀寫檔案的具名串流，和 Mac 連上同一台伺服�
 
 SMB 位置的串流名稱裡，屬性名稱的冒號以 U+F022 傳送；smbclient 刪不掉串流，移除全部標籤時寫入空的串流。名稱含有 rclone 會改寫的字元（" * : < > ? | \，或以空白、句點結尾）的項目不讀寫標籤。
 
-其他種類的遠端位置不出現 Finder 標籤，而不是顯示成停用。
+其他種類的遠端位置不出現標籤，而不是顯示成停用。
 
 ## 42. 同步
 
@@ -2834,7 +2805,7 @@ MVP 之後加入的：
 同步工作與排程
 單一登入（OIDC）
 應用程式捷徑
-macOS Finder 標籤的讀寫
+檔案標籤的讀寫
 加密的 zip 與存起來的壓縮檔密碼
 多國語言
 窄螢幕

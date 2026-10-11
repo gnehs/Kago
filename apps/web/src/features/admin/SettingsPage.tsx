@@ -7,6 +7,7 @@ import { Field, Input, Select } from "@/components/ui/input";
 import { KagoPasswordInput } from "@/components/kago/password-input";
 import { firstDirection, sortColumns } from "@/features/files/FileList";
 import { BASE_VIEW } from "@/features/files/folderView";
+import { FinderTagList } from "@/features/tags/FinderTagEditor";
 import { Card, Page, Row, RowList, SettingRow } from "@/components/kago/page";
 import { KagoSegmented } from "@/components/kago/segmented";
 import { formatUnixDate } from "@/lib/format";
@@ -116,6 +117,9 @@ export function SettingsPage() {
             <KagoSegmented label={t("Icons for pictures and videos")} options={switches} value={settings.smartView === false ? "off" : "on"} onChange={(value) => void saveSettings({ smartView: value === "on" })} />
           </SettingRow>
         </div>
+      </Card>
+      <Card title={t("Tags")} description={t("Tags you keep at hand. They appear in a file’s info, ready to put on it with one click.")}>
+        <FinderTagList />
       </Card>
       <ArchivePasswords />
     </Page>

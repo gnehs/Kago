@@ -8,7 +8,7 @@ import { lookup } from "mime-types";
 import { z } from "zod";
 import { AppError } from "../lib/errors.js";
 import { assertNameAvailable, nfc } from "../lib/filename.js";
-import { readFinderTags, writeFinderTags } from "../lib/finder-tags.js";
+import { finderTagSchema, readFinderTags, writeFinderTags } from "../lib/finder-tags.js";
 import { MAX_SQLITE_PAGE, sqliteOverview, sqliteRows } from "../lib/sqlite-preview.js";
 import { isPictureFormat, parseSubtitleName } from "../lib/subtitles.js";
 import { isSystemFile } from "../lib/system-files.js";
@@ -70,18 +70,10 @@ export const renameManySchema = z.object({
   items: z.array(renameSchema.omit({ rootSlug: true })).min(1).max(1000)
 });
 
-// Object references in the stored list are one byte, and the path limit of a name is plenty for a tag.
 export const finderTagsSchema = z.object({
   rootSlug: z.string().min(1),
   path: z.string().min(1),
-  tags: z
-    .array(
-      z.object({
-        name: z.string().trim().min(1).max(255).refine((value) => !/[\n\r\0]/.test(value)),
-        color: z.enum(["gray", "green", "purple", "blue", "yellow", "red", "orange"]).nullable()
-      })
-    )
-    .max(100)
+  tags: z.array(finderTagSchema).max(100)
 });
 
 /** A thumbnail is either a file on disk (a drawn picture, or the original) or a few bytes of text. */
@@ -279,7 +271,7 @@ export class FsService {
       if (this.storage.isRemote(safe)) await this.storage.remote.setFinderTags(safe.root, safe.logicalPath, tags);
       else await writeFinderTags(path.dirname(safe.absolutePath), path.basename(safe.absolutePath), tags, await fsp.realpath(safe.root.base_path));
     } catch {
-      throw new AppError(500, "This location cannot store Finder tags", "FINDER_TAGS_UNSUPPORTED");
+      throw new AppError(500, "This location cannot store tags", "FINDER_TAGS_UNSUPPORTED");
     }
     this.audit.write({
       actorType: "user",

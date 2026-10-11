@@ -1,15 +1,22 @@
 import { execFile } from "node:child_process";
 import fsp from "node:fs/promises";
 import path from "node:path";
+import { z } from "zod";
 import { logger } from "./logger.js";
 
-/** A tag set in macOS Finder. Kago only reads these; its own tags live in the DB. */
+/** A tag kept on the file itself, the way macOS Finder keeps its own. */
 export type FinderTag = { name: string; color: FinderTagColor | null };
 
 export type FinderTagColor = (typeof colors)[number];
 
 // Finder stores each tag as "name\n<index>", the index pointing into this list (0 is no colour).
 const colors = ["gray", "green", "purple", "blue", "yellow", "red", "orange"] as const;
+
+// Object references in the stored list are one byte, and the path limit of a name is plenty for a tag.
+export const finderTagSchema = z.object({
+  name: z.string().trim().min(1).max(255).refine((value) => !/[\n\r\0]/.test(value)),
+  color: z.enum(colors).nullable()
+});
 
 const ATTRIBUTE = "com.apple.metadata:_kMDItemUserTags";
 const CHUNK_SIZE = 500;
@@ -40,7 +47,7 @@ export async function readFinderTags(directory: string, names: string[]): Promis
         }
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-          if (!unavailable) logger.warn("Finder tags are unavailable: the xattr tool is not installed");
+          if (!unavailable) logger.warn("File tags are unavailable: the xattr tool is not installed");
           unavailable = true;
         }
       }

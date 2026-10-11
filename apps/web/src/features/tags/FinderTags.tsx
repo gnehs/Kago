@@ -2,15 +2,10 @@ import { cn } from "@/lib/utils";
 import type { FinderTag } from "@/types/kago";
 import { t } from "@/lib/i18n";
 
-export const finderTagColorClass: Record<NonNullable<FinderTag["color"]>, string> = {
-  gray: "bg-tag-gray",
-  green: "bg-tag-green",
-  purple: "bg-tag-purple",
-  blue: "bg-tag-blue",
-  yellow: "bg-tag-yellow",
-  red: "bg-tag-red",
-  orange: "bg-tag-orange"
-};
+/** A tag's colour as a small bead, or a hollow for a tag without one. Its size comes from `className`. */
+export function TagDot({ color, className }: { color: FinderTag["color"]; className?: string }) {
+  return <span data-color={color ?? undefined} className={cn("kago-tag-dot", className)} />;
+}
 
 const MAX_DOTS = 3;
 
@@ -23,7 +18,7 @@ export function FinderTagDots({ tags, className }: { tags?: FinderTag[]; classNa
   return (
     <span className={cn("flex shrink-0 items-center", className)} role="img" aria-label={t("Tags: {label}", { label })} title={label}>
       {colored.map((tag) => (
-        <span key={tag.name} className={cn("-ml-1 size-2.5 rounded-full ring-1 ring-surface first:ml-0", finderTagColorClass[tag.color!])} />
+        <TagDot key={tag.name} color={tag.color} className="-ml-1 size-2.5 outline outline-1 outline-surface first:ml-0" />
       ))}
     </span>
   );

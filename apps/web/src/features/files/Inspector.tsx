@@ -9,7 +9,6 @@ import { Button } from "@/components/ui/button";
 import { ShareForm } from "@/features/shares/ShareForm";
 import { parseShareMode, shareModeLabel } from "@/features/shares/shareUtils";
 import { FinderTagEditor } from "@/features/tags/FinderTagEditor";
-import { TagEditor } from "@/features/tags/TagEditor";
 import { formatDate, formatSize, isPicture, isVideoType, kindLabel } from "@/lib/format";
 import { displayPath } from "@/lib/paths";
 import { usePointerDrag } from "@/lib/usePointerDrag";
@@ -103,18 +102,12 @@ export function Inspector({ window: activeWindow }: { window: FileWindow }) {
               ))
             : null}
 
-          {/* Two kinds of tag, one place: where each is kept is what tells them apart. */}
-          <DetailSection title={t("Tags")}>
-            {/* Finder tags are kept on the file itself: on the server's own disk, or on an SMB server as a Mac would leave them. */}
-            {(readonly && !meta.data.finderTags?.length) || (root && root.provider !== "local" && root.provider !== "smb") ? null : (
-              <TagGroup label="Finder" hint={t("Stored on the file, visible in Finder too")}>
-                <FinderTagEditor rootSlug={rootSlug} path={path} tags={meta.data.finderTags ?? []} readonly={readonly} />
-              </TagGroup>
-            )}
-            <TagGroup label="Kago" hint={t("Kept in Kago only")}>
-              <TagEditor rootSlug={rootSlug} path={path} />
-            </TagGroup>
-          </DetailSection>
+          {/* Tags are kept on the file itself: on the server's own disk, or on an SMB server. Other locations have no place for them. */}
+          {(readonly && !meta.data.finderTags?.length) || (root && root.provider !== "local" && root.provider !== "smb") ? null : (
+            <DetailSection title={t("Tags")}>
+              <FinderTagEditor rootSlug={rootSlug} path={path} tags={meta.data.finderTags ?? []} readonly={readonly} />
+            </DetailSection>
+          )}
 
           <DetailSection title={t("Share links")}>
             {pathShares.length > 0 ? (
@@ -232,14 +225,3 @@ function FilmRecipeDetails({ recipe }: { recipe: FilmRecipe }) {
   );
 }
 
-function TagGroup({ label, hint, children }: { label: string; hint: string; children: ReactNode }) {
-  return (
-    <div className="mt-3 flex flex-col gap-1.5 first-of-type:mt-0">
-      <div className="flex items-baseline gap-2 text-xs">
-        <span className="font-medium text-muted">{label}</span>
-        <span className="truncate text-faint">{hint}</span>
-      </div>
-      {children}
-    </div>
-  );
-}

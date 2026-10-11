@@ -39,7 +39,6 @@ import { SHARE_VISIT_SECONDS, ShareService, shareSchema, type ShareVisitor } fro
 import { ShelfService } from "./services/shelf.service.js";
 import { StorageService } from "./services/storage.service.js";
 import { syncJobSchema, SyncService } from "./services/sync.service.js";
-import { TagService, tagSchema } from "./services/tag.service.js";
 import { archivePasswordSchema } from "./services/archive-password.service.js";
 import { taskInputSchema, TaskService } from "./services/task.service.js";
 import { workspaceSchema, WorkspaceService } from "./services/workspace.service.js";
@@ -72,7 +71,6 @@ export async function buildApp(env: Env) {
   const workspace = new WorkspaceService(db, roots, paths);
   const tasks = new TaskService(db, paths, permissions, audit, events, env.appDataDir, fsService, storage, preferences);
   const shelves = new ShelfService(db, paths, permissions, events, audit, storage);
-  const tags = new TagService(db, paths, permissions, audit);
   const shares = new ShareService(db, paths, permissions, audit, events, storage);
   const sync = new SyncService(db, tasks, auth, audit);
   const groups = new GroupService(db);
@@ -142,7 +140,7 @@ export async function buildApp(env: Env) {
     }
   }
   await remotes.start();
-  registerApi(app, { auth, audit, roots, paths, permissions, fsService, workspace, preferences, tasks, shelves, tags, shares, groups, oidc, media, images, apps, iconLibrary, frameProbe: new FrameProbe(), events, db, storage, remotes, sync, env });
+  registerApi(app, { auth, audit, roots, paths, permissions, fsService, workspace, preferences, tasks, shelves, shares, groups, oidc, media, images, apps, iconLibrary, frameProbe: new FrameProbe(), events, db, storage, remotes, sync, env });
 
   app.get("/ws", {
     websocket: true,
@@ -296,7 +294,6 @@ type Services = {
   preferences: PreferenceService;
   tasks: TaskService;
   shelves: ShelfService;
-  tags: TagService;
   shares: ShareService;
   groups: GroupService;
   oidc: OidcService;
@@ -1065,18 +1062,6 @@ function registerApi(app: FastifyInstance, services: Services) {
     });
   });
 
-  app.get("/api/tags", async (request) => services.tags.list(requireActor(request)));
-  app.post("/api/tags", async (request) => services.tags.create(requireActor(request), tagSchema.parse(request.body)));
-  app.get("/api/tags/file", async (request) => {
-    const actor = requireActor(request);
-    const query = fsQuerySchema.parse(request.query);
-    return services.tags.getFileTags(actor, query.rootSlug, query.path);
-  });
-  app.put("/api/tags/file", async (request) => {
-    const actor = requireActor(request);
-    const body = z.object({ rootSlug: z.string(), path: z.string(), tagIds: z.array(z.string()).max(200) }).parse(request.body);
-    return services.tags.setFileTags(actor, body.rootSlug, body.path, body.tagIds);
-  });
 
   app.get("/api/permissions", async (request) => {
     requireAdmin(request);
