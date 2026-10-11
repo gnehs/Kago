@@ -293,6 +293,8 @@ export const zhCN: Dictionary = {
   "Info": "信息",
   "Close info panel": "关闭信息面板",
   "Couldn’t load this item’s info.": "无法读取这个项目的信息。",
+  "Calculating…": "计算中…",
+  "Couldn’t calculate": "无法计算",
   "{count} selected, showing the last one": "已选择 {count} 项，显示最后一项",
   "Location": "位置",
   "Access": "访问",

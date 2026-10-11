@@ -742,6 +742,20 @@ function registerApi(app: FastifyInstance, services: Services) {
     const query = fsQuerySchema.parse(request.query);
     return services.fsService.meta(actor, query.rootSlug, query.path);
   });
+  app.get("/api/fs/size", async (request, reply) => {
+    const actor = requireActor(request);
+    const query = fsQuerySchema.parse(request.query);
+    // A large folder takes a while to read through; whoever looks elsewhere meanwhile drops the connection, and the count with it.
+    const gone = new AbortController();
+    reply.raw.on("close", () => gone.abort());
+    try {
+      return await services.fsService.size(actor, query.rootSlug, query.path, gone.signal);
+    } catch (error) {
+      // Nobody is left to tell, and giving up is not a failure to record.
+      if (gone.signal.aborted) return reply.status(204).send();
+      throw error;
+    }
+  });
   app.get("/api/fs/download", async (request, reply) => {
     const actor = requireActor(request);
     const query = fsQuerySchema.parse(request.query);

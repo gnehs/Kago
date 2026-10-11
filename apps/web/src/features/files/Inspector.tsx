@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { Link2, X } from "lucide-react";
-import { useFileMeta, useImageMetadata, useMediaInfo, useRoots, useShares } from "@/api/hooks";
+import { useFileMeta, useFolderSize, useImageMetadata, useMediaInfo, useRoots, useShares } from "@/api/hooks";
 import { KagoBadge } from "@/components/kago/badge";
 import { Detail, DetailList, DetailSection } from "@/components/kago/details";
 import { KagoLoading } from "@/components/kago/empty-state";
@@ -36,6 +36,7 @@ export function Inspector({ window: activeWindow }: { window: FileWindow }) {
   const photo = useImageMetadata(rootSlug, path, Boolean(meta.data && isPicture(meta.data))).data;
   // Likewise a video the server cannot probe.
   const video = useMediaInfo(rootSlug, path, Boolean(meta.data && meta.data.kind === "file" && isVideoType(meta.data.type))).data;
+  const folderSize = useFolderSize(rootSlug, path, meta.data?.kind === "folder");
   const root = roots.data?.find((root) => root.slug === rootSlug);
   const rootId = root?.id;
   const readonly = Boolean(root?.readonly);
@@ -75,6 +76,15 @@ export function Inspector({ window: activeWindow }: { window: FileWindow }) {
 
           <DetailSection title={t("General")}>
             <DetailList>
+              {meta.data.kind === "folder" ? (
+                <Detail label={t("Size")}>
+                  {folderSize.data
+                    ? `${formatSize(folderSize.data.bytes)} · ${t("{count} file | {count} files", { count: folderSize.data.count })}`
+                    : folderSize.isError
+                      ? <span className="text-muted">{t("Couldn’t calculate")}</span>
+                      : <span className="text-muted">{t("Calculating…")}</span>}
+                </Detail>
+              ) : null}
               <Detail label={t("Modified")}>{formatDate(meta.data.mtime)}</Detail>
               <Detail label={t("Location")}><span title={`${rootSlug}:${path}`}>{displayPath(root?.name ?? rootSlug, path)}</span></Detail>
               {readonly ? <Detail label={t("Access")}>{t("Read-only")}</Detail> : null}

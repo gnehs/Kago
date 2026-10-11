@@ -293,6 +293,8 @@ export const ja: Dictionary = {
   "Info": "情報",
   "Close info panel": "情報パネルを閉じる",
   "Couldn’t load this item’s info.": "この項目の情報を読み込めません。",
+  "Calculating…": "計算中…",
+  "Couldn’t calculate": "計算できませんでした",
   "{count} selected, showing the last one": "{count} 項目を選択中、最後の項目を表示",
   "Location": "場所",
   "Access": "アクセス",

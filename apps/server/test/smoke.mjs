@@ -376,6 +376,15 @@ test("minimum file-manager demo flow", async () => {
     assert.deepEqual(tidyList.filter((name) => litter.includes(name)), []);
     assert.ok(tidyList.includes("thumbs.db.txt"));
     assert.equal((await admin.get("/api/fs/download?rootSlug=photos&path=/public/Thumbs.db")).payload, "litter");
+    // A folder's size is everything inside it, however deep, counted as it is listed: without what the system left behind.
+    await mkdir(path.join(fixture.dataDir, "photos", "sized", "inner", "deeper"), { recursive: true });
+    for (const [name, text] of [["a.txt", "12345"], ["inner/b.txt", "123"], ["inner/deeper/c.txt", "12"], [".DS_Store", "litter"], ["inner/._b.txt", "litter"]]) await writeFile(path.join(fixture.dataDir, "photos", "sized", name), text);
+    await symlink(path.join(fixture.dataDir, "photos", "public"), path.join(fixture.dataDir, "photos", "sized", "elsewhere"));
+    assert.deepEqual((await admin.get("/api/fs/size?rootSlug=photos&path=/sized")).json, { bytes: 10, count: 3 });
+    assert.deepEqual((await admin.get("/api/fs/size?rootSlug=photos&path=/sized/inner")).json, { bytes: 5, count: 2 });
+    assert.deepEqual((await admin.get("/api/fs/size?rootSlug=photos&path=/sized/a.txt")).json, { bytes: 5, count: 1 });
+    assert.equal((await admin.get("/api/fs/size?rootSlug=photos&path=/sized/missing")).statusCode, 404);
+    await rm(path.join(fixture.dataDir, "photos", "sized"), { recursive: true });
     // A rule is for the whole location: what it lets someone see in one folder it lets them see in every other.
     assert.equal((await scopedUser.get("/api/fs/list?rootSlug=photos&path=/private")).statusCode, 200);
     assert.equal((await scopedUser.post("/api/fs/mkdir", { rootSlug: "photos", path: "/public", name: "not-allowed" })).statusCode, 403);

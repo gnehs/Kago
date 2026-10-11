@@ -37,9 +37,10 @@ export function rcloneSocketPath(appDataDir: string): string {
 export class RcloneClient {
   constructor(private readonly socketPath: string) {}
 
-  async call<T = Record<string, unknown>>(command: string, body: Record<string, unknown> = {}): Promise<T> {
+  /** `signal` drops the connection, and rclone stops what the call had it doing. */
+  async call<T = Record<string, unknown>>(command: string, body: Record<string, unknown> = {}, signal?: AbortSignal): Promise<T> {
     const payload = Buffer.from(JSON.stringify(body));
-    const response = await this.request("POST", `/${command}`, { "Content-Type": "application/json", "Content-Length": String(payload.length) }, payload);
+    const response = await this.request("POST", `/${command}`, { "Content-Type": "application/json", "Content-Length": String(payload.length) }, payload, signal);
     const text = await readAll(response);
     if (response.statusCode !== 200) throw rcloneError(response.statusCode ?? 500, text);
     return JSON.parse(text.toString("utf8") || "{}") as T;
@@ -110,10 +111,10 @@ export class RcloneClient {
     }
   }
 
-  private request(method: string, url: string, headers: Record<string, string>, body?: Buffer): Promise<http.IncomingMessage> {
+  private request(method: string, url: string, headers: Record<string, string>, body?: Buffer, signal?: AbortSignal): Promise<http.IncomingMessage> {
     return new Promise((resolve, reject) => {
-      const request = http.request({ socketPath: this.socketPath, method, path: url, headers }, resolve);
-      request.on("error", (error) => reject(unavailable(error)));
+      const request = http.request({ socketPath: this.socketPath, method, path: url, headers, signal }, resolve);
+      request.on("error", (error) => reject(signal?.aborted ? error : unavailable(error)));
       request.end(body);
     });
   }

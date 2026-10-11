@@ -4,7 +4,7 @@ import { api, previewUrl } from "./client";
 import { decodeSubtitle } from "../lib/subtitles";
 import { withSpeeds } from "../lib/taskSpeed";
 import { isTrashing, useTrashingStore } from "../stores/trashing";
-import type { Actor, AuditLog, ExternalApp, FileItem, FileList, FileMeta, FileTask, FrameVerdict, Group, ImageMetadata, LibraryIcon, MediaInfo, PermissionRule, Root, ShareLink, Shelf, SqlitePage, SsoConfig, SsoIdentity, SsoInfo, SqliteTable, StorageInfo, SubtitleList, SyncJob, SyncRun, SyncTrial, Tag, TrashItem, UserAccount, WorkspaceState } from "../types/kago";
+import type { Actor, AuditLog, ExternalApp, FileItem, FileList, FileMeta, FileTask, FolderSize, FrameVerdict, Group, ImageMetadata, LibraryIcon, MediaInfo, PermissionRule, Root, ShareLink, Shelf, SqlitePage, SsoConfig, SsoIdentity, SsoInfo, SqliteTable, StorageInfo, SubtitleList, SyncJob, SyncRun, SyncTrial, Tag, TrashItem, UserAccount, WorkspaceState } from "../types/kago";
 
 export function useSetupStatus() {
   return useQuery({ queryKey: ["auth", "setup"], queryFn: () => api<{ needsSetup: boolean; oidc: SsoInfo | null }>("/api/auth/setup") });
@@ -113,6 +113,18 @@ export function useFileMeta(rootSlug: string, path: string, enabled = true) {
     queryKey: ["fs", "meta", rootSlug, path],
     queryFn: () => api<FileMeta>(`/api/fs/meta?${new URLSearchParams({ rootSlug, path }).toString()}`),
     enabled
+  });
+}
+
+/** How much a folder holds, which the server reads the whole folder to tell: asked only where it is shown, and given up when that goes away. */
+export function useFolderSize(rootSlug: string, path: string, enabled = true) {
+  return useQuery({
+    queryKey: ["fs", "size", rootSlug, path],
+    queryFn: ({ signal }) => api<FolderSize>(`/api/fs/size?${new URLSearchParams({ rootSlug, path }).toString()}`, { signal }),
+    enabled,
+    // Coming back to a folder just measured does not measure it again.
+    staleTime: 60_000,
+    retry: false
   });
 }
 

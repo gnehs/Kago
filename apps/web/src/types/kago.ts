@@ -284,6 +284,9 @@ export type FileMeta = {
   finderTags?: FinderTag[];
 };
 
+/** Everything inside a folder, however deep: the bytes of its files, and how many files there are. */
+export type FolderSize = { bytes: number; count: number };
+
 /** A tag set in macOS Finder, read from the file itself. Read-only in Kago. */
 export type FinderTag = {
   name: string;

@@ -293,6 +293,8 @@ export const zhTW: Dictionary = {
   "Info": "資訊",
   "Close info panel": "關閉資訊面板",
   "Couldn’t load this item’s info.": "無法讀取這個項目的資訊。",
+  "Calculating…": "計算中…",
+  "Couldn’t calculate": "無法計算",
   "{count} selected, showing the last one": "已選取 {count} 項，顯示最後一項",
   "Location": "位置",
   "Access": "存取",

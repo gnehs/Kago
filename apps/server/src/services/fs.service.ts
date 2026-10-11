@@ -115,6 +115,9 @@ export const sqliteRowsSchema = fsQuerySchema.extend({
 
 export const maxUploadFiles = 20;
 
+/** How many files of a folder being measured are asked about at once. */
+const SIZE_STAT_BATCH = 64;
+
 export class FsService {
   private readonly thumbnailer: Thumbnailer;
   private keptPictureDirs?: Promise<Set<string>>;
@@ -220,6 +223,43 @@ export class FsService {
       type: stat.isDirectory() ? "folder" : lookup(safe.absolutePath) || "application/octet-stream",
       finderTags: finderTags.get(name) ?? []
     };
+  }
+
+  /**
+   * How much a folder holds, everything inside it counted: nothing keeps that figure, so the folder is read through
+   * to tell it, which takes as long as the folder is large. `signal` is for whoever stopped waiting.
+   * Counted as the folder is listed: without what the system left behind, and without following a symlink.
+   */
+  async size(actor: Actor, rootSlug: string, logicalPath: string, signal?: AbortSignal): Promise<{ bytes: number; count: number }> {
+    const safe = await this.paths.resolveExisting(rootSlug, logicalPath);
+    this.permissions.require(actor, "view", safe.root, safe.logicalPath);
+    if (this.storage.isRemote(safe)) return this.storage.remote.size(safe.root, safe.logicalPath, (await this.storage.stat(safe)).isDirectory(), signal);
+    const stat = await fsp.lstat(safe.absolutePath);
+    if (!stat.isDirectory()) return { bytes: stat.size, count: 1 };
+
+    const total = { bytes: 0, count: 0 };
+    const pending = [safe.absolutePath];
+    for (let folder = pending.pop(); folder !== undefined; folder = pending.pop()) {
+      signal?.throwIfAborted();
+      // A folder that cannot be read, or that went away meanwhile, is counted as holding nothing.
+      const entries = await fsp.readdir(folder, { withFileTypes: true }).catch(() => []);
+      const files: string[] = [];
+      for (const entry of entries) {
+        if (entry.name.includes("\0") || isSystemFile(entry.name)) continue;
+        if (entry.isDirectory()) pending.push(path.join(folder, entry.name));
+        else if (entry.isFile()) files.push(path.join(folder, entry.name));
+      }
+      for (let start = 0; start < files.length; start += SIZE_STAT_BATCH) {
+        signal?.throwIfAborted();
+        const stats = await Promise.all(files.slice(start, start + SIZE_STAT_BATCH).map((file) => fsp.lstat(file).catch(() => null)));
+        for (const fileStat of stats) {
+          if (!fileStat) continue;
+          total.bytes += fileStat.size;
+          total.count += 1;
+        }
+      }
+    }
+    return total;
   }
 
   async setFinderTags(actor: Actor, input: z.infer<typeof finderTagsSchema>) {

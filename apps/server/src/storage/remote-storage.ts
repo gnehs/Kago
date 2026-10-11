@@ -228,12 +228,17 @@ export class RemoteStorage {
     });
   }
 
-  /** How much a file or a whole folder holds. */
-  async size(root: Root, logicalPath: string, directory: boolean): Promise<{ bytes: number; count: number }> {
+  /** How much a file or a whole folder holds, and in how many files. What is in the trash is not in the folder. */
+  async size(root: Root, logicalPath: string, directory: boolean, signal?: AbortSignal): Promise<{ bytes: number; count: number }> {
     if (!directory) return { bytes: (await this.stat(root, logicalPath))?.size ?? 0, count: 1 };
-    const result = await this.client.call<{ bytes: number; count: number }>("operations/size", { fs: joinFs(this.fs(root), this.rel(logicalPath)) }).catch((error: unknown) => {
-      throw remoteFailure(error);
-    });
+    // The trash sits at the top of the location or of each share, so only a folder above it can hold one.
+    const above = this.fixedDepth(root) - segmentsOf(logicalPath).length;
+    const excluded = above >= 0 ? [`/${"*/".repeat(above)}${REMOTE_TRASH}/**`] : [];
+    const result = await this.client
+      .call<{ bytes: number; count: number }>("operations/size", { fs: joinFs(this.fs(root), this.rel(logicalPath)), _filter: { ExcludeRule: excluded } }, signal)
+      .catch((error: unknown) => {
+        throw remoteFailure(error);
+      });
     return { bytes: Math.max(result.bytes, 0), count: result.count };
   }
 

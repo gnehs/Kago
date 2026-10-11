@@ -1176,7 +1176,7 @@ FileWindow
 
 Inspector（每個檔案視窗各自開關）
   - 圖示、名稱、種類與大小
-  - 一般
+  - 一般（資料夾的大小在這裡：選到才算，換選別的就停）
   - 拍攝資訊 / 影片資訊
   - 標籤（Finder 與 Kago）
   - 分享連結
@@ -2405,6 +2405,7 @@ DELETE /api/archive-passwords/:id
 ```txt
 GET    /api/fs/list?rootSlug=photos&path=/Japan
 GET    /api/fs/meta?rootSlug=photos&path=/Japan/a.jpg
+GET    /api/fs/size?rootSlug=photos&path=/Japan    資料夾裡所有檔案的總大小與數量，現算
 GET    /api/fs/download?rootSlug=photos&path=/Japan/a.jpg
 GET    /api/fs/download-zip
 GET    /api/fs/preview?rootSlug=photos&path=/Japan/a.jpg
