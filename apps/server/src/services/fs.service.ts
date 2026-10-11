@@ -269,7 +269,8 @@ export class FsService {
     if (this.storage.isRemote(safe)) throw new AppError(500, "This location cannot store Finder tags", "FINDER_TAGS_UNSUPPORTED");
     const tags = input.tags.filter((tag, index) => input.tags.findIndex((other) => other.name === tag.name) === index);
     try {
-      await writeFinderTags(path.dirname(safe.absolutePath), path.basename(safe.absolutePath), tags);
+      const boundary = await fsp.realpath(safe.root.base_path);
+      await writeFinderTags(path.dirname(safe.absolutePath), path.basename(safe.absolutePath), tags, boundary);
     } catch {
       throw new AppError(500, "This location cannot store Finder tags", "FINDER_TAGS_UNSUPPORTED");
     }

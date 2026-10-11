@@ -1,4 +1,6 @@
 import { execFile } from "node:child_process";
+import fsp from "node:fs/promises";
+import path from "node:path";
 import { logger } from "./logger.js";
 
 /** A tag set in macOS Finder. Kago only reads these; its own tags live in the DB. */
@@ -58,8 +60,8 @@ function run(command: string, args: string[], cwd: string, strict = false): Prom
 }
 
 // `xattr -px` prints "./name: " and then the value as rows of hex bytes.
-async function readDarwin(directory: string, names: string[]): Promise<Map<string, Buffer>> {
-  const stdout = await run("/usr/bin/xattr", ["-px", ATTRIBUTE, ...names.map((name) => `./${name}`)], directory);
+async function readDarwin(directory: string, names: string[], attribute = ATTRIBUTE): Promise<Map<string, Buffer>> {
+  const stdout = await run("/usr/bin/xattr", ["-px", attribute, ...names.map((name) => `./${name}`)], directory);
   const values = new Map<string, Buffer>();
   let current: string | null = names.length === 1 ? names[0]! : null;
   let hex = "";
@@ -112,11 +114,47 @@ async function readLinux(directory: string, names: string[]): Promise<Map<string
   return values;
 }
 
+// Finder also keeps the colour of the last coloured tag as a label in the entry's Finder info, and shows that
+// label as a tag when the tags themselves are gone.
+const FINDER_INFO = "com.apple.FinderInfo";
+const LINUX_FINDER_INFO = `user.${FINDER_INFO}`;
+const SAMBA_FINDER_INFO = "user.DosStream.AFP_AfpInfo:$DATA";
+const SAMBA_FINDER_INFO_OFFSET = 16;
+const FINDER_INFO_SIZE = 32;
+const LABEL_BYTE = 9;
+const LABEL_MASK = 0x0e;
+
+const SAMBA_EVIDENCE = "^user\\.DosStream\\.|^user\\.DOSATTRIB$";
+const EVIDENCE_NAMES = 200;
+
+/** Finder info with the label set to that of `tags`, or null when it already is. */
+function relabel(info: Buffer, offset: number, tags: FinderTag[]): Buffer | null {
+  if (info.length < offset + FINDER_INFO_SIZE) return null;
+  const color = tags.filter((tag) => tag.color).at(-1)?.color;
+  const next = Buffer.from(info);
+  next[offset + LABEL_BYTE] = (next[offset + LABEL_BYTE]! & ~LABEL_MASK) | ((color ? colors.indexOf(color) + 1 : 0) << 1);
+  return next.equals(info) ? null : next;
+}
+
+/**
+ * Whether Samba serves this volume, told by the attributes it leaves on what its clients create or tag.
+ * A folder made on the server itself has none, so its neighbours and the folders above it are looked at too.
+ */
+async function servedBySamba(directory: string, boundary: string): Promise<boolean> {
+  for (let current = directory; ; current = path.dirname(current)) {
+    const names = (await fsp.readdir(current).catch(() => [])).filter((name) => !name.includes("\n")).slice(0, EVIDENCE_NAMES);
+    const found = await getfattr(current, SAMBA_EVIDENCE, [".", ...names]);
+    if ([...found.values()].some((attributes) => attributes.size > 0)) return true;
+    if (current === boundary || current === path.dirname(current)) return false;
+  }
+}
+
 /**
  * Replaces the Finder tags of one entry of a directory; an empty list removes the attribute, as Finder does.
+ * `boundary` is the folder not to look above when working out how the volume stores them.
  * Throws when the volume refuses the change.
  */
-export async function writeFinderTags(directory: string, name: string, tags: FinderTag[]): Promise<void> {
+export async function writeFinderTags(directory: string, name: string, tags: FinderTag[], boundary = directory): Promise<void> {
   if (name.includes("\n")) throw new Error("Name cannot be tagged");
   const file = `./${name}`;
   const value = encodeStringArray(tags.map((tag) => (tag.color ? `${tag.name}\n${colors.indexOf(tag.color) + 1}` : tag.name)));
@@ -124,21 +162,31 @@ export async function writeFinderTags(directory: string, name: string, tags: Fin
   if (process.platform === "darwin") {
     if (tags.length > 0) await run("/usr/bin/xattr", ["-wx", ATTRIBUTE, value.toString("hex"), file], directory, true);
     else if ((await readDarwin(directory, [name])).has(name)) await run("/usr/bin/xattr", ["-d", ATTRIBUTE, file], directory, true);
+    const info = (await readDarwin(directory, [name], FINDER_INFO)).get(name);
+    const relabelled = info && relabel(info, 0, tags);
+    // Finder info of nothing but zeros reads as absent, and macOS refuses to store it.
+    if (relabelled?.some((byte) => byte !== 0)) await run("/usr/bin/xattr", ["-wx", FINDER_INFO, relabelled.toString("hex"), file], directory, true);
+    else if (relabelled) await run("/usr/bin/xattr", ["-d", FINDER_INFO, file], directory, true);
     return;
   }
 
-  // The entry's own attributes, and its folder's, say how this volume stores them.
-  const found = await getfattr(directory, "_kMDItemUserTags|^user\\.DosStream\\.|^user\\.DOSATTRIB$", [name, "."]);
-  const existing = [...(found.get(name)?.keys() ?? [])].filter(isTagAttribute);
+  // The entry's own attributes say how this volume stores them.
+  const found = (await getfattr(directory, `_kMDItemUserTags|${SAMBA_EVIDENCE}|^user\\.com\\.apple\\.FinderInfo$`, [name])).get(name) ?? new Map<string, Buffer>();
+  const set = (attribute: string, data: Buffer) => run("setfattr", ["-h", "-n", attribute, "-v", `0x${data.toString("hex")}`, "--", file], directory, true);
+  for (const [attribute, offset] of [[LINUX_FINDER_INFO, 0], [SAMBA_FINDER_INFO, SAMBA_FINDER_INFO_OFFSET]] as const) {
+    const info = found.get(attribute);
+    const relabelled = info && relabel(info, offset, tags);
+    if (relabelled) await set(attribute, relabelled);
+  }
+  const existing = [...found.keys()].filter(isTagAttribute);
   if (tags.length === 0) {
     for (const attribute of existing) await run("setfattr", ["-h", "-x", attribute, "--", file], directory, true);
     return;
   }
-  const samba = [...found.values()].some((attributes) => attributes.size > 0);
+  const samba = [...found.keys()].some((attribute) => !isTagAttribute(attribute) && attribute !== LINUX_FINDER_INFO) || (await servedBySamba(directory, boundary));
   for (const attribute of existing.length > 0 ? existing : [samba ? SAMBA_ATTRIBUTE : LINUX_ATTRIBUTE]) {
     // Samba expects stream data to end with a NUL.
-    const data = attribute.startsWith("user.DosStream.") ? Buffer.concat([value, Buffer.alloc(1)]) : value;
-    await run("setfattr", ["-h", "-n", attribute, "-v", `0x${data.toString("hex")}`, "--", file], directory, true);
+    await set(attribute, attribute.startsWith("user.DosStream.") ? Buffer.concat([value, Buffer.alloc(1)]) : value);
   }
 }
 
