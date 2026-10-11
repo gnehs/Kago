@@ -11,21 +11,19 @@ import { getSubtitlePref, getVideoHdr, getVideoHdrLift, getVideoQuality, setSubt
 import { languageLabel, pickSubtitle, subtitleLabel } from "@/lib/subtitles";
 import { toast } from "@/stores/toast";
 import { useWorkspaceStore, type PreviewWindow } from "@/stores/workspace";
-import type { FileItem, MediaInfo, SubtitleTrack } from "@/types/kago";
+import type { FileItem, SubtitleTrack } from "@/types/kago";
 import { FileIcon } from "@/components/kago/file-icon";
 import { useSubtitleRenderer } from "./useSubtitleRenderer";
-import { chromaSampling, videoInfoGroups, type VideoInfoGroup } from "./videoInfo";
+import { videoInfoGroups, type VideoInfoGroup } from "./videoInfo";
 import { PLAYER_CONTROL_CLASS, VideoPlayer } from "./VideoPlayer";
 import { t } from "@/lib/i18n";
+import { watchDirectPlayback } from "./directPlayback";
+import { INITIAL_RECOVERY, recoverPlayback, trackPlaybackPosition } from "./playbackRecovery";
+import { canDirectPlay, canPlayHdrStream } from "./videoCapabilities";
 
 const BITRATE_HINT: Record<number, string> = { 2160: "16 Mbps", 1440: "10 Mbps", 1080: "6 Mbps", 720: "3 Mbps", 480: "1.5 Mbps", 360: "0.8 Mbps" };
 const ENCODER_LABEL: Record<string, string> = { nvenc: "NVIDIA GPU", vaapi: "Intel / AMD GPU", "vaapi-cqp": "Intel / AMD GPU", videotoolbox: "Apple GPU", software: "CPU" };
 const SUBTITLE_FORMAT_LABEL: Record<SubtitleTrack["format"], string> = { ass: "ASS", srt: "SRT", pgs: "PGS", vobsub: "VobSub", dvb: "DVB", picture: "" };
-const MAX_RECOVERIES = 2;
-/** How long the original file gets to show it is a video at all before the server is asked to transcode it. */
-const DIRECT_LOAD_TIMEOUT_MS = 20_000;
-/** How much of the original file may play without a single frame of picture before it is given up on. */
-const DIRECT_BLIND_SECONDS = 1.5;
 // Numbered episodes sort as numbers, the way the file list shows them.
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 
@@ -75,16 +73,18 @@ export function VideoPreview({
   const videos = useMemo(() => (folder?.items ?? []).filter((item) => item.kind === "file" && isVideoType(item.type)).sort((a, b) => collator.compare(a.name, b.name)), [folder]);
   const position = videos.findIndex((item) => item.path === path);
   const neighbour = (item: FileItem | undefined) => (item && onNavigate ? { label: item.name, go: () => onNavigate(item) } : null);
-  const latestPath = useRef(path);
-  latestPath.current = path;
+  const mediaKey = `${rootSlug}\0${path}`;
+  const latestMedia = useRef(mediaKey);
+  latestMedia.current = mediaKey;
   const videoRef = useRef<HTMLVideoElement>(null);
+  const playbackError = useRef(() => {});
+  const playbackRequest = useRef<(playing: boolean) => void>(() => {});
+  const seekRequest = useRef<(seconds: number) => void>(() => {});
   // Carries the playhead across a change of source.
   const resume = useRef({ time: 0, playing: false });
-  const recoveries = useRef(0);
+  const [recovery, setRecovery] = useState(INITIAL_RECOVERY);
   const [picked, setPicked] = useState<VideoQualityPref | null>(null);
   const [audioIndex, setAudioIndex] = useState(0);
-  const [directFailed, setDirectFailed] = useState(false);
-  const [attempt, setAttempt] = useState(0);
   const [status, setStatus] = useState<"idle" | "preparing" | "error">("idle");
   const [infoOpen, setInfoOpen] = useState(false);
   const subtitleList = useSubtitles(rootSlug, path).data;
@@ -92,13 +92,12 @@ export function VideoPreview({
   // A subtitle's id, or `off`; null until a choice is made in this window.
   const [subtitlePick, setSubtitlePick] = useState<string | null>(null);
   // The player stays mounted from one video to the next, so fullscreen survives; what was chosen for the last one does not carry over.
-  const [shownPath, setShownPath] = useState(path);
-  if (shownPath !== path) {
-    setShownPath(path);
+  const [shownMedia, setShownMedia] = useState(mediaKey);
+  if (shownMedia !== mediaKey) {
+    setShownMedia(mediaKey);
     setPicked(null);
     setAudioIndex(0);
-    setDirectFailed(false);
-    setAttempt(0);
+    setRecovery(INITIAL_RECOVERY);
     setStatus("idle");
     setSubtitlePick(null);
   }
@@ -113,7 +112,7 @@ export function VideoPreview({
   const qualities = media?.transcode ? media.qualities : [];
   // Another audio track can only be had by transcoding: a browser plays the first one of a file.
   const audioTracks = media?.transcode ? media.audio : [];
-  const canDirect = !media || qualities.length === 0 || canDirectPlay(media);
+  const canDirect = useMemo(() => !media || !media.transcode || media.qualities.length === 0 || canDirectPlay(media), [media]);
   const screenHdr = useHdrScreen();
   const [hdrWanted, setHdrWanted] = useState(getVideoHdr);
   // Turned off by hand, HDR is handled as on a screen that cannot show it.
@@ -122,10 +121,10 @@ export function VideoPreview({
   // On a screen without HDR the server's tone mapping is used rather than whatever the browser makes of the file,
   // unless the original was asked for by hand in this window.
   const tonemapped = sourceHdr !== null && !hdrScreen && Boolean(media?.tonemap) && picked !== "direct";
-  const directOk = qualities.length === 0 || (canDirect && !directFailed && audioIndex === 0 && burned === null && !tonemapped);
+  const directOk = qualities.length === 0 || (canDirect && !recovery.forceTranscode && audioIndex === 0 && burned === null && !tonemapped);
   const height = resolveHeight(qualities, picked, directOk);
   // Only a transcode has the choice; the original file is whatever it is, and the browser maps it to the screen.
-  const hdr = height !== null && sourceHdr !== null && Boolean(media?.hdrOutput) && hdrScreen && canPlayHdrStream();
+  const hdr = !recovery.forceSdr && height !== null && sourceHdr !== null && Boolean(media?.hdrOutput) && hdrScreen && canPlayHdrStream();
   const [liftWanted, setLiftWanted] = useState(getVideoHdrLift);
   // A browser shows HDR10 a stop darker than players that follow Apple's convention; the server makes up the difference.
   const lift = hdr && sourceHdr === "pq" && liftWanted;
@@ -137,12 +136,6 @@ export function VideoPreview({
   // The original file is only watched for trouble where there is something to fall back on, and a picture to miss.
   const guarded = qualities.length > 0 && Boolean(media?.video);
 
-  /** Hands a file the browser turned out not to play over to the transcoder. */
-  const failDirect = () => {
-    toast(t("The browser can’t play this file directly, so it is being transcoded"));
-    setDirectFailed(true);
-  };
-
   useEffect(() => {
     if (probedAspect > 0) reportAspect.current?.(probedAspect);
   }, [probedAspect]);
@@ -153,43 +146,45 @@ export function VideoPreview({
     let cancelled = false;
     let sessionId: string | null = null;
     let teardown = () => {};
-    const { time: startAt, playing } = resume.current;
+    let sourceFailed = false;
+    const active = () => !cancelled && latestMedia.current === mediaKey;
+    const position = trackPlaybackPosition(video, resume.current);
+    playbackRequest.current = position.request;
+    let seekLoadingStream = (_seconds: number) => {};
+    seekRequest.current = (seconds) => {
+      position.seek(seconds);
+      if (video.readyState === 0) seekLoadingStream(seconds);
+    };
+    const fail = (failure: "media" | "network") => {
+      if (!active() || sourceFailed) return;
+      sourceFailed = true;
+      position.fail();
+      const source = height === null ? "direct" : hdr ? "hdr" : "sdr";
+      const next = recoverPlayback(recovery, source, failure, guarded);
+      if (!next) return setStatus("error");
+      if (source === "direct") toast(t("The browser can’t play this file directly, so it is being transcoded"));
+      setRecovery(next);
+    };
+    // Native media errors and hls.js fatal errors share the same bounded recovery path.
+    playbackError.current = () => fail(video.error?.code === 2 ? "network" : "media");
+    const play = () => {
+      if (!active() || sourceFailed || !position.capture().playing) return;
+      void video.play().catch((error: unknown) => {
+        if (active() && error instanceof DOMException && error.name === "NotSupportedError") fail("media");
+      });
+    };
     const restore = () => {
-      if (startAt > 0) video.currentTime = startAt;
-      if (playing) void video.play().catch(() => {});
+      if (!active() || sourceFailed) return;
+      const startAt = position.capture().time;
+      if (startAt !== video.currentTime) video.currentTime = startAt;
+      play();
     };
 
     if (height === null) {
       setStatus("idle");
-      video.src = previewUrl(rootSlug, path);
+      if (guarded) teardown = watchDirectPlayback(video, () => fail("media"));
       video.addEventListener("loadedmetadata", restore, { once: true });
-      if (guarded) {
-        // A browser does not always say so when it cannot play a file: it may never get past the header, or play
-        // the sound of a picture it cannot decode. None of these raise the error that `onError` waits for.
-        const giveUp = () => {
-          if (!cancelled) failDirect();
-        };
-        const timer = globalThis.setTimeout(() => {
-          if (video.readyState === 0) giveUp();
-        }, DIRECT_LOAD_TIMEOUT_MS);
-        const onMetadata = () => {
-          if (video.videoWidth === 0) giveUp();
-        };
-        const onTime = () => {
-          const frames = video.getVideoPlaybackQuality?.().totalVideoFrames;
-          if (frames === undefined || frames > 0) return video.removeEventListener("timeupdate", onTime);
-          let played = 0;
-          for (let index = 0; index < video.played.length; index += 1) played += video.played.end(index) - video.played.start(index);
-          if (played >= DIRECT_BLIND_SECONDS) giveUp();
-        };
-        video.addEventListener("loadedmetadata", onMetadata);
-        video.addEventListener("timeupdate", onTime);
-        teardown = () => {
-          globalThis.clearTimeout(timer);
-          video.removeEventListener("loadedmetadata", onMetadata);
-          video.removeEventListener("timeupdate", onTime);
-        };
-      }
+      video.src = previewUrl(rootSlug, path);
     } else {
       setStatus("preparing");
       void (async () => {
@@ -197,18 +192,19 @@ export function VideoPreview({
           method: "POST",
           body: JSON.stringify({ rootSlug, path, height, audioIndex, subtitleIndex: burned, subtitlePath: burnedFile, hdr, lift })
         });
-        if (cancelled) return closeSession(session.id);
+        if (!active()) return closeSession(session.id);
         sessionId = session.id;
         const { default: Hls } = await import("hls.js");
-        if (cancelled) return;
+        if (!active()) return;
         if (!Hls.isSupported()) {
           // Safari without Media Source Extensions plays HLS itself.
-          video.src = session.playlistUrl;
           video.addEventListener("loadedmetadata", restore, { once: true });
+          video.src = session.playlistUrl;
           return;
         }
         const hls = new Hls({
-          startPosition: startAt > 0 ? startAt : -1,
+          // The user can seek while the session or manifest is being prepared.
+          autoStartLoad: false,
           // A segment is only sent once ffmpeg has finished it, which on a slow NAS can outlast the default 10 s.
           fragLoadPolicy: {
             default: {
@@ -220,57 +216,59 @@ export function VideoPreview({
           }
         });
         teardown = () => hls.destroy();
-        let mediaRecovered = false;
+        let manifestReady = false;
+        seekLoadingStream = (seconds) => {
+          if (manifestReady && active() && !sourceFailed) hls.startLoad(seconds);
+        };
         hls.on(Hls.Events.ERROR, (_event, data) => {
-          if (!data.fatal) return;
-          if (data.type === Hls.ErrorTypes.MEDIA_ERROR && !mediaRecovered) {
-            mediaRecovered = true;
-            hls.recoverMediaError();
-          } else if (recoveries.current < MAX_RECOVERIES) {
-            // Most often the session expired while paused; a fresh one picks up where this left off.
-            recoveries.current += 1;
-            setAttempt((value) => value + 1);
-          } else {
-            setStatus("error");
-          }
+          if (data.fatal) fail(data.type === Hls.ErrorTypes.NETWORK_ERROR ? "network" : "media");
         });
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
-          if (playing) void video.play().catch(() => {});
+          if (!active() || sourceFailed) return;
+          manifestReady = true;
+          hls.startLoad(position.capture().time);
+          play();
         });
+        video.addEventListener("loadedmetadata", restore, { once: true });
         hls.loadSource(session.playlistUrl);
         hls.attachMedia(video);
       })().catch(() => {
-        if (!cancelled) setStatus("error");
+        if (active()) setStatus("error");
       });
     }
 
     return () => {
       cancelled = true;
+      playbackError.current = () => {};
+      playbackRequest.current = () => {};
+      seekRequest.current = () => {};
       video.removeEventListener("loadedmetadata", restore);
+      const stoppedAt = position.dispose();
       // Another rendition picks up where this one stopped; another video starts from the top, playing.
-      if (latestPath.current !== path) resume.current = { time: 0, playing: true };
-      else resume.current = { time: video.readyState > 0 ? video.currentTime : startAt, playing: video.readyState > 0 ? !video.paused && !video.ended : playing };
+      resume.current = latestMedia.current !== mediaKey ? { time: 0, playing: true } : stoppedAt;
       teardown();
       video.removeAttribute("src");
       video.load();
       if (sessionId) closeSession(sessionId);
     };
-  }, [ready, rootSlug, path, height, audioIndex, burned, burnedFile, hdr, lift, attempt, guarded]);
+  }, [ready, rootSlug, path, mediaKey, height, audioIndex, burned, burnedFile, hdr, lift, recovery, guarded]);
 
   useSubtitleRenderer(videoRef, textSubtitle, subtitleList?.fonts ?? [], aspect ?? probedAspect, () => {
     toast(t("Couldn’t load this subtitle"), "error");
     setSubtitlePick("off");
   });
 
+  const resetRetries = () => setRecovery((current) => current.retries === 0 ? current : { ...current, retries: 0 });
+
   const pickTrack = (track: SubtitleTrack | null) => {
-    recoveries.current = 0;
+    resetRetries();
     // Remembered by language, so the next video opens with the same kind of track.
     setSubtitlePref(track ? track.language : "off");
     setSubtitlePick(track ? track.id : "off");
   };
 
   const pick = (quality: VideoQualityPref) => {
-    recoveries.current = 0;
+    resetRetries();
     setVideoQuality(quality);
     setPicked(quality);
     if (quality === "direct") setAudioIndex(0);
@@ -297,7 +295,7 @@ export function VideoPreview({
         onOpenChange={slot.onOpenChange}
         menu={
           <>
-            {canDirect && !directFailed ? (
+            {canDirect && !recovery.forceTranscode ? (
               <KagoMenuCheckItem checked={height === null} hint={t("No transcoding")} onClick={() => pick("direct")}>{t("Original file")}</KagoMenuCheckItem>
             ) : null}
             {qualities.map((quality) => (
@@ -311,7 +309,7 @@ export function VideoPreview({
               <KagoMenuCheckItem
                 checked={hdrWanted}
                 onClick={() => {
-                  recoveries.current = 0;
+                  resetRetries();
                   setVideoHdr(!hdrWanted);
                   setHdrWanted(!hdrWanted);
                 }}
@@ -323,7 +321,7 @@ export function VideoPreview({
               <KagoMenuCheckItem
                 checked={liftWanted}
                 onClick={() => {
-                  recoveries.current = 0;
+                  resetRetries();
                   setVideoHdrLift(!liftWanted);
                   setLiftWanted(!liftWanted);
                 }}
@@ -373,7 +371,7 @@ export function VideoPreview({
                       checked={(height === null ? 0 : audioIndex) === index}
                       hint={[track.codec.toUpperCase(), track.channels > 0 ? `${track.channels}ch` : ""].filter(Boolean).join(" ")}
                       onClick={() => {
-                        recoveries.current = 0;
+                        resetRetries();
                         setAudioIndex(index);
                       }}
                     >
@@ -400,7 +398,7 @@ export function VideoPreview({
   return (
       <VideoPlayer
         videoRef={videoRef}
-        mediaKey={path}
+        mediaKey={mediaKey}
         nowPlaying={nowPlaying}
         previous={videos.length > 1 && position !== -1 ? neighbour(videos[position - 1]) : undefined}
         next={videos.length > 1 && position !== -1 ? neighbour(videos[position + 1]) : undefined}
@@ -411,15 +409,10 @@ export function VideoPreview({
         overlay={infoOpen && infoGroups.length > 0 ? <VideoInfoPanel groups={infoGroups} onClose={() => setInfoOpen(false)} /> : null}
         onInfo={infoGroups.length > 0 ? () => setInfoOpen((open) => !open) : undefined}
         onAspect={onAspect}
-        onLoadedData={() => setStatus("idle")}
-        onPlaying={() => {
-          recoveries.current = 0;
-        }}
-        onError={() => {
-          // Only the original file reports failures here; hls.js surfaces its own.
-          if (height !== null || qualities.length === 0) return;
-          failDirect();
-        }}
+        onLoadedData={() => setStatus((current) => current === "error" ? current : "idle")}
+        onPlaybackRequest={(playing) => playbackRequest.current(playing)}
+        onSeekRequest={(seconds) => seekRequest.current(seconds)}
+        onError={() => playbackError.current()}
       />
   );
 }
@@ -488,48 +481,6 @@ function useHdrScreen(): boolean {
   return hdr;
 }
 
-const HEVC_MAIN10 = "hvc1.2.4.L153.B0";
-
-/** Whether this browser takes the server's HDR stream: 10-bit HEVC in fragmented MP4, through hls.js where there is Media Source and natively where there is not. */
-function canPlayHdrStream(): boolean {
-  const type = `video/mp4; codecs="${HEVC_MAIN10}"`;
-  const source = (globalThis as { ManagedMediaSource?: typeof MediaSource }).ManagedMediaSource ?? globalThis.MediaSource;
-  return source ? source.isTypeSupported(type) : document.createElement("video").canPlayType(type) !== "";
-}
-
 function closeSession(id: string) {
   void api(`/api/media/sessions/${encodeURIComponent(id)}`, { method: "DELETE", keepalive: true }).catch(() => {});
-}
-
-const VIDEO_CODECS: Record<string, string> = { h264: "avc1.640028", hevc: "hvc1.1.6.L120.90", vp8: "vp8", vp9: "vp09.00.40.08", av1: "av01.0.08M.08" };
-/** The same codecs with a 10-bit picture, which a browser may not take where it takes 8 bits. */
-const VIDEO_CODECS_10BIT: Record<string, string> = { hevc: HEVC_MAIN10, vp9: "vp09.02.40.10", av1: "av01.0.08M.10" };
-const AUDIO_CODECS: Record<string, string> = { aac: "mp4a.40.2", mp3: "mp3", opus: "opus", vorbis: "vorbis", flac: "flac", ac3: "ac-3", eac3: "ec-3" };
-
-/** Whether this browser can play the file untouched, judged by container and codecs. A wrong yes is caught by the video's error event. */
-function canDirectPlay(info: MediaInfo): boolean {
-  if (!info.video) return true;
-  const videoCodec = (info.video.bitDepth > 8 ? VIDEO_CODECS_10BIT[info.video.codec] : undefined) ?? VIDEO_CODECS[info.video.codec];
-  const audioCodec = info.audio[0] ? AUDIO_CODECS[info.audio[0].codec] : "";
-  if (!videoCodec || audioCodec === undefined) return false;
-  if (info.video.codec === "h264" && info.video.bitDepth > 8) return false;
-  // Cameras and screen recorders keep more colour than the 4:2:0 that browsers decode everywhere; a browser asked
-  // about such a file answers for the codec and then shows nothing.
-  if (!["", "4:2:0"].includes(chromaSampling(info.video.pixelFormat)) || /^(rgb|bgr|gbr|gray)/.test(info.video.pixelFormat)) return false;
-  if (info.video.bitDepth > 10) return false;
-
-  const container = info.container.split(",");
-  let mime: string;
-  if (container.includes("mp4") || container.includes("mov")) {
-    mime = "video/mp4";
-  } else if (container.includes("matroska") || container.includes("webm")) {
-    // WebM is the one kind of Matroska browsers play. Anything else in an .mkv is transcoded, even where a browser
-    // would take the codecs: playback of it is unreliable, and its extra audio tracks and subtitles are out of reach.
-    if (!["vp8", "vp9", "av1"].includes(info.video.codec) || (info.audio[0] && !["opus", "vorbis"].includes(info.audio[0].codec))) return false;
-    mime = "video/webm";
-  } else {
-    return false;
-  }
-  const codecs = [videoCodec, audioCodec].filter(Boolean).join(", ");
-  return document.createElement("video").canPlayType(`${mime}; codecs="${codecs}"`) !== "";
 }

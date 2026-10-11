@@ -10,6 +10,7 @@ import { startCompositePip } from "./compositePip";
 import { GlassBackdrop } from "./GlassBackdrop";
 import { t } from "@/lib/i18n";
 import { useMediaSession } from "./useMediaSession";
+import { isMediaFailure } from "./directPlayback";
 
 const IDLE_MS = 2500;
 const SEEK_STEP = 5;
@@ -68,6 +69,8 @@ export function VideoPlayer({
   onAspect,
   onLoadedData,
   onPlaying,
+  onPlaybackRequest,
+  onSeekRequest,
   onError
 }: {
   videoRef: RefObject<HTMLVideoElement | null>;
@@ -92,6 +95,8 @@ export function VideoPlayer({
   onAspect?: (aspect: number) => void;
   onLoadedData?: () => void;
   onPlaying?: () => void;
+  onPlaybackRequest?: (playing: boolean) => void;
+  onSeekRequest?: (seconds: number) => void;
   onError?: () => void;
 }) {
   const [container, setContainer] = useState<HTMLDivElement | null>(null);
@@ -178,17 +183,32 @@ export function VideoPlayer({
     };
   }, [container]);
 
+  const play = (video: HTMLVideoElement) => {
+    const source = video.src;
+    onPlaybackRequest?.(true);
+    void video.play().catch((error: unknown) => {
+      // Autoplay policy and source replacement are not codec failures.
+      if (video.src === source && error instanceof DOMException && error.name === "NotSupportedError") onError?.();
+    });
+  };
+
+  const pause = (video: HTMLVideoElement) => {
+    onPlaybackRequest?.(false);
+    video.pause();
+  };
+
   const togglePlay = () => {
     const video = videoRef.current;
     if (!video) return;
-    if (video.paused || video.ended) void video.play().catch(() => {});
-    else video.pause();
+    if (video.paused || video.ended) play(video);
+    else pause(video);
   };
 
   const seekTo = (seconds: number) => {
     const video = videoRef.current;
     if (!video || duration <= 0) return;
     const next = Math.min(Math.max(0, seconds), duration);
+    onSeekRequest?.(next);
     video.currentTime = next;
     setTime(next);
   };
@@ -209,8 +229,8 @@ export function VideoPlayer({
           duration,
           // While a new source loads the element sits at zero; the playhead on screen is where it will resume.
           position: () => (videoRef.current && videoRef.current.readyState > 0 ? videoRef.current.currentTime : time),
-          play: () => void videoRef.current?.play().catch(() => {}),
-          pause: () => videoRef.current?.pause(),
+          play: () => { if (videoRef.current) play(videoRef.current); },
+          pause: () => { if (videoRef.current) pause(videoRef.current); },
           seekTo,
           previous: previous?.go,
           next: next?.go
@@ -254,7 +274,7 @@ export function VideoPlayer({
     if (!video) return;
     const restore = () => {
       if (Math.abs(video.currentTime - time) > 1) video.currentTime = time;
-      if (playing && video.paused) void video.play().catch(() => {});
+      if (playing && video.paused) play(video);
     };
     if (video.readyState > 0) restore();
     else video.addEventListener("loadedmetadata", restore, { once: true });
@@ -374,7 +394,9 @@ export function VideoPlayer({
           setLoading(false);
           onPlaying?.();
         }}
-        onError={onError}
+        onError={(event) => {
+          if (isMediaFailure(event.currentTarget.error)) onError?.();
+        }}
       />
       {hdr ? <GlassBackdrop videoRef={videoRef} shown={controlsShown || loading || Boolean(notice)} menuOpen={menuOpen} /> : null}
 

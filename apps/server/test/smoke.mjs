@@ -1051,7 +1051,11 @@ test("what the disk refuses is told apart from an unexpected error", { skip: pro
   }
 });
 
-test("videos are probed and transcoded to HLS on demand", { skip: spawnSync("ffmpeg", ["-version"]).status !== 0 && "ffmpeg is not installed" }, async () => {
+test("videos are probed and transcoded to HLS on demand", {
+  skip: spawnSync("ffmpeg", ["-version"]).status !== 0
+    ? "ffmpeg is not installed"
+    : spawnSync("ffprobe", ["-version"]).status !== 0 && "ffprobe is not installed"
+}, async () => {
   const fixture = await createFixture("kago-smoke-media.");
   const clip = path.join(fixture.dataDir, "photos", "public", "clip.avi");
   const encoded = spawnSync("ffmpeg", ["-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=size=640x480:rate=24", "-f", "lavfi", "-i", "sine", "-t", "14", "-c:v", "mpeg4", "-c:a", "mp3", clip]);
@@ -1073,6 +1077,44 @@ test("videos are probed and transcoded to HLS on demand", { skip: spawnSync("ffm
 
     // Subtitles are matched to the video by name; the rest of the name gives the language and flags.
     const publicDir = path.join(fixture.dataDir, "photos", "public");
+    const coverImage = path.join(publicDir, "cover.jpg");
+    const coverClip = path.join(publicDir, "cover.mp4");
+    const madeCover = spawnSync("ffmpeg", ["-loglevel", "error", "-f", "lavfi", "-i", "color=c=blue:s=80x80:r=1", "-frames:v", "1", "-c:v", "mjpeg", coverImage]);
+    assert.equal(madeCover.status, 0, String(madeCover.stderr));
+    const withCover = spawnSync("ffmpeg", [
+      "-loglevel", "error", "-i", clip, "-i", coverImage,
+      "-map", "1:v:0", "-map", "0:v:0", "-map", "0:a:0",
+      "-c", "copy", "-disposition:v:0", "attached_pic", "-disposition:v:1", "default", coverClip
+    ]);
+    assert.equal(withCover.status, 0, String(withCover.stderr));
+    const coverProbe = spawnSync("ffprobe", ["-v", "error", "-show_streams", "-of", "json", coverClip]);
+    assert.equal(coverProbe.status, 0, String(coverProbe.stderr));
+    const coverStreams = JSON.parse(coverProbe.stdout).streams.filter((stream) => stream.codec_type === "video");
+    assert.ok(coverStreams.some((stream) => stream.disposition.attached_pic === 1), "the fixture contains an attached cover picture");
+    const mainBySelector = spawnSync("ffprobe", [
+      "-v", "error", "-select_streams", "V:0", "-show_entries", "stream=codec_name,width,height", "-of", "json", coverClip
+    ]);
+    assert.equal(mainBySelector.status, 0, String(mainBySelector.stderr));
+    const selectedMain = JSON.parse(mainBySelector.stdout).streams[0];
+    assert.ok(selectedMain, "V:0 selects the primary video rather than the attached picture");
+    assert.deepEqual([selectedMain.codec_name, selectedMain.width, selectedMain.height], ["mpeg4", 640, 480]);
+
+    const coverInfo = await admin.get("/api/media/info?rootSlug=photos&path=/public/cover.mp4");
+    assert.equal(coverInfo.statusCode, 200);
+    assert.deepEqual([coverInfo.json.video.codec, coverInfo.json.video.width, coverInfo.json.video.height], ["mpeg4", 640, 480]);
+    const coverSession = await admin.post("/api/media/sessions", { rootSlug: "photos", path: "/public/cover.mp4", height: 360 });
+    assert.equal(coverSession.statusCode, 200);
+    const coverSegment = await admin.get(`/api/media/sessions/${coverSession.json.id}/0.ts`);
+    assert.equal(coverSegment.statusCode, 200);
+    const coverOutputProbe = spawnSync("ffprobe", [
+      "-v", "error", "-show_entries", "stream=codec_type,codec_name,pix_fmt,width,height", "-of", "json", "pipe:0"
+    ], { input: coverSegment.raw });
+    assert.equal(coverOutputProbe.status, 0, String(coverOutputProbe.stderr));
+    const coverVideo = JSON.parse(coverOutputProbe.stdout).streams.find((stream) => stream.codec_type === "video");
+    assert.ok(coverVideo, "the cover-art session transcodes a video stream");
+    assert.deepEqual([coverVideo.codec_name, coverVideo.pix_fmt, coverVideo.width, coverVideo.height], ["h264", "yuv420p", 480, 360]);
+    await admin.delete(`/api/media/sessions/${coverSession.json.id}`);
+
     for (const name of ["clip.ass", "clip.zh.ass", "clip.en.srt", "clip.Commentary.en.sdh.srt", "clip.cht.default.ssa", "clip.final.srt", "clip2.en.srt", "clip.en.txt"]) await writeFile(path.join(publicDir, name), "");
     const subtitles = await admin.get("/api/media/subtitles?rootSlug=photos&path=/public/clip.avi");
     assert.equal(subtitles.statusCode, 200);
@@ -1121,6 +1163,31 @@ test("videos are probed and transcoded to HLS on demand", { skip: spawnSync("ffm
       const segment = await admin.get(`${base}/${index}.ts`);
       assert.equal(segment.statusCode, 200);
       assert.equal(segment.raw[0], 0x47, "segments are MPEG-TS");
+      if (index === 2) {
+        const probe = spawnSync("ffprobe", [
+          "-v", "error",
+          "-show_streams", "-show_packets",
+          "-show_entries", "stream=index,codec_type,codec_name,pix_fmt,width,height:packet=pts_time,stream_index",
+          "-of", "json", "pipe:0"
+        ], { input: segment.raw });
+        assert.equal(probe.status, 0, String(probe.stderr));
+        const details = JSON.parse(probe.stdout);
+        const video = details.streams.find((stream) => stream.codec_type === "video");
+        const audio = details.streams.find((stream) => stream.codec_type === "audio");
+        assert.ok(video, "the HLS segment has a video stream");
+        assert.ok(audio, "the HLS segment has an audio stream");
+        assert.deepEqual(
+          [video.codec_name, video.pix_fmt, video.width, video.height],
+          ["h264", "yuv420p", 480, 360],
+          "the session transcodes MPEG-4 to browser-compatible H.264 at the requested size"
+        );
+        assert.equal(audio.codec_name, "aac", "the session transcodes MP3 audio to AAC");
+
+        const firstVideoPacket = details.packets.find((packet) => packet.stream_index === video.index);
+        assert.ok(firstVideoPacket, "the later segment contains a video packet");
+        assert.ok(Number(firstVideoPacket.pts_time) >= 11, `later segment starts near its 12-second seek point, got ${firstVideoPacket.pts_time}`);
+        assert.ok(Number(firstVideoPacket.pts_time) < 15, `later segment remains within the source duration, got ${firstVideoPacket.pts_time}`);
+      }
     }
     assert.equal((await admin.get(`${base}/3.ts`)).statusCode, 404);
     assert.equal((await admin.get(`${base}/../../fs/list`)).statusCode !== 200, true);
@@ -1128,12 +1195,32 @@ test("videos are probed and transcoded to HLS on demand", { skip: spawnSync("ffm
     // An HDR picture is told apart, and a picture subtitle is listed as one the server draws into the frames.
     const hdrClip = path.join(publicDir, "hdr.mkv");
     await writeFile(path.join(publicDir, "inner.sup"), pgsSubtitle());
+    await writeFile(path.join(publicDir, "cover.en.sup"), pgsSubtitle());
+    const coverSubtitle = await admin.get("/api/media/subtitles?rootSlug=photos&path=/public/cover.mp4");
+    assert.deepEqual(coverSubtitle.json.tracks.map((track) => [track.id, track.format]), [["file:/public/cover.en.sup", "pgs"]]);
+    const coverSubtitleSession = await admin.post("/api/media/sessions", {
+      rootSlug: "photos", path: "/public/cover.mp4", height: 360, subtitleIndex: 0, subtitlePath: "/public/cover.en.sup"
+    });
+    assert.equal(coverSubtitleSession.statusCode, 200);
+    const coverSubtitleSegment = await admin.get(`/api/media/sessions/${coverSubtitleSession.json.id}/0.ts`);
+    assert.equal(coverSubtitleSegment.statusCode, 200);
+    const coverSubtitleProbe = spawnSync("ffprobe", [
+      "-v", "error", "-show_entries", "stream=codec_type,codec_name,pix_fmt,width,height", "-of", "json", "pipe:0"
+    ], { input: coverSubtitleSegment.raw });
+    assert.equal(coverSubtitleProbe.status, 0, String(coverSubtitleProbe.stderr));
+    const coverSubtitleVideo = JSON.parse(coverSubtitleProbe.stdout).streams.find((stream) => stream.codec_type === "video");
+    assert.ok(coverSubtitleVideo, "the cover-art subtitle session transcodes a video stream");
+    assert.deepEqual([coverSubtitleVideo.codec_name, coverSubtitleVideo.pix_fmt, coverSubtitleVideo.width, coverSubtitleVideo.height], ["h264", "yuv420p", 480, 360]);
+    await admin.delete(`/api/media/sessions/${coverSubtitleSession.json.id}`);
+
     const graded = spawnSync("ffmpeg", [
       "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=size=640x360:rate=24,format=yuv420p10le,setparams=color_primaries=bt2020:color_trc=smpte2084:colorspace=bt2020nc",
       "-i", path.join(publicDir, "inner.sup"), "-t", "8", "-map", "0", "-map", "1", "-c:v", "libx264", "-c:s", "copy", hdrClip
     ]);
     assert.equal(graded.status, 0, String(graded.stderr));
     const hdrInfo = await admin.get("/api/media/info?rootSlug=photos&path=/public/hdr.mkv");
+    assert.equal(hdrInfo.json.video.codec, "h264");
+    assert.equal(hdrInfo.json.video.pixelFormat, "yuv420p10le");
     assert.equal(hdrInfo.json.video.hdr, "pq");
     assert.equal(info.json.video.hdr, null);
     const pictures = await admin.get("/api/media/subtitles?rootSlug=photos&path=/public/hdr.mkv");
@@ -1149,6 +1236,19 @@ test("videos are probed and transcoded to HLS on demand", { skip: spawnSync("ffm
     const burnedSegment = await admin.get(`/api/media/sessions/${burned.json.id}/0.ts`);
     assert.equal(burnedSegment.statusCode, 200);
     assert.equal(burnedSegment.raw[0], 0x47);
+    const normalized = spawnSync("ffprobe", [
+      "-v", "error", "-show_streams",
+      "-show_entries", "stream=codec_type,codec_name,pix_fmt,width,height",
+      "-of", "json", "pipe:0"
+    ], { input: burnedSegment.raw });
+    assert.equal(normalized.status, 0, String(normalized.stderr));
+    const normalizedVideo = JSON.parse(normalized.stdout).streams.find((stream) => stream.codec_type === "video");
+    assert.ok(normalizedVideo, "the tone-mapped segment has video");
+    assert.deepEqual(
+      [normalizedVideo.codec_name, normalizedVideo.pix_fmt, normalizedVideo.width, normalizedVideo.height],
+      ["h264", "yuv420p", 640, 360],
+      "the session converts 10-bit H.264 into 8-bit H.264 for a browser-compatible output"
+    );
     await admin.delete(`/api/media/sessions/${burned.json.id}`);
 
     // A picture subtitle lying next to the video is drawn in the same way, read as a second input.

@@ -590,7 +590,7 @@ export class MediaService {
     const upload = session.hdr ? accel.hdrFilter : accel.filter;
     let filters: string[];
     if (session.subtitleIndex === null) {
-      filters = ["-map", "0:v:0", "-vf", `${picture}${upload}`];
+      filters = ["-map", "0:V:0", "-vf", `${picture}${upload}`];
     } else {
       // The subtitle's canvas is fitted to the picture as it comes out, which a cropped film does not fill the box with.
       const fit = video && video.width > 0 && video.height > 0 ? Math.min(boxWidth / video.width, boxHeight / video.height) : 0;
@@ -599,7 +599,7 @@ export class MediaService {
       const dim = level < 1 ? `,colorchannelmixer=rr=${level}:gg=${level}:bb=${level}` : "";
       filters = [
         "-filter_complex",
-        `[0:v:0]${picture}[picture];[${session.subtitleFile ? 1 : 0}:s:${session.subtitleIndex}]scale=w=${width}:h=${height}:force_original_aspect_ratio=decrease${dim}[subtitle];` +
+        `[0:V:0]${picture}[picture];[${session.subtitleFile ? 1 : 0}:s:${session.subtitleIndex}]scale=w=${width}:h=${height}:force_original_aspect_ratio=decrease${dim}[subtitle];` +
           `[picture][subtitle]overlay=x=(W-w)/2:y=(H-h)/2:eof_action=pass${session.hdr ? ":format=yuv420p10" : ""}${upload}[out]`,
         "-map", "[out]"
       ];
@@ -810,7 +810,7 @@ export class MediaService {
     try {
       const result = await execFileAsync(
         this.ffprobe,
-        ["-v", "error", "-select_streams", "v:0", "-read_intervals", "%+#1", "-show_entries", "frame=color_transfer:frame_side_data=max_luminance", "-print_format", "json", ...guardedProbe(absolutePath)],
+        ["-v", "error", "-select_streams", "V:0", "-read_intervals", "%+#1", "-show_entries", "frame=color_transfer:frame_side_data=max_luminance", "-print_format", "json", ...guardedProbe(absolutePath)],
         { timeout: 20_000 }
       );
       const frame = (JSON.parse(result.stdout) as { frames?: Array<Record<string, any>> }).frames?.[0];
@@ -834,7 +834,7 @@ export class MediaService {
     const data = JSON.parse(raw) as { format?: Record<string, unknown>; streams?: Array<Record<string, any>> };
     const streams = data.streams ?? [];
     const videoStreams = streams.filter((stream) => stream.codec_type === "video");
-    const videoStream = videoStreams.find((stream) => !stream.disposition?.attached_pic);
+    const videoStream = videoStreams.find((stream) => !stream.disposition?.attached_pic && !stream.disposition?.timed_thumbnails);
     const cover = videoStreams.findIndex((stream) => stream.disposition?.attached_pic && Number(stream.width) * Number(stream.height) <= MAX_COVER_PIXELS);
     const audioStreams = streams.filter((stream) => stream.codec_type === "audio");
     const subtitleStreams = streams.filter((stream) => stream.codec_type === "subtitle");

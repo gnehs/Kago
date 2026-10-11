@@ -9,6 +9,7 @@
     "build": "tsc -p tsconfig.json && vite build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit",
+    "test:video": "node --test scripts/test-direct-playback.mjs scripts/test-video-capabilities.mjs scripts/test-playback-recovery.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
