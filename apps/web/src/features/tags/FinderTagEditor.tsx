@@ -29,8 +29,8 @@ const colors: Array<{ color: Color; name: string }> = [
 
 const dot = (tag: FinderTag) => <TagDot color={tag.color} className="size-2.5" />;
 
-/** A name and a colour for one Finder tag, handed over as it is added. */
-export function FinderTagForm({ placeholder, onAdd }: { placeholder: string; /** Answers whether the tag was taken, which clears the form. */ onAdd: (tag: FinderTag) => unknown }) {
+/** A name and a colour for one tag, handed over as it is added. */
+function FinderTagForm({ placeholder, onAdd }: { placeholder: string; /** Answers whether the tag was taken, which clears the form. */ onAdd: (tag: FinderTag) => unknown }) {
   const [name, setName] = useState("");
   const [color, setColor] = useState<Color | null>(null);
   // A colour on its own adds Finder's tag of that colour.
@@ -76,8 +76,9 @@ const withFinderTag = (tags: FinderTag[], tag: FinderTag) => (tags.some((item) =
 /** Finder tags of one file or folder, stored on the file itself so Finder shows the same ones. */
 export function FinderTagEditor({ rootSlug, path, tags, readonly }: { rootSlug: string; path: string; tags: FinderTag[]; readonly: boolean }) {
   const queryClient = useQueryClient();
-  // The tags kept at hand in the settings. Putting a tag on a file never adds to them.
-  const handy = (useSettingsStore((state) => state.settings.finderTags) ?? []).filter((tag) => !tags.some((item) => item.name === tag.name));
+  // The only tags there are to put on: the ones kept at hand in the settings. Putting one on a file never adds to them.
+  const mine = useSettingsStore((state) => state.settings.finderTags) ?? [];
+  const handy = mine.filter((tag) => !tags.some((item) => item.name === tag.name));
 
   const save = (next: FinderTag[], fallback: string) =>
     run(async () => {
@@ -118,7 +119,7 @@ export function FinderTagEditor({ rootSlug, path, tags, readonly }: { rootSlug: 
               ))}
             </ul>
           ) : null}
-          <FinderTagForm placeholder={t("Add tag")} onAdd={add} />
+          {mine.length === 0 ? <p className="m-0 text-xs text-muted">{t("Set up your tags in Settings to put them on files.")}</p> : null}
         </>
       )}
     </div>
