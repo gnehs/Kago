@@ -204,6 +204,37 @@ test("a remote location behaves like a local one", { skip: remote ? false : "KAG
     assert.equal((await api.get(`/api/fs/meta?${q("/album/docs")}`)).status, 404);
     assert.equal((await api.post("/api/tasks", { type: "copy", sources: [{ rootSlug: slug, path: "/docs" }], destination: { rootSlug: slug, path: "/docs/nested" } })).status, 409);
 
+    // Many files picked at once travel together, whatever their names, and nothing beside them does.
+    {
+      const picks = ["a b.txt", "#hash.txt", ";semi.txt", "[x]{y}.txt", "が.txt", "plain.txt"];
+      await mkdir(path.join(dataDir, "local", "picks"));
+      for (const name of [...picks, "stays.txt"]) await writeFile(path.join(dataDir, "local", "picks", name), name);
+      const pick = (rootSlug, folder) => picks.map((name) => ({ rootSlug, path: `${folder}/${name}` }));
+      const names = async (folder) => (await api.get(`/api/fs/list?${q(folder)}`)).json.items.map((item) => item.name).sort();
+      const sent = await task({ type: "copy", sources: pick("local", "/picks"), destination: { rootSlug: slug, path: "/" } });
+      assert.deepEqual({ status: sent.status, total: sent.total_files, done: sent.processed_files }, { status: "done", total: picks.length, done: picks.length });
+      assert.deepEqual(await names("/"), ["album", "docs", ...picks].sort());
+      const taken = await task({ type: "copy", sources: pick("local", "/picks"), destination: { rootSlug: slug, path: "/" } });
+      assert.equal(taken.error_message, "Target already exists");
+      // Into a folder beside them: the run starts in the folder its own destination is in.
+      const before = await names("/docs");
+      assert.equal((await task({ type: "move", sources: pick(slug, ""), destination: { rootSlug: slug, path: "/docs" } })).status, "done");
+      assert.deepEqual(await names("/"), ["album", "docs"]);
+      assert.deepEqual(await names("/docs"), [...before, ...picks].sort());
+      for (const name of picks) assert.equal((await api.get(`/api/fs/preview?${q(`/docs/${name}`)}`)).text, name);
+      await rm(path.join(dataDir, "local", "picks"), { recursive: true });
+      await mkdir(path.join(dataDir, "local", "picks"));
+      const fetched = await task({ type: "move", sources: pick(slug, "/docs"), destination: { rootSlug: "local", path: "/picks" } });
+      assert.deepEqual({ status: fetched.status, done: fetched.processed_files }, { status: "done", done: picks.length });
+      assert.deepEqual(await names("/docs"), before);
+      assert.deepEqual((await readdir(path.join(dataDir, "local", "picks"))).sort(), [...picks].sort());
+      for (const name of picks) assert.equal(await readFile(path.join(dataDir, "local", "picks", name), "utf8"), name);
+      const moves = new DatabaseSync(path.join(appDataDir, "app.db"), { readOnly: true });
+      assert.equal(moves.prepare("SELECT COUNT(*) AS count FROM audit_logs WHERE action = 'move' AND result = 'success' AND path LIKE '/docs/%.txt'").get().count, picks.length);
+      moves.close();
+      await rm(path.join(dataDir, "local", "picks"), { recursive: true });
+    }
+
     // The trash of a remote location is on the remote, out of sight.
     assert.equal((await task({ type: "delete_to_trash", sources: [{ rootSlug: slug, path: "/docs/nested" }, { rootSlug: slug, path: "/album/renamed.txt" }] })).status, "done");
     assert.equal((await api.get(`/api/fs/meta?${q("/docs/nested")}`)).status, 404);

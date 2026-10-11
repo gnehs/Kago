@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createCipheriv, createHmac, pbkdf2Sync } from "node:crypto";
-import { access, chmod, mkdtemp, mkdir, readdir, readFile, rm, symlink, truncate, writeFile } from "node:fs/promises";
+import { access, chmod, mkdtemp, mkdir, readdir, readFile, rm, stat, symlink, truncate, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
@@ -119,6 +119,35 @@ test("minimum file-manager demo flow", async () => {
     assert.deepEqual(await counted("copy", "/counted/inner/empty", "/counted-to"), { status: "done", total_files: 1, processed_files: 1 });
     await rm(path.join(fixture.dataDir, "photos", "counted"), { recursive: true });
     await rm(path.join(fixture.dataDir, "photos", "counted-to"), { recursive: true });
+
+    // A folder of many files is copied several at a time, and still arrives whole, each file with its own time.
+    const manyDir = path.join(fixture.dataDir, "photos", "many");
+    const manyNames = Array.from({ length: 240 }, (_, index) => `d${index % 6}/deep${index % 4}/f${index}.txt`);
+    for (const name of manyNames) {
+      await mkdir(path.dirname(path.join(manyDir, name)), { recursive: true });
+      await writeFile(path.join(manyDir, name), name);
+      await utimes(path.join(manyDir, name), 1_700_000_000, 1_700_000_000 + manyNames.indexOf(name));
+    }
+    await mkdir(path.join(fixture.dataDir, "photos", "many-to"));
+    assert.deepEqual(await counted("copy", "/many", "/many-to"), { status: "done", total_files: 240, processed_files: 240 });
+    for (const name of manyNames) {
+      const copied = path.join(fixture.dataDir, "photos", "many-to", "many", name);
+      assert.equal(await readFile(copied, "utf8"), name);
+      assert.equal((await stat(copied)).mtimeMs, (1_700_000_000 + manyNames.indexOf(name)) * 1000);
+    }
+    // Many picked at once are each checked against what the folder holds: one name taken stops them all before any is copied.
+    await mkdir(path.join(fixture.dataDir, "photos", "many-flat"));
+    await writeFile(path.join(fixture.dataDir, "photos", "many-flat", "f3.txt"), "taken");
+    const picked = manyNames.filter((name) => name.startsWith("d3/deep3/")).map((name) => ({ rootSlug: "photos", path: `/many/${name}` }));
+    const clash = await admin.post("/api/tasks", { type: "copy", sources: picked, destination: { rootSlug: "photos", path: "/many-flat" } });
+    assert.equal((await waitTask(admin, clash.json.id)).status, "failed");
+    assert.deepEqual(await readdir(path.join(fixture.dataDir, "photos", "many-flat")), ["f3.txt"]);
+    await rm(path.join(fixture.dataDir, "photos", "many-flat", "f3.txt"));
+    const pickedTask = await admin.post("/api/tasks", { type: "move", sources: picked, destination: { rootSlug: "photos", path: "/many-flat" } });
+    assert.equal((await waitTask(admin, pickedTask.json.id)).processed_files, picked.length);
+    assert.equal((await readdir(path.join(fixture.dataDir, "photos", "many-flat"))).length, picked.length);
+    assert.deepEqual(await readdir(path.join(manyDir, "d3", "deep3")), []);
+    for (const name of ["many", "many-to", "many-flat"]) await rm(path.join(fixture.dataDir, "photos", name), { recursive: true });
 
     assert.equal((await admin.post("/api/fs/mkdir", { rootSlug: "photos", path: "/public", name: "new-folder" })).statusCode, 200);
     const upload = await admin.multipart("/api/fs/upload", {

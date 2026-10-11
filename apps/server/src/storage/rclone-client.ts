@@ -95,8 +95,11 @@ export class RcloneClient {
   async runJob(command: string, body: Record<string, unknown>, onStats: (stats: RcloneStats) => void, shouldStop: () => boolean): Promise<void> {
     const { jobid } = await this.call<{ jobid: number }>(command, { ...body, _async: true });
     const group = `job/${jobid}`;
+    // Asked soon at first, so that a job done in a moment costs a moment, and then no more often than twice a second.
+    let wait = 25;
     for (;;) {
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await new Promise((resolve) => setTimeout(resolve, wait));
+      wait = Math.min(wait * 2, 500);
       if (shouldStop()) {
         await this.call("job/stop", { jobid }).catch(() => undefined);
         throw new RcloneJobStopped();
