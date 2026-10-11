@@ -1,3 +1,6 @@
+/** Where a location keeps what was deleted from it, at its own top; never listed, never reachable by path. */
+export const TRASH_FOLDER = ".kago-trash";
+
 /**
  * What operating systems and NAS software leave in folders for their own use: thumbnail caches, folder settings,
  * resource forks, recycle bins. Nobody put them there, so a folder is listed without them. They stay where they
@@ -29,5 +32,5 @@ const SYSTEM_NAMES = new Set([
   ".@__thumb"
 ]);
 
-/** `._name` is where macOS keeps a file's resource fork on a volume that has no place for one. */
-export const isSystemFile = (name: string) => name.startsWith("._") || SYSTEM_NAMES.has(name.toLowerCase());
+/** `._name` is where macOS keeps a file's resource fork on a volume that has no place for one. Kago's own trash folder is left out the same way. */
+export const isSystemFile = (name: string) => name.startsWith("._") || name === TRASH_FOLDER || SYSTEM_NAMES.has(name.toLowerCase());

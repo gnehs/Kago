@@ -305,10 +305,25 @@ test("minimum file-manager demo flow", async () => {
       sources: [{ rootSlug: "photos", path: "/public/to-empty" }]
     });
     assert.equal((await waitTask(admin, emptyTask.json.id)).status, "done");
-    assert.equal((await readdir(path.join(fixture.appDataDir, "trash"))).length, 1);
+    // A location throws into a folder at its own top, which stays on its disk and is never listed or reached by path.
+    const ownTrash = path.join(fixture.dataDir, "photos", ".kago-trash");
+    assert.equal((await readdir(ownTrash)).length, 1);
+    assert.deepEqual(await readdir(path.join(fixture.appDataDir, "trash")).catch(() => []), []);
+    assert.ok(!(await admin.get("/api/fs/list?rootSlug=photos&path=/")).json.items.some((item) => item.name === ".kago-trash"));
+    assert.equal((await admin.get("/api/fs/list?rootSlug=photos&path=/.kago-trash")).statusCode, 404);
+    assert.equal((await admin.post("/api/fs/mkdir", { rootSlug: "photos", path: "/.kago-trash", name: "inside" })).statusCode, 404);
     assert.deepEqual((await admin.delete("/api/trash")).json, { deleted: 1 });
     assert.deepEqual((await admin.get("/api/trash")).json, []);
-    assert.deepEqual(await readdir(path.join(fixture.appDataDir, "trash")), []);
+    assert.deepEqual(await readdir(ownTrash), []);
+
+    // Nothing has to be copied to get there, so nothing is asked; deleting for good skips the trash altogether.
+    assert.equal((await admin.post("/api/fs/mkdir", { rootSlug: "photos", path: "/public", name: "to-delete" })).statusCode, 200);
+    assert.deepEqual((await admin.post("/api/trash/cost", { sources: [{ rootSlug: "photos", path: "/public/to-delete" }] })).json, { copyBytes: 0 });
+    const deleteTask = await admin.post("/api/tasks", { type: "delete", sources: [{ rootSlug: "photos", path: "/public/to-delete" }] });
+    assert.equal((await waitTask(admin, deleteTask.json.id)).status, "done");
+    assert.equal((await admin.get("/api/fs/list?rootSlug=photos&path=/public/to-delete")).statusCode, 404);
+    assert.deepEqual((await admin.get("/api/trash")).json, []);
+    assert.deepEqual(await readdir(ownTrash), []);
     assert.equal((await admin.get("/api/fs/download?rootSlug=photos&path=/public/uploaded.txt")).payload, "uploaded");
 
     const shelf = await admin.post("/api/shelves", { name: "Smoke shelf" });

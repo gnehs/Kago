@@ -10,14 +10,13 @@ import type { FileTag } from "../lib/file-tags.js";
 import { nfc } from "../lib/filename.js";
 import { id } from "../lib/ids.js";
 import { logger } from "../lib/logger.js";
+import { TRASH_FOLDER } from "../lib/system-files.js";
 import type { RootService } from "../services/root.service.js";
 import type { Root } from "../services/types.js";
 import { providerOf } from "./providers.js";
 import { readSmbTags, writeSmbTags } from "./smb-file-tags.js";
 import { remoteFailure, type RcloneClient, type RcloneItem, type RcloneStats } from "./rclone-client.js";
 
-/** Where a remote location keeps what was deleted from it; never listed, never reachable by path. */
-export const REMOTE_TRASH = ".kago-trash";
 /** Tools that read a file from disk are given a copy of a remote one, which has to fit. */
 const MAX_LOCAL_COPY_BYTES = 4 * 1024 * 1024 * 1024;
 const LOCAL_COPY_MAX_AGE_MS = 12 * 60 * 60 * 1000;
@@ -65,19 +64,19 @@ export class RemoteStorage {
 
   /** Whether the path is, or lies in, a trash folder: one sits at the top of the location, or of each share. */
   isTrash(root: Root, logicalPath: string): boolean {
-    return segmentsOf(logicalPath)[this.fixedDepth(root)] === REMOTE_TRASH;
+    return segmentsOf(logicalPath)[this.fixedDepth(root)] === TRASH_FOLDER;
   }
 
   /** The trash folder that takes what is deleted at `logicalPath`: the one of the same share. */
   trashFolder(root: Root, logicalPath: string): string {
-    return `/${[...segmentsOf(logicalPath).slice(0, this.fixedDepth(root)), REMOTE_TRASH].join("/")}`;
+    return `/${[...segmentsOf(logicalPath).slice(0, this.fixedDepth(root)), TRASH_FOLDER].join("/")}`;
   }
 
   /** Whether the path is something Kago put directly inside a trash folder. */
   isTrashItem(root: Root, logicalPath: string): boolean {
     const segments = segmentsOf(logicalPath);
     const depth = this.fixedDepth(root);
-    return logicalPath.startsWith("/") && segments.length === depth + 2 && segments[depth] === REMOTE_TRASH && !segments.includes("..") && !segments.includes(".");
+    return logicalPath.startsWith("/") && segments.length === depth + 2 && segments[depth] === TRASH_FOLDER && !segments.includes("..") && !segments.includes(".");
   }
 
   async stat(root: Root, logicalPath: string): Promise<RemoteEntry | null> {
@@ -102,7 +101,7 @@ export class RemoteStorage {
       throw remoteFailure(error);
     });
     const hidden = segmentsOf(logicalPath).length === this.fixedDepth(root);
-    return items.map(entryOf).filter((entry) => !hidden || entry.name !== REMOTE_TRASH);
+    return items.map(entryOf).filter((entry) => !hidden || entry.name !== TRASH_FOLDER);
   }
 
   open(root: Root, logicalPath: string, range?: { start: number; end: number }): Promise<Readable> {
@@ -245,7 +244,7 @@ export class RemoteStorage {
     if (!directory) return { bytes: (await this.stat(root, logicalPath))?.size ?? 0, count: 1 };
     // The trash sits at the top of the location or of each share, so only a folder above it can hold one.
     const above = this.fixedDepth(root) - segmentsOf(logicalPath).length;
-    const excluded = above >= 0 ? [`/${"*/".repeat(above)}${REMOTE_TRASH}/**`] : [];
+    const excluded = above >= 0 ? [`/${"*/".repeat(above)}${TRASH_FOLDER}/**`] : [];
     const result = await this.client
       .call<{ bytes: number; count: number }>("operations/size", { fs: joinFs(this.fs(root), this.rel(logicalPath)), _filter: { ExcludeRule: excluded } }, signal)
       .catch((error: unknown) => {

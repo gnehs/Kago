@@ -4,6 +4,7 @@ import type { RootService } from "./root.service.js";
 import type { Root } from "./types.js";
 import { AppError } from "../lib/errors.js";
 import { nfc, sameName } from "../lib/filename.js";
+import { TRASH_FOLDER } from "../lib/system-files.js";
 import { isRemote, type RemoteEntry, type RemoteStorage } from "../storage/remote-storage.js";
 
 export type SafePath = {
@@ -60,6 +61,7 @@ export class PathService {
     const parentLogical = await this.resolveSegments(root, path.posix.dirname(requested));
     // Anything Kago creates is written in NFC, whatever form the client sent.
     const normalized = path.posix.join(parentLogical, nfc(path.posix.basename(requested)));
+    if (isLocalTrash(normalized)) throw new AppError(400, "Invalid path", "INVALID_PATH");
     const absolutePath = path.join(root.base_path, normalized.slice(1));
     await this.assertParentInsideRoot(root, absolutePath);
     return { root, logicalPath: normalized, absolutePath };
@@ -91,6 +93,7 @@ export class PathService {
    * so a typed NFC path still reaches a file whose name is stored as NFD (and vice versa).
    */
   private async resolveSegments(root: Root, logicalPath: string): Promise<string> {
+    if (isLocalTrash(logicalPath)) throw new AppError(404, "Path not found", "PATH_NOT_FOUND");
     const resolved: string[] = [];
     let current = root.base_path;
     for (const segment of logicalPath.split("/").filter(Boolean)) {
@@ -134,6 +137,9 @@ export class PathService {
     return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
   }
 }
+
+/** Whether the path is, or lies in, the trash folder at the top of a local location. A disk that does not mind the case finds it under any. */
+const isLocalTrash = (logicalPath: string) => logicalPath.split("/").find(Boolean)?.toLowerCase() === TRASH_FOLDER;
 
 /** Refuses what would make, rename, move or remove one of a server's shares. */
 export const sharesAreFixed = () => new AppError(403, "The shares of a server can’t be changed from here", "REMOTE_SHARES_FIXED");

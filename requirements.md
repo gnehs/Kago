@@ -120,7 +120,7 @@ docker run -d \
   app.db            SQLite 資料庫
   session.secret    簽署 session 的密鑰（未提供 SESSION_SECRET 時自動產生）
   storage.key       加密遠端位置連線設定、單一登入 secret 等的金鑰
-  trash/            本機位置的垃圾桶
+  trash/            本機位置放不了自己的 .kago-trash 時的垃圾桶
   thumbnails/
   previews/
   temp/             zip 下載、轉檔暫存
@@ -1563,6 +1563,7 @@ download_zip
 extract
 sync
 delete_to_trash
+delete
 restore_trash
 thumbnail
 ```
@@ -2180,16 +2181,18 @@ edit permissions
 
 刪除預設必須進垃圾桶，不直接永久刪除。
 
-垃圾桶的位置依位置的種類而定：
+每個位置的垃圾桶都在它自己裡面，丟進去是同一顆磁碟上的 rename，不必複製：
 
 ```txt
-本機位置   /app-data/trash/
+本機位置   該位置頂層的 .kago-trash 資料夾（/data/<位置>/.kago-trash）
 遠端位置   該位置裡的 .kago-trash 資料夾
 ```
 
-遠端位置的 `.kago-trash` 不會被列出來，不能用路徑存取，也不參與同步。
+`.kago-trash` 不會被列出來，不能用路徑存取，也不參與同步。
 
-沒有 `/data/.trash/` 這種放在同一個磁碟上的模式。
+本機位置的頂層放不了 `.kago-trash`（例如不可寫）時，退回 `/app-data/trash/`；舊版丟進 `/app-data/trash/` 的項目仍可還原與清空。
+
+丟進垃圾桶仍得跨磁碟複製（垃圾桶和檔案不在同一個檔案系統）且超過 1 GB 時，先問使用者要照樣移到垃圾桶，還是直接刪除（`delete` 任務，不可復原）。
 
 刪除時要記錄 trash_items。
 

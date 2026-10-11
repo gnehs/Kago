@@ -3,7 +3,7 @@ import { Dialog } from "@base-ui/react/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { settleDialog, useDialogStore } from "@/stores/dialogs";
+import { ALTERNATIVE, settleDialog, useDialogStore } from "@/stores/dialogs";
 import { t } from "@/lib/i18n";
 
 export function KagoDialog({ open, onClose, title, question, className, children }: { open: boolean; onClose: () => void; title: ReactNode; /** It asks one thing and waits for the answer: the title is centred over a rule, as on a form. */ question?: boolean; className?: string; children: ReactNode }) {
@@ -76,9 +76,12 @@ export function KagoDialogHost() {
             <Input ref={input} autoFocus value={value} placeholder={request.input.placeholder} onChange={(event) => setValue(event.target.value)} />
           ) : null}
         </div>
-        {/* The two answers, side by side and as wide as each other, on a strip of their own: the way out first, what the dialog is for last. */}
-        <footer className="grid shrink-0 grid-cols-2 gap-2 rounded-b-lg border-t border-line bg-elevated p-3">
+        {/* The two answers, side by side and as wide as each other, on a strip of their own: the way out first, what the dialog is for last. Three are too many for one row, and stand under each other. */}
+        <footer className={cn("grid shrink-0 gap-2 rounded-b-lg border-t border-line bg-elevated p-3", request.alternative ? "grid-cols-1" : "grid-cols-2")}>
           <Button size="lg" onClick={() => settleDialog(null)}>{t("Cancel")}</Button>
+          {request.alternative ? (
+            <Button size="lg" variant={request.alternative.destructive ? "destructive" : "outline"} onClick={() => settleDialog(ALTERNATIVE)}>{request.alternative.label}</Button>
+          ) : null}
           <Button size="lg" type="submit" variant={request.destructive ? "destructive-primary" : "default"} disabled={!canSubmit} autoFocus={!request.input}>
             {request.confirmLabel ?? t("OK")}
           </Button>

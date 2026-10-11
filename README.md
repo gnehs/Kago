@@ -31,7 +31,7 @@
 - **Sync**: sync folders between locations, by hand or on a schedule.
 - **App shortcuts**: put the other services on your NAS (Jellyfin, Immich, Home Assistant…) on the desktop and open them in a new tab with one click. Type a name and icons are suggested from Dashboard Icons and selfh.st Icons, or upload your own. An administrator can put a shortcut on everyone's desktop.
 - **Tags**: colored tags are kept on the files themselves, and each person keeps a list of the ones they use most. Every color has a shape of its own, so tags can be told apart without telling the colors apart.
-- **Trash**: deleted files go to the Trash first and can be restored.
+- **Trash**: deleted files go to the Trash first and can be restored. Each location keeps its Trash in a hidden `.kago-trash` folder at its own top, so deleting never copies anything to another disk.
 - **Languages**: the interface comes in English, 繁體中文, 简体中文 and 日本語. It follows the browser language by default and can be switched in Settings → General.
 - **Quick open**: press <kbd>⌘K</kbd> / <kbd>Ctrl K</kbd> to jump to any location or feature.
 - **Dark mode**: follows the system, or switch it yourself.
@@ -82,7 +82,7 @@ services:
 | Path in the container | Purpose |
 | --- | --- |
 | `/data` | The files you want to manage. **Each folder directly inside it** becomes a "location" in the file manager, so mount a directory that holds several folders, or mount several folders to sub-paths such as `/data/Photos` and `/data/Videos`. |
-| `/app-data` | Kago's own data: the SQLite database (accounts, permissions, share links, audit log), the Trash, thumbnails and transcoding scratch files. **Back this folder up.** |
+| `/app-data` | Kago's own data: the SQLite database (accounts, permissions, share links, audit log), thumbnails and transcoding scratch files. **Back this folder up.** |
 
 To bring together folders that live on different disks, mount each one separately:
 

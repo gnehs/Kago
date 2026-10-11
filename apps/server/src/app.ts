@@ -1043,6 +1043,7 @@ function registerApi(app: FastifyInstance, services: Services) {
 
   app.get("/api/trash", async (request) => services.tasks.listTrash(requireActor(request)));
   app.delete("/api/trash", async (request) => services.tasks.emptyTrash(requireActor(request)));
+  app.post("/api/trash/cost", async (request) => services.tasks.trashCost(requireActor(request), z.object({ sources: z.array(z.object({ rootSlug: z.string().min(1), path: z.string().min(1) })) }).parse(request.body).sources));
   app.post("/api/trash/:id/restore", async (request) => {
     const actor = requireActor(request);
     const params = z.object({ id: z.string() }).parse(request.params);

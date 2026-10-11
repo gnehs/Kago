@@ -9,6 +9,7 @@ const typeLabels: Record<string, string> = {
   download_zip: t("Zip download"),
   extract: t("Extract"),
   delete_to_trash: t("Move to Trash"),
+  delete: t("Delete"),
   restore_trash: t("Restore from Trash"),
   thumbnail: t("Thumbnails"),
   sync: t("Sync")
@@ -28,8 +29,8 @@ const statusMeta: Record<string, { label: string; tone: "neutral" | "accent" | "
 export const taskTypeLabel = (task: FileTask) => typeLabels[task.type] ?? task.type;
 export const taskStatus = (task: FileTask) => statusMeta[task.status] ?? { label: task.status, tone: "neutral" as const };
 export const isActiveTask = (task: FileTask) => ["queued", "running", "pausing", "paused"].includes(task.status);
-/** Moving to the Trash looks instant to the user, so it only shows up among the live tasks when it goes wrong. */
-export const isQuietTask = (task: FileTask) => task.type === "delete_to_trash" && (isActiveTask(task) || task.status === "done");
+/** Moving to the Trash, or deleting, looks instant to the user, so it only shows up among the live tasks when it goes wrong. */
+export const isQuietTask = (task: FileTask) => (task.type === "delete_to_trash" || task.type === "delete") && (isActiveTask(task) || task.status === "done");
 export const canCancelTask = (task: FileTask) => ["queued", "paused", "running"].includes(task.status);
 export const isFinishedTask = (task: FileTask) => !isActiveTask(task);
 export const canRetryTask = (task: FileTask) => ["failed", "cancelled", "interrupted"].includes(task.status);

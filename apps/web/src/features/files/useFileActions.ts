@@ -1,10 +1,11 @@
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { api, downloadUrl } from "@/api/client";
+import { formatSize } from "@/lib/format";
 import { baseName, ensureZipName, joinLogicalPath, needsNormalizing, nfc, parentPath, triggerDownload } from "@/lib/paths";
 import { run } from "@/lib/run";
 import type { UploadTree } from "@/lib/uploadTree";
 import { useClipboardStore, type FileRef } from "@/stores/clipboard";
-import { promptText } from "@/stores/dialogs";
+import { chooseAction, promptText } from "@/stores/dialogs";
 import { toast } from "@/stores/toast";
 import { hideTrashing } from "@/stores/trashing";
 import { followTask } from "@/features/tasks/taskToast";
@@ -92,13 +93,29 @@ export function renameFile(queryClient: QueryClient, item: FileRef & { name: str
   }, t("Couldn’t rename"));
 }
 
+/** Past this much to copy, moving to the Trash is slow enough to ask whether it is wanted at all. */
+const SLOW_TRASH_BYTES = 1024 ** 3;
+
 /** Resolves to the task moving them, or to nothing when it could not be started. */
 export function trashFiles(queryClient: QueryClient, sources: FileRef[]) {
   return run(async () => {
-    const task = await createTask(queryClient, { type: "delete_to_trash", sources });
+    // The Trash of a location is on its own disk, and getting there is a rename. Only what has to be copied to it takes time.
+    const { copyBytes } = await api<{ copyBytes: number }>("/api/trash/cost", { method: "POST", body: JSON.stringify({ sources }) });
+    let type = "delete_to_trash";
+    if (copyBytes >= SLOW_TRASH_BYTES) {
+      const choice = await chooseAction({
+        title: t("Moving this to the Trash will take a while"),
+        description: t("The Trash is on another disk, so {size} has to be copied there first. Deleting right away is instant, but can’t be undone.", { size: formatSize(copyBytes) }),
+        confirmLabel: t("Move to Trash"),
+        alternative: { label: t("Delete right away"), destructive: true }
+      });
+      if (!choice) return;
+      if (choice === "alternative") type = "delete";
+    }
+    const task = await createTask(queryClient, { type, sources });
     // The server moves them in the background; here they are gone at once.
     hideTrashing(task.id, sources);
-    toast(t("Moved {count} item to Trash | Moved {count} items to Trash", { count: sources.length }));
+    toast(type === "delete" ? t("Deleted {count} item | Deleted {count} items", { count: sources.length }) : t("Moved {count} item to Trash | Moved {count} items to Trash", { count: sources.length }));
     return task;
   });
 }

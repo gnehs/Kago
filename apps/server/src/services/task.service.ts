@@ -17,7 +17,8 @@ import { SecretBox } from "../lib/secret-box.js";
 import { zipStream, type ZipEntry, type ZipOptions } from "../lib/zip-stream.js";
 import { RcloneJobStopped, refusedForPermission, type RcloneStats } from "../storage/rclone-client.js";
 import { runRclone } from "../storage/rclone-daemon.js";
-import { isRemote, joinFs, REMOTE_TRASH, transferProgress } from "../storage/remote-storage.js";
+import { TRASH_FOLDER } from "../lib/system-files.js";
+import { isRemote, joinFs, transferProgress } from "../storage/remote-storage.js";
 import type { EventPublisher } from "../ws/events.js";
 import { ArchivePasswordService } from "./archive-password.service.js";
 import type { AuditService } from "./audit.service.js";
@@ -27,7 +28,7 @@ import type { Level, PermissionService } from "./permission.service.js";
 import type { PreferenceService } from "./preference.service.js";
 import type { StorageService } from "./storage.service.js";
 import { SyncReport } from "./sync-report.js";
-import type { Actor, FileTask } from "./types.js";
+import type { Actor, FileTask, Root } from "./types.js";
 
 const maxExtractEntries = 10_000;
 const maxExtractBytes = 1024 * 1024 * 1024 * 2;
@@ -54,6 +55,7 @@ export const taskInputSchema = z.object({
     "copy",
     "move",
     "delete_to_trash",
+    "delete",
     "restore_trash",
     "compress",
     "download_zip",
@@ -289,7 +291,6 @@ export class TaskService {
 
   /** Permanently deletes everything the actor can see in the trash. */
   async emptyTrash(actor: Actor): Promise<{ deleted: number }> {
-    const trashDir = path.resolve(this.appDataDir, "trash");
     const items = rows<RestorableTrashItem>(
       actor.role === "ADMIN"
         ? this.db.prepare("SELECT * FROM trash_items WHERE restored_at IS NULL").all()
@@ -301,8 +302,8 @@ export class TaskService {
         // What a remote location threw away lies in its own hidden folder; anything else is not Kago's to remove.
         const entry = this.storage.remote.isTrashItem(root, item.trash_path) ? await this.storage.remote.stat(root, item.trash_path) : null;
         if (entry) await this.storage.remote.remove(root, item.trash_path, entry.directory);
-      } else if (path.dirname(path.resolve(item.trash_path)) === trashDir) {
-        // Trashed entries always sit directly inside the trash dir; never remove anything else.
+      } else if (this.localTrashOf(root, item.trash_path)) {
+        // Trashed entries always sit directly inside a trash dir; never remove anything else.
         await fsp.rm(item.trash_path, { recursive: true, force: true });
       }
       this.db.prepare("DELETE FROM trash_items WHERE id = ?").run(item.id);
@@ -457,6 +458,7 @@ export class TaskService {
       if (task.type === "copy") await this.runCopyLike(task, actor, false);
       else if (task.type === "move") await this.runCopyLike(task, actor, true);
       else if (task.type === "delete_to_trash") await this.runTrash(task, actor);
+      else if (task.type === "delete") await this.runDelete(task, actor);
       else if (task.type === "restore_trash") await this.runRestore(task, actor);
       else if (task.type === "compress") await this.runCompress(task, actor);
       else if (task.type === "download_zip") await this.runDownloadZip(task, actor);
@@ -708,9 +710,6 @@ export class TaskService {
 
   private async runTrash(task: FileTask, actor: Actor): Promise<void> {
     const sources = JSON.parse(task.sources_json) as Array<{ rootSlug: string; path: string }>;
-    const trashDir = path.join(this.appDataDir, "trash");
-    await fsp.mkdir(trashDir, { recursive: true });
-
     const operations = [];
     let totalBytes = 0;
     for (const source of sources) {
@@ -726,7 +725,7 @@ export class TaskService {
       const stats = await collectPathStats(safe.absolutePath);
       totalBytes += stats.bytes;
       const trashName = `${Date.now()}-${id("trash")}-${path.basename(safe.absolutePath)}`;
-      const trashPath = path.join(trashDir, trashName);
+      const trashPath = path.join(await this.localTrashDir(safe.root), trashName);
       operations.push({ safe, trashPath, bytes: stats.bytes });
     }
     await this.updateTotals(task.id, operations.length, totalBytes);
@@ -760,12 +759,12 @@ export class TaskService {
 
   private async runRestore(task: FileTask, actor: Actor): Promise<void> {
     const sources = JSON.parse(task.sources_json) as Array<{ rootSlug: string; path: string }>;
-    const trashDir = path.join(this.appDataDir, "trash");
     let totalBytes = 0;
     for (const source of sources) {
       const item = this.getRestorableTrashItem(actor, source.path);
-      if (isRemote((await this.paths.resolveRootById(item.original_root_id, "/")).root)) continue;
-      await assertRealPathInside(trashDir, item.trash_path);
+      const { root } = await this.paths.resolveRootById(item.original_root_id, "/");
+      if (isRemote(root)) continue;
+      await assertRealPathInside(this.requireLocalTrashOf(root, item.trash_path), item.trash_path);
       totalBytes += (await collectPathStats(item.trash_path)).bytes;
     }
     await this.updateTotals(task.id, sources.length, totalBytes);
@@ -786,7 +785,7 @@ export class TaskService {
         continue;
       }
       const target = path.join(safe.absolutePath, path.basename(item.original_path));
-      await assertRealPathInside(trashDir, item.trash_path);
+      await assertRealPathInside(this.requireLocalTrashOf(safe.root, item.trash_path), item.trash_path);
       await assertNameAvailable(safe.absolutePath, path.basename(target));
       const stats = await collectPathStats(item.trash_path);
       const streamed = await movePath(item.trash_path, target, (processedBytes) => this.bumpProcessedBytes(task.id, processedBytes));
@@ -802,6 +801,66 @@ export class TaskService {
       if (!streamed) this.bumpProcessedBytes(task.id, stats.bytes);
       await this.bumpProcessed(task.id);
     }
+  }
+
+  /** Deletes for good, without the detour through the trash: for what would take long to carry there. */
+  private async runDelete(task: FileTask, actor: Actor): Promise<void> {
+    const sources = JSON.parse(task.sources_json) as Array<{ rootSlug: string; path: string }>;
+    await this.updateTotals(task.id, sources.length, 0);
+    for (const source of sources) {
+      const safe = await this.paths.resolveExisting(source.rootSlug, source.path);
+      this.permissions.require(actor, "edit", safe.root, safe.logicalPath);
+      if (safe.logicalPath === "/") throw new AppError(400, "Invalid path", "INVALID_PATH");
+      this.assertNotFixed(safe);
+      await this.progress(task.id, safe.logicalPath);
+      if (isRemote(safe.root)) await this.storage.remote.remove(safe.root, safe.logicalPath, (await this.storage.stat(safe)).isDirectory());
+      else await fsp.rm(safe.absolutePath, { recursive: true, force: true });
+      await this.bumpProcessed(task.id);
+      this.audit.write({ actorType: "user", actorId: actor.id, action: "delete", rootId: safe.root.id, path: safe.logicalPath, result: "success" });
+    }
+  }
+
+  /**
+   * How much of what is to be thrown away would have to be copied to get to the trash, which is what makes it
+   * slow: only what lies on another disk than the trash it goes to. Anything else is renamed, however large.
+   */
+  async trashCost(actor: Actor, sources: Array<{ rootSlug: string; path: string }>): Promise<{ copyBytes: number }> {
+    let copyBytes = 0;
+    for (const source of sources) {
+      const safe = await this.paths.resolveExisting(source.rootSlug, source.path);
+      this.permissions.require(actor, "edit", safe.root, safe.logicalPath);
+      if (isRemote(safe.root)) continue;
+      const [item, trash] = await Promise.all([fsp.lstat(safe.absolutePath), fsp.stat(await this.localTrashDir(safe.root))]);
+      if (item.dev !== trash.dev) copyBytes += (await collectPathStats(safe.absolutePath)).bytes;
+    }
+    return { copyBytes };
+  }
+
+  /**
+   * The trash a local location throws into: a folder at its own top, so that what is thrown away stays on its disk
+   * and is renamed, not copied. A location whose top cannot take one falls back to the trash in the app data.
+   */
+  private async localTrashDir(root: Root): Promise<string> {
+    const own = path.join(root.base_path, TRASH_FOLDER);
+    await fsp.mkdir(own).catch(() => undefined);
+    // Something else by that name, a symlink among them, is not a place to put things.
+    if ((await fsp.lstat(own).catch(() => null))?.isDirectory()) return own;
+    const shared = path.join(this.appDataDir, "trash");
+    await fsp.mkdir(shared, { recursive: true });
+    return shared;
+  }
+
+  /** The trash dir a local trash item lies directly in, when it is one Kago throws into: the location's own, or the one in the app data. */
+  private localTrashOf(root: Root | null, trashPath: string): string | null {
+    const dir = path.dirname(path.resolve(trashPath));
+    const known = [path.resolve(this.appDataDir, "trash"), ...(root && !isRemote(root) ? [path.resolve(root.base_path, TRASH_FOLDER)] : [])];
+    return known.includes(dir) ? dir : null;
+  }
+
+  private requireLocalTrashOf(root: Root, trashPath: string): string {
+    const dir = this.localTrashOf(root, trashPath);
+    if (!dir) throw new AppError(404, "Trash item not found", "TRASH_ITEM_NOT_FOUND");
+    return dir;
   }
 
   private getRestorableTrashItem(actor: Actor, trashItemId: string): RestorableTrashItem {
@@ -1278,7 +1337,7 @@ export class TaskService {
     // Where times cannot be kept, a file of the same size is taken to have changed when the source's is the newer.
     const byAge = isRemote(destination.root) && (await this.storage.remote.keepsNoTimes(destination.root));
     // A remote location's trash is Kago's own business at either end.
-    const excluded = [`/${REMOTE_TRASH}/**`, `/*/${REMOTE_TRASH}/**`];
+    const excluded = [`/${TRASH_FOLDER}/**`, `/*/${TRASH_FOLDER}/**`];
     try {
       if (trial) {
         await runRclone(
@@ -1367,7 +1426,7 @@ export class TaskService {
       return;
     }
 
-    if (input.type === "delete_to_trash") {
+    if (input.type === "delete_to_trash" || input.type === "delete") {
       for (const source of input.sources) {
         const safe = await this.paths.resolveExisting(source.rootSlug, source.path);
         this.permissions.require(actor, "edit", safe.root, safe.logicalPath);
