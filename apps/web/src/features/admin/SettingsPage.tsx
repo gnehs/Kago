@@ -118,9 +118,7 @@ export function SettingsPage() {
           </SettingRow>
         </div>
       </Card>
-      <Card title={t("Tags")} description={t("Tags you keep at hand. They appear in a file’s info, ready to put on it with one click.")}>
-        <FinderTagList />
-      </Card>
+      <FinderTagList />
       <ArchivePasswords />
     </Page>
   );

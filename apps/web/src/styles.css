@@ -609,23 +609,53 @@
       var(--kago-badge-edge);
   }
 
-  /* A tag's colour, as a button barely raised: a little lighter at the top, with a faint shine and the thinnest of shadows. Without a colour it is a hollow in the surface. */
+  /*
+   * A tag's mark: its colour, barely raised (a little lighter at the top, a faint shine, the thinnest of shadows), cut
+   * to a shape so that it is told apart without the colour. Without a colour it is a hollow in the surface. The shape
+   * is cut out of a layer of its own, so that the shadow follows it.
+   */
   .kago-tag-dot {
+    --mark: var(--kago-sunk);
+    position: relative;
     flex-shrink: 0;
     border-radius: 999px;
-    background: var(--kago-sunk);
+    background: var(--mark);
     box-shadow: var(--kago-sunk-shadow);
   }
 
   .kago-tag-dot[data-color] {
     --tag: var(--kago-tag-gray);
-    background:
+    --mark:
       radial-gradient(80% 45% at 50% 8%, rgb(255 255 255 / 0.3), rgb(255 255 255 / 0) 80%),
       linear-gradient(color-mix(in oklab, var(--tag), white 8%), color-mix(in oklab, var(--tag), black 7%));
     box-shadow:
       inset 0 0 0 0.5px color-mix(in oklab, var(--tag), black 22%),
-      0 0.5px 0.5px rgb(15 23 42 / 0.2);
+      0 0.5px 0.5px rgb(15 23 42 / 0.2),
+      /* A pale rim, which is what shows on a row chosen in a colour close to the tag's own. */
+      0 0 0 0.5px rgb(255 255 255 / 0.35);
   }
+
+  .kago-tag-dot[data-shape]:not([data-shape="circle"]) {
+    background: none;
+    box-shadow: none;
+    filter: drop-shadow(0 0 0.4px rgb(255 255 255 / 0.5)) drop-shadow(0 0.5px 0.5px rgb(15 23 42 / 0.25));
+  }
+
+  .kago-tag-dot[data-shape]:not([data-shape="circle"])::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: var(--mark);
+    clip-path: var(--shape);
+  }
+
+  /* The pointed shapes are let out past the box a little: cut to it, they would look smaller than the circle beside them. */
+  .kago-tag-dot[data-shape="triangle"] { --shape: polygon(50% 0%, 104% 92%, -4% 92%); }
+  .kago-tag-dot[data-shape="diamond"] { --shape: polygon(50% -6%, 106% 50%, 50% 106%, -6% 50%); }
+  .kago-tag-dot[data-shape="square"] { --shape: inset(7% round 16%); }
+  .kago-tag-dot[data-shape="pentagon"] { --shape: polygon(50% -2%, 103% 38%, 83% 100%, 17% 100%, -3% 38%); }
+  .kago-tag-dot[data-shape="hexagon"] { --shape: polygon(25% 3%, 75% 3%, 103% 50%, 75% 97%, 25% 97%, -3% 50%); }
+  .kago-tag-dot[data-shape="star"] { --shape: polygon(50% -6%, 64% 32%, 105% 34%, 73% 59%, 84% 99%, 50% 76%, 16% 99%, 27% 59%, -5% 34%, 36% 32%); }
 
   .kago-tag-dot[data-color="green"] { --tag: var(--kago-tag-green); }
   .kago-tag-dot[data-color="purple"] { --tag: var(--kago-tag-purple); }

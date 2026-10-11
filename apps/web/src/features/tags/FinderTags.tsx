@@ -1,24 +1,46 @@
 import { cn } from "@/lib/utils";
-import type { FinderTag } from "@/types/kago";
+import { useSettingsStore } from "@/stores/settings";
+import type { FinderTag, TagShape } from "@/types/kago";
 import { t } from "@/lib/i18n";
 
-/** A tag's colour as a small bead, or a hollow for a tag without one. Its size comes from `className`. */
-export function TagDot({ color, className }: { color: FinderTag["color"]; className?: string }) {
-  return <span data-color={color ?? undefined} className={cn("kago-tag-dot", className)} />;
+/**
+ * The shape each colour is drawn in, so that tags are told apart without telling the colours apart. The colours most
+ * often taken for one another (red, orange, yellow and green; blue and purple) have the shapes least alike.
+ */
+export const colorShape: Record<NonNullable<FinderTag["color"]>, TagShape> = {
+  red: "triangle",
+  orange: "diamond",
+  yellow: "star",
+  green: "square",
+  blue: "circle",
+  purple: "pentagon",
+  gray: "hexagon"
+};
+
+/** The shape a tag is drawn in: the one its owner's list gives a tag of that name, or else the shape of its colour. */
+function useTagShape(tag: FinderTag): TagShape {
+  const own = useSettingsStore((state) => state.settings.finderTags?.find((item) => item.name === tag.name)?.shape);
+  return own ?? (tag.color ? colorShape[tag.color] : "circle");
+}
+
+/** A tag's colour and shape, small; a hollow for a tag without a colour. Its size comes from `className`. */
+export function TagDot({ tag, className }: { tag: FinderTag; className?: string }) {
+  const shape = useTagShape(tag);
+  return <span data-color={tag.color ?? undefined} data-shape={shape} className={cn("kago-tag-dot", className)} />;
 }
 
 const MAX_DOTS = 3;
 
-/** The coloured dots Finder shows next to a name. Tags without a colour only appear in the tooltip. */
+/** The marks of a file's coloured tags, next to its name. They stand side by side: one laid over another would hide its shape. Tags without a colour only appear in the tooltip. */
 export function FinderTagDots({ tags, className }: { tags?: FinderTag[]; className?: string }) {
   if (!tags?.length) return null;
   const colored = tags.filter((tag) => tag.color).slice(-MAX_DOTS);
   if (colored.length === 0) return null;
   const label = tags.map((tag) => tag.name).join("、");
   return (
-    <span className={cn("flex shrink-0 items-center", className)} role="img" aria-label={t("Tags: {label}", { label })} title={label}>
+    <span className={cn("flex shrink-0 items-center gap-px", className)} role="img" aria-label={t("Tags: {label}", { label })} title={label}>
       {colored.map((tag) => (
-        <TagDot key={tag.name} color={tag.color} className="-ml-1 size-2.5 outline outline-1 outline-surface first:ml-0" />
+        <TagDot key={tag.name} tag={tag} className="size-2.5" />
       ))}
     </span>
   );

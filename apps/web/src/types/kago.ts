@@ -190,7 +190,7 @@ export type AccountSettings = {
   smartView?: boolean;
   defaultView?: Partial<FolderView>;
   /** The Finder tags kept at hand to put on files. Only its owner writes it. */
-  finderTags?: FinderTag[];
+  finderTags?: ListedTag[];
   /** When the desktop background was last set, which names the picture to ask for. Absent without one. */
   wallpaper?: number | null;
 };
@@ -294,6 +294,11 @@ export type FinderTag = {
   name: string;
   color: "gray" | "green" | "purple" | "blue" | "yellow" | "red" | "orange" | null;
 };
+
+export type TagShape = "circle" | "triangle" | "diamond" | "square" | "pentagon" | "hexagon" | "star";
+
+/** A tag in a person's own list. The shape is theirs: without one, the tag is drawn in the shape of its colour. */
+export type ListedTag = FinderTag & { shape?: TagShape };
 
 export type ShareLink = {
   id: string;

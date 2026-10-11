@@ -33,7 +33,13 @@ export const settingsSchema = z
     /** How folders are shown where nothing else says. */
     defaultView: viewSchema,
     /** The Finder tags a person keeps at hand to put on files. Only they write it: nothing is added from the files they see or tag. */
-    finderTags: z.array(finderTagSchema).max(100).refine((tags) => new Set(tags.map((tag) => tag.name)).size === tags.length)
+    finderTags: z
+      .array(
+        // The shape a tag is drawn in is this person's own: the file has a place for a name and a colour only.
+        finderTagSchema.extend({ shape: z.enum(["circle", "triangle", "diamond", "square", "pentagon", "hexagon", "star"]).optional() })
+      )
+      .max(100)
+      .refine((tags) => new Set(tags.map((tag) => tag.name)).size === tags.length)
   })
   .partial()
   .strict();

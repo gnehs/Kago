@@ -30,7 +30,7 @@
 - **Remote locations**: folders on SMB, SFTP, WebDAV and FTP can be added as locations and browsed, played and shared just like local ones. The container needs no extra privileges.
 - **Sync**: sync folders between locations, by hand or on a schedule.
 - **App shortcuts**: put the other services on your NAS (Jellyfin, Immich, Home Assistant…) on the desktop and open them in a new tab with one click. Type a name and icons are suggested from Dashboard Icons and selfh.st Icons, or upload your own. An administrator can put a shortcut on everyone's desktop.
-- **Tags**: colored tags are kept on the files themselves, and each person keeps a list of the ones they use most.
+- **Tags**: colored tags are kept on the files themselves, and each person keeps a list of the ones they use most. Every color has a shape of its own, so tags can be told apart without telling the colors apart.
 - **Trash**: deleted files go to the Trash first and can be restored.
 - **Languages**: the interface comes in English, 繁體中文, 简体中文 and 日本語. It follows the browser language by default and can be switched in Settings → General.
 - **Quick open**: press <kbd>⌘K</kbd> / <kbd>Ctrl K</kbd> to jump to any location or feature.

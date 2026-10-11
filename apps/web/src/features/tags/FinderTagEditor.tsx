@@ -1,19 +1,22 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { api } from "@/api/client";
+import { Plus } from "lucide-react";
 import { KagoChip, KagoChips } from "@/components/kago/chip";
+import { KagoDialog, KagoDialogActions } from "@/components/kago/dialog";
+import { Card, Row, RowList } from "@/components/kago/page";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Field, FieldGroup, Input } from "@/components/ui/input";
 import { run } from "@/lib/run";
 import { saveSettings, useSettingsStore } from "@/stores/settings";
 import { cn } from "@/lib/utils";
-import type { FileMeta, FinderTag } from "@/types/kago";
-import { TagDot } from "./FinderTags";
+import type { FileMeta, FinderTag, ListedTag, TagShape } from "@/types/kago";
+import { colorShape, TagDot } from "./FinderTags";
 import { t } from "@/lib/i18n";
 
 type Color = NonNullable<FinderTag["color"]>;
 
-/** As many as the account keeps. */
+/** As many as the account keeps in a list. */
 const MAX_TAGS = 100;
 
 // In Finder's own order, with the names it gives its colour tags.
@@ -27,51 +30,90 @@ const colors: Array<{ color: Color; name: string }> = [
   { color: "gray", name: t("Gray") }
 ];
 
-const dot = (tag: FinderTag) => <TagDot color={tag.color} className="size-2.5" />;
+const shapes: Array<{ shape: TagShape; name: string }> = [
+  { shape: "circle", name: t("Circle") },
+  { shape: "triangle", name: t("Triangle") },
+  { shape: "diamond", name: t("Diamond") },
+  { shape: "square", name: t("Square") },
+  { shape: "pentagon", name: t("Pentagon") },
+  { shape: "hexagon", name: t("Hexagon") },
+  { shape: "star", name: t("Star") }
+];
 
-/** A name and a colour for one tag, handed over as it is added. */
-function FinderTagForm({ placeholder, onAdd }: { placeholder: string; /** Answers whether the tag was taken, which clears the form. */ onAdd: (tag: FinderTag) => unknown }) {
-  const [name, setName] = useState("");
-  const [color, setColor] = useState<Color | null>(null);
-  // A colour on its own adds Finder's tag of that colour.
-  const newName = name.trim() || colors.find((item) => item.color === color)?.name || "";
+const dot = (tag: FinderTag) => <TagDot tag={tag} className="size-2.5" />;
 
-  async function add(event: React.FormEvent) {
+const choice = "kago-tag-dot size-5 outline-2 outline-offset-2 outline-transparent focus-visible:outline-accent";
+
+/** One tag of the list being written: a new one, or one that is there. */
+function TagForm({ tag, taken, onSave, onClose }: { tag: ListedTag | null; /** The names the other tags of the list go by. */ taken: string[]; onSave: (tag: ListedTag) => void; onClose: () => void }) {
+  const [name, setName] = useState(tag?.name ?? "");
+  const [color, setColor] = useState<Color | null>(tag?.color ?? null);
+  // Left alone, the shape is the one the colour has everywhere.
+  const [shape, setShape] = useState<TagShape | null>(tag?.shape ?? null);
+  // A colour on its own makes the tag named after that colour.
+  const colorName = colors.find((item) => item.color === color)?.name;
+  const newName = name.trim() || colorName || "";
+  const shown = shape ?? (color ? colorShape[color] : "circle");
+  const clash = taken.includes(newName);
+
+  function submit(event: React.FormEvent) {
     event.preventDefault();
-    if (!newName) return;
-    if (await onAdd({ name: newName, color })) {
-      setName("");
-      setColor(null);
-    }
+    if (!newName || clash) return;
+    onSave({ name: newName, color, ...(shape ? { shape } : {}) });
+    onClose();
   }
 
   return (
-    <form className="flex flex-col gap-2" onSubmit={add}>
-      <div className="flex items-center gap-1.5" role="radiogroup" aria-label={t("Tag color")}>
-        {colors.map((item) => (
-          <button
-            key={item.color}
-            type="button"
-            role="radio"
-            aria-checked={color === item.color}
-            aria-label={item.name}
-            title={item.name}
-            data-color={item.color}
-            className={cn("kago-tag-dot size-4 outline-2 outline-offset-2 outline-transparent focus-visible:outline-accent", color === item.color && "outline-ink")}
-            onClick={() => setColor(color === item.color ? null : item.color)}
-          />
-        ))}
-      </div>
-      <div className="flex gap-2">
-        <Input placeholder={color ? colors.find((item) => item.color === color)?.name : placeholder} value={name} onChange={(event) => setName(event.target.value)} />
-        <Button type="submit" disabled={!newName}>{t("Add")}</Button>
-      </div>
+    <form className="flex flex-col gap-4 p-4 pt-3" onSubmit={submit}>
+      <Field label={t("Name")} hint={clash ? t("You already have a tag with this name") : undefined}>
+        <Input autoFocus maxLength={255} placeholder={colorName} value={name} onChange={(event) => setName(event.target.value)} />
+      </Field>
+      <FieldGroup label={t("Color##of a tag")}>
+        <div className="flex items-center gap-2.5 py-1 pl-0.5" role="radiogroup" aria-label={t("Color##of a tag")}>
+          <button type="button" role="radio" aria-checked={color === null} aria-label={t("No color")} title={t("No color")} className={cn(choice, color === null && "outline-ink")} onClick={() => setColor(null)} />
+          {colors.map((item) => (
+            <button
+              key={item.color}
+              type="button"
+              role="radio"
+              aria-checked={color === item.color}
+              aria-label={item.name}
+              title={item.name}
+              data-color={item.color}
+              className={cn(choice, color === item.color && "outline-ink")}
+              onClick={() => setColor(item.color)}
+            />
+          ))}
+        </div>
+      </FieldGroup>
+      <FieldGroup label={t("Shape")} hint={t("Told apart by shape, a tag needs no telling colors apart. Each color has a shape of its own until you pick another.")}>
+        <div className="flex items-center gap-2.5 py-1 pl-0.5" role="radiogroup" aria-label={t("Shape")}>
+          {shapes.map((item) => (
+            <button
+              key={item.shape}
+              type="button"
+              role="radio"
+              aria-checked={shown === item.shape}
+              aria-label={item.name}
+              title={item.name}
+              data-color={color ?? undefined}
+              data-shape={item.shape}
+              className={cn(choice, shown === item.shape && "outline-ink")}
+              onClick={() => setShape(item.shape)}
+            />
+          ))}
+        </div>
+      </FieldGroup>
+      <KagoDialogActions>
+        <Button type="button" onClick={onClose}>{t("Cancel")}</Button>
+        <Button type="submit" variant="default" disabled={!newName || clash}>{tag ? t("Save") : t("Add")}</Button>
+      </KagoDialogActions>
     </form>
   );
 }
 
-/** A list of tags with `tag` in it: one of that name already there takes its colour in place. */
-const withFinderTag = (tags: FinderTag[], tag: FinderTag) => (tags.some((item) => item.name === tag.name) ? tags.map((item) => (item.name === tag.name ? tag : item)) : [...tags, tag]);
+/** A list of tags with `tag` in it: one of that name already there is replaced where it stands. */
+const withFinderTag = <T extends FinderTag>(tags: T[], tag: T) => (tags.some((item) => item.name === tag.name) ? tags.map((item) => (item.name === tag.name ? tag : item)) : [...tags, tag]);
 
 /** Finder tags of one file or folder, stored on the file itself so Finder shows the same ones. */
 export function FinderTagEditor({ rootSlug, path, tags, readonly }: { rootSlug: string; path: string; tags: FinderTag[]; readonly: boolean }) {
@@ -87,7 +129,8 @@ export function FinderTagEditor({ rootSlug, path, tags, readonly }: { rootSlug: 
       await queryClient.invalidateQueries({ queryKey: ["fs", "list", rootSlug] });
       return meta;
     }, fallback);
-  const add = (tag: FinderTag) => save(withFinderTag(tags, tag), t("Couldn’t add the tag"));
+  // The file keeps a name and a colour; the shape stays in the list.
+  const add = ({ name, color }: ListedTag) => save(withFinderTag(tags, { name, color }), t("Couldn’t add the tag"));
 
   return (
     <div className="flex flex-col gap-2">
@@ -126,29 +169,47 @@ export function FinderTagEditor({ rootSlug, path, tags, readonly }: { rootSlug: 
   );
 }
 
-/** The Finder tags a person keeps at hand. They write it themselves: it is not gathered from files, and it lists no files. */
+/** The tags a person keeps at hand, as a card of the settings. They write it themselves: it is not gathered from files, and it lists no files. */
 export function FinderTagList() {
   const tags = useSettingsStore((state) => state.settings.finderTags) ?? [];
+  const [editing, setEditing] = useState<ListedTag | "new" | null>(null);
+  // The last tag stays on show while its dialog fades out.
+  const [shown, setShown] = useState(editing);
+  if (editing && editing !== shown) setShown(editing);
+  const current = shown === "new" ? null : shown;
+
+  const describe = (tag: ListedTag) => {
+    const shape = tag.shape ?? (tag.color ? colorShape[tag.color] : "circle");
+    return `${colors.find((item) => item.color === tag.color)?.name ?? t("No color")} · ${shapes.find((item) => item.shape === shape)?.name}`;
+  };
+
   return (
-    <div className="flex flex-col gap-3">
+    <Card
+      title={t("Tags")}
+      description={t("Tags you keep at hand. They appear in a file’s info, ready to put on it with one click.")}
+      action={tags.length < MAX_TAGS ? <Button variant="default" onClick={() => setEditing("new")}><Plus />{t("Add tag")}</Button> : null}
+    >
       {tags.length > 0 ? (
-        <KagoChips>
+        <RowList bare>
           {tags.map((tag) => (
-            <KagoChip key={tag.name} dot={dot(tag)} removeLabel={t("Remove {name} from your tags", { name: tag.name })} onRemove={() => void saveSettings({ finderTags: tags.filter((item) => item.name !== tag.name) })}>
-              {tag.name}
-            </KagoChip>
+            <Row key={tag.name} icon={<TagDot tag={tag} className="mx-0.5 size-4" />} title={tag.name} subtitle={describe(tag)}>
+              <Button onClick={() => setEditing(tag)}>{t("Edit")}</Button>
+              <Button variant="destructive" onClick={() => void saveSettings({ finderTags: tags.filter((item) => item.name !== tag.name) })}>{t("Remove")}</Button>
+            </Row>
           ))}
-        </KagoChips>
-      ) : null}
-      {tags.length < MAX_TAGS ? (
-        <FinderTagForm
-          placeholder={t("Tag name")}
-          onAdd={(tag) => {
-            void saveSettings({ finderTags: withFinderTag(tags, tag) });
-            return true;
-          }}
+        </RowList>
+      ) : (
+        <p className="m-0 text-muted">{t("No tags yet.")}</p>
+      )}
+      <KagoDialog open={editing !== null} onClose={() => setEditing(null)} title={current ? t("Edit {name}", { name: current.name }) : t("Add tag")}>
+        <TagForm
+          key={current?.name ?? "new"}
+          tag={current}
+          taken={tags.filter((item) => item.name !== current?.name).map((item) => item.name)}
+          onSave={(tag) => void saveSettings({ finderTags: current ? tags.map((item) => (item.name === current.name ? tag : item)) : [...tags, tag] })}
+          onClose={() => setEditing(null)}
         />
-      ) : null}
-    </div>
+      </KagoDialog>
+    </Card>
   );
 }
