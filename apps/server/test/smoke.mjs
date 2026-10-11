@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createCipheriv, createHmac, pbkdf2Sync } from "node:crypto";
+import { EventEmitter } from "node:events";
 import { access, chmod, mkdtemp, mkdir, readdir, readFile, rm, stat, symlink, truncate, utimes, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { availableParallelism, loadavg, tmpdir } from "node:os";
 import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
 import test from "node:test";
@@ -10,6 +11,7 @@ import { inflateRawSync } from "node:zlib";
 import AdmZip from "adm-zip";
 import { buildApp } from "../dist/app.js";
 import { loadEnv } from "../dist/config/env.js";
+import { MediaService } from "../dist/services/media.service.js";
 
 test("minimum file-manager demo flow", async () => {
   const fixture = await createFixture("kago-smoke-demo.");
@@ -1192,6 +1194,72 @@ test("videos are probed and transcoded to HLS on demand", {
     assert.equal((await admin.get(`${base}/3.ts`)).statusCode, 404);
     assert.equal((await admin.get(`${base}/../../fs/list`)).statusCode !== 200, true);
 
+    // Hover prewarm shares the exact transcode contract and returns complete cached segments without starting a foreground run.
+    const hoverClip = path.join(publicDir, "hover.avi");
+    const hoverEncoded = spawnSync("ffmpeg", [
+      "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=size=1920x1080:rate=24", "-t", "32", "-c:v", "mpeg4", "-q:v", "5", hoverClip
+    ]);
+    assert.equal(hoverEncoded.status, 0, String(hoverEncoded.stderr));
+    const hoverSession = await admin.post("/api/media/sessions", { rootSlug: "photos", path: "/public/hover.avi", height: 360 });
+    assert.equal(hoverSession.statusCode, 200);
+    const hoverBase = `/api/media/sessions/${hoverSession.json.id}`;
+    const hoverDir = path.join(fixture.appDataDir, "temp", "transcode", hoverSession.json.id);
+    const warmDir = path.join(hoverDir, ".prewarm-cache");
+    for (const invalid of [
+      { time: -1, revision: 1 },
+      { time: 0, revision: 0 },
+      { time: 0, revision: 1.5 },
+      { time: 0, revision: 1, unexpected: true }
+    ]) assert.equal((await admin.post(`${hoverBase}/prewarm`, invalid)).statusCode, 400);
+
+    const canSpeculate = process.platform !== "win32" && availableParallelism() > 1 && loadavg()[0] < availableParallelism() - 1;
+    if (canSpeculate) {
+      const queued = await admin.post(`${hoverBase}/prewarm`, { time: 20, revision: 1 });
+      assert.deepEqual(queued.json, { status: "queued" });
+      let warmFiles = [];
+      for (let tries = 0; tries < 200; tries += 1) {
+        warmFiles = await readdir(warmDir).catch(() => []);
+        if (warmFiles.includes("3.ts") && warmFiles.includes("4.ts")) break;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      assert.ok(warmFiles.includes("3.ts"), "the target segment at 18 seconds is prewarmed");
+      assert.ok(warmFiles.includes("4.ts"), "the next segment is prewarmed");
+      assert.deepEqual((await admin.post(`${hoverBase}/prewarm`, { time: 21, revision: 2 })).json, { status: "ready" });
+      assert.deepEqual((await admin.post(`${hoverBase}/prewarm`, { time: 21, revision: 1 })).json, { status: "skipped", reason: "stale-revision" });
+      assert.deepEqual((await admin.post(`${hoverBase}/prewarm`, { time: null, revision: 3 })).json, { status: "skipped", reason: "cancelled" });
+      assert.deepEqual((await readdir(warmDir)).sort(), ["3.ts", "4.ts"], "cancellation preserves completed cache for the imminent seek");
+
+      for (const index of [3, 4]) {
+        const warmSegment = await admin.get(`${hoverBase}/${index}.ts`);
+        assert.equal(warmSegment.statusCode, 200);
+        assert.ok(warmSegment.raw.length > 0);
+        assert.deepEqual(warmSegment.raw, await readFile(path.join(hoverDir, `${index}.ts`)));
+      }
+      assert.equal((await readdir(hoverDir)).includes("ffmpeg.m3u8"), false, "a warm hit did not start a foreground ffmpeg run");
+
+      // Two adjacent requests arrive while a speculative encoder is active and must share one foreground run.
+      assert.deepEqual((await admin.post(`${hoverBase}/prewarm`, { time: 12, revision: 4 })).json, { status: "queued" });
+      let activeWorkDir = false;
+      for (let tries = 0; tries < 200; tries += 1) {
+        activeWorkDir = (await readdir(hoverDir)).some((name) => name.startsWith(".prewarm-") && name !== ".prewarm-cache");
+        if (activeWorkDir) break;
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      assert.equal(activeWorkDir, true, "the speculative ffmpeg is still active before concurrent foreground requests");
+      const [foregroundZero, foregroundOne] = await Promise.all([
+        admin.get(`${hoverBase}/0.ts`),
+        admin.get(`${hoverBase}/1.ts`)
+      ]);
+      assert.equal(foregroundZero.statusCode, 200);
+      assert.equal(foregroundZero.raw[0], 0x47);
+      assert.equal(foregroundOne.statusCode, 200);
+      assert.equal(foregroundOne.raw[0], 0x47);
+      for (let tries = 0; tries < 100 && (await readdir(hoverDir)).some((name) => name.startsWith(".prewarm-") && name !== ".prewarm-cache"); tries += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      assert.equal((await readdir(warmDir).catch(() => [])).length, 0, "a cancelled hover is not promoted after the foreground seek");
+    }
+
     // An HDR picture is told apart, and a picture subtitle is listed as one the server draws into the frames.
     const hdrClip = path.join(publicDir, "hdr.mkv");
     await writeFile(path.join(publicDir, "inner.sup"), pgsSubtitle());
@@ -1297,9 +1365,11 @@ test("videos are probed and transcoded to HLS on demand", {
     const viewer = client(app);
     await viewer.post("/api/auth/login", { email: "viewer@example.test", password: "fake-viewer-password-123" });
     assert.equal((await viewer.get(`${base}/index.m3u8`)).statusCode, 404);
+    assert.equal((await viewer.post(`${hoverBase}/prewarm`, { time: 0, revision: 1 })).statusCode, 404);
     assert.equal((await viewer.post("/api/media/sessions", { rootSlug: "photos", path: "/public/clip.avi", height: 360 })).statusCode, 403);
 
     assert.equal((await admin.delete(base)).statusCode, 200);
+    assert.equal((await admin.delete(hoverBase)).statusCode, 200);
     assert.equal((await admin.get(`${base}/index.m3u8`)).statusCode, 404);
     const transcodeDir = path.join(fixture.appDataDir, "temp", "transcode");
     for (let tries = 0; tries < 40 && (await readdir(transcodeDir)).length > 0; tries += 1) await new Promise((resolve) => setTimeout(resolve, 50));
@@ -1308,6 +1378,44 @@ test("videos are probed and transcoded to HLS on demand", {
     await app.close();
     await rm(fixture.baseDir, { recursive: true, force: true });
   }
+});
+
+test("foreground preemption waits for the speculative child to close", async () => {
+  const service = Object.create(MediaService.prototype);
+  const child = new EventEmitter();
+  child.closed = false;
+  child.exitCode = null;
+  child.signalCode = null;
+  child.kill = (signal) => {
+    assert.equal(signal, "SIGKILL");
+    setTimeout(() => {
+      child.closed = true;
+      child.signalCode = signal;
+      child.emit("close", null, signal);
+    }, 40);
+    return true;
+  };
+  const session = { actorId: "test-actor", prewarmRevision: 1, prewarmIndex: 2 };
+  const job = { sessionId: "speculative", actorId: "test-actor", index: 2, revision: 1, proc: child, cancelled: false };
+  service.sessions = new Map([[job.sessionId, session]]);
+  service.pendingPrewarms = new Map();
+  service.activePrewarm = job;
+  service.foregroundStarts = 0;
+  service.pumpPrewarms = () => {
+    assert.equal(service.foregroundStarts, 1, "the speculative queue stays blocked until its child closes");
+    service.activePrewarm = null;
+  };
+  child.once("close", service.pumpPrewarms);
+
+  let finished = false;
+  const preemption = service.preemptSpeculation("foreground").then(() => { finished = true; });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(finished, false, "foreground startup waits for close, not just kill() returning");
+  assert.equal(service.foregroundStarts, 1);
+  assert.equal(service.pendingPrewarms.has(job.sessionId), true, "the latest hover can resume after foreground work ends");
+  await preemption;
+  assert.equal(finished, true);
+  assert.equal(service.foregroundStarts, 0);
 });
 
 function testEnv(fixture) {

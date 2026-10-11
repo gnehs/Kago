@@ -71,6 +71,7 @@ export function VideoPlayer({
   onPlaying,
   onPlaybackRequest,
   onSeekRequest,
+  onSeekPreview,
   onError
 }: {
   videoRef: RefObject<HTMLVideoElement | null>;
@@ -97,6 +98,7 @@ export function VideoPlayer({
   onPlaying?: () => void;
   onPlaybackRequest?: (playing: boolean) => void;
   onSeekRequest?: (seconds: number) => void;
+  onSeekPreview?: (seconds: number | null) => void;
   onError?: () => void;
 }) {
   const [container, setContainer] = useState<HTMLDivElement | null>(null);
@@ -208,6 +210,7 @@ export function VideoPlayer({
     const video = videoRef.current;
     if (!video || duration <= 0) return;
     const next = Math.min(Math.max(0, seconds), duration);
+    onSeekPreview?.(null);
     onSeekRequest?.(next);
     video.currentTime = next;
     setTime(next);
@@ -430,6 +433,7 @@ export function VideoPlayer({
           onDragging={setScrubbing}
           // Committed on release: every seek in a transcoded stream may restart the encoder.
           onCommit={seekTo}
+          onPreview={onSeekPreview}
         />
         <div className="flex items-center gap-1">
           {previous !== undefined ? (
@@ -528,6 +532,7 @@ export function PlayerSlider({
   className,
   onChange,
   onCommit,
+  onPreview,
   onDragging
 }: {
   label: string;
@@ -538,6 +543,7 @@ export function PlayerSlider({
   className?: string;
   onChange?: (value: number) => void;
   onCommit?: (value: number) => void;
+  onPreview?: (value: number | null) => void;
   onDragging?: (dragging: boolean) => void;
 }) {
   const [drag, setDrag] = useState<number | null>(null);
@@ -550,6 +556,7 @@ export function PlayerSlider({
     return Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)) * max;
   };
   const end = (event: React.PointerEvent<HTMLElement>, commit: boolean) => {
+    onPreview?.(null);
     if (drag === null) return;
     if (commit) onCommit?.(valueAt(event));
     setDrag(null);
@@ -574,16 +581,21 @@ export function PlayerSlider({
         setDrag(next);
         onDragging?.(true);
         onChange?.(next);
+        onPreview?.(next);
       }}
       onPointerMove={(event) => {
         if (!enabled) return;
         const next = valueAt(event);
         setHover(next);
+        if (event.pointerType !== "touch" || drag !== null) onPreview?.(next);
         if (drag === null) return;
         setDrag(next);
         onChange?.(next);
       }}
-      onPointerLeave={() => setHover(null)}
+      onPointerLeave={() => {
+        setHover(null);
+        onPreview?.(null);
+      }}
       onPointerUp={(event) => end(event, true)}
       onPointerCancel={(event) => end(event, false)}
     >

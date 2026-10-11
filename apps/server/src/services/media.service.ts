@@ -2,6 +2,7 @@ import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
+import { availableParallelism, loadavg } from "node:os";
 import path from "node:path";
 import type { Readable } from "node:stream";
 import { promisify } from "node:util";
@@ -35,6 +36,11 @@ export const mediaStreamSchema = z.object({
   path: z.string().min(1),
   index: z.coerce.number().int().min(0).max(255)
 });
+
+export const mediaPrewarmSchema = z.object({
+  time: z.number().finite().min(0).max(1_000_000).nullable(),
+  revision: z.number().int().positive().max(Number.MAX_SAFE_INTEGER)
+}).strict();
 
 /** Where in a file a stream of its sound re-encoded as Opus should begin. */
 export const mediaAudioSchema = z.object({
@@ -148,7 +154,13 @@ type Session = {
   lastRequested: number;
   pruned: number;
   lastAccess: number;
+  prewarmRevision: number;
+  prewarmIndex: number | null;
+  warmed: Map<number, { file: string; at: number; initBytes: Buffer | null }>;
 };
+
+type PrewarmRequest = { sessionId: string; actorId: string; index: number; revision: number; queuedAt: number };
+type PrewarmJob = PrewarmRequest & { dir: string; proc: ChildProcess; cancelled: boolean; initBytes: Buffer | null };
 
 const SEGMENT_SECONDS = 6;
 const LADDER = [2160, 1440, 1080, 720, 480, 360];
@@ -157,6 +169,14 @@ const SESSIONS_PER_ACTOR = 3;
 /** ffmpeg stops when nobody has asked for a segment this long; the session itself outlives it so a paused player can resume. */
 const IDLE_KILL_MS = 60_000;
 const SESSION_TTL_MS = 15 * 60_000;
+/** A queued hover is useful only while the pointer is likely to remain near its target. */
+const PREWARM_QUEUE_TTL_MS = 15_000;
+/** A speculative encode is short and bounded even when the source or a hardware encoder stalls. */
+const PREWARM_TIMEOUT_MS = 30_000;
+/** Keep only a small, recent window after the pointer leaves the timeline. */
+const PREWARM_CACHE_TTL_MS = 60_000;
+const PREWARM_SEGMENTS = 2;
+const PREWARM_QUEUE_LIMIT = 8;
 /** ffmpeg is suspended once it is this many segments ahead of the player, and resumed when the lead halves. */
 const THROTTLE_AHEAD = 20;
 const KEEP_BEHIND = 10;
@@ -244,6 +264,11 @@ export class MediaService {
   /** The ffmpeg behind each stream of re-encoded music, oldest first, by whose it is. */
   private readonly audioStreams = new Map<string, Set<ChildProcess>>();
   private readonly sessions = new Map<string, Session>();
+  /** At most one speculative ffmpeg runs on the server; queued targets are latest-wins per session. */
+  private readonly pendingPrewarms = new Map<string, PrewarmRequest>();
+  private activePrewarm: PrewarmJob | null = null;
+  /** Blocks a new speculative job while a foreground encoder waits for the active child to close. */
+  private foregroundStarts = 0;
   private readonly probes = new Map<string, Omit<MediaInfo, "transcode" | "audioTranscode" | "encoder" | "hdrOutput" | "tonemap">>();
   private readonly probing = new Map<string, Promise<Omit<MediaInfo, "transcode" | "audioTranscode" | "encoder" | "hdrOutput" | "tonemap">>>();
   // Anyone who may look at a folder may ask about every file in it; each question is a process of its own.
@@ -425,9 +450,65 @@ export class MediaService {
       paused: false,
       lastRequested: 0,
       pruned: 0,
-      lastAccess: Date.now()
+      lastAccess: Date.now(),
+      prewarmRevision: 0,
+      prewarmIndex: null,
+      warmed: new Map()
     });
     return { id, hdr: this.sessions.get(id)!.hdr };
+  }
+
+  /** Speculatively encodes up to two segments around a scrub target when foreground work leaves room. */
+  prewarm(actorId: string, id: string, request: { time: number | null; revision: number }): { status: "ready" | "queued" | "skipped"; reason?: string } {
+    const session = this.require(actorId, id);
+    if (request.revision <= session.prewarmRevision) return { status: "skipped", reason: "stale-revision" };
+    session.prewarmRevision = request.revision;
+
+    if (request.time === null) {
+      session.prewarmIndex = null;
+      this.pendingPrewarms.delete(id);
+      this.cancelPrewarm(id);
+      this.pumpPrewarms();
+      return { status: "skipped", reason: "cancelled" };
+    }
+
+    const index = Math.min(session.segmentCount - 1, Math.floor(request.time / SEGMENT_SECONDS));
+    session.prewarmIndex = index;
+    this.retainWarmWindow(session, index);
+    const wasQueued = this.pendingPrewarms.has(id);
+    this.pendingPrewarms.delete(id);
+
+    const segment = this.segmentPath(session, index);
+    if (fs.existsSync(segment)) {
+      this.cancelPrewarm(id);
+      return { status: "ready" };
+    }
+    const cached = session.warmed.get(index);
+    if (cached && this.warmCompatible(session, cached)) {
+      this.cancelPrewarm(id);
+      return { status: "ready" };
+    }
+    if (cached) this.removeWarmSegment(session, index);
+    if (session.hdr && !this.readInitBytes(session)) {
+      session.prewarmIndex = null;
+      return { status: "skipped", reason: "init-unavailable" };
+    }
+
+    const active = this.activePrewarm;
+    if (active && active.sessionId === id && active.index === index && !active.cancelled) {
+      active.revision = request.revision;
+      active.queuedAt = Date.now();
+      return { status: "queued" };
+    }
+    if (active?.sessionId === id && active.index !== index) this.cancelPrewarm(id);
+
+    if (!wasQueued && this.pendingPrewarms.size >= PREWARM_QUEUE_LIMIT) {
+      session.prewarmIndex = null;
+      return { status: "skipped", reason: "queue-full" };
+    }
+    this.pendingPrewarms.set(id, { sessionId: id, actorId, index, revision: request.revision, queuedAt: Date.now() });
+    this.pumpPrewarms();
+    return { status: "queued" };
   }
 
   /**
@@ -437,35 +518,42 @@ export class MediaService {
   async audioStream(actorId: string, absolutePath: string, stat: FileVersion, start: number): Promise<{ stream: Readable; stop: () => void }> {
     const info = await this.info(absolutePath, stat);
     if (!info.audioTranscode) throw new AppError(422, "This file cannot be transcoded", "TRANSCODE_UNAVAILABLE");
-    const own = this.audioStreams.get(actorId) ?? new Set<ChildProcess>();
-    this.audioStreams.set(actorId, own);
-    for (const stale of [...own].slice(0, Math.max(0, own.size - AUDIO_STREAMS_PER_ACTOR + 1))) stale.kill("SIGKILL");
+    this.foregroundStarts += 1;
+    try {
+      await this.preemptSpeculation();
+      const own = this.audioStreams.get(actorId) ?? new Set<ChildProcess>();
+      this.audioStreams.set(actorId, own);
+      for (const stale of [...own].slice(0, Math.max(0, own.size - AUDIO_STREAMS_PER_ACTOR + 1))) stale.kill("SIGKILL");
 
-    const proc = spawn(
-      this.ffmpeg,
-      [
-        "-nostdin", "-hide_banner", "-loglevel", "error",
-        // Seeking the input, not the output: a stream for the middle of an album starts decoding there.
-        "-ss", start.toFixed(3),
-        ...guardedInput(absolutePath),
-        "-map", "0:a:0", "-vn", "-sn", "-dn",
-        "-c:a", "libopus", "-b:a", `${AUDIO_KBPS}k`, "-ac", "2",
-        "-f", "webm", "pipe:1"
-      ],
-      { stdio: ["ignore", "pipe", "pipe"] }
-    );
-    own.add(proc);
-    let stderr = "";
-    proc.stderr.on("data", (chunk: Buffer) => {
-      stderr = (stderr + chunk.toString()).slice(-2000);
-    });
-    proc.on("error", (error) => logger.error("ffmpeg failed to start", error.message));
-    proc.on("close", (code, signal) => {
-      own.delete(proc);
-      if (own.size === 0 && this.audioStreams.get(actorId) === own) this.audioStreams.delete(actorId);
-      if (code !== 0 && !signal) logger.error(`ffmpeg (opus) exited with code ${code}`, stderr.trim());
-    });
-    return { stream: proc.stdout, stop: () => proc.kill("SIGKILL") };
+      const proc = spawn(
+        this.ffmpeg,
+        [
+          "-nostdin", "-hide_banner", "-loglevel", "error",
+          // Seeking the input, not the output: a stream for the middle of an album starts decoding there.
+          "-ss", start.toFixed(3),
+          ...guardedInput(absolutePath),
+          "-map", "0:a:0", "-vn", "-sn", "-dn",
+          "-c:a", "libopus", "-b:a", `${AUDIO_KBPS}k`, "-ac", "2",
+          "-f", "webm", "pipe:1"
+        ],
+        { stdio: ["ignore", "pipe", "pipe"] }
+      );
+      own.add(proc);
+      let stderr = "";
+      proc.stderr.on("data", (chunk: Buffer) => {
+        stderr = (stderr + chunk.toString()).slice(-2000);
+      });
+      proc.on("error", (error) => logger.error("ffmpeg failed to start", error.message));
+      proc.on("close", (code, signal) => {
+        own.delete(proc);
+        if (own.size === 0 && this.audioStreams.get(actorId) === own) this.audioStreams.delete(actorId);
+        if (code !== 0 && !signal) logger.error(`ffmpeg (opus) exited with code ${code}`, stderr.trim());
+        this.pumpPrewarms();
+      });
+      return { stream: proc.stdout, stop: () => proc.kill("SIGKILL") };
+    } finally {
+      this.foregroundStarts -= 1;
+    }
   }
 
   playlist(actorId: string, id: string): string {
@@ -489,10 +577,57 @@ export class MediaService {
     const file = this.segmentPath(session, index);
     if (fs.existsSync(file)) return file;
 
+    const cached = session.warmed.get(index);
+    if (cached && Date.now() - cached.at <= PREWARM_CACHE_TTL_MS && this.warmCompatible(session, cached)) {
+      if (session.prewarmIndex === index) {
+        session.prewarmIndex = null;
+        this.pendingPrewarms.delete(id);
+      }
+      const bytes = fs.readFileSync(cached.file);
+      if (session.proc) {
+        // A paused foreground run could still write this segment after the warm result is served.
+        const proc = session.proc;
+        const closed = this.waitForClose(proc);
+        this.kill(session);
+        session.run += 1;
+        session.runStart = index;
+        session.head = index;
+        await closed;
+        if (!this.sessions.has(id)) throw new AppError(404, "Playback session not found", "NOT_FOUND");
+        fs.rmSync(file, { force: true });
+        fs.writeFileSync(file, bytes);
+        this.removeWarmSegment(session, index);
+        session.prewarmIndex = null;
+        this.pendingPrewarms.delete(id);
+        this.pumpPrewarms();
+        return file;
+      }
+      try {
+        // Serve from the regular session output directory so a later warm-cache eviction cannot race the response stream.
+        fs.copyFileSync(cached.file, file, fs.constants.COPYFILE_EXCL);
+        this.removeWarmSegment(session, index);
+        session.prewarmIndex = null;
+        this.pendingPrewarms.delete(id);
+        this.cancelPrewarm(id);
+        return file;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "EEXIST") return file;
+        this.removeWarmSegment(session, index);
+      }
+    } else if (cached) {
+      this.removeWarmSegment(session, index);
+    }
+
+    // A real cache miss is a seek: discard this session's stale hover, but leave it alone for ordinary file hits above.
+    this.retainWarmWindow(session, index);
+    this.pendingPrewarms.delete(id);
+    session.prewarmIndex = null;
+    this.cancelPrewarm(id);
+
     this.advanceHead(session);
     const onItsWay = session.proc && index >= session.runStart && index <= session.head + 2;
-    if (!onItsWay) this.start(session, index);
-    else this.resume(session);
+    if (!onItsWay) await this.start(session, index);
+    else await this.resume(session);
     return this.awaitFile(session, file);
   }
 
@@ -511,10 +646,10 @@ export class MediaService {
       const settled = !session.proc || session.head > session.runStart;
       if (settled && (fs.statSync(file, { throwIfNoEntry: false })?.size ?? 0) > 0) return file;
       if (session.proc) {
-        this.resume(session);
+        await this.resume(session);
       } else {
         if (started) break;
-        this.start(session, session.lastRequested);
+        await this.start(session, session.lastRequested);
         started = true;
       }
       session.lastAccess = Date.now();
@@ -544,6 +679,7 @@ export class MediaService {
 
   stop(): void {
     clearInterval(this.ticker);
+    this.pendingPrewarms.clear();
     for (const session of [...this.sessions.values()]) this.destroy(session);
     for (const own of this.audioStreams.values()) for (const proc of own) proc.kill("SIGKILL");
   }
@@ -563,16 +699,64 @@ export class MediaService {
     while (session.head < session.segmentCount && fs.existsSync(this.segmentPath(session, session.head))) session.head += 1;
   }
 
-  private start(session: Session, index: number, sameRun = false): void {
-    this.kill(session);
-    // Segments from an earlier run at or past the new start would make `head` lie about how far this run has got.
-    for (const name of fs.readdirSync(session.dir)) {
-      if (name.endsWith(".tmp") || Number.parseInt(name, 10) >= index) fs.rmSync(path.join(session.dir, name), { force: true });
-    }
-    if (!sameRun) session.run += 1;
-    session.runStart = index;
-    session.head = index;
+  private async start(session: Session, index: number, sameRun = false): Promise<void> {
+    this.foregroundStarts += 1;
+    try {
+      await this.preemptSpeculation(session.id);
+      if (!this.sessions.has(session.id)) throw new AppError(404, "Playback session not found", "NOT_FOUND");
+      if (fs.existsSync(this.segmentPath(session, index))) return;
+      this.advanceHead(session);
+      if (session.proc && index >= session.runStart && index <= session.head + 2) {
+        if (session.paused) {
+          session.proc.kill("SIGCONT");
+          session.paused = false;
+        }
+        return;
+      }
 
+      this.clearWarmCache(session);
+      this.kill(session);
+      // Segments from an earlier run at or past the new start would make `head` lie about how far this run has got.
+      for (const name of fs.readdirSync(session.dir)) {
+        if (name.endsWith(".tmp") || Number.parseInt(name, 10) >= index) fs.rmSync(path.join(session.dir, name), { force: true });
+      }
+      if (!sameRun) session.run += 1;
+      session.runStart = index;
+      session.head = index;
+
+      const args = this.transcodeArgs(session, index, session.dir);
+      const accel = session.software ? accelFor("software") : this.accel;
+      const proc = spawn(this.ffmpeg, args, { stdio: ["ignore", "ignore", "pipe"] });
+      let stderr = "";
+      proc.stderr.on("data", (chunk: Buffer) => {
+        stderr = (stderr + chunk.toString()).slice(-2000);
+      });
+      proc.on("error", (error) => logger.error("ffmpeg failed to start", error.message));
+      proc.on("close", (code, signal) => {
+        if (session.proc !== proc) return;
+        session.proc = null;
+        if (code === 0 || signal) {
+          this.pumpPrewarms();
+          return;
+        }
+        logger.error(`ffmpeg (${accel.encoder}) exited with code ${code}`, stderr.trim());
+        this.advanceHead(session);
+        // A GPU that cannot take this particular file should not make it unplayable.
+        if (accel.encoder !== "software" && session.head === session.runStart && this.sessions.has(session.id)) {
+          session.software = true;
+          void this.start(session, session.runStart, true).catch((error) => logger.error("could not restart transcoding", String(error)));
+        }
+        this.pumpPrewarms();
+      });
+      session.proc = proc;
+      session.paused = false;
+    } finally {
+      this.foregroundStarts -= 1;
+    }
+  }
+
+  /** The foreground and speculative encoders use the same streams, filters, codecs, timestamps, and HLS settings. */
+  private transcodeArgs(session: Session, index: number, outputDir: string, endTime?: number): string[] {
     const { video } = session.info;
     const landscape = !video || video.width >= video.height;
     const long = Math.round((session.height * 16) / 9);
@@ -630,30 +814,253 @@ export class MediaService {
       // Segments appear under their final name only once complete.
       "-hls_flags", "temp_file",
       "-start_number", String(index),
-      "-hls_segment_filename", path.join(session.dir, `%d.${session.hdr ? "m4s" : "ts"}`),
+      "-hls_segment_filename", path.join(outputDir, `%d.${session.hdr ? "m4s" : "ts"}`),
       "-hls_playlist_type", "vod", "-hls_list_size", "0",
-      path.join(session.dir, "ffmpeg.m3u8")
+      // With copyts, a relative -t starts at the source timestamp and can stop before the first sought segment.
+      ...(endTime === undefined ? [] : ["-to", String(endTime)]),
+      path.join(outputDir, "ffmpeg.m3u8")
     ];
-    const proc = spawn(this.ffmpeg, args, { stdio: ["ignore", "ignore", "pipe"] });
-    let stderr = "";
-    proc.stderr.on("data", (chunk: Buffer) => {
-      stderr = (stderr + chunk.toString()).slice(-2000);
-    });
-    proc.on("error", (error) => logger.error("ffmpeg failed to start", error.message));
-    proc.on("close", (code, signal) => {
-      if (session.proc !== proc) return;
-      session.proc = null;
-      if (code === 0 || signal) return;
-      logger.error(`ffmpeg (${accel.encoder}) exited with code ${code}`, stderr.trim());
-      this.advanceHead(session);
-      // A GPU that cannot take this particular file should not make it unplayable.
-      if (accel.encoder !== "software" && session.head === session.runStart && this.sessions.has(session.id)) {
-        session.software = true;
-        this.start(session, session.runStart, true);
+    return args;
+  }
+
+  private warmCacheDir(session: Session): string {
+    return path.join(session.dir, ".prewarm-cache");
+  }
+
+  private warmCachePath(session: Session, index: number): string {
+    return path.join(this.warmCacheDir(session), `${index}.${session.hdr ? "m4s" : "ts"}`);
+  }
+
+  private warmCompatible(session: Session, cached: { file: string; at: number; initBytes: Buffer | null }): boolean {
+    if (!fs.existsSync(cached.file)) return false;
+    if (!session.hdr) return true;
+    if (!cached.initBytes) return false;
+    try {
+      return fs.readFileSync(path.join(session.dir, INIT_SEGMENT)).equals(cached.initBytes);
+    } catch {
+      return false;
+    }
+  }
+
+  private removeWarmSegment(session: Session, index: number): void {
+    const cached = session.warmed.get(index);
+    session.warmed.delete(index);
+    if (cached) {
+      try {
+        fs.rmSync(cached.file, { force: true });
+      } catch (error) {
+        logger.warn("could not remove a cached video segment", String(error));
       }
-    });
-    session.proc = proc;
-    session.paused = false;
+    }
+  }
+
+  private retainWarmWindow(session: Session, index: number): void {
+    for (const cachedIndex of [...session.warmed.keys()]) {
+      if (cachedIndex < index || cachedIndex >= index + PREWARM_SEGMENTS) this.removeWarmSegment(session, cachedIndex);
+    }
+  }
+
+  private clearWarmCache(session: Session): void {
+    session.warmed.clear();
+    try {
+      fs.rmSync(this.warmCacheDir(session), { recursive: true, force: true });
+    } catch (error) {
+      logger.warn("could not clear speculative video cache", String(error));
+    }
+  }
+
+  private removePrewarmDirectory(dir: string): void {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+    } catch (error) {
+      logger.warn("could not remove a speculative video work directory", String(error));
+    }
+  }
+
+  private cancelPrewarm(sessionId: string): void {
+    const job = this.activePrewarm;
+    if (!job || job.sessionId !== sessionId || job.cancelled) return;
+    job.cancelled = true;
+    job.proc.kill("SIGKILL");
+  }
+
+  /** Foreground encoders take priority immediately; the speculative slot stays occupied until `close`. */
+  private async preemptSpeculation(foregroundSessionId?: string): Promise<void> {
+    const job = this.activePrewarm;
+    if (!job) return;
+    this.foregroundStarts += 1;
+    if (!job.cancelled) job.cancelled = true;
+    if (job.sessionId !== foregroundSessionId && job.revision === this.sessions.get(job.sessionId)?.prewarmRevision) {
+      const session = this.sessions.get(job.sessionId);
+      if (
+        session && session.actorId === job.actorId && session.prewarmRevision === job.revision &&
+        session.prewarmIndex === job.index && !this.pendingPrewarms.has(job.sessionId) &&
+        this.pendingPrewarms.size < PREWARM_QUEUE_LIMIT
+      ) {
+        this.pendingPrewarms.set(job.sessionId, {
+          sessionId: job.sessionId,
+          actorId: job.actorId,
+          index: job.index,
+          revision: job.revision,
+          queuedAt: Date.now()
+        });
+      }
+    }
+    const closed = this.waitForClose(job.proc);
+    try {
+      job.proc.kill("SIGKILL");
+      await closed;
+    } finally {
+      this.foregroundStarts -= 1;
+    }
+  }
+
+  private async waitForClose(proc: ChildProcess): Promise<void> {
+    if ((proc as ChildProcess & { closed?: boolean }).closed) return;
+    await new Promise<void>((resolve) => proc.once("close", () => resolve()));
+  }
+
+  private hasForegroundEncoder(): boolean {
+    for (const session of this.sessions.values()) {
+      if (session.proc && session.proc.exitCode === null && session.proc.signalCode === null && !session.paused) return true;
+    }
+    for (const own of this.audioStreams.values()) {
+      for (const proc of own) if (proc.exitCode === null && proc.signalCode === null) return true;
+    }
+    return false;
+  }
+
+  private hasSpareCapacity(): boolean {
+    // Windows reports a zero load average because it does not implement loadavg; that is not evidence of spare CPU.
+    if (process.platform === "win32") return false;
+    const cores = availableParallelism();
+    return cores > 1 && (loadavg()[0] ?? Number.POSITIVE_INFINITY) < cores - 1;
+  }
+
+  private pumpPrewarms(): void {
+    const now = Date.now();
+    for (const request of this.pendingPrewarms.values()) {
+      const session = this.sessions.get(request.sessionId);
+      if (
+        now - request.queuedAt > PREWARM_QUEUE_TTL_MS ||
+        !session ||
+        session.actorId !== request.actorId ||
+        session.prewarmRevision !== request.revision ||
+        session.prewarmIndex !== request.index
+      ) {
+        this.pendingPrewarms.delete(request.sessionId);
+        if (session?.prewarmRevision === request.revision) session.prewarmIndex = null;
+        continue;
+      }
+    }
+    if (this.activePrewarm || this.foregroundStarts > 0 || this.hasForegroundEncoder() || !this.hasSpareCapacity()) return;
+    for (const request of this.pendingPrewarms.values()) {
+      const session = this.sessions.get(request.sessionId);
+      if (!session) {
+        this.pendingPrewarms.delete(request.sessionId);
+        continue;
+      }
+      const file = this.segmentPath(session, request.index);
+      if (fs.existsSync(file) || (session.warmed.has(request.index) && this.warmCompatible(session, session.warmed.get(request.index)!))) {
+        this.pendingPrewarms.delete(request.sessionId);
+        continue;
+      }
+      const initBytes = session.hdr ? this.readInitBytes(session) : null;
+      if (session.hdr && !initBytes) {
+        this.pendingPrewarms.delete(request.sessionId);
+        session.prewarmIndex = null;
+        continue;
+      }
+
+      this.pendingPrewarms.delete(request.sessionId);
+      const dir = path.join(session.dir, `.prewarm-${createId("warm")}`);
+      try {
+        fs.mkdirSync(dir, { recursive: false });
+        const endTime = request.index + PREWARM_SEGMENTS >= session.segmentCount
+          ? session.info.duration
+          : (request.index + PREWARM_SEGMENTS) * SEGMENT_SECONDS;
+        const args = this.transcodeArgs(session, request.index, dir, endTime);
+        const proc = spawn(this.ffmpeg, args, {
+          stdio: ["ignore", "ignore", "pipe"],
+          timeout: PREWARM_TIMEOUT_MS,
+          killSignal: "SIGKILL"
+        });
+        const job: PrewarmJob = { ...request, dir, proc, cancelled: false, initBytes };
+        this.activePrewarm = job;
+        proc.stderr.on("data", () => {});
+        proc.on("error", () => {});
+        proc.on("close", (code, signal) => {
+          if (this.activePrewarm === job) this.activePrewarm = null;
+          try {
+            const current = this.sessions.get(job.sessionId);
+            if (
+              code === 0 && !signal && !job.cancelled && current &&
+              current.actorId === job.actorId && current.prewarmRevision === job.revision && current.prewarmIndex === job.index
+            ) {
+              this.promotePrewarm(job, current);
+            }
+          } catch (error) {
+            logger.warn("could not cache speculative video segments", String(error));
+            const current = this.sessions.get(job.sessionId);
+            if (current) {
+              for (let index = job.index; index < Math.min(current.segmentCount, job.index + PREWARM_SEGMENTS); index += 1) {
+                this.removeWarmSegment(current, index);
+              }
+            }
+          } finally {
+            this.removePrewarmDirectory(job.dir);
+            try {
+              this.pumpPrewarms();
+            } catch (error) {
+              logger.error("could not continue speculative video queue", String(error));
+            }
+          }
+        });
+      } catch {
+        this.removePrewarmDirectory(dir);
+        if (session.prewarmRevision === request.revision) session.prewarmIndex = null;
+      }
+      return;
+    }
+  }
+
+  private promotePrewarm(job: PrewarmJob, session: Session): void {
+    if (session.hdr) {
+      const expected = job.initBytes;
+      const made = this.readInitBytesFrom(path.join(job.dir, INIT_SEGMENT));
+      const current = this.readInitBytes(session);
+      if (!expected || !made?.equals(expected) || !current?.equals(expected)) return;
+    }
+    const extension = session.hdr ? "m4s" : "ts";
+    const end = Math.min(session.segmentCount, job.index + PREWARM_SEGMENTS);
+    const found: Array<{ index: number; source: string }> = [];
+    for (let index = job.index; index < end; index += 1) {
+      const source = path.join(job.dir, `${index}.${extension}`);
+      if ((fs.statSync(source, { throwIfNoEntry: false })?.size ?? 0) > 0) found.push({ index, source });
+    }
+    if (!found.some((item) => item.index === job.index)) return;
+    fs.mkdirSync(this.warmCacheDir(session), { recursive: true });
+    for (const item of found) {
+      if (session.warmed.has(item.index)) this.removeWarmSegment(session, item.index);
+      while (session.warmed.size >= PREWARM_SEGMENTS) this.removeWarmSegment(session, session.warmed.keys().next().value!);
+      const target = this.warmCachePath(session, item.index);
+      fs.rmSync(target, { force: true });
+      fs.renameSync(item.source, target);
+      session.warmed.set(item.index, { file: target, at: Date.now(), initBytes: job.initBytes });
+    }
+  }
+
+  private readInitBytes(session: Session): Buffer | null {
+    return this.readInitBytesFrom(path.join(session.dir, INIT_SEGMENT));
+  }
+
+  private readInitBytesFrom(file: string): Buffer | null {
+    try {
+      const bytes = fs.readFileSync(file);
+      return bytes.length ? bytes : null;
+    } catch {
+      return null;
+    }
   }
 
   private kill(session: Session): void {
@@ -664,21 +1071,49 @@ export class MediaService {
     proc.kill("SIGKILL");
   }
 
-  private resume(session: Session): void {
-    if (session.proc && session.paused) {
-      session.proc.kill("SIGCONT");
-      session.paused = false;
+  private async resume(session: Session): Promise<void> {
+    const proc = session.proc;
+    if (proc && session.paused) {
+      this.foregroundStarts += 1;
+      try {
+        await this.preemptSpeculation(session.id);
+        if (session.proc === proc && session.paused) {
+          proc.kill("SIGCONT");
+          session.paused = false;
+        }
+      } finally {
+        this.foregroundStarts -= 1;
+      }
     }
   }
 
   private destroy(session: Session): void {
     this.sessions.delete(session.id);
     const proc = session.proc;
+    this.pendingPrewarms.delete(session.id);
+    session.prewarmIndex = null;
+    const warm = this.activePrewarm?.sessionId === session.id ? this.activePrewarm : null;
+    if (warm) {
+      warm.cancelled = true;
+      warm.proc.kill("SIGKILL");
+    }
     this.kill(session);
-    // Wait for ffmpeg to be gone, or it may write one more segment into a directory being removed.
+    this.clearWarmCache(session);
+    // Wait for both encoders to close, or one could write into a directory being removed.
+    const children = [proc, warm?.proc].filter((child): child is ChildProcess => Boolean(child));
+    const openChildren = children.filter((child) => !(child as ChildProcess & { closed?: boolean }).closed);
+    let remaining = openChildren.length;
     const remove = () => fs.rm(session.dir, { recursive: true, force: true, maxRetries: 3 }, () => {});
-    if (proc && proc.exitCode === null && proc.signalCode === null) proc.once("close", remove);
-    else remove();
+    if (remaining === 0) remove();
+    else {
+      for (const child of openChildren) {
+        child.once("close", () => {
+          remaining -= 1;
+          if (remaining === 0) remove();
+        });
+        child.kill("SIGKILL");
+      }
+    }
   }
 
   private tick(): void {
@@ -699,7 +1134,7 @@ export class MediaService {
             session.proc.kill("SIGSTOP");
             session.paused = true;
           } else if (session.paused && ahead <= THROTTLE_AHEAD / 2) {
-            this.resume(session);
+            void this.resume(session);
           }
         }
       }
@@ -708,7 +1143,11 @@ export class MediaService {
         fs.rm(this.segmentPath(session, session.pruned), { force: true }, () => {});
       }
       if (session.lastRequested < session.pruned) session.pruned = Math.max(0, session.lastRequested - KEEP_BEHIND);
+      for (const [index, cached] of session.warmed) {
+        if (now - cached.at > PREWARM_CACHE_TTL_MS) this.removeWarmSegment(session, index);
+      }
     }
+    this.pumpPrewarms();
   }
 
   /** Picks the first encoder that survives a real test encode, so a GPU that is present but unusable is skipped. */

@@ -20,6 +20,7 @@ import { t } from "@/lib/i18n";
 import { watchDirectPlayback } from "./directPlayback";
 import { INITIAL_RECOVERY, recoverPlayback, trackPlaybackPosition } from "./playbackRecovery";
 import { canDirectPlay, canPlayHdrStream } from "./videoCapabilities";
+import { createSeekPrewarmer } from "./seekPrewarm";
 
 const BITRATE_HINT: Record<number, string> = { 2160: "16 Mbps", 1440: "10 Mbps", 1080: "6 Mbps", 720: "3 Mbps", 480: "1.5 Mbps", 360: "0.8 Mbps" };
 const ENCODER_LABEL: Record<string, string> = { nvenc: "NVIDIA GPU", vaapi: "Intel / AMD GPU", "vaapi-cqp": "Intel / AMD GPU", videotoolbox: "Apple GPU", software: "CPU" };
@@ -80,6 +81,7 @@ export function VideoPreview({
   const playbackError = useRef(() => {});
   const playbackRequest = useRef<(playing: boolean) => void>(() => {});
   const seekRequest = useRef<(seconds: number) => void>(() => {});
+  const seekPreview = useRef<(seconds: number | null) => void>(() => {});
   // Carries the playhead across a change of source.
   const resume = useRef({ time: 0, playing: false });
   const [recovery, setRecovery] = useState(INITIAL_RECOVERY);
@@ -147,7 +149,21 @@ export function VideoPreview({
     let sessionId: string | null = null;
     let teardown = () => {};
     let sourceFailed = false;
+    let prewarmer: ReturnType<typeof createSeekPrewarmer> | undefined;
+    let previewAt: number | null = null;
     const active = () => !cancelled && latestMedia.current === mediaKey;
+    seekPreview.current = (seconds) => {
+      if (!active() || sourceFailed || video.ownerDocument.hidden) return;
+      previewAt = seconds;
+      prewarmer?.hover(seconds);
+    };
+    const cancelPreview = () => {
+      if (video.ownerDocument.hidden) {
+        previewAt = null;
+        prewarmer?.hover(null);
+      }
+    };
+    video.ownerDocument.addEventListener("visibilitychange", cancelPreview);
     const position = trackPlaybackPosition(video, resume.current);
     playbackRequest.current = position.request;
     let seekLoadingStream = (_seconds: number) => {};
@@ -158,6 +174,7 @@ export function VideoPreview({
     const fail = (failure: "media" | "network") => {
       if (!active() || sourceFailed) return;
       sourceFailed = true;
+      prewarmer?.dispose();
       position.fail();
       const source = height === null ? "direct" : hdr ? "hdr" : "sdr";
       const next = recoverPlayback(recovery, source, failure, guarded);
@@ -194,6 +211,13 @@ export function VideoPreview({
         });
         if (!active()) return closeSession(session.id);
         sessionId = session.id;
+        prewarmer = createSeekPrewarmer((time, revision, signal) => api(`/api/media/sessions/${encodeURIComponent(session.id)}/prewarm`, {
+          method: "POST",
+          body: JSON.stringify({ time, revision }),
+          signal,
+          keepalive: time === null
+        }));
+        prewarmer.hover(previewAt);
         const { default: Hls } = await import("hls.js");
         if (!active()) return;
         if (!Hls.isSupported()) {
@@ -242,6 +266,9 @@ export function VideoPreview({
       playbackError.current = () => {};
       playbackRequest.current = () => {};
       seekRequest.current = () => {};
+      seekPreview.current = () => {};
+      prewarmer?.dispose();
+      video.ownerDocument.removeEventListener("visibilitychange", cancelPreview);
       video.removeEventListener("loadedmetadata", restore);
       const stoppedAt = position.dispose();
       // Another rendition picks up where this one stopped; another video starts from the top, playing.
@@ -412,6 +439,7 @@ export function VideoPreview({
         onLoadedData={() => setStatus((current) => current === "error" ? current : "idle")}
         onPlaybackRequest={(playing) => playbackRequest.current(playing)}
         onSeekRequest={(seconds) => seekRequest.current(seconds)}
+        onSeekPreview={(seconds) => seekPreview.current(seconds)}
         onError={() => playbackError.current()}
       />
   );

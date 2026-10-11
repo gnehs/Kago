@@ -29,7 +29,7 @@ import { ImageService } from "./services/image.service.js";
 import { appUrl, externalAppOrderSchema, externalAppSchema, ExternalAppService } from "./services/external-app.service.js";
 import { createGroupSchema, GroupService } from "./services/group.service.js";
 import { IconLibraryService } from "./services/icon-library.service.js";
-import { MediaService, mediaAudioSchema, mediaSessionSchema, mediaStreamSchema } from "./services/media.service.js";
+import { MediaService, mediaAudioSchema, mediaPrewarmSchema, mediaSessionSchema, mediaStreamSchema } from "./services/media.service.js";
 import { oidcConfigSchema, OidcService } from "./services/oidc.service.js";
 import { PathService } from "./services/path.service.js";
 import { permissionSetSchema, PermissionService } from "./services/permission.service.js";
@@ -954,6 +954,12 @@ function registerApi(app: FastifyInstance, services: Services) {
     const session = await services.media.createSession(actor.id, file.input, file.stat, { ...input, subtitleFile });
     return { id: session.id, hdr: session.hdr, playlistUrl: `/api/media/sessions/${session.id}/index.m3u8` };
   });
+  app.post("/api/media/sessions/:id/prewarm", async (request) => {
+    const actor = requireActor(request);
+    const params = z.object({ id: z.string().min(1) }).parse(request.params);
+    const input = mediaPrewarmSchema.parse(request.body);
+    return services.media.prewarm(actor.id, params.id, input);
+  });
   app.get("/api/media/sessions/:id/:file", async (request, reply) => {
     const actor = requireActor(request);
     const params = z.object({ id: z.string().min(1), file: z.string().regex(/^(index\.m3u8|init\.mp4|\d{1,9}\.(ts|m4s))$/) }).parse(request.params);
@@ -963,8 +969,8 @@ function registerApi(app: FastifyInstance, services: Services) {
       return services.media.playlist(actor.id, params.id);
     }
     const segment = params.file === "init.mp4" ? await services.media.initSegment(actor.id, params.id) : await services.media.segment(actor.id, params.id, Number.parseInt(params.file, 10));
-    const stat = await fs.promises.stat(segment);
     reply.header("Content-Type", params.file.endsWith(".ts") ? "video/mp2t" : "video/mp4");
+    const stat = await fs.promises.stat(segment);
     reply.header("Content-Length", String(stat.size));
     return reply.send(fs.createReadStream(segment));
   });
