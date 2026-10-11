@@ -104,7 +104,7 @@ Folders that aren't on this machine can be locations too. In Settings → Locati
 - A location's name and connection details can be changed later under Settings → Locations → Connection, and take effect as soon as you save. The location's URL (its slug), its permissions and its share links are not affected by renaming.
 - Items deleted in a remote location are moved to a `.kago-trash` folder at the root of that remote (one per share when the location is a whole server), and can still be restored or emptied from the Trash. Kago never lists this folder.
 - Features that need the whole file (thumbnails of PDFs and documents, camera RAW, shooting info, SQLite previews, extraction) first fetch it to `/app-data/temp/remote`, up to 4 GB per file, and clear it after 12 hours without use. Videos are read as they play and are never downloaded in full.
-- Finder tags live in a file's extended attributes, which remote locations don't have. A same-named `.idx` + `.sub` subtitle pair isn't listed in remote locations either. Kago's own tags are not affected.
+- Finder tags are read and written in SMB locations the way a Mac connected to the same server does it, so both see the same tags; the other kinds of remote have no place to keep them. A same-named `.idx` + `.sub` subtitle pair isn't listed in remote locations either. Kago's own tags are not affected.
 - SFTP can use a password, or tick "Sign in with Kago's SSH key" and add the public key shown in the form to the other side's `~/.ssh/authorized_keys`. The key is Kago's own (`/app-data/ssh/id_ed25519`, generated the first time it is needed).
 
 ### Sync
@@ -258,7 +258,7 @@ The icon and its locations only appear when `/data` contains folders; files plac
 "Kago's system account has no permission for this on the server's disk" means the account behind `PUID` / `PGID` can't read or write the folder mounted into `/data`. That has nothing to do with the permissions set inside Kago, and can't be changed from there. Settings → Locations marks the locations whose top folder can't be read or written, and shows the UID and GID Kago really runs as; the path that was refused is in the container's log (`docker logs kago`). Change the variables, or change the folder's permissions on the NAS. A location that is only meant to be read can simply be made read-only.
 
 **Finder tags aren't shown.**
-Tags live in a file's extended attributes (xattr). The underlying filesystem has to support them, and the file has to have been saved from a Mac in a way that keeps xattrs (SMB, for example).
+Tags live in a file's extended attributes (xattr). The underlying filesystem has to support them, and the file has to have been saved from a Mac in a way that keeps xattrs (SMB, for example). A NAS that keeps a Mac's attributes somewhere of its own (Synology, for one) only shows them over SMB: add it as an SMB location rather than mounting its share into `/data`.
 
 **A remote location won't connect.**
 In Settings → Locations, press that location's "Connection" and then "Test connection" to see the reason the other side reports (wrong user name or password, share not found, host unreachable and so on). The container has to be able to reach that machine: on a bridge network, enter an IP or a host name the container can resolve; `.local` names usually don't resolve.

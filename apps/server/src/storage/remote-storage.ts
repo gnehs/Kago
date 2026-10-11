@@ -6,12 +6,14 @@ import type { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { Env } from "../config/env.js";
 import { AppError } from "../lib/errors.js";
+import type { FinderTag } from "../lib/finder-tags.js";
 import { nfc } from "../lib/filename.js";
 import { id } from "../lib/ids.js";
 import { logger } from "../lib/logger.js";
 import type { RootService } from "../services/root.service.js";
 import type { Root } from "../services/types.js";
 import { providerOf } from "./providers.js";
+import { readSmbFinderTags, writeSmbFinderTags } from "./smb-finder-tags.js";
 import { remoteFailure, type RcloneClient, type RcloneItem, type RcloneStats } from "./rclone-client.js";
 
 /** Where a remote location keeps what was deleted from it; never listed, never reachable by path. */
@@ -226,6 +228,16 @@ export class RemoteStorage {
     await this.client.call(directory ? "operations/purge" : "operations/deletefile", { fs: this.fs(root), remote: this.rel(logicalPath) }).catch((error: unknown) => {
       throw remoteFailure(error);
     });
+  }
+
+  /** Finder tags of the named entries of a folder. Only an SMB server keeps them where they can be reached. */
+  finderTags(root: Root, logicalPath: string, names: string[]): Promise<Map<string, FinderTag[]>> {
+    return readSmbFinderTags(this.roots.remoteConfig(root), logicalPath, names);
+  }
+
+  /** Throws where the location cannot keep them. */
+  setFinderTags(root: Root, logicalPath: string, tags: FinderTag[]): Promise<void> {
+    return writeSmbFinderTags(this.roots.remoteConfig(root), logicalPath, tags);
   }
 
   /** How much a file or a whole folder holds, and in how many files. What is in the trash is not in the folder. */

@@ -128,7 +128,17 @@ test("a remote location behaves like a local one", { skip: remote ? false : "KAG
     assert.equal((await api.post("/api/fs/rename", { rootSlug: slug, path: filePath, name: "renamed.txt" })).status, 200);
     assert.equal((await api.post("/api/fs/rename", { rootSlug: slug, path: "/文件 夾", name: "docs" })).status, 200);
     assert.equal((await api.get(`/api/fs/preview?${q("/docs/renamed.txt")}`)).text, "edited");
-    assert.equal((await api.put("/api/fs/finder-tags", { rootSlug: slug, path: "/docs/renamed.txt", tags: [] })).json.code, "FINDER_TAGS_UNSUPPORTED");
+
+    // Finder tags reach an SMB server as streams of the file, written by smbclient; no other remote has a place for them.
+    const finderTags = [{ name: "標籤", color: "red" }, { name: "Kago", color: null }];
+    const tagged = await api.put("/api/fs/finder-tags", { rootSlug: slug, path: "/docs/renamed.txt", tags: finderTags });
+    if (remote.type === "smb" && spawnSync("smbclient", ["--version"]).status === 0) {
+      assert.deepEqual(tagged.json.finderTags, finderTags);
+      assert.deepEqual((await api.get(`/api/fs/list?${q("/docs")}`)).json.items.find((item) => item.name === "renamed.txt").finderTags, finderTags);
+      assert.deepEqual((await api.put("/api/fs/finder-tags", { rootSlug: slug, path: "/docs/renamed.txt", tags: [] })).json.finderTags, []);
+    } else {
+      assert.equal(tagged.json.code, "FINDER_TAGS_UNSUPPORTED");
+    }
 
     // Pictures and video: thumbnails, shooting data and transcoding all read the remote file.
     const media = path.join(dir, "media");

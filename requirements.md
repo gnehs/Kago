@@ -84,6 +84,7 @@ WebDAV（作為遠端位置的一種）
 * Zod
 * sharp、MuPDF、ExifTool（縮圖與影像資訊）
 * rclone（遠端位置與同步）
+* smbclient（SMB 位置的 Finder 標籤）
 * jellyfin-ffmpeg（影片轉檔、媒體資訊、縮圖）
 
 ### Container
@@ -92,7 +93,7 @@ WebDAV（作為遠端位置的一種）
 * Single `docker run`
 * Mount `/data`
 * Mount `/app-data`
-* 映像檔內建 rclone 與 jellyfin-ffmpeg，不需要另外安裝
+* 映像檔內建 rclone、smbclient 與 jellyfin-ffmpeg，不需要另外安裝
 
 ## 5. 部署方式
 
@@ -1008,7 +1009,7 @@ backup
 
 移除遠端位置只移除 Kago 裡的紀錄，檔案留在原處；指向它的分享連結、權限規則與標籤會一併移除。
 
-位置在介面上與在分享、權限裡不分本機與遠端，只有本機位置才有的東西（Finder 標籤）在遠端位置不出現。
+位置在介面上與在分享、權限裡不分本機與遠端，某種位置才有的東西（Finder 標籤只在本機與 SMB 位置）在其他位置不出現。
 
 「設定 → 位置」會標出最上層資料夾就讀不到或寫不進去的本機位置，並顯示 Kago 實際使用的 UID 與 GID。
 
@@ -2248,15 +2249,22 @@ Finder 標籤   存在檔案上，macOS Finder 也看得到
 ### Finder 標籤
 
 ```txt
-只有本機位置有
-以平台自己的工具讀寫檔案的 extended attribute（com.apple.metadata:_kMDItemUserTags）
+本機位置與 SMB 位置有
+本機：以平台自己的工具讀寫檔案的 extended attribute（com.apple.metadata:_kMDItemUserTags）
+SMB：以 smbclient 讀寫檔案的具名串流，和 Mac 連上同一台伺服器時的做法相同，伺服器怎麼存由它自己決定
 隨檔案清單一起讀出來
 寫入：PUT /api/fs/finder-tags，需要 edit
 ```
 
-如果 xattr 讀寫失敗（磁碟不支援、工具不存在），不可以讓檔案管理功能失效：那只代表沒有標籤。
+如果讀寫失敗（磁碟不支援、工具不存在、伺服器沒有回應），不可以讓檔案管理功能失效：那只代表沒有標籤。
 
-遠端位置不出現 Finder 標籤，而不是顯示成停用。
+本機位置在 Linux 上依 Samba 留下的屬性判斷標籤該寫成哪個名稱：先看檔案自己，沒有線索就看同一層的其他項目，再逐層往上看到位置的根目錄。
+
+寫入時一併更新 Finder info 裡的顏色標記（最後一個有顏色的標籤），否則 Mac 會把留下來的顏色當成標籤顯示。
+
+SMB 位置的串流名稱裡，屬性名稱的冒號以 U+F022 傳送；smbclient 刪不掉串流，移除全部標籤時寫入空的串流。名稱含有 rclone 會改寫的字元（" * : < > ? | \，或以空白、句點結尾）的項目不讀寫標籤。
+
+其他種類的遠端位置不出現 Finder 標籤，而不是顯示成停用。
 
 ## 42. 同步
 

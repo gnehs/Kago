@@ -174,8 +174,9 @@ export class FsService {
     if (!(await this.storage.stat(safe)).isDirectory()) throw new AppError(400, "Path is not a folder", "NOT_FOLDER");
     // Where the folders listed are a server's shares, nothing can be added beside them or done to them.
     const readonly = Boolean(safe.root.readonly) || this.storage.remote.isFixed(safe.root, path.posix.join(safe.logicalPath, "child"));
-    const items = (await this.storage.remote.list(safe.root, safe.logicalPath))
-      .filter((entry) => !entry.name.includes("\0") && !isSystemFile(entry.name))
+    const entries = (await this.storage.remote.list(safe.root, safe.logicalPath)).filter((entry) => !entry.name.includes("\0") && !isSystemFile(entry.name));
+    const finderTags = await this.storage.remote.finderTags(safe.root, safe.logicalPath, entries.map((entry) => entry.name));
+    const items = entries
       .map((entry) => {
         const itemLogicalPath = path.posix.join(safe.logicalPath, entry.name);
         return {
@@ -186,7 +187,7 @@ export class FsService {
           mtime: entry.mtimeMs,
           type: entry.directory ? "folder" : lookup(entry.name) || "application/octet-stream",
           readonly,
-          finderTags: []
+          finderTags: finderTags.get(entry.name) ?? []
         };
       })
       .filter((item) => item !== null);
@@ -199,6 +200,7 @@ export class FsService {
     if (this.storage.isRemote(safe)) {
       const remote = await this.storage.stat(safe);
       const remoteName = this.storage.name(safe);
+      const finderTags = await this.storage.remote.finderTags(safe.root, path.posix.dirname(safe.logicalPath), [remoteName]);
       return {
         rootSlug,
         path: safe.logicalPath,
@@ -207,7 +209,7 @@ export class FsService {
         size: remote.size,
         mtime: remote.mtimeMs,
         type: remote.isDirectory() ? "folder" : lookup(remoteName) || "application/octet-stream",
-        finderTags: []
+        finderTags: finderTags.get(remoteName) ?? []
       };
     }
     const stat = await fsp.lstat(safe.absolutePath);
@@ -265,12 +267,11 @@ export class FsService {
   async setFinderTags(actor: Actor, input: z.infer<typeof finderTagsSchema>) {
     const safe = await this.paths.resolveExisting(input.rootSlug, input.path);
     this.permissions.require(actor, "edit", safe.root, safe.logicalPath);
-    // Finder tags are an attribute of a file on disk; a remote has nowhere to keep them.
-    if (this.storage.isRemote(safe)) throw new AppError(500, "This location cannot store Finder tags", "FINDER_TAGS_UNSUPPORTED");
     const tags = input.tags.filter((tag, index) => input.tags.findIndex((other) => other.name === tag.name) === index);
     try {
-      const boundary = await fsp.realpath(safe.root.base_path);
-      await writeFinderTags(path.dirname(safe.absolutePath), path.basename(safe.absolutePath), tags, boundary);
+      // Finder tags are kept on the file itself. Of the remotes, only an SMB server has a place for them.
+      if (this.storage.isRemote(safe)) await this.storage.remote.setFinderTags(safe.root, safe.logicalPath, tags);
+      else await writeFinderTags(path.dirname(safe.absolutePath), path.basename(safe.absolutePath), tags, await fsp.realpath(safe.root.base_path));
     } catch {
       throw new AppError(500, "This location cannot store Finder tags", "FINDER_TAGS_UNSUPPORTED");
     }

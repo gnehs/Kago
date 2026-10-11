@@ -105,8 +105,8 @@ export function Inspector({ window: activeWindow }: { window: FileWindow }) {
 
           {/* Two kinds of tag, one place: where each is kept is what tells them apart. */}
           <DetailSection title={t("Tags")}>
-            {/* Finder tags are kept on the file itself, which only a folder on the server's own disk can do. */}
-            {(readonly && !meta.data.finderTags?.length) || (root && root.provider !== "local") ? null : (
+            {/* Finder tags are kept on the file itself: on the server's own disk, or on an SMB server as a Mac would leave them. */}
+            {(readonly && !meta.data.finderTags?.length) || (root && root.provider !== "local" && root.provider !== "smb") ? null : (
               <TagGroup label="Finder" hint={t("Stored on the file, visible in Finder too")}>
                 <FinderTagEditor rootSlug={rootSlug} path={path} tags={meta.data.finderTags ?? []} readonly={readonly} />
               </TagGroup>

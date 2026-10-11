@@ -35,7 +35,7 @@ export async function readFinderTags(directory: string, names: string[]): Promis
       try {
         const values = process.platform === "darwin" ? await readDarwin(directory, chunk) : await readLinux(directory, chunk);
         for (const [name, value] of values) {
-          const tags = parseTags(value);
+          const tags = decodeFinderTags(value);
           if (tags.length > 0) result.set(name, tags);
         }
       } catch (error) {
@@ -119,7 +119,8 @@ async function readLinux(directory: string, names: string[]): Promise<Map<string
 const FINDER_INFO = "com.apple.FinderInfo";
 const LINUX_FINDER_INFO = `user.${FINDER_INFO}`;
 const SAMBA_FINDER_INFO = "user.DosStream.AFP_AfpInfo:$DATA";
-const SAMBA_FINDER_INFO_OFFSET = 16;
+/** Where Finder info starts in the AFP_AfpInfo stream a Mac keeps it in over SMB. */
+export const AFP_INFO_OFFSET = 16;
 const FINDER_INFO_SIZE = 32;
 const LABEL_BYTE = 9;
 const LABEL_MASK = 0x0e;
@@ -128,7 +129,7 @@ const SAMBA_EVIDENCE = "^user\\.DosStream\\.|^user\\.DOSATTRIB$";
 const EVIDENCE_NAMES = 200;
 
 /** Finder info with the label set to that of `tags`, or null when it already is. */
-function relabel(info: Buffer, offset: number, tags: FinderTag[]): Buffer | null {
+export function relabel(info: Buffer, offset: number, tags: FinderTag[]): Buffer | null {
   if (info.length < offset + FINDER_INFO_SIZE) return null;
   const color = tags.filter((tag) => tag.color).at(-1)?.color;
   const next = Buffer.from(info);
@@ -157,7 +158,7 @@ async function servedBySamba(directory: string, boundary: string): Promise<boole
 export async function writeFinderTags(directory: string, name: string, tags: FinderTag[], boundary = directory): Promise<void> {
   if (name.includes("\n")) throw new Error("Name cannot be tagged");
   const file = `./${name}`;
-  const value = encodeStringArray(tags.map((tag) => (tag.color ? `${tag.name}\n${colors.indexOf(tag.color) + 1}` : tag.name)));
+  const value = encodeFinderTags(tags);
 
   if (process.platform === "darwin") {
     if (tags.length > 0) await run("/usr/bin/xattr", ["-wx", ATTRIBUTE, value.toString("hex"), file], directory, true);
@@ -173,7 +174,7 @@ export async function writeFinderTags(directory: string, name: string, tags: Fin
   // The entry's own attributes say how this volume stores them.
   const found = (await getfattr(directory, `_kMDItemUserTags|${SAMBA_EVIDENCE}|^user\\.com\\.apple\\.FinderInfo$`, [name])).get(name) ?? new Map<string, Buffer>();
   const set = (attribute: string, data: Buffer) => run("setfattr", ["-h", "-n", attribute, "-v", `0x${data.toString("hex")}`, "--", file], directory, true);
-  for (const [attribute, offset] of [[LINUX_FINDER_INFO, 0], [SAMBA_FINDER_INFO, SAMBA_FINDER_INFO_OFFSET]] as const) {
+  for (const [attribute, offset] of [[LINUX_FINDER_INFO, 0], [SAMBA_FINDER_INFO, AFP_INFO_OFFSET]] as const) {
     const info = found.get(attribute);
     const relabelled = info && relabel(info, offset, tags);
     if (relabelled) await set(attribute, relabelled);
@@ -188,6 +189,11 @@ export async function writeFinderTags(directory: string, name: string, tags: Fin
     // Samba expects stream data to end with a NUL.
     await set(attribute, attribute.startsWith("user.DosStream.") ? Buffer.concat([value, Buffer.alloc(1)]) : value);
   }
+}
+
+/** Tags as the value Finder keeps them in. */
+export function encodeFinderTags(tags: FinderTag[]): Buffer {
+  return encodeStringArray(tags.map((tag) => (tag.color ? `${tag.name}\n${colors.indexOf(tag.color) + 1}` : tag.name)));
 }
 
 // getfattr writes bytes outside printable ASCII, and the backslash itself, as \ooo.
@@ -210,7 +216,8 @@ function unescapeOctal(value: string): string {
   return Buffer.from(bytes).toString("utf8");
 }
 
-function parseTags(value: Buffer): FinderTag[] {
+/** The tags in the value Finder keeps them as; none when it is not one. */
+export function decodeFinderTags(value: Buffer): FinderTag[] {
   // Samba stores stream data with a trailing NUL, which would shift the plist trailer.
   const entries = parseStringArray(value) ?? (value.at(-1) === 0 ? parseStringArray(value.subarray(0, -1)) : null) ?? [];
   const tags: FinderTag[] = [];
