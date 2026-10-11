@@ -24,6 +24,7 @@ import { zipStream } from "./lib/zip-stream.js";
 import { isBrowserViewable } from "./lib/viewable.js";
 import { AuditService } from "./services/audit.service.js";
 import { AuthService, MAX_PASSWORD, changePasswordSchema, createUserSchema, loginSchema, patchUserSchema, resetPasswordSchema, setupAdminSchema } from "./services/auth.service.js";
+import { CompatibilityService } from "./services/compatibility.service.js";
 import { FsService, avatarSchema, fileTagsSchema, fsQuerySchema, maxUploadFiles, mkdirSchema, renameManySchema, renameSchema, sqliteRowsSchema, thumbnailQuerySchema, writeTextSchema, zipQuerySchema } from "./services/fs.service.js";
 import { ImageService } from "./services/image.service.js";
 import { appUrl, externalAppOrderSchema, externalAppSchema, ExternalAppService } from "./services/external-app.service.js";
@@ -76,6 +77,7 @@ export async function buildApp(env: Env) {
   const groups = new GroupService(db);
   const oidc = new OidcService(db, secrets, auth, audit, events);
   const media = new MediaService(env.appDataDir);
+  const compatibility = new CompatibilityService();
   const iconLibrary = new IconLibraryService(env.appDataDir);
   const apps = new ExternalAppService(db, env.appDataDir, iconLibrary, events, audit, secrets);
   const workers = new WorkerManager(tasks, env, events);
@@ -140,7 +142,7 @@ export async function buildApp(env: Env) {
     }
   }
   await remotes.start();
-  registerApi(app, { auth, audit, roots, paths, permissions, fsService, workspace, preferences, tasks, shelves, shares, groups, oidc, media, images, apps, iconLibrary, frameProbe: new FrameProbe(), events, db, storage, remotes, sync, env });
+  registerApi(app, { auth, audit, roots, paths, permissions, fsService, workspace, preferences, tasks, shelves, shares, groups, oidc, media, compatibility, images, apps, iconLibrary, frameProbe: new FrameProbe(), events, db, storage, remotes, sync, env });
 
   app.get("/ws", {
     websocket: true,
@@ -298,6 +300,7 @@ type Services = {
   groups: GroupService;
   oidc: OidcService;
   media: MediaService;
+  compatibility: CompatibilityService;
   images: ImageService;
   apps: ExternalAppService;
   iconLibrary: IconLibraryService;
@@ -613,6 +616,11 @@ function registerApi(app: FastifyInstance, services: Services) {
 
   app.get("/api/settings", async (request) => services.preferences.get(requireActor(request).id));
   app.patch("/api/settings", async (request) => services.preferences.patchSettings(requireActor(request).id, settingsSchema.parse(request.body)));
+  app.post("/api/compatibility/server", async (request, reply) => {
+    requireAdmin(request);
+    reply.header("Cache-Control", "no-store");
+    return services.compatibility.check();
+  });
   app.get("/api/archive-passwords", async (request) => services.tasks.archivePasswords.list(requireActor(request).id));
   app.post("/api/archive-passwords", async (request) => services.tasks.archivePasswords.add(requireActor(request).id, archivePasswordSchema.parse(request.body)));
   app.delete("/api/archive-passwords/:id", async (request) => {
