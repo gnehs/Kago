@@ -1,5 +1,5 @@
-import { AudioLines, Captions, CaptionsOff, Download, Info, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { AudioLines, Captions, CaptionsOff, Download, Info, ListVideo, X } from "lucide-react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { api, downloadUrl, previewUrl, thumbnailUrl } from "@/api/client";
 import { useFileList, useMediaInfo, useSubtitles } from "@/api/hooks";
 import { KagoIconButton } from "@/components/kago/icon-button";
@@ -7,7 +7,7 @@ import { KagoDropdownMenu, KagoMenuCheckItem, KagoMenuHeading, KagoMenuNote, Kag
 import { KagoWindow } from "@/components/kago/window";
 import { isVideoType } from "@/lib/format";
 import { baseName, parentPath, triggerDownload } from "@/lib/paths";
-import { getSubtitlePref, getVideoHdr, getVideoHdrLift, getVideoQuality, setSubtitlePref, setVideoHdr, setVideoHdrLift, setVideoQuality, type VideoQualityPref } from "@/lib/prefs";
+import { getSubtitlePref, getVideoHdr, getVideoHdrLift, getVideoPlaylistOpen, getVideoQuality, setSubtitlePref, setVideoHdr, setVideoHdrLift, setVideoPlaylistOpen, setVideoQuality, type VideoQualityPref } from "@/lib/prefs";
 import { languageLabel, pickSubtitle, subtitleLabel } from "@/lib/subtitles";
 import { toast } from "@/stores/toast";
 import { useWorkspaceStore, type PreviewWindow } from "@/stores/workspace";
@@ -21,6 +21,7 @@ import { watchDirectPlayback } from "./directPlayback";
 import { INITIAL_RECOVERY, recoverPlayback, trackPlaybackPosition } from "./playbackRecovery";
 import { canDirectPlay, canPlayHdrStream } from "./videoCapabilities";
 import { createSeekPrewarmer } from "./seekPrewarm";
+import { VideoPlaylist } from "./VideoPlaylist";
 
 const BITRATE_HINT: Record<number, string> = { 2160: "16 Mbps", 1440: "10 Mbps", 1080: "6 Mbps", 720: "3 Mbps", 480: "1.5 Mbps", 360: "0.8 Mbps" };
 const ENCODER_LABEL: Record<string, string> = { nvenc: "NVIDIA GPU", vaapi: "Intel / AMD GPU", "vaapi-cqp": "Intel / AMD GPU", videotoolbox: "Apple GPU", software: "CPU" };
@@ -70,8 +71,8 @@ export function VideoPreview({
   onNavigate?: (item: FileItem) => void;
 }) {
   const info = useMediaInfo(rootSlug, path);
-  const folder = useFileList(rootSlug, parentPath(path), Boolean(onNavigate)).data;
-  const videos = useMemo(() => (folder?.items ?? []).filter((item) => item.kind === "file" && isVideoType(item.type)).sort((a, b) => collator.compare(a.name, b.name)), [folder]);
+  const folder = useFileList(rootSlug, parentPath(path), Boolean(onNavigate));
+  const videos = useMemo(() => (folder.data?.items ?? []).filter((item) => item.kind === "file" && isVideoType(item.type)).sort((a, b) => collator.compare(a.name, b.name)), [folder.data]);
   const position = videos.findIndex((item) => item.path === path);
   const neighbour = (item: FileItem | undefined) => (item && onNavigate ? { label: item.name, go: () => onNavigate(item) } : null);
   const mediaKey = `${rootSlug}\0${path}`;
@@ -88,7 +89,19 @@ export function VideoPreview({
   const [picked, setPicked] = useState<VideoQualityPref | null>(null);
   const [audioIndex, setAudioIndex] = useState(0);
   const [status, setStatus] = useState<"idle" | "preparing" | "error">("idle");
-  const [infoOpen, setInfoOpen] = useState(false);
+  const [panel, setPanel] = useState<"playlist" | "info" | null>(() => getVideoPlaylistOpen() ? "playlist" : null);
+  const playlistId = useId();
+  const playlistButton = useRef<HTMLButtonElement>(null);
+  const playlistOpen = panel === "playlist" && Boolean(onNavigate);
+  const toggleInfo = () => setPanel((current) => current === "info" ? null : "info");
+  const showPlaylist = (open: boolean) => {
+    setVideoPlaylistOpen(open);
+    setPanel(open ? "playlist" : null);
+  };
+  const closePlaylist = () => {
+    showPlaylist(false);
+    playlistButton.current?.focus({ preventScroll: true });
+  };
   const subtitleList = useSubtitles(rootSlug, path).data;
   const subtitles = subtitleList?.tracks ?? [];
   // A subtitle's id, or `off`; null until a choice is made in this window.
@@ -414,8 +427,21 @@ export function VideoPreview({
         </KagoDropdownMenu>
       ) : null}
       {qualityMenu(slot)}
+      {onNavigate ? (
+        <KagoIconButton
+          ref={playlistButton}
+          label={t("Playlist")}
+          className={`size-7 ${PLAYER_CONTROL_CLASS}`}
+          active={playlistOpen}
+          aria-expanded={playlistOpen}
+          aria-controls={playlistOpen ? playlistId : undefined}
+          onClick={() => showPlaylist(!playlistOpen)}
+        >
+          <ListVideo />
+        </KagoIconButton>
+      ) : null}
       {infoGroups.length > 0 ? (
-        <KagoIconButton label={t("Video info (⌘I)")} className={`size-7 ${PLAYER_CONTROL_CLASS}`} active={infoOpen} onClick={() => setInfoOpen(!infoOpen)}>
+        <KagoIconButton label={t("Video info (⌘I)")} className={`size-7 ${PLAYER_CONTROL_CLASS}`} active={panel === "info"} onClick={toggleInfo}>
           <Info />
         </KagoIconButton>
       ) : null}
@@ -433,8 +459,19 @@ export function VideoPreview({
         hdr={hdr || (height === null && sourceHdr !== null && screenHdr)}
         notice={status === "preparing" ? t("Transcoding…") : status === "error" ? t("Couldn’t play this video") : null}
         renderSettings={renderSettings}
-        overlay={infoOpen && infoGroups.length > 0 ? <VideoInfoPanel groups={infoGroups} onClose={() => setInfoOpen(false)} /> : null}
-        onInfo={infoGroups.length > 0 ? () => setInfoOpen((open) => !open) : undefined}
+        overlay={playlistOpen && onNavigate ? (
+          <VideoPlaylist
+            id={playlistId}
+            videos={videos}
+            currentPath={path}
+            loading={!folder.isError && (folder.isPending || folder.data?.partial === true)}
+            error={folder.isError}
+            onSelect={(item) => { if (item.path !== path) onNavigate(item); }}
+            returnFocus={() => videoRef.current?.parentElement?.focus({ preventScroll: true })}
+            onClose={closePlaylist}
+          />
+        ) : panel === "info" && infoGroups.length > 0 ? <VideoInfoPanel groups={infoGroups} onClose={() => setPanel(null)} /> : null}
+        onInfo={infoGroups.length > 0 ? toggleInfo : undefined}
         onAspect={onAspect}
         onLoadedData={() => setStatus((current) => current === "error" ? current : "idle")}
         onPlaybackRequest={(playing) => playbackRequest.current(playing)}

@@ -145,7 +145,7 @@ export function VideoPlayer({
 
   const duration = ownDuration || fallbackDuration;
   const long = duration >= 3600;
-  const controlsShown = !playing || active || menuOpen || scrubbing;
+  const controlsShown = !playing || active || menuOpen || scrubbing || Boolean(overlay);
 
   const wake = () => {
     setActive(true);

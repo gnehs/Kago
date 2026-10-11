@@ -428,6 +428,8 @@ export const zhCN: Dictionary = {
   "Ambience": "流光",
   "Track {number}": "第 {number} 轨",
   "Tracks": "曲目",
+  "Playlist": "播放列表",
+  "No videos in this folder": "此文件夹没有视频",
   "Couldn’t play this audio": "无法播放这个音频",
   "Couldn’t open this cue sheet": "无法打开这个 CUE 文件",
   "The audio it points to is not in this folder, or is in a format the browser can’t play.": "它指向的音频文件不在这个文件夹，或是浏览器无法播放的格式。",

@@ -63,6 +63,19 @@ export function setVideoQuality(quality: VideoQualityPref) {
   }
 }
 
+const videoPlaylistKey = "kago.videoPlaylist";
+
+/** Whether the folder's video list opens alongside playback in this browser. */
+export const getVideoPlaylistOpen = () => read(videoPlaylistKey, ["open", "closed"], "closed") === "open";
+
+export function setVideoPlaylistOpen(open: boolean) {
+  try {
+    localStorage.setItem(videoPlaylistKey, open ? "open" : "closed");
+  } catch {
+    // Private browsing: the choice just lasts for this window.
+  }
+}
+
 const videoHdrKey = "kago.videoHdr";
 
 /** Whether an HDR video is shown as HDR on a screen that can. Browsers render HDR darker than some expect, so it can be turned off by hand. */

@@ -428,6 +428,8 @@ export const ja: Dictionary = {
   "Ambience": "アンビエンス",
   "Track {number}": "トラック {number}",
   "Tracks": "トラック",
+  "Playlist": "プレイリスト",
+  "No videos in this folder": "このフォルダには動画がありません",
   "Couldn’t play this audio": "このオーディオを再生できません",
   "Couldn’t open this cue sheet": "この CUE シートを開けません",
   "The audio it points to is not in this folder, or is in a format the browser can’t play.": "参照先のオーディオファイルがこのフォルダにないか、ブラウザで再生できない形式です。",

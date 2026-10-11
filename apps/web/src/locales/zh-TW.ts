@@ -428,6 +428,8 @@ export const zhTW: Dictionary = {
   "Ambience": "流光",
   "Track {number}": "第 {number} 軌",
   "Tracks": "曲目",
+  "Playlist": "播放清單",
+  "No videos in this folder": "此資料夾沒有影片",
   "Couldn’t play this audio": "無法播放這個音訊",
   "Couldn’t open this cue sheet": "無法開啟這個 CUE 檔",
   "The audio it points to is not in this folder, or is in a format the browser can’t play.": "它指向的音訊檔不在這個資料夾，或是瀏覽器無法播放的格式。",
