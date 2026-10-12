@@ -4,7 +4,7 @@ import { api, apiLines, ApiError, previewUrl, serverMessage } from "./client";
 import { decodeSubtitle } from "../lib/subtitles";
 import { withSpeeds } from "../lib/taskSpeed";
 import { isTrashing, useTrashingStore } from "../stores/trashing";
-import type { Actor, AuditLog, ExternalApp, FileItem, FileList, FileMeta, FileTask, FolderSize, FrameVerdict, Group, ImageMetadata, LibraryIcon, MediaInfo, PermissionRule, Root, ShareLink, Shelf, SqlitePage, Storyboard, SsoConfig, SsoIdentity, SsoInfo, SqliteTable, StorageInfo, SubtitleList, SyncJob, SyncRun, SyncTrial, TrashItem, UserAccount, WorkspaceState } from "../types/kago";
+import type { Actor, AuditLog, ConvertJob, ConvertSupport, ExternalApp, FileItem, FileList, FileMeta, FileTask, FolderSize, FrameVerdict, Group, ImageMetadata, LibraryIcon, MediaInfo, PermissionRule, Root, ShareLink, Shelf, SqlitePage, Storyboard, SsoConfig, SsoIdentity, SsoInfo, SqliteTable, StorageInfo, SubtitleList, SyncJob, SyncRun, SyncTrial, TrashItem, UserAccount, WorkspaceState } from "../types/kago";
 
 export function useSetupStatus() {
   return useQuery({ queryKey: ["auth", "setup"], queryFn: () => api<{ needsSetup: boolean; oidc: SsoInfo | null }>("/api/auth/setup") });
@@ -42,6 +42,16 @@ export function useRoots() {
 /** The kinds of remote location, the ones set up, whether the server can reach any at all, and what its disk allows in the local ones. Administrators only. */
 export function useStorage() {
   return useQuery({ queryKey: ["storage"], queryFn: () => api<StorageInfo>("/api/storage"), retry: false });
+}
+
+export function useConvertJobs() {
+  // A run changes a job's last result without any event of its own.
+  return useQuery({ queryKey: ["convert-jobs"], queryFn: () => api<ConvertJob[]>("/api/convert-jobs"), refetchInterval: 10_000 });
+}
+
+/** What the server can convert to. It does not change while the server runs. */
+export function useConvertSupport(enabled = true) {
+  return useQuery({ queryKey: ["convert-support"], queryFn: () => api<ConvertSupport>("/api/convert/support"), staleTime: Infinity, enabled });
 }
 
 export function useSyncJobs() {

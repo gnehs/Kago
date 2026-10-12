@@ -76,6 +76,39 @@ export type SyncJob = {
   created_by: string;
 };
 
+/** What to make of a file. Only `format` has to be said; the rest is the server's to pick where it is left open. */
+export type ConvertSpec = {
+  format: string;
+  /** The tallest a video may come out, or the longest side of a picture. */
+  height: number | null;
+  videoCodec: "auto" | "copy" | "h264" | "hevc" | "av1" | "vp9";
+  crf: number | null;
+  fps: number | null;
+  audioCodec: "auto" | "copy" | "aac" | "opus" | "mp3" | "flac" | "ac3";
+  audioBitrate: number | null;
+  quality: number | null;
+  /** Whether a video is decoded and encoded on the server's GPU where it has one that can. */
+  hardware: boolean;
+};
+/** What the server's ffmpeg can make; nothing at all without one. */
+export type ConvertSupport = { available: boolean; formats: string[]; videoCodecs: string[]; audioCodecs: string[]; /** The GPU conversions can use and the codecs it encodes; null without one. */ hardware: { device: string; codecs: string[] } | null };
+export type ConvertJobOptions = { keepSmaller: boolean; after: "keep" | "trash" | "delete"; copyOthers: boolean };
+/** A folder that converts itself: whatever turns up in `input` comes out in `destination`. */
+export type ConvertJob = {
+  id: string;
+  name: string;
+  input: { rootSlug: string; path: string };
+  destination: { rootSlug: string; path: string };
+  spec: ConvertSpec;
+  options: ConvertJobOptions;
+  watch: boolean;
+  last_run_at: number | null;
+  last_status: string | null;
+  last_error: string | null;
+  failed: number;
+  created_by: string;
+};
+
 export type UserAccount = {
   id: string;
   email: string;
@@ -410,6 +443,8 @@ export type MediaInfo = {
   audio: Array<{ codec: string; profile: string; channels: number; layout: string; sampleRate: number; bitrate: number; language: string; title: string; default: boolean }>;
   /** Subtitle streams inside the file. */
   subtitles: Array<{ index: number; codec: string; language: string; title: string; default: boolean; forced: boolean; sdh: boolean }>;
+  /** Fonts attached to the file for its subtitles. */
+  fonts?: Array<{ index: number; name: string }>;
   /** Heights the file can be transcoded to, tallest first. */
   qualities: number[];
   /** What the file says about itself (ID3, Vorbis comments, MP4 atoms); each empty where it says nothing. */

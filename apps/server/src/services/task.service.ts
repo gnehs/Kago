@@ -7,6 +7,7 @@ import yauzl from "yauzl";
 import { z } from "zod";
 import type { Db } from "../db/db.js";
 import { row, rows } from "../db/db.js";
+import { ConvertStopped } from "../lib/convert.js";
 import { AppError, fileSystemRefusal } from "../lib/errors.js";
 import { assertNameAvailable, nfc } from "../lib/filename.js";
 import { id, now } from "../lib/ids.js";
@@ -22,6 +23,7 @@ import { isRemote, joinFs, transferProgress } from "../storage/remote-storage.js
 import type { EventPublisher } from "../ws/events.js";
 import { ArchivePasswordService } from "./archive-password.service.js";
 import type { AuditService } from "./audit.service.js";
+import { convertInputSchema, convertJobOptionsSchema, ConvertService, remuxInputSchema, type ConvertInput, type ConvertJobRun, type RemuxInputSpec, type TaskHandle } from "./convert.service.js";
 import type { FsService } from "./fs.service.js";
 import { sharesAreFixed, type PathService, type SafePath } from "./path.service.js";
 import type { Level, PermissionService } from "./permission.service.js";
@@ -81,6 +83,13 @@ type ExtractOptions = { password?: string; remember?: boolean };
 /** How many locked entries a password is checked against before anything is written. */
 const maxPasswordProbes = 16;
 
+/**
+ * Tasks wait in two lines, each with a worker of its own. Converting takes hours where copying takes minutes, so it
+ * has a line to itself: `media` for conversions, `files` for everything else.
+ */
+export type TaskLane = "files" | "media";
+const mediaTaskTypes = "'convert', 'remux'";
+
 /** One end of a sync: a folder of a location. */
 export const syncEndpointSchema = z.object({ kind: z.literal("location"), rootSlug: z.string().min(1), path: z.string().min(1) });
 
@@ -105,6 +114,7 @@ export class TaskService {
   private readonly cancelChecks = new Map<string, number>();
   private secretBox: SecretBox | null = null;
   readonly archivePasswords: ArchivePasswordService;
+  readonly convert: ConvertService;
 
   constructor(
     private readonly db: Db,
@@ -118,6 +128,7 @@ export class TaskService {
     private readonly preferences: PreferenceService
   ) {
     this.archivePasswords = new ArchivePasswordService(db, () => this.secrets());
+    this.convert = new ConvertService(db, paths, permissions, audit, storage, appDataDir, (actor, safe) => this.trashNow(actor, safe));
   }
 
   async create(actor: Actor, input: z.infer<typeof taskInputSchema>): Promise<FileTask> {
@@ -206,6 +217,68 @@ export class TaskService {
     return task;
   }
 
+  /** Queues a conversion of the given files, or with `job` one run of a saved job over its input folder. */
+  async createConvert(actor: Actor, input: ConvertInput, job?: ConvertJobRun, scheduled = false): Promise<FileTask> {
+    if (job) await this.convert.assertJob(actor, { input: job.input, destination: input.destination, options: job.options });
+    else await this.convert.assertConvert(actor, input);
+    const task = this.queue(actor, "convert", input.sources, JSON.stringify({ ...input.destination, convert: input.spec, ...(job ? { job } : {}) }), scheduled);
+    this.audit.write({ actorType: "user", actorId: actor.id, action: "create_task", target: { type: "convert", format: input.spec.format, count: input.sources.length, jobId: job?.id, scheduled }, result: "success" });
+    return task;
+  }
+
+  /** Queues the packing of a video's tracks into a Matroska file beside it. */
+  async createRemux(actor: Actor, input: RemuxInputSpec): Promise<FileTask> {
+    await this.convert.assertRemux(actor, input);
+    const task = this.queue(actor, "remux", [input.source], JSON.stringify({ rootSlug: input.source.rootSlug, path: path.posix.dirname(input.source.path), remux: input }));
+    this.audit.write({ actorType: "user", actorId: actor.id, action: "create_task", target: { type: "remux", source: input.source, name: input.name }, result: "success" });
+    return task;
+  }
+
+  private queue(actor: Actor, type: string, sources: Array<{ rootSlug: string; path: string }>, destination: string, scheduled = false): FileTask {
+    const ts = now();
+    const task: FileTask = {
+      id: id("task"),
+      type,
+      status: "queued",
+      created_by: actor.id,
+      sources_json: JSON.stringify(sources),
+      destination,
+      total_files: Math.max(sources.length, 1),
+      processed_files: 0,
+      total_bytes: 0,
+      processed_bytes: 0,
+      current_path: null,
+      error_message: null,
+      auth_snapshot_json: JSON.stringify({ actorId: actor.id, role: actor.role, ...(scheduled ? { scheduled } : {}) }),
+      created_at: ts,
+      updated_at: ts,
+      started_at: null,
+      finished_at: null
+    };
+    this.insertTask(task);
+    this.events.publish({ type: "task.created", userId: task.created_by, task });
+    return task;
+  }
+
+  /** Checks again what a conversion was allowed when it was first asked for. */
+  private async assertMediaTask(actor: Actor, task: FileTask): Promise<void> {
+    const { convert: spec, job, remux, ...destination } = JSON.parse(task.destination ?? "{}") as { rootSlug: string; path: string; convert?: unknown; job?: ConvertJobRun; remux?: unknown };
+    if (task.type === "remux") return this.convert.assertRemux(actor, remuxInputSchema.parse(remux));
+    if (job) await this.convert.assertJob(actor, { input: job.input, destination, options: convertJobOptionsSchema.parse(job.options) });
+    else await this.convert.assertConvert(actor, convertInputSchema.parse({ sources: JSON.parse(task.sources_json), destination, spec }));
+  }
+
+  /** What a conversion is given to say how it is getting on. */
+  private handle(taskId: string): TaskHandle {
+    return {
+      show: (currentPath) => this.show(taskId, currentPath),
+      totals: (files, bytes) => this.updateTotals(taskId, files, bytes),
+      bytes: (bytes) => this.countBytes(taskId, bytes),
+      files: (files) => this.countFiles(taskId, files),
+      stopped: () => this.isCancelled(taskId)
+    };
+  }
+
   private insertTask(task: FileTask): void {
     this.db
       .prepare(
@@ -258,8 +331,8 @@ export class TaskService {
 
   private async forgetFinished(endedBy: number, createdBy?: string): Promise<number> {
     const finished = `status IN (${finishedStatuses}) AND COALESCE(finished_at, updated_at) <= ?`;
-    // A sync job reads the outcome of its last run from that task, so that one stays, only out of the list.
-    const kept = "id IN (SELECT last_task_id FROM sync_jobs WHERE last_task_id IS NOT NULL)";
+    // A sync or auto-convert job reads the outcome of its last run from that task, so that one stays, only out of the list.
+    const kept = "(id IN (SELECT last_task_id FROM sync_jobs WHERE last_task_id IS NOT NULL) OR id IN (SELECT last_task_id FROM convert_jobs WHERE last_task_id IS NOT NULL))";
     const tasks = rows<{ id: string; type: string; cleared: number; kept: number }>(
       createdBy
         ? this.db.prepare(`SELECT id, type, cleared, ${kept} AS kept FROM tasks WHERE ${finished} AND created_by = ?`).all(endedBy, createdBy)
@@ -389,6 +462,12 @@ export class TaskService {
       this.audit.write({ actorType: "user", actorId: actor.id, action: "task_retry", target: { taskId, retryTaskId: again.id }, result: "success" });
       return again;
     }
+    if (task.type === "convert" || task.type === "remux") {
+      await this.assertMediaTask(actor, task);
+      const again = this.cloneTask(actor, task);
+      this.audit.write({ actorType: "user", actorId: actor.id, action: "task_retry", target: { taskId, retryTaskId: again.id }, result: "success" });
+      return again;
+    }
     const input = this.taskInputFromTask(task);
     await this.assertTaskPermissions(actor, input);
     const retryTask = this.cloneTask(actor, task);
@@ -424,11 +503,13 @@ export class TaskService {
     });
   }
 
-  claimNext(): FileTask | null {
+  /** Takes the oldest task that is waiting, of the given lane's when one is named. */
+  claimNext(lane?: TaskLane): FileTask | null {
+    const mine = lane ? ` AND type ${lane === "media" ? "IN" : "NOT IN"} (${mediaTaskTypes})` : "";
     this.db.exec("BEGIN IMMEDIATE");
     try {
       const task = row<FileTask>(
-        this.db.prepare("SELECT * FROM tasks WHERE status = 'queued' ORDER BY created_at ASC LIMIT 1").get()
+        this.db.prepare(`SELECT * FROM tasks WHERE status = 'queued'${mine} ORDER BY created_at ASC LIMIT 1`).get()
       );
       if (!task) {
         this.db.exec("COMMIT");
@@ -465,9 +546,11 @@ export class TaskService {
       else if (task.type === "extract") await this.runExtract(task, actor);
       else if (task.type === "thumbnail") await this.runThumbnail(task, actor);
       else if (task.type === "sync") await this.runSync(task, actor);
+      else if (task.type === "convert") await this.convert.run(task, actor, this.handle(task.id));
+      else if (task.type === "remux") await this.convert.runRemux(task, actor, this.handle(task.id));
       if (this.finish(task.id, "done")) this.events.publish({ type: "task.done", userId: task.created_by, taskId: task.id });
     } catch (error) {
-      if (error instanceof TaskCancelledError || error instanceof RcloneJobStopped) {
+      if (error instanceof TaskCancelledError || error instanceof RcloneJobStopped || error instanceof ConvertStopped) {
         this.flushProgress(task.id, true);
         return;
       }
@@ -755,6 +838,25 @@ export class TaskService {
       });
       if (!streamed) this.bumpProcessedBytes(task.id, bytes);
     }
+  }
+
+  /** Throws one file away in the middle of other work, the way `runTrash` does a list of them. */
+  private async trashNow(actor: Actor, safe: SafePath): Promise<void> {
+    this.permissions.require(actor, "edit", safe.root, safe.logicalPath);
+    let trashPath: string;
+    if (isRemote(safe.root)) {
+      this.assertNotFixed(safe);
+      trashPath = `${this.storage.remote.trashFolder(safe.root, safe.logicalPath)}/${Date.now()}-${id("trash")}-${this.storage.name(safe)}`;
+      await this.storage.remote.mkdir(safe.root, path.posix.dirname(trashPath));
+      await this.storage.remote.move(safe.root, safe.logicalPath, trashPath, false);
+    } else {
+      trashPath = path.join(await this.localTrashDir(safe.root), `${Date.now()}-${id("trash")}-${path.basename(safe.absolutePath)}`);
+      await movePath(safe.absolutePath, trashPath, () => undefined);
+    }
+    this.db
+      .prepare("INSERT INTO trash_items (id, original_root_id, original_path, trash_path, deleted_by, deleted_at, restored_at) VALUES (?, ?, ?, ?, ?, ?, NULL)")
+      .run(id("trashitem"), safe.root.id, safe.logicalPath, trashPath, actor.id, now());
+    this.audit.write({ actorType: "user", actorId: actor.id, action: "delete_to_trash", rootId: safe.root.id, path: safe.logicalPath, result: "success" });
   }
 
   private async runRestore(task: FileTask, actor: Actor): Promise<void> {

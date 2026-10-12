@@ -4,6 +4,7 @@ import { Ban, Check, Clock, Ellipsis, FileDiff, History, Pause, Pencil, Plus, Re
 import { api } from "@/api/client";
 import { useSyncJobs } from "@/api/hooks";
 import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
+import { FolderField } from "@/components/kago/folder-picker";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { KagoDropdownMenu, KagoMenuItem, KagoMenuSeparator } from "@/components/kago/menu";
 import { Button } from "@/components/ui/button";
@@ -188,8 +189,8 @@ function SyncForm({ roots, job, onSaved }: { roots: Root[]; job: SyncJob | null;
   return (
     <form className="grid grid-cols-2 gap-3" onSubmit={submit}>
       <Field label={t("Name")} className="col-span-2"><Input autoFocus value={name} onChange={(event) => setName(event.target.value)} /></Field>
-      <EndpointFields label={t("From")} roots={roots} draft={source} onChange={setSource} />
-      <EndpointFields label={t("To")} roots={roots} draft={destination} onChange={setDestination} />
+      <FolderField className="col-span-2" label={t("From")} roots={roots} value={source} onChange={setSource} />
+      <FolderField className="col-span-2" label={t("To")} roots={roots} value={destination} writable onChange={setDestination} />
       <Field label={t("What to do")} hint={mode === "mirror" ? t("Whatever the source no longer has is deleted from the destination.") : t("Nothing is ever deleted from the destination.")}>
         <Select value={mode} onChange={(event) => setMode(event.target.value as "copy" | "mirror")}>
           <option value="copy">{t("Copy new and changed files")}</option>
@@ -233,19 +234,5 @@ function SyncForm({ roots, job, onSaved }: { roots: Root[]; job: SyncJob | null;
         <Button type="submit" variant="default" disabled={!canSubmit}>{job ? t("Save") : t("Add sync")}</Button>
       </div>
     </form>
-  );
-}
-
-/** One end of a sync: a folder of a location. */
-function EndpointFields({ label, roots, draft, onChange }: { label: string; roots: Root[]; draft: EndpointDraft; onChange: (draft: EndpointDraft) => void }) {
-  return (
-    <fieldset className="col-span-2 m-0 grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-3 border-0 p-0">
-      <Field label={label}>
-        <Select value={draft.rootSlug} onChange={(event) => onChange({ ...draft, rootSlug: event.target.value })}>
-          {roots.map((root) => <option key={root.id} value={root.slug}>{root.name}</option>)}
-        </Select>
-      </Field>
-      <Field label={t("Path")}><Input value={draft.path} placeholder="/" onChange={(event) => onChange({ ...draft, path: event.target.value })} /></Field>
-    </fieldset>
   );
 }

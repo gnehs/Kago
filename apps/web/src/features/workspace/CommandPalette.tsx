@@ -1,6 +1,6 @@
 import { Fragment, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Dialog } from "@base-ui/react/dialog";
-import { CircleUserRound, Clock, Fingerprint, Folder, HardDrive, Info, KeyRound, LayoutGrid, RefreshCw, ScrollText, Search, UserRound, UsersRound } from "lucide-react";
+import { CircleUserRound, Clock, FileVideo, Fingerprint, Folder, HardDrive, Info, KeyRound, LayoutGrid, RefreshCw, ScrollText, Search, UserRound, UsersRound } from "lucide-react";
 import { useExternalApps } from "@/api/hooks";
 import { KagoKbd } from "@/components/kago/kbd";
 import { ExternalAppGlyph } from "@/components/kago/external-app-icon";
@@ -27,6 +27,7 @@ const apps: Array<{ app: AppKind; section?: SettingsSection; label: string; icon
   { app: "settings", section: "account", label: t("Account"), icon: <CircleUserRound /> },
   { app: "settings", section: "apps", label: t("Apps"), icon: <LayoutGrid /> },
   { app: "settings", section: "sync", label: t("Sync"), icon: <RefreshCw /> },
+  { app: "settings", section: "convert", label: t("Auto-convert"), icon: <FileVideo /> },
   { app: "settings", section: "locations", label: t("Locations"), icon: <HardDrive />, adminOnly: true },
   { app: "settings", section: "users", label: t("Users"), icon: <UserRound />, adminOnly: true },
   { app: "settings", section: "groups", label: t("Groups"), icon: <UsersRound />, adminOnly: true },

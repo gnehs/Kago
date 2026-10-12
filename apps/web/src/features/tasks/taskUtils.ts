@@ -12,7 +12,9 @@ const typeLabels: Record<string, string> = {
   delete: t("Delete"),
   restore_trash: t("Restore from Trash"),
   thumbnail: t("Thumbnails"),
-  sync: t("Sync")
+  sync: t("Sync"),
+  convert: t("Convert"),
+  remux: t("Repack")
 };
 
 const statusMeta: Record<string, { label: string; tone: "neutral" | "accent" | "success" | "warning" | "danger" }> = {

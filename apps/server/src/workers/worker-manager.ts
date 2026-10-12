@@ -1,7 +1,7 @@
 import { Worker } from "node:worker_threads";
 import type { Env } from "../config/env.js";
 import { logger } from "../lib/logger.js";
-import type { TaskService } from "../services/task.service.js";
+import type { TaskLane, TaskService } from "../services/task.service.js";
 import type { EventHub, ServerEvent } from "../ws/events.js";
 
 type WorkerToMainMessage =
@@ -20,7 +20,9 @@ export class WorkerManager {
   constructor(
     private readonly tasks: TaskService,
     private readonly env: Env,
-    private readonly events: EventHub
+    private readonly events: EventHub,
+    /** Which line of tasks its worker takes from. */
+    private readonly lane: TaskLane = "files"
   ) {}
 
   start(): void {
@@ -47,15 +49,15 @@ export class WorkerManager {
   private spawnWorker(): void {
     this.restartTimer = null;
     const worker = new Worker(workerEntryUrl(), {
-      name: "kago-task-worker",
-      workerData: { env: this.env }
+      name: `kago-task-worker-${this.lane}`,
+      workerData: { env: this.env, lane: this.lane }
     });
     this.worker = worker;
     this.currentTaskId = null;
 
     worker.on("message", (message: WorkerToMainMessage) => this.handleWorkerMessage(message));
     worker.once("error", (error) => {
-      logger.error("task worker failed", error);
+      logger.error(`${this.lane} task worker failed`, error);
     });
     worker.once("exit", (code) => {
       if (this.worker === worker) this.worker = null;
@@ -64,14 +66,14 @@ export class WorkerManager {
       if (this.stopping) return;
       if (taskId) this.tasks.failRunning(taskId, "Worker exited before completing task");
       const delayMs = this.nextBackoffDelay();
-      logger.warn("task worker exited; scheduling restart", { code, delayMs });
+      logger.warn(`${this.lane} task worker exited; scheduling restart`, { code, delayMs });
       this.restartTimer = setTimeout(() => this.spawnWorker(), delayMs);
     });
   }
 
   private handleWorkerMessage(message: WorkerToMainMessage): void {
     if (message.type === "ready") {
-      logger.info("task worker ready");
+      logger.info(`${this.lane} task worker ready`);
       return;
     }
     if (message.type === "event") {

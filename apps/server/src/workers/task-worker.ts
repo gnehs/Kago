@@ -13,12 +13,13 @@ import { PathService } from "../services/path.service.js";
 import { PermissionService } from "../services/permission.service.js";
 import { PreferenceService } from "../services/preference.service.js";
 import { RootService } from "../services/root.service.js";
-import { TaskService } from "../services/task.service.js";
+import { TaskService, type TaskLane } from "../services/task.service.js";
 import type { FileTask } from "../services/types.js";
 import type { EventPublisher, ServerEvent } from "../ws/events.js";
 
 type WorkerInput = {
   env: Env;
+  lane: TaskLane;
 };
 
 type WorkerToMainMessage =
@@ -69,8 +70,11 @@ port.on("message", (message: { type?: string }) => {
 
 post({ type: "ready" });
 schedule(0);
-tidy();
-setInterval(tidy, 60 * 60 * 1000).unref();
+// One of the workers is enough to keep house.
+if (input.lane === "files") {
+  tidy();
+  setInterval(tidy, 60 * 60 * 1000).unref();
+}
 
 function tidy(): void {
   void tasks.cleanupExpiredDownloads().catch(() => undefined);
@@ -88,7 +92,7 @@ async function tick(): Promise<void> {
   running = true;
   let task: FileTask | null = null;
   try {
-    task = tasks.claimNext();
+    task = tasks.claimNext(input.lane);
     if (!task) {
       failureCount = 0;
       schedule(1000);

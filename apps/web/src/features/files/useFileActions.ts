@@ -14,6 +14,8 @@ import { folderTitle, useWorkspaceStore } from "@/stores/workspace";
 import { startExtract } from "./ArchivePassword";
 import { MAX_BATCH_RENAME, promptBatchRename } from "./BatchRenameDialog";
 import { promptCompress } from "./CompressDialog";
+import { promptConvert } from "@/features/convert/ConvertDialog";
+import type { MediaKind } from "@/features/convert/convertSpec";
 import type { FileItem, FileTask, FileWindow } from "@/types/kago";
 import { t } from "@/lib/i18n";
 
@@ -228,6 +230,15 @@ export function useFileActions(window: FileWindow) {
         if (!choice) return;
         followTask(await createTask(queryClient, { type: "compress", sources: refs(paths), destination: here(joinLogicalPath(window.logicalPath, ensureZipName(choice.name))), options: choice.options }));
       }),
+    /** Asks what to make of some media files of one kind and converts them into this folder. */
+    convert: (items: FileItem[], kind: MediaKind) =>
+      run(async () => {
+        const spec = await promptConvert({ kind, names: items.map((item) => nfc(item.name)) });
+        if (!spec) return;
+        const task = await api<FileTask>("/api/convert", { method: "POST", body: JSON.stringify({ sources: refs(items.map((item) => item.path)), destination: here(), spec }) });
+        await queryClient.invalidateQueries({ queryKey: ["tasks"] });
+        followTask(task);
+      }, t("Couldn’t start the conversion")),
     extract: (paths: string[]) => run(() => startExtract(queryClient, { sources: refs(paths), destination: here() })),
     download: (items: FileItem[]) => downloadFiles(queryClient, window.rootSlug, items),
     addToShelf: (paths: string[]) =>

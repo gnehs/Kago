@@ -6,7 +6,7 @@ import { isActiveTask, taskErrorLabel, taskProgressLabel, taskProgressMax, taskP
 import { t } from "@/lib/i18n";
 
 /** Task types whose completion is worth announcing; the rest finish quietly. */
-export const announcedTypes = ["copy", "move", "compress", "extract", "restore_trash", "sync"];
+export const announcedTypes = ["copy", "move", "compress", "extract", "restore_trash", "sync", "convert", "remux"];
 
 export const taskFinished = (label: string) => t("{task} finished", { task: label });
 export const taskFailed = (label: string, error?: string | null) => t("{task} failed: {reason}", { task: label, reason: taskErrorLabel(error ?? "Task failed") });

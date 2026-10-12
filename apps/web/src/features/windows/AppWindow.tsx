@@ -4,6 +4,7 @@ import { AboutPage } from "@/features/about/AboutPage";
 import { AuditPage } from "@/features/admin/AuditPage";
 import { AppsPage } from "@/features/apps/AppsPage";
 import { AccountPage } from "@/features/auth/AccountPage";
+import { AutoConvertPage } from "@/features/convert/AutoConvertPage";
 import { GroupsPage } from "@/features/admin/GroupsPage";
 import { LocationsPage } from "@/features/admin/LocationsPage";
 import { SettingsLayout } from "@/features/admin/SettingsLayout";
@@ -31,7 +32,7 @@ export const appIcons: Record<AppKind, ReactNode> = {
 export function AppWindowView({ window, roots, user }: { window: AppWindow; roots: Root[]; user: Actor }) {
   const isAdmin = user.role === "ADMIN";
   // The sections that are everyone's stay open to everyone; the rest fall back to the first of them.
-  const section = isAdmin || window.section === "account" || window.section === "sync" || window.section === "apps" || window.section === "about" || window.section === "compatibility" ? window.section : "general";
+  const section = isAdmin || window.section === "account" || window.section === "sync" || window.section === "convert" || window.section === "apps" || window.section === "about" || window.section === "compatibility" ? window.section : "general";
 
   return (
     <KagoWindow window={window} icon={<span className="flex text-muted">{appIcons[window.app]}</span>}>
@@ -44,6 +45,7 @@ export function AppWindowView({ window, roots, user }: { window: AppWindow; root
           {section === "account" ? <AccountPage user={user} /> : null}
           {section === "apps" ? <AppsPage /> : null}
           {section === "sync" ? <SyncPage roots={roots} user={user} /> : null}
+          {section === "convert" ? <AutoConvertPage roots={roots} user={user} /> : null}
           {section === "about" ? <AboutPage /> : null}
           {section === "compatibility" ? <CompatibilityPage isAdmin={isAdmin} /> : null}
           {isAdmin && window.section === "locations" ? <LocationsPage roots={roots} /> : null}

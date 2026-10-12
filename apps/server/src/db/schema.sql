@@ -281,6 +281,37 @@ CREATE TABLE IF NOT EXISTS sync_runs (
 CREATE INDEX IF NOT EXISTS idx_sync_runs_job_started
 ON sync_runs(job_id, started_at);
 
+-- Folders that are converted by themselves: whatever turns up in the input folder comes out in the destination.
+CREATE TABLE IF NOT EXISTS convert_jobs (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  input_json TEXT NOT NULL,
+  destination_json TEXT NOT NULL,
+  spec_json TEXT NOT NULL,
+  options_json TEXT NOT NULL DEFAULT '{}',
+  -- Whether the input folder is looked at now and then, and not only when someone starts the job.
+  watch INTEGER NOT NULL DEFAULT 1,
+  last_run_at INTEGER,
+  last_task_id TEXT,
+  created_by TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- What a job has already dealt with and left in its input folder, as the file was then: one that has changed since is new again.
+CREATE TABLE IF NOT EXISTS convert_job_files (
+  job_id TEXT NOT NULL,
+  path TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  mtime_ms INTEGER NOT NULL,
+  status TEXT NOT NULL,
+  output TEXT,
+  done_at INTEGER NOT NULL,
+  PRIMARY KEY (job_id, path),
+  FOREIGN KEY (job_id) REFERENCES convert_jobs(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS user_settings (
   user_id TEXT PRIMARY KEY,
   settings_json TEXT NOT NULL,

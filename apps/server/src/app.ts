@@ -40,6 +40,8 @@ import { SHARE_VISIT_SECONDS, ShareService, shareSchema, type ShareVisitor } fro
 import { ShelfService } from "./services/shelf.service.js";
 import { StorageService } from "./services/storage.service.js";
 import { syncJobSchema, SyncService } from "./services/sync.service.js";
+import { convertInputSchema, remuxInputSchema } from "./services/convert.service.js";
+import { convertJobSchema, ConvertJobService } from "./services/convert-job.service.js";
 import { archivePasswordSchema } from "./services/archive-password.service.js";
 import { taskInputSchema, TaskService } from "./services/task.service.js";
 import { workspaceSchema, WorkspaceService } from "./services/workspace.service.js";
@@ -74,6 +76,7 @@ export async function buildApp(env: Env) {
   const shelves = new ShelfService(db, paths, permissions, events, audit, storage);
   const shares = new ShareService(db, paths, permissions, audit, events, storage);
   const sync = new SyncService(db, tasks, auth, audit);
+  const convertJobs = new ConvertJobService(db, tasks, auth, audit);
   const groups = new GroupService(db);
   const oidc = new OidcService(db, secrets, auth, audit, events);
   const media = new MediaService(env.appDataDir);
@@ -81,6 +84,8 @@ export async function buildApp(env: Env) {
   const iconLibrary = new IconLibraryService(env.appDataDir);
   const apps = new ExternalAppService(db, env.appDataDir, iconLibrary, events, audit, secrets);
   const workers = new WorkerManager(tasks, env, events);
+  // Conversions wait in a line of their own, so a long one holds up no copy or move.
+  const mediaWorkers = new WorkerManager(tasks, env, events, "media");
 
   await app.register(cookie, { secret: env.sessionSecret });
   await app.register(multipart, {
@@ -142,7 +147,7 @@ export async function buildApp(env: Env) {
     }
   }
   await remotes.start();
-  registerApi(app, { auth, audit, roots, paths, permissions, fsService, workspace, preferences, tasks, shelves, shares, groups, oidc, media, compatibility, images, apps, iconLibrary, frameProbe: new FrameProbe(), events, db, storage, remotes, sync, env });
+  registerApi(app, { auth, audit, roots, paths, permissions, fsService, workspace, preferences, tasks, shelves, shares, groups, oidc, media, compatibility, images, apps, iconLibrary, frameProbe: new FrameProbe(), events, db, storage, remotes, sync, convertJobs, env });
 
   app.get("/ws", {
     websocket: true,
@@ -170,8 +175,9 @@ export async function buildApp(env: Env) {
 
   app.addHook("onClose", async () => {
     events.close();
-    await workers.stop();
+    await Promise.all([workers.stop(), mediaWorkers.stop()]);
     sync.stop();
+    convertJobs.stop();
     clearInterval(pruning);
     clearInterval(pruningPictures);
     remotes.stop();
@@ -181,7 +187,9 @@ export async function buildApp(env: Env) {
   });
 
   workers.start();
+  mediaWorkers.start();
   sync.start();
+  convertJobs.start();
   const pruning = setInterval(() => void remote.pruneLocalCopies().catch(() => undefined), 60 * 60 * 1000);
   pruning.unref();
   void remote.pruneLocalCopies().catch(() => undefined);
@@ -310,6 +318,7 @@ type Services = {
   storage: StorageService;
   remotes: RemoteManager;
   sync: SyncService;
+  convertJobs: ConvertJobService;
   env: Env;
 };
 
@@ -601,6 +610,25 @@ function registerApi(app: FastifyInstance, services: Services) {
   app.get("/api/sync-jobs/:id/trial", async (request) => services.sync.trial(requireActor(request), z.object({ id: z.string() }).parse(request.params).id));
   app.get("/api/sync-jobs/:id/runs", async (request) => services.sync.runs(requireActor(request), z.object({ id: z.string() }).parse(request.params).id));
   app.post("/api/sync-jobs/:id/run", async (request) => services.sync.run(requireActor(request), z.object({ id: z.string() }).parse(request.params).id));
+
+  app.post("/api/convert", async (request) => services.tasks.createConvert(requireActor(request), convertInputSchema.parse(request.body)));
+  app.get("/api/convert/support", async (request) => {
+    requireActor(request);
+    return services.tasks.convert.support();
+  });
+  app.post("/api/remux", async (request) => services.tasks.createRemux(requireActor(request), remuxInputSchema.parse(request.body)));
+  app.get("/api/convert-jobs", async (request) => services.convertJobs.list(requireActor(request)));
+  app.post("/api/convert-jobs", async (request) => services.convertJobs.create(requireActor(request), convertJobSchema.parse(request.body)));
+  app.put("/api/convert-jobs/:id", async (request) => {
+    const params = z.object({ id: z.string() }).parse(request.params);
+    return services.convertJobs.update(requireActor(request), params.id, convertJobSchema.parse(request.body));
+  });
+  app.delete("/api/convert-jobs/:id", async (request) => {
+    services.convertJobs.delete(requireActor(request), z.object({ id: z.string() }).parse(request.params).id);
+    return { ok: true };
+  });
+  app.post("/api/convert-jobs/:id/run", async (request) => services.convertJobs.run(requireActor(request), z.object({ id: z.string() }).parse(request.params).id));
+  app.post("/api/convert-jobs/:id/structure", async (request) => services.convertJobs.copyStructure(requireActor(request), z.object({ id: z.string() }).parse(request.params).id));
 
   app.get("/api/workspace", async (request) => {
     const actor = requireActor(request);

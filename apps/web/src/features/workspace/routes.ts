@@ -12,6 +12,7 @@ const appRoutes: Record<string, { app: AppKind; section?: SettingsSection; admin
   "/_kago/account": { app: "settings", section: "account" },
   "/_kago/apps": { app: "settings", section: "apps" },
   "/_kago/sync": { app: "settings", section: "sync" },
+  "/_kago/convert": { app: "settings", section: "convert" },
   "/_kago/admin/locations": { app: "settings", section: "locations", adminOnly: true },
   "/_kago/admin/users": { app: "settings", section: "users", adminOnly: true },
   "/_kago/admin/groups": { app: "settings", section: "groups", adminOnly: true },

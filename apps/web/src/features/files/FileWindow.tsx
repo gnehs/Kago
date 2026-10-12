@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Archive, ArchiveRestore, Ban, CircleUserRound, ClipboardPaste, Copy, Download, ExternalLink, Folder, FolderInput, FolderOpen, FolderPlus, FolderUp, Inbox, Info, PanelTop, Pencil, Play, Plus, RefreshCw, Scissors, SquareArrowOutUpRight, Trash2, Upload, Wallpaper, X } from "lucide-react";
+import { Archive, ArchiveRestore, Ban, CircleUserRound, ClipboardPaste, Copy, Download, ExternalLink, FileOutput, FileVideo, Folder, FolderInput, FolderOpen, FolderPlus, FolderUp, Inbox, Info, ListVideo, PanelTop, Pencil, Play, Plus, RefreshCw, Scissors, SquareArrowOutUpRight, Trash2, Upload, Wallpaper, X } from "lucide-react";
 import { useFileList, useFolderContents } from "@/api/hooks";
 import { KagoBadge } from "@/components/kago/badge";
 import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { KagoContextMenu, KagoMenuButton, KagoMenuItem, KagoMenuNote, KagoMenuSeparator } from "@/components/kago/menu";
 import { chooseAvatar } from "@/features/auth/AvatarDialog";
+import { autoConvertInto } from "@/features/convert/AutoConvertPage";
+import { mediaKindOf } from "@/features/convert/convertSpec";
+import { openTrackEditor } from "@/features/convert/TrackEditor";
 import { KagoWindow } from "@/components/kago/window";
 import { OPEN_ITEM_EVENT } from "@/features/workspace/useShortcuts";
 import { isArchive } from "@/lib/fileKind";
@@ -341,6 +344,9 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
     const single = targets.length === 1 ? targets[0]! : null;
     const count = targets.length;
     // Video and music open in a player, so the menu says what opening them does.
+    // Files of one kind of media can all be made into the same thing.
+    const kinds = new Set(targets.map(mediaKindOf));
+    const convertible = kinds.size === 1 ? [...kinds][0]! : null;
     const playable = single?.kind === "file" && (isVideoType(single.type) || isMusicFile(single) || isCueSheet(single));
     return targets.length > 0 ? (
       <>
@@ -377,6 +383,9 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
         <KagoMenuItem icon={<FolderPlus />} disabled={readonly || targets.some((item) => item.readonly)} onClick={() => void actions.newFolderWith(paths)}>{count > 1 ? t("New folder with {count} item | New folder with {count} items", { count }) : t("New folder with selection")}</KagoMenuItem>
         <KagoMenuItem icon={<Archive />} disabled={readonly} onClick={() => void actions.compress(paths)}>{count > 1 ? t("Compress {count} item | Compress {count} items", { count }) : t("Compress")}</KagoMenuItem>
         {targets.every(isArchive) ? <KagoMenuItem icon={<ArchiveRestore />} disabled={readonly} onClick={() => void actions.extract(paths)}>{t("Extract here")}</KagoMenuItem> : null}
+        {convertible ? <KagoMenuItem icon={<FileOutput />} disabled={readonly} onClick={() => void actions.convert(targets, convertible)}>{count > 1 ? t("Convert {count} item… | Convert {count} items…", { count }) : t("Convert…")}</KagoMenuItem> : null}
+        {single && convertible === "video" ? <KagoMenuItem icon={<ListVideo />} disabled={readonly} onClick={() => openTrackEditor({ rootSlug: win.rootSlug, item: single, siblings: allItems.filter((item) => parentPath(item.path) === parentPath(single.path)) })}>{t("Edit tracks…")}</KagoMenuItem> : null}
+        {single?.kind === "folder" ? <KagoMenuItem icon={<FileVideo />} disabled={readonly || single.readonly} onClick={() => autoConvertInto({ rootSlug: win.rootSlug, path: single.path })}>{t("Auto-convert into this folder…")}</KagoMenuItem> : null}
         <KagoMenuSeparator />
         <KagoMenuItem icon={<Trash2 />} destructive disabled={readonly || targets.some((item) => item.readonly)} onClick={() => void actions.trash(paths)}>{t("Move to Trash")}</KagoMenuItem>
       </>
@@ -391,6 +400,7 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
         <KagoMenuItem icon={<FolderPlus />} disabled={readonly} onClick={() => void actions.newFolder()}>{t("New folder")}</KagoMenuItem>
         <KagoMenuItem icon={<Upload />} disabled={readonly} onClick={() => uploadInput.current?.click()}>{t("Upload files")}</KagoMenuItem>
         <KagoMenuItem icon={<FolderUp />} disabled={readonly} onClick={() => folderInput.current?.click()}>{t("Upload folder")}</KagoMenuItem>
+        <KagoMenuItem icon={<FileVideo />} disabled={readonly} onClick={() => autoConvertInto({ rootSlug: win.rootSlug, path: win.logicalPath })}>{t("Auto-convert into this folder…")}</KagoMenuItem>
         <KagoMenuSeparator />
         <KagoMenuItem icon={<PanelTop />} shortcut="⌥T" onClick={() => store().openTab(win.id, win)}>{t("New tab")}</KagoMenuItem>
         <KagoMenuItem icon={<ExternalLink />} onClick={() => store().openWindow({ rootSlug: win.rootSlug, logicalPath: win.logicalPath, title: win.title })}>{t("Open this folder in a new window (⌥N)")}</KagoMenuItem>

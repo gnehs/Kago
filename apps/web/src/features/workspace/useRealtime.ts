@@ -55,7 +55,7 @@ export function useRealtime(userId: string, onRemoteWorkspaceChange: () => void)
         if ((type === "task.done" || type === "task.failed") && message.userId === userId && message.taskId) announceTask(type, message.taskId, message.error);
         invalidate("tasks");
         if (type === "task.done") invalidate("trash");
-        if (type === "task.done" || type === "task.failed") invalidate("sync-jobs");
+        if (type === "task.done" || type === "task.failed") invalidate("sync-jobs", "convert-jobs");
         // A failed or cancelled move to the Trash leaves items behind, which the fresh listing brings back.
         if (type === "task.done" || type === "task.failed" || message.patch?.status === "cancelled") {
           const { taskId } = message;
