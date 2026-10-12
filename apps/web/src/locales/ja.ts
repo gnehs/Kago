@@ -1096,8 +1096,6 @@ export const ja: Dictionary = {
   "Not a valid name": "使えない名前です",
   "Too long": "長すぎます",
   "Name taken": "名前が重複しています",
-  "Move up": "上へ移動",
-  "Move down": "下へ移動",
   "Reading file info… {done} of {total}": "ファイル情報を読み込み中… {done} / {total}",
   "{count} name can’t be used | {count} names can’t be used": "{count} 件の名前は使えません",
   "No name would change": "変更される名前はありません",

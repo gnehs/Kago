@@ -15,8 +15,9 @@ const comesBefore = (x: number, y: number, rect: Rect) => (x < rect.left - GAP ?
  * Lets the items of a column that wraps be put in another order by dragging one of them. The item follows the
  * pointer and the others make room as it passes; nothing is decided until it is let go, and a press that goes
  * nowhere is still a click. `order` is what to draw: the given order, or the one being tried while a drag is on.
+ * A `list` is one column that does not wrap, where only how far down the pointer is counts.
  */
-export function useDragOrder(ids: string[], onDrop: (ids: string[]) => void) {
+export function useDragOrder(ids: string[], onDrop: (ids: string[]) => void, list = false) {
   const [drag, setDrag] = useState<Drag | null>(null);
   // The drag as the pointer last left it. What is drawn follows a moment behind, and letting go must not wait for it.
   const latest = useRef<Drag | null>(null);
@@ -36,11 +37,12 @@ export function useDragOrder(ids: string[], onDrop: (ids: string[]) => void) {
     if (!element) return;
     element.style.transform = "";
     const rect = element.getBoundingClientRect();
-    element.style.transform = `translate(${drag.x - press.current.grabX - rect.left}px, ${drag.y - press.current.grabY - rect.top}px)`;
+    // In a list it keeps to its column.
+    element.style.transform = `translate(${list ? 0 : drag.x - press.current.grabX - rect.left}px, ${drag.y - press.current.grabY - rect.top}px)`;
     return () => {
       element.style.transform = "";
     };
-  }, [drag]);
+  }, [drag, list]);
 
   /** Where among the others the pointer is: after every one it does not come before. */
   function orderAt(id: string, order: string[], x: number, y: number) {
@@ -48,7 +50,7 @@ export function useDragOrder(ids: string[], onDrop: (ids: string[]) => void) {
     let index = 0;
     for (const other of others) {
       const rect = elements.current.get(other)?.getBoundingClientRect();
-      if (rect && !comesBefore(x, y, rect)) index += 1;
+      if (rect && !comesBefore(list ? rect.left : x, y, rect)) index += 1;
     }
     const next = [...others.slice(0, index), id, ...others.slice(index)];
     return next.every((value, at) => value === order[at]) ? order : next;

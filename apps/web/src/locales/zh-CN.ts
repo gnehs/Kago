@@ -1096,8 +1096,6 @@ export const zhCN: Dictionary = {
   "Not a valid name": "不是有效的名称",
   "Too long": "太长",
   "Name taken": "名称已被使用",
-  "Move up": "上移",
-  "Move down": "下移",
   "Reading file info… {done} of {total}": "正在读取文件信息… {done} / {total}",
   "{count} name can’t be used | {count} names can’t be used": "有 {count} 个名称无法使用",
   "No name would change": "没有名称会改变",

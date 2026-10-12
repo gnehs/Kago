@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueries, type UseQueryResult } from "@tanstack/react-query";
-import { ArrowRight, ChevronDown, ChevronUp, X } from "lucide-react";
+import { ArrowRight, GripVertical, X } from "lucide-react";
 import { create } from "zustand";
 import { api } from "@/api/client";
 import { KagoDialog } from "@/components/kago/dialog";
@@ -9,8 +9,10 @@ import { KagoVirtualList } from "@/components/kago/virtual-list";
 import { Button } from "@/components/ui/button";
 import { Checkbox, Field, Input, Select } from "@/components/ui/input";
 import { t } from "@/lib/i18n";
+import { isInteractiveTarget } from "@/lib/usePointerDrag";
 import { cn } from "@/lib/utils";
 import type { FileItem, ImageMetadata, MediaInfo } from "@/types/kago";
+import { useDragOrder } from "@/features/workspace/useDragOrder";
 import { makePart, partKinds, planRename, readsFrom, renameTemplates, sourcesOf, type PartKind, type PartSource, type RenameInfo, type RenamePart, type RenameProblem, type RenameRow } from "./batchRename";
 
 /** The server renames at most this many at once. */
@@ -78,16 +80,18 @@ function useRenameInfo(rootSlug: string, items: FileItem[], sources: PartSource[
 
 const PROBLEMS: Record<RenameProblem, string> = { empty: t("No name"), invalid: t("Not a valid name"), long: t("Too long"), clash: t("Name taken") };
 
-function PartCard({ part, kind, first, last, onChange, onMove, onRemove }: { part: RenamePart; kind: PartKind; first: boolean; last: boolean; onChange: (key: string, value: string | number | boolean) => void; onMove: (by: -1 | 1) => void; onRemove: () => void }) {
+/** One part of the pattern. It is picked up by its heading, which `drag` listens on, and put down elsewhere in the list. */
+function PartCard({ part, kind, drag, className, onChange, onRemove }: { part: RenamePart; kind: PartKind; drag: ReturnType<ReturnType<typeof useDragOrder>["item"]>; className?: string; onChange: (key: string, value: string | number | boolean) => void; onRemove: () => void }) {
   const fields = kind.fields.filter((field) => field.kind !== "check" || !field.when || field.when(part.options));
   // A part with one thing to set is named by its own heading.
   const bare = fields.length === 1;
+  const { onPointerDown, ...item } = drag;
   return (
-    <li className="flex flex-col gap-1.5 rounded-md bg-elevated p-2 ring-1 ring-line">
-      <div className="flex items-center gap-0.5">
-        <span className="min-w-0 flex-1 truncate pl-0.5 text-xs font-medium text-muted">{kind.label}</span>
-        <KagoIconButton label={t("Move up")} className="size-6" disabled={first} onClick={() => onMove(-1)}><ChevronUp /></KagoIconButton>
-        <KagoIconButton label={t("Move down")} className="size-6" disabled={last} onClick={() => onMove(1)}><ChevronDown /></KagoIconButton>
+    <li className={cn("flex flex-col gap-1.5 rounded-md bg-elevated p-2 ring-1 ring-line data-[dragging]:relative data-[dragging]:z-10 data-[dragging]:shadow-window", className)} {...item}>
+      {/* A press on the cross is not the start of a drag. */}
+      <div className="flex cursor-grab touch-none items-center gap-1 select-none in-data-[dragging]:cursor-grabbing" onPointerDown={(event) => !isInteractiveTarget(event.target) && onPointerDown(event)}>
+        <GripVertical className="size-3.5 shrink-0 text-faint" />
+        <span className="min-w-0 flex-1 truncate text-xs font-medium text-muted">{kind.label}</span>
         <KagoIconButton label={t("Remove")} className="size-6" onClick={onRemove}><X /></KagoIconButton>
       </div>
       {fields.length > 0 ? (
@@ -146,12 +150,9 @@ function BatchRenameForm({ request }: { request: BatchRenameRequest }) {
         ? t("No name would change")
         : t("{count} item will be renamed | {count} items will be renamed", { count: renamed.length }));
 
-  const update = (index: number, next: RenamePart | null) => setParts(parts.flatMap((part, at) => (at === index ? next ?? [] : part)));
-  const move = (index: number, by: -1 | 1) => {
-    const next = [...parts];
-    [next[index], next[index + by]] = [next[index + by]!, next[index]!];
-    setParts(next);
-  };
+  const update = (key: string, next: RenamePart | null) => setParts(parts.flatMap((part) => (part.key === key ? next ?? [] : part)));
+  const inOrder = (keys: string[]) => keys.flatMap((key) => parts.find((part) => part.key === key) ?? []);
+  const reorder = useDragOrder(parts.map((part) => part.key), (keys) => setParts(inOrder(keys)), true);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -170,18 +171,18 @@ function BatchRenameForm({ request }: { request: BatchRenameRequest }) {
           </Select>
           {/* Room around the cards for the rings of what is inside them, which the scrolling would cut off. */}
           <ol className="-m-1 flex min-h-0 flex-1 list-none flex-col gap-1.5 overflow-y-auto p-1">
-            {parts.map((part, index) => {
+            {inOrder(reorder.order).map((part) => {
               const kind = partKinds.find((entry) => entry.type === part.type);
               return kind ? (
                 <PartCard
                   key={part.key}
                   part={part}
                   kind={kind}
-                  first={index === 0}
-                  last={index === parts.length - 1}
-                  onChange={(key, value) => update(index, { ...part, options: { ...part.options, [key]: value } })}
-                  onMove={(by) => move(index, by)}
-                  onRemove={() => update(index, null)}
+                  drag={reorder.item(part.key)}
+                  // The others do not answer to the pointer as the one being dragged passes over them.
+                  className={reorder.draggingId ? "pointer-events-none data-[dragging]:pointer-events-auto" : undefined}
+                  onChange={(key, value) => update(part.key, { ...part, options: { ...part.options, [key]: value } })}
+                  onRemove={() => update(part.key, null)}
                 />
               ) : null;
             })}
