@@ -1,46 +1,24 @@
 import { t } from "@/lib/i18n";
 
-/** Stable diagnostic codes are translated here; process errors and private paths never reach the page. */
+/**
+ * Stable diagnostic codes are translated here; process errors and private paths never reach the page.
+ * Only what went wrong is put into words: a test that passed is a checkmark and needs no sentence.
+ */
 const details: Record<string, string> = {
-  "compatibility.nvidiaDeviceEnumerationUnavailable": t("NVIDIA devices could not be enumerated; individual GPUs were not tested."),
-  "compatibility.vaapiDeviceEnumerationUnavailable": t("VA-API devices could not be enumerated. Only explicitly configured devices can be tested."),
-  "compatibility.capabilityProbeFailed": t("FFmpeg capabilities could not be queried."),
-  "compatibility.passed": t("Generated video processed successfully."),
-  "compatibility.ffmpegMissing": t("FFmpeg could not be started."),
-  "compatibility.encoderUnavailable": t("This FFmpeg build does not include this encoder."),
-  "compatibility.decoderUnavailable": t("This FFmpeg build does not include this decoder."),
-  "compatibility.hardwareUnavailable": t("The graphics device or driver could not be initialized."),
-  "compatibility.hardwareBackendUnavailable": t("This graphics backend is unavailable on the server."),
-  "compatibility.hardwareCodecUnsupported": t("The graphics hardware does not support this codec configuration."),
-  "compatibility.hardwareTestFailed": t("The hardware test failed."),
-  "compatibility.fixtureUnavailable": t("No test video could be generated; decoding was not tested."),
-  "compatibility.encodeFailed": t("FFmpeg could not encode the test video."),
-  "compatibility.decodeFailed": t("FFmpeg could not decode the test video."),
-  "compatibility.outputInvalid": t("The test did not produce valid video frames."),
-  "browser.webCodecsEncodeUnsupported": t("WebCodecs reports this encoding configuration as unsupported."),
-  "browser.webCodecsDecodeUnsupported": t("WebCodecs reports this decoding configuration as unsupported."),
-  "browser.videoTestSourceUnavailable": t("The browser could not create a test frame."),
-  "browser.webCodecsEncoderUnavailable": t("WebCodecs encoding is unavailable in this browser."),
-  "browser.webCodecsEncodeTestPassed": t("A generated 64 × 64 frame was encoded successfully."),
-  "browser.webCodecsEncodeTimedOut": t("The encoding test timed out."),
-  "browser.webCodecsEncodeNoOutput": t("The encoder produced no video data."),
-  "browser.webCodecsEncodeTestFailed": t("The browser could not encode the test frame."),
-  "browser.webCodecsDecodeTestUnavailable": t("No encoded test sample was available for decoding."),
-  "browser.webCodecsDecodeTestPassed": t("The encoded sample was decoded into a video frame."),
-  "browser.webCodecsDecodeTimedOut": t("The decoding test timed out."),
-  "browser.webCodecsDecodeNoOutput": t("The decoder produced no video frames."),
-  "browser.webCodecsDecodeTestFailed": t("The browser could not decode the test sample."),
-  "browser.webCodecsDecodeReportedOnly": t("Decoding support was reported, but no sample was decoded."),
-  "browser.webCodecsEncodeReportedOnly": t("Encoding support was reported, but no frame was encoded."),
-  "browser.codecCapabilityCheckTimedOut": t("The codec capability query timed out."),
-  "browser.codecCapabilityCheckUnavailable": t("The browser could not report this codec capability."),
-  "browser.insecureContext": t("WebCodecs requires HTTPS or localhost."),
-  "browser.mediaCapabilitiesUnavailable": t("This browser does not expose Media Capabilities."),
-  "browser.mediaCapabilitiesQueryUnavailable": t("The browser did not provide a playback capability result."),
-  "browser.mediaCapabilitiesPlaybackSupported": t("The browser reports support for this playback configuration."),
-  "browser.mediaCapabilitiesPlaybackUnsupported": t("The browser reports this playback configuration as unsupported."),
-  "browser.mediaCapabilitiesQueryTimedOut": t("The playback capability query timed out."),
-  "browser.mediaCapabilitiesQueryFailed": t("The playback capability query failed.")
+  "compatibility.nvidiaDeviceEnumerationUnavailable": t("Couldn’t list the NVIDIA GPUs, so they weren’t tested one by one."),
+  "compatibility.vaapiDeviceEnumerationUnavailable": t("Couldn’t list the VA-API devices, so only the ones set by hand were tested."),
+  "compatibility.capabilityProbeFailed": t("Couldn’t ask FFmpeg what it supports."),
+  "compatibility.ffmpegMissing": t("FFmpeg didn’t start."),
+  "compatibility.encoderUnavailable": t("This FFmpeg was built without the encoder."),
+  "compatibility.decoderUnavailable": t("This FFmpeg was built without the decoder."),
+  "compatibility.hardwareUnavailable": t("The GPU or its driver didn’t start."),
+  "compatibility.hardwareBackendUnavailable": t("The server doesn’t have this kind of acceleration."),
+  "compatibility.hardwareCodecUnsupported": t("The GPU doesn’t handle this format."),
+  "compatibility.hardwareTestFailed": t("The GPU failed the test."),
+  "compatibility.fixtureUnavailable": t("No test clip could be made, so decoding wasn’t tested."),
+  "compatibility.encodeFailed": t("FFmpeg couldn’t encode the test clip."),
+  "compatibility.decodeFailed": t("FFmpeg couldn’t decode the test clip."),
+  "compatibility.outputInvalid": t("What came out wasn’t playable video.")
 };
 
 export const compatibilityDetail = (code: string): string | undefined => details[code];

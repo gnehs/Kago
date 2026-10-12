@@ -148,3 +148,66 @@ export function canPlayHdrStream(): boolean {
   if (source) return source.isTypeSupported(type);
   return typeof document !== "undefined" && document.createElement("video").canPlayType(type) !== "";
 }
+
+export type DirectPlayFormat = {
+  id: string;
+  label: string;
+  eightBit: boolean;
+  /** `null` where the format has no 10-bit form. */
+  tenBit: boolean | null;
+};
+
+export type DirectPlaySupport = {
+  video: DirectPlayFormat[];
+  audio: Array<{ id: string; label: string; plays: boolean }>;
+};
+
+type SampleVideo = { codec: string; profile: string; level: number; container: string };
+
+const SAMPLE_VIDEOS: Array<{ id: string; label: string; eightBit: SampleVideo; tenBit: SampleVideo | null }> = [
+  { id: "h264", label: "H.264", eightBit: { codec: "h264", profile: "High", level: 41, container: "mov,mp4" }, tenBit: { codec: "h264", profile: "High 10", level: 51, container: "mov,mp4" } },
+  { id: "hevc", label: "HEVC", eightBit: { codec: "hevc", profile: "Main", level: 120, container: "mov,mp4" }, tenBit: { codec: "hevc", profile: "Main 10", level: 153, container: "mov,mp4" } },
+  { id: "vp8", label: "VP8", eightBit: { codec: "vp8", profile: "", level: 0, container: "matroska,webm" }, tenBit: null },
+  { id: "vp9", label: "VP9", eightBit: { codec: "vp9", profile: "Profile 0", level: 40, container: "matroska,webm" }, tenBit: { codec: "vp9", profile: "Profile 2", level: 40, container: "matroska,webm" } },
+  { id: "av1", label: "AV1", eightBit: { codec: "av1", profile: "Main", level: 8, container: "mov,mp4" }, tenBit: { codec: "av1", profile: "Main", level: 8, container: "mov,mp4" } }
+];
+
+const SAMPLE_AUDIO: Array<{ id: string; label: string }> = [
+  { id: "aac", label: "AAC" },
+  { id: "mp3", label: "MP3" },
+  { id: "opus", label: "Opus" },
+  { id: "vorbis", label: "Vorbis" },
+  { id: "flac", label: "FLAC" },
+  { id: "ac3", label: "AC-3" },
+  { id: "eac3", label: "E-AC-3" }
+];
+
+function sampleFile(video: SampleVideo, bitDepth: 8 | 10, audio?: string): MediaInfo {
+  return {
+    container: video.container,
+    video: { codec: video.codec, profile: video.profile, level: video.level, bitDepth, pixelFormat: bitDepth === 8 ? "yuv420p" : "yuv420p10le" },
+    audio: audio ? [{ codec: audio }] : []
+  } as MediaInfo;
+}
+
+/**
+ * What the player would decide for a typical file of each format: `canDirectPlay` put to made-up files, so the
+ * answers shown in Settings are the ones playback goes by. An audio codec counts where it plays beside a video
+ * the browser takes, in MP4 or in WebM.
+ */
+export function directPlaySupport(canPlayType: CanPlayType = defaultCanPlayType): DirectPlaySupport {
+  const [h264, , , vp9] = SAMPLE_VIDEOS;
+  return {
+    video: SAMPLE_VIDEOS.map(({ id, label, eightBit, tenBit }) => ({
+      id,
+      label,
+      eightBit: canDirectPlay(sampleFile(eightBit, 8), canPlayType),
+      tenBit: tenBit ? canDirectPlay(sampleFile(tenBit, 10), canPlayType) : null
+    })),
+    audio: SAMPLE_AUDIO.map(({ id, label }) => ({
+      id,
+      label,
+      plays: canDirectPlay(sampleFile(h264!.eightBit, 8, id), canPlayType) || canDirectPlay(sampleFile(vp9!.eightBit, 8, id), canPlayType)
+    }))
+  };
+}

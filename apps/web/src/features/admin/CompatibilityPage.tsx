@@ -1,254 +1,230 @@
-import { useEffect, useRef, useState } from "react";
-import { Check, CircleHelp, Cpu, LoaderCircle, Monitor, Play, RefreshCw, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Check, LoaderCircle, Minus, Play, RefreshCw, TriangleAlert, X } from "lucide-react";
 import { api } from "@/api/client";
 import { Card, Page } from "@/components/kago/page";
+import { KagoTooltip } from "@/components/kago/tooltip";
 import { Button } from "@/components/ui/button";
 import { formatDate } from "@/lib/format";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import { runBrowserCompatibility, type BrowserCompatibilityReport } from "./browserCompatibility";
+import { canPlayHdrStream, directPlaySupport } from "@/features/files/videoCapabilities";
 import { compatibilityDetail } from "./compatibilityMessages";
-import { groupServerChecks, type ServerCompatibilityCheck, type ServerCompatibilityReport } from "./serverCompatibility";
+import { summarizeServerChecks, type ServerCompatibilityCheck, type ServerCompatibilityReport } from "./serverCompatibility";
 
-type CheckResult = {
-  id: string;
-  label: string;
-  codec: string;
-  operation: "encode" | "decode" | "playback";
-  status: "passed" | "failed" | "unsupported" | "unavailable";
-  detail: string;
-  evidence?: "reported" | "tested";
-  durationMs?: number | null;
-};
+type Tone = "success" | "warning" | "danger" | "muted";
 
-const statusLabels = {
-  passed: t("Test passed"),
-  failed: t("Test failed"),
-  unsupported: t("Not supported"),
-  unavailable: t("Not tested")
-};
+const tones: Record<Tone, string> = { success: "text-success", warning: "text-warning", danger: "text-danger", muted: "text-muted" };
+const icons: Record<Tone, typeof Check> = { success: Check, warning: TriangleAlert, danger: X, muted: Minus };
 
-/** A checkmark means either a completed test or a capability report; the words always say which. */
-function Result({ check, compact = false }: { check?: CheckResult; compact?: boolean }) {
-  const status = check?.status ?? "unavailable";
-  const Icon = status === "passed" ? Check : status === "unavailable" ? CircleHelp : X;
-  const label = status === "passed" && check?.evidence === "reported" ? t("Reported support") : statusLabels[status];
-  const detail = check ? compatibilityDetail(check.detail) : undefined;
+/** One answer in a table. With `text` the words stand beside the mark; without, they are kept for whoever cannot see it. */
+function Mark({ tone, label, text, hint }: { tone: Tone; label: string; text?: boolean; hint?: string }) {
+  const Icon = icons[tone];
+  const mark = (
+    <span className={cn("inline-flex items-center gap-1.5", tones[tone])}>
+      <Icon aria-hidden="true" className="size-4 shrink-0" />
+      <span className={text ? undefined : "sr-only"}>{label}</span>
+      {hint ? <span className="sr-only">{hint}</span> : null}
+    </span>
+  );
+  return hint || !text ? <KagoTooltip label={hint ?? label}>{mark}</KagoTooltip> : mark;
+}
+
+/** What the card found, in a sentence, ahead of the table that backs it. */
+function Verdict({ tone, children }: { tone: Tone; children: ReactNode }) {
+  const Icon = icons[tone];
   return (
-    <div className="flex flex-col gap-1">
-      <span className={cn("flex items-center gap-1.5 font-medium", status === "passed" ? "text-success" : status === "failed" ? "text-danger" : "text-muted")}>
-        <Icon aria-hidden="true" className="size-4 shrink-0" />
-        {label}
-      </span>
-      {detail && !compact && status !== "passed" ? <span className="text-xs text-muted">{detail}</span> : null}
-      {check?.durationMs != null ? <span className="text-xs text-faint tabular-nums">{t("{milliseconds} ms", { milliseconds: Math.round(check.durationMs) })}</span> : null}
-    </div>
+    <p className="m-0 mb-4 flex items-start gap-2 font-medium">
+      <Icon aria-hidden="true" className={cn("mt-0.5 size-4 shrink-0", tones[tone])} />
+      {children}
+    </p>
   );
 }
 
-function CodecMatrix({ checks, server = false }: { checks: Array<CheckResult & { backend?: string; deviceId?: string | null }>; server?: boolean }) {
-  const rows = new Map<string, { label: string; encode?: CheckResult; decode?: CheckResult }>();
-  for (const check of checks) {
-    if (check.operation === "playback") continue;
-    const key = JSON.stringify([check.backend, check.deviceId, check.codec]);
-    const row = rows.get(key) ?? { label: server ? check.codec : check.label };
-    row[check.operation] = check;
-    rows.set(key, row);
-  }
+function Waiting({ children }: { children: ReactNode }) {
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full table-fixed text-left">
-        <caption className="sr-only">{server ? t("Server encoding and decoding results") : t("Browser encoding and decoding results")}</caption>
-        <thead className="text-xs text-muted">
-          <tr className="border-b border-line">
-            <th scope="col" className="w-1/4 pr-3 pb-2 font-medium">{t("Format")}</th>
-            <th scope="col" className="px-2 pb-2 font-medium">{t("Encoding")}</th>
-            <th scope="col" className="pl-2 pb-2 font-medium">{t("Decoding")}</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-line">
-          {[...rows].map(([key, row]) => (
-            <tr key={key}>
-              <th scope="row" className="py-3 pr-3 align-top font-medium">
-                {row.label}
-              </th>
-              <td className="px-2 py-3 align-top"><Result check={row.encode} /></td>
-              <td className="py-3 pl-2 align-top"><Result check={row.decode} /></td>
+    <p role="status" className="m-0 flex items-center gap-2 text-muted">
+      <LoaderCircle aria-hidden="true" className="size-4 animate-spin motion-reduce:animate-none" />
+      {children}
+    </p>
+  );
+}
+
+const headCell = "pb-2 font-medium";
+const cell = "py-2.5 align-top";
+
+function codecMark(check: ServerCompatibilityCheck | undefined) {
+  if (!check) return <Mark tone="muted" label={t("Not tested")} />;
+  if (check.status === "passed") return <Mark tone="success" label={t("Works")} hint={check.durationMs != null ? t("{milliseconds} ms", { milliseconds: Math.round(check.durationMs) }) : undefined} />;
+  const detail = compatibilityDetail(check.detail);
+  if (check.status === "failed") return <Mark tone="danger" label={t("Failed")} hint={detail} />;
+  return <Mark tone="muted" label={check.status === "unsupported" ? t("Not supported") : t("Not tested")} hint={detail} />;
+}
+
+function ServerResults({ report }: { report: ServerCompatibilityReport }) {
+  const { codecs, devices, missing, hardware, software } = summarizeServerChecks(report.checks);
+  const notes = [...new Set(report.discoveryNotes?.map(compatibilityDetail).filter((note) => note != null))];
+
+  return (
+    <>
+      {!report.ffmpeg.available ? <Verdict tone="danger">{t("FFmpeg is missing, so video can’t be transcoded.")}</Verdict>
+        : hardware.length ? <Verdict tone="success">{t("{devices} can transcode video in hardware.", { devices: hardware.join(t(", ")) })}</Verdict>
+        : software ? <Verdict tone="warning">{t("No hardware acceleration here. Video is transcoded on the CPU.")}</Verdict>
+        : <Verdict tone="danger">{t("This server can’t transcode video.")}</Verdict>}
+      {devices.length ? (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left">
+            <caption className="sr-only">{t("What each device on the server encodes and decodes")}</caption>
+            <thead className="text-xs text-muted">
+              <tr>
+                <th scope="col" rowSpan={2} className={cn(headCell, "border-b border-line pr-3 align-bottom")}>{t("Device")}</th>
+                {codecs.map((codec) => <th key={codec} scope="colgroup" colSpan={2} className="px-2 pb-1 font-medium text-ink">{codec}</th>)}
+              </tr>
+              <tr className="border-b border-line">
+                {codecs.map((codec) => [
+                  <th key={codec + "encode"} scope="col" className={cn(headCell, "w-16 px-2")}>{t("Encode")}</th>,
+                  <th key={codec + "decode"} scope="col" className={cn(headCell, "w-16 px-2")}>{t("Decode")}</th>
+                ])}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line">
+              {devices.map((device) => (
+                <tr key={device.key}>
+                  <th scope="row" className={cn(cell, "pr-3 font-normal")}>
+                    <div className="font-medium">{device.name}</div>
+                    <div className="text-xs text-muted">{device.hardware ? device.backend ?? t("Hardware##transcoding") : t("Software##transcoding")}</div>
+                    {device.problems.map((problem) => (
+                      <div key={problem.id} className="mt-1 text-xs text-danger">
+                        {t("{subject}: {reason}", { subject: `${problem.codec} ${problem.operation === "encode" ? t("Encode") : t("Decode")}`, reason: compatibilityDetail(problem.detail) ?? t("Failed") })}
+                      </div>
+                    ))}
+                  </th>
+                  {codecs.map((codec) => [
+                    <td key={codec + "encode"} className={cn(cell, "px-2")}>{codecMark(device.checks.get(codec + " encode"))}</td>,
+                    <td key={codec + "decode"} className={cn(cell, "px-2")}>{codecMark(device.checks.get(codec + " decode"))}</td>
+                  ])}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+      {missing.length ? <p className="m-0 mt-3 text-xs text-muted">{t("Not on this server: {backends}", { backends: missing.join(t(", ")) })}</p> : null}
+      {notes.map((note) => <p key={note} className="m-0 mt-1 text-xs text-warning">{note}</p>)}
+      <TestedAt date={report.checkedAt} />
+    </>
+  );
+}
+
+function playMark(plays: boolean | null) {
+  if (plays == null) return <span aria-hidden="true" className="text-faint">—</span>;
+  return plays ? <Mark text tone="success" label={t("Plays as is")} /> : <Mark text tone="muted" label={t("Transcoded")} />;
+}
+
+/** Nothing here is measured: these are the answers the player itself goes by when it opens a video. */
+function BrowserResults() {
+  const { video, audio } = useMemo(() => directPlaySupport(), []);
+  const hdr = useMemo(() => canPlayHdrStream(), []);
+  const playable = video.filter((format) => format.eightBit);
+
+  return (
+    <>
+      {playable.length === video.length ? <Verdict tone="success">{t("Plays every common video format as is.")}</Verdict>
+        : playable.length ? <Verdict tone="success">{t("Plays {formats} as is. The server transcodes the rest.", { formats: playable.map((format) => format.label).join(t(", ")) })}</Verdict>
+        : <Verdict tone="warning">{t("Plays no common video format as is. The server transcodes everything.")}</Verdict>}
+      <div className="overflow-x-auto">
+        <table className="w-full table-fixed text-left">
+          <caption className="sr-only">{t("What this browser plays as is")}</caption>
+          <thead className="text-xs text-muted">
+            <tr className="border-b border-line">
+              <th scope="col" className={cn(headCell, "pr-3")}>{t("Format")}</th>
+              <th scope="col" className={cn(headCell, "px-2")}>{t("8-bit")}</th>
+              <th scope="col" className={cn(headCell, "px-2")}>{t("10-bit")}</th>
             </tr>
+          </thead>
+          <tbody className="divide-y divide-line">
+            {video.map((format) => (
+              <tr key={format.id}>
+                <th scope="row" className={cn(cell, "pr-3 font-medium")}>{format.label}</th>
+                <td className={cn(cell, "px-2")}>{playMark(format.eightBit)}</td>
+                <td className={cn(cell, "px-2")}>{playMark(format.tenBit)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <dl className="m-0 grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-2 border-t border-line pt-2.5">
+        <dt className="text-xs font-medium text-muted">{t("Audio")}</dt>
+        <dd className="m-0 flex flex-wrap gap-x-4 gap-y-1">
+          {audio.map((codec) => (
+            <span key={codec.id} className="flex items-center gap-1.5">
+              {codec.label}
+              <Mark tone={codec.plays ? "success" : "muted"} label={codec.plays ? t("Plays as is") : t("Transcoded")} />
+            </span>
           ))}
-        </tbody>
-      </table>
-    </div>
+        </dd>
+        <dt className="text-xs font-medium text-muted">HDR</dt>
+        <dd className="m-0">{hdr ? <Mark text tone="success" label={t("Transcoded video stays HDR")} /> : <Mark text tone="muted" label={t("Transcoded video becomes SDR")} />}</dd>
+      </dl>
+    </>
   );
 }
 
-function ServerDeviceResults({ checks }: { checks: ServerCompatibilityCheck[] }) {
-  return (
-    <div className="flex flex-col gap-5">
-      {groupServerChecks(checks).map(({ key, device, checks: deviceChecks }) => (
-        <section key={key} aria-label={device.deviceLabel ?? device.backend} className="min-w-0">
-          <h3 className="m-0 font-semibold">{device.deviceLabel ?? device.backend}</h3>
-          {device.deviceLabel ? <p className="m-0 mt-0.5 text-xs text-muted">{device.backend}</p> : null}
-          {device.deviceScope === "system" && device.backend === "Apple VideoToolbox" ? <p className="m-0 mt-0.5 text-xs text-muted">{t("System-selected device")}</p> : null}
-          <div className="mt-3"><CodecMatrix checks={deviceChecks} server /></div>
-        </section>
-      ))}
-    </div>
-  );
+function TestedAt({ date }: { date: string }) {
+  return <p className="m-0 mt-3 text-xs text-faint">{t("Tested {date}", { date: formatDate(Date.parse(date)) })}</p>;
 }
 
-function CapabilityFlag({ value }: { value: boolean | null | undefined }) {
-  return <span className={value === true ? "text-success" : "text-muted"}>{value == null ? t("Unknown") : value ? t("Yes") : t("No")}</span>;
-}
-
-function PlaybackMatrix({ report }: { report: BrowserCompatibilityReport }) {
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full table-fixed text-left">
-        <caption className="sr-only">{t("Browser playback capability reports")}</caption>
-        <thead className="text-xs text-muted">
-          <tr className="border-b border-line">
-            <th scope="col" className="w-[35%] pr-3 pb-2 font-medium">{t("Format")}</th>
-            <th scope="col" className="w-[35%] px-2 pb-2 font-medium">{t("Playback")}</th>
-            <th scope="col" className="px-2 pb-2 font-medium">{t("Smooth")}</th>
-            <th scope="col" className="pl-2 pb-2 font-medium">{t("Power efficient")}</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-line">
-          {report.checks.filter((check) => check.operation === "playback").map((check) => (
-            <tr key={check.id}>
-              <th scope="row" className="py-3 pr-3 align-top font-medium">{check.label}</th>
-              <td className="px-2 py-3 align-top"><Result check={check} compact={check.status === "passed" || check.status === "unsupported"} /></td>
-              <td className="px-2 py-3 align-top"><CapabilityFlag value={check.smooth} /></td>
-              <td className="py-3 pl-2 align-top"><CapabilityFlag value={check.powerEfficient} /></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function CheckedAt({ date }: { date: string }) {
-  return <p className="m-0 mt-3 text-xs text-faint">{t("Last checked: {date}", { date: formatDate(Date.parse(date)) })}</p>;
-}
-
-/** Synthetic tests are started deliberately: opening Settings should not compete with a video playing. */
+/** The server's test is started deliberately: opening Settings should not compete with a video being transcoded. */
 export function CompatibilityPage({ isAdmin }: { isAdmin: boolean }) {
-  const [browser, setBrowser] = useState<BrowserCompatibilityReport | null>(null);
   const [server, setServer] = useState<ServerCompatibilityReport | null>(null);
-  const [browserError, setBrowserError] = useState(false);
-  const [serverError, setServerError] = useState<string | null>(null);
-  const [browserRunning, setBrowserRunning] = useState(false);
-  const [serverRunning, setServerRunning] = useState(false);
-  const [progress, setProgress] = useState({ completed: 0, total: 0 });
-  const browserRun = useRef<AbortController | null>(null);
-  const serverRun = useRef<AbortController | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [running, setRunning] = useState(false);
+  const run = useRef<AbortController | null>(null);
 
-  useEffect(() => () => {
-    browserRun.current?.abort();
-    serverRun.current?.abort();
-  }, []);
+  useEffect(() => () => run.current?.abort(), []);
 
-  const checkBrowser = async () => {
-    if (browserRun.current) return;
+  const test = async () => {
+    if (run.current) return;
     const controller = new AbortController();
-    browserRun.current = controller;
-    setBrowserRunning(true);
-    setBrowserError(false);
-    setBrowser(null);
-    setProgress({ completed: 0, total: 0 });
-    try {
-      const report = await runBrowserCompatibility(controller.signal, (completed, total) => {
-        if (!controller.signal.aborted) setProgress({ completed, total });
-      });
-      if (!controller.signal.aborted) setBrowser(report);
-    } catch {
-      if (!controller.signal.aborted) setBrowserError(true);
-    } finally {
-      if (!controller.signal.aborted) setBrowserRunning(false);
-      if (browserRun.current === controller) browserRun.current = null;
-    }
-  };
-
-  const checkServer = async () => {
-    if (!isAdmin || serverRun.current) return;
-    const controller = new AbortController();
-    serverRun.current = controller;
-    setServerRunning(true);
-    setServerError(null);
+    run.current = controller;
+    setRunning(true);
+    setError(null);
     setServer(null);
     try {
       const report = await api<ServerCompatibilityReport>("/api/compatibility/server", { method: "POST", signal: controller.signal });
       if (!controller.signal.aborted) setServer(report);
-    } catch (error) {
-      if (!controller.signal.aborted) setServerError(error instanceof Error ? error.message : t("Couldn’t check the server"));
+    } catch (failure) {
+      if (!controller.signal.aborted) setError(failure instanceof Error ? failure.message : t("Couldn’t test the server"));
     } finally {
-      if (!controller.signal.aborted) setServerRunning(false);
-      if (serverRun.current === controller) serverRun.current = null;
+      if (!controller.signal.aborted) setRunning(false);
+      if (run.current === controller) run.current = null;
     }
   };
 
-  const running = browserRunning || serverRunning;
-  const serverPassed = server?.checks.filter((check) => check.hardware && check.status === "passed").length ?? 0;
-  const browserPassed = browser?.checks.filter((check) => check.evidence === "tested" && check.status === "passed").length ?? 0;
+  const tested = server != null || error != null;
 
   return (
-    <Page title={t("Compatibility")} description={t("Check video encoding, decoding and playback on your server and in this browser.")}>
-      <Card>
-        <div className="flex flex-wrap items-start gap-4">
-          <div className="min-w-48 flex-1">
-            <h2 className="m-0 font-semibold">{t("Your media capabilities")}</h2>
-          </div>
-          <Button variant="default" disabled={running} onClick={() => { void checkBrowser(); void checkServer(); }}>
-            {running ? <LoaderCircle aria-hidden="true" className="animate-spin motion-reduce:animate-none" /> : browser || server ? <RefreshCw aria-hidden="true" /> : <Play aria-hidden="true" />}
-            {running ? t("Checking…") : browser || server ? t("Check again") : t("Run checks")}
-          </Button>
-        </div>
-        <div className="mt-4 grid gap-4 border-t border-line pt-4 @sm:grid-cols-2" aria-live="polite" aria-atomic="true">
-          <div className="flex items-start gap-2.5">
-            <Cpu aria-hidden="true" className="mt-0.5 text-muted" />
-            <div>
-              <div className="font-medium">{t("Server graphics")}</div>
-              <div className="mt-0.5 text-xs text-muted">{!isAdmin ? t("An administrator can run server checks.") : serverRunning ? t("Testing the server’s encoders and decoders…") : server ? t("{count} hardware checks passed", { count: serverPassed }) : serverError ? t("Server check failed") : t("Ready to check")}</div>
-            </div>
-          </div>
-          <div className="flex items-start gap-2.5">
-            <Monitor aria-hidden="true" className="mt-0.5 text-muted" />
-            <div>
-              <div className="font-medium">{t("This browser")}</div>
-              <div className="mt-0.5 text-xs text-muted">{browserRunning ? progress.total ? t("Checking {completed} of {total}…", progress) : t("Checking…") : browser ? t("{count} codec tests passed", { count: browserPassed }) : browserError ? t("Browser check failed") : t("Ready to check")}</div>
-            </div>
-          </div>
-        </div>
-      </Card>
-
-      <Card title={t("Server graphics")} action={isAdmin ? <Button disabled={serverRunning} onClick={() => void checkServer()}>{serverRunning ? t("Checking…") : t("Check server")}</Button> : undefined}>
-        {!isAdmin ? <p className="m-0 text-muted">{t("An administrator can run server checks.")}</p> : serverError ? <p role="alert" className="m-0 text-danger">{serverError}</p> : server ? (
-          <>
-            <p className="m-0 mb-3 text-xs text-muted">{server.ffmpeg.available ? `FFmpeg ${server.ffmpeg.version ?? ""}` : t("FFmpeg is not available")}</p>
-            {server.discoveryNotes?.map((note) => compatibilityDetail(note) ? <p key={note} className="m-0 mb-3 text-xs text-warning">{compatibilityDetail(note)}</p> : null)}
-            <ServerDeviceResults checks={server.checks} />
-            <CheckedAt date={server.checkedAt} />
-          </>
-        ) : <p className="m-0 text-muted" role="status">{serverRunning ? t("Testing the server’s encoders and decoders…") : t("Run a check to see hardware results and the CPU fallback.")}</p>}
-      </Card>
-
-      <Card title={t("Browser encoding and decoding")} action={<Button disabled={browserRunning} onClick={() => void checkBrowser()}>{browserRunning ? t("Checking…") : t("Check browser")}</Button>}>
-        {browserError ? <p role="alert" className="m-0 text-danger">{t("Couldn’t check this browser. Try again.")}</p> : browser ? (
-          <>
-            {!browser.secureContext ? <p className="m-0 mb-3 text-warning">{t("Open Kago over HTTPS or localhost to enable WebCodecs checks.")}</p> : null}
-            <CodecMatrix checks={browser.checks} />
-            <CheckedAt date={browser.checkedAt} />
-          </>
-        ) : <p className="m-0 text-muted" role="status">{browserRunning ? t("Checking browser codecs…") : t("Run a check to see which codecs work in this browser.")}</p>}
-      </Card>
-
-      {browser ? (
-        <Card title={t("Browser playback")}>
-          <PlaybackMatrix report={browser} />
+    <Page
+      title={t("Transcoding test")}
+      description={isAdmin ? t("See what video the server can transcode, and what this browser plays as is.") : t("See what video this browser plays as is.")}
+      actions={isAdmin ? (
+        <Button variant={tested || running ? "outline" : "default"} disabled={running} onClick={() => void test()}>
+          {running ? <LoaderCircle aria-hidden="true" className="animate-spin motion-reduce:animate-none" /> : tested ? <RefreshCw aria-hidden="true" /> : <Play aria-hidden="true" />}
+          {running ? t("Testing…") : tested ? t("Run again") : t("Test the server")}
+        </Button>
+      ) : undefined}
+    >
+      {isAdmin ? (
+        <Card title={t("Server")} description={server?.ffmpeg.version ? `FFmpeg ${server.ffmpeg.version}` : undefined}>
+          {running ? <Waiting>{t("Transcoding a test clip on every device…")}</Waiting>
+            : error ? <p role="alert" className="m-0 text-danger">{error}</p>
+            : server ? <ServerResults report={server} />
+            : <p className="m-0 text-muted">{t("Not tested yet. Every device on the server encodes and decodes a short generated clip, which takes a few seconds.")}</p>}
         </Card>
       ) : null}
+      <Card title={t("This browser")}>
+        <BrowserResults />
+      </Card>
+      {!isAdmin ? <p className="m-0 text-xs text-muted">{t("Only an administrator can test the server.")}</p> : null}
     </Page>
   );
 }

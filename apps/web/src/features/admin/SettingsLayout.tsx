@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { CircleUserRound, Fingerprint, HardDrive, Info, KeyRound, LayoutGrid, ListChecks, RefreshCw, ScrollText, SlidersHorizontal, UserRound, UsersRound } from "lucide-react";
+import { CircleUserRound, Clapperboard, Fingerprint, HardDrive, Info, KeyRound, LayoutGrid, RefreshCw, ScrollText, SlidersHorizontal, UserRound, UsersRound } from "lucide-react";
 import { KagoDivider } from "@/components/kago/divider";
 import { cn } from "@/lib/utils";
 import type { SettingsSection } from "@/stores/workspace";
@@ -31,7 +31,7 @@ const groups: Array<{ label: string; adminOnly?: boolean; sections: Array<{ sect
   {
     label: "Kago",
     sections: [
-      { section: "compatibility", label: t("Compatibility"), icon: <ListChecks /> },
+      { section: "compatibility", label: t("Transcoding test"), icon: <Clapperboard /> },
       { section: "about", label: t("About"), icon: <Info /> }
     ]
   }

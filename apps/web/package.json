@@ -10,7 +10,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit",
     "test:video": "node --test scripts/test-direct-playback.mjs scripts/test-video-capabilities.mjs scripts/test-playback-recovery.mjs scripts/test-seek-prewarm.mjs",
-    "test:compatibility": "node --test scripts/test-browser-compatibility.mjs scripts/test-server-compatibility-groups.mjs",
+    "test:compatibility": "node --test scripts/test-server-compatibility-groups.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

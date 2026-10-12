@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { canDirectPlay, canPlayHdrStream } from '../src/features/files/videoCapabilities.ts';
+import { canDirectPlay, canPlayHdrStream, directPlaySupport } from '../src/features/files/videoCapabilities.ts';
 
 function media({
   codec = 'h264',
@@ -150,4 +150,28 @@ test('canPlayHdrStream checks the exact Main 10 HDR type through Media Source Ex
 
   assert.equal(canPlayHdrStream(), true);
   assert.deepEqual(calls, ['video/mp4; codecs="hvc1.2.4.L153.B0"']);
+});
+
+test('the settings summary asks the browser exactly what playback would ask', () => {
+  const asked = [];
+  const support = directPlaySupport((type) => { asked.push(type); return 'probably'; });
+  assert.deepEqual(support.video.map(format => [format.id, format.eightBit, format.tenBit]), [
+    ['h264', true, false],
+    ['hevc', true, true],
+    ['vp8', true, null],
+    ['vp9', true, true],
+    ['av1', true, true],
+  ]);
+  assert.ok(asked.includes('video/mp4; codecs="avc1.640029"'));
+  assert.ok(asked.includes('video/mp4; codecs="hvc1.2.4.L153"'));
+  assert.ok(asked.includes('video/webm; codecs="vp09.02.40.10"'));
+  assert.ok(asked.includes('video/mp4; codecs="av01.0.08M.10"'));
+  assert.ok(support.audio.every(codec => codec.plays));
+});
+
+test('the settings summary reports what the browser refuses, one format at a time', () => {
+  const support = directPlaySupport((type) => /hvc1|av01|ac-3|ec-3|vorbis/.test(type) ? '' : 'maybe');
+  assert.deepEqual(support.video.filter(format => format.eightBit).map(format => format.id), ['h264', 'vp8', 'vp9']);
+  assert.equal(support.video.find(format => format.id === 'vp9').tenBit, true);
+  assert.deepEqual(support.audio.filter(codec => !codec.plays).map(codec => codec.id), ['vorbis', 'ac3', 'eac3']);
 });
