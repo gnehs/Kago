@@ -29,6 +29,9 @@
 - **Uploads of any size**: drop files or whole folders to upload them. They are streamed straight to disk, with progress, speed and time remaining.
 - **Remote locations**: folders on SMB, SFTP, WebDAV and FTP can be added as locations and browsed, played and shared just like local ones. The container needs no extra privileges.
 - **Sync**: sync folders between locations, by hand or on a schedule.
+- **Converting**: convert videos, music and pictures from the right-click menu, across kinds too (a video's sound or a GIF of it, a GIF into a video). A change of container alone, such as mkv to mp4, encodes nothing again and takes moments; encoder, CRF and frame rate are tucked under Advanced. Hardware acceleration is supported.
+- **Auto-convert**: drop files into an input folder and they turn up converted at the same level of the destination. It can watch the folder, copy the destination's folder structure, send the original when converting made it no smaller, and delete the source when it is done.
+- **MKV track editor**: without encoding anything again, choose the audio and subtitle tracks to keep, pack in audio and subtitle files, and save a new MKV.
 - **App shortcuts**: put the other services on your NAS (Jellyfin, Immich, Home Assistant…) on the desktop and open them in a new tab with one click. Type a name and icons are suggested from Dashboard Icons and selfh.st Icons, or upload your own. An administrator can put a shortcut on everyone's desktop.
 - **Tags**: colored tags are kept on the files themselves, and each person keeps a list of the ones they use most. Every color has a shape of its own, so tags can be told apart without telling the colors apart.
 - **Trash**: deleted files go to the Trash first and can be restored. Each location keeps its Trash in a hidden `.kago-trash` folder at its own top, so deleting never copies anything to another disk.
@@ -116,6 +119,28 @@ Settings → Sync stores sync jobs: bring the contents of one folder to another,
 - Creating and running a sync needs View permission for the source's location and Edit permission for the destination's. A scheduled sync runs as the person who created it; when that person is disabled or loses permission, the run is skipped and noted in the audit log.
 - Schedules follow the server's time zone, which you can set with the `TZ` environment variable (for example `TZ=Asia/Taipei`).
 
+### Converting, auto-convert and the MKV track editor
+
+**Converting.** Right-click a video, a piece of music or a picture and choose "Convert…"; several files of the same kind can be converted at once. All you have to choose is the format, and for a video the resolution (it is only ever made smaller, never enlarged). The new file goes in the same folder and the original is left as it is.
+
+- A video can become MP4, MKV, MOV or WebM, give up just its sound, or be made into a GIF; a GIF can become a video. Music can become MP3, M4A, FLAC, Opus, Ogg or WAV, and pictures JPEG, PNG, WebP, AVIF or GIF. Formats the server's ffmpeg can't make aren't offered.
+- When only the container changes (mkv to mp4, say), the picture and sound the new format can hold are moved over untouched, which loses nothing and takes moments; only a stream it can't hold is encoded again. Text subtitles are carried over in the new container's own form, and image subtitles survive only in MKV.
+- Under "Advanced" you can pick the video encoder (H.264, H.265, AV1, VP9, or no re-encoding), the quality (CRF), the frame rate, and the audio encoder and bitrate. A 10-bit video that is encoded again uses H.265 and stays 10-bit by default, which is how HDR survives.
+
+**Auto-convert.** "Settings → Auto-convert" keeps auto-converts: name an input folder and a destination, and whatever is dropped into the input folder turns up converted in the destination, in the same subfolder it was dropped in. Right-click any folder and choose "Auto-convert into this folder…" to start one with that folder as the destination.
+
+- **Copy the folder structure**: makes every folder under the destination (folders only, no files) in the input folder, so that a file dropped at some level of the input folder lands at the same level of the destination. It can be ticked when the auto-convert is created, and done again later from its row's menu.
+- **Watching**: when on, the input folder is looked at every 30 seconds, and a file is picked up once its size has stopped changing, so one that is still being copied in isn't converted half-written. When off, files are only processed when you press "Run now".
+- **No smaller after converting**: you can have the original sent to the destination instead, rather than keeping the larger of the two.
+- **Other files**: by default only media that suits the format is picked up (videos and GIFs for a video format); tick the option to bring subtitles, covers and the like along as well.
+- **Once a file is done**: leave it in the input folder, move it to the Trash, or delete it. A file that is left is not processed twice unless it changes.
+- A file that fails stays where it is and is remembered, and is tried again only when it changes or the auto-convert is run by hand, not every 30 seconds.
+- The input folder and the destination can't contain one another. An auto-convert runs as the person who created it, and needs View permission for the input folder (Edit when it removes its sources) and Edit permission for the destination.
+
+**MKV track editor.** Right-click a video and choose "Edit tracks…" to tick the video, audio and subtitle tracks to keep, change their order, language, title, default and forced flags, add audio and subtitle files (`.srt`, `.ass`, `.vtt`, `.sup`) from the same folder, and save the result as a new MKV. Nothing is encoded again, so the picture and sound stay exactly as they are. A language in a file's name (`film.zh-TW.srt`) is filled in for you. Subtitle files should be UTF-8.
+
+Converting and repacking are background tasks, with progress, cancelling and results in the task list. They wait in a queue of their own and run one at a time, so a long conversion doesn't hold up copying and moving.
+
 ### Single sign-on (OIDC)
 
 Kago can sign people in through a standard OpenID Connect identity provider: Pocket ID, Authentik, Keycloak and the like, with whatever the provider offers for signing in (passkeys, for example). Kago is only ever the client and issues no identities of its own; the provider decides who someone is, and what they may do stays with Kago's users, groups and permissions.
@@ -200,6 +225,8 @@ At startup Kago actually encodes a short clip to choose an encoder, in the order
 | `TRANSCODE_HWACCEL` | `auto` | `auto`, `nvenc`, `vaapi` or `none` (software only). Falls back to software when the chosen encoder isn't available |
 | `TRANSCODE_VAAPI_DEVICE` | automatic | The render node VAAPI uses, for example `/dev/dri/renderD129`; when unset, each `/dev/dri/renderD*` is tried in turn |
 | `FFMPEG_PATH` / `FFPROBE_PATH` | bundled | Use a different ffmpeg binary |
+
+**Converting files uses the GPU too.** Converting from the right-click menu and auto-convert (see [Converting, auto-convert and the MKV track editor](#converting-auto-convert-and-the-mkv-track-editor)) decode on the same GPU, and encode there whichever of H.264, H.265 and AV1 it can make; the rest (VP9, for one) are still encoded on the CPU. Detection happens the first time converting is used, and what was found is in the log as `conversions use ...`, and the two variables above apply here as well. Encoding on a GPU is much faster, but files come out larger than software encoding at the same quality; when size matters, untick "Use hardware acceleration" under Advanced when converting. The CRF you enter is translated to the GPU's own quality setting, so the result is only close. When the GPU can't handle a particular file, it is done again with software encoding automatically.
 
 The integrated GPU's render node belongs to the host's `render` / `video` groups, and the entrypoint adds `PUID` to them automatically; if you start the container with `--user`, add `--group-add` yourself. Transcoding scratch files live in `/app-data/temp/transcode` and are removed when the window is closed or after a period of inactivity.
 

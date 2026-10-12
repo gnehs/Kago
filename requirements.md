@@ -52,7 +52,7 @@ Kago 的使用體驗接近瀏覽器中的桌面檔案管理環境。使用者登
 最初列為非目標、後來做了的：
 
 ```txt
-影片轉檔
+影片轉檔（播放時即時轉，以及把檔案轉成另一種格式）
 單一登入（OIDC）
 檔案標籤的讀寫
 WebDAV（作為遠端位置的一種）
@@ -161,7 +161,7 @@ Kago container
   ├─ WebSocket event server（/ws）
   ├─ Worker manager
   ├─ SQLite database via node:sqlite
-  ├─ Task worker（worker thread）
+  ├─ Task worker：files（worker thread）
   │   ├─ copy
   │   ├─ move
   │   ├─ delete-to-trash
@@ -171,8 +171,12 @@ Kago container
   │   ├─ extract
   │   ├─ sync
   │   └─ thumbnail
+  ├─ Task worker：media（worker thread）
+  │   ├─ convert
+  │   └─ remux
   ├─ Thumbnail worker（worker thread）
   ├─ Sync scheduler
+  ├─ Auto-convert watcher
   ├─ rclone daemon（遠端位置）
   ├─ ffmpeg / ffprobe（轉檔、媒體資訊）
   ├─ /data
@@ -316,6 +320,7 @@ Kago 不使用 URL 表示檔案路徑。
 /_kago/account
 /_kago/apps
 /_kago/sync
+/_kago/convert
 /_kago/about
 /_kago/admin/locations
 /_kago/admin/users
@@ -1717,6 +1722,40 @@ ON sync_runs(job_id, started_at);
 
 見 §42。`sync_runs` 是每筆同步工作較早的執行結果，在它們的 task 被清掉之後仍然留著。
 
+### convert_jobs
+
+```sql
+CREATE TABLE convert_jobs (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  input_json TEXT NOT NULL,
+  destination_json TEXT NOT NULL,
+  spec_json TEXT NOT NULL,
+  options_json TEXT NOT NULL DEFAULT '{}',
+  watch INTEGER NOT NULL DEFAULT 1,
+  last_run_at INTEGER,
+  last_task_id TEXT,
+  created_by TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE convert_job_files (
+  job_id TEXT NOT NULL,
+  path TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  mtime_ms INTEGER NOT NULL,
+  status TEXT NOT NULL,
+  output TEXT,
+  done_at INTEGER NOT NULL,
+  PRIMARY KEY (job_id, path),
+  FOREIGN KEY (job_id) REFERENCES convert_jobs(id) ON DELETE CASCADE
+);
+```
+
+見 §42-1。`convert_job_files` 記的是自動轉檔已經處理過、還留在輸入資料夾裡的檔案，以及當時的大小與修改時間；之後變了的檔案算是新的。`status` 是 `done`、`copied`（送過去的是原始檔案）或 `failed`。
+
 ### external_apps
 
 桌面上的應用程式捷徑。`owner_id` 是 NULL 的捷徑由管理員放到所有人的桌面上。
@@ -1948,6 +1987,8 @@ download zip
 extract
 sync
 thumbnail generation
+convert
+remux
 ```
 
 前端送出：
@@ -1956,7 +1997,7 @@ thumbnail generation
 POST /api/tasks
 ```
 
-`sync` 不從這裡建立，由同步工作建立（見 §42）。
+`sync` 不從這裡建立，由同步工作建立（見 §42）。`convert` 與 `remux` 也不從這裡建立，各有自己的端點（見 §42-1）。
 
 後端只建立任務，不等待任務完成。
 
@@ -2023,7 +2064,7 @@ container 啟動時，所有 `running` task 必須標成 `interrupted`。
 
 ## 37. Worker 行為
 
-任務由一個 task worker（worker thread）執行，縮圖另外有自己的 worker，都不佔用處理 HTTP 的主執行緒。
+任務排成兩條佇列，各由一個 task worker（worker thread）執行，一次一個：`media` 是 `convert` 與 `remux`，`files` 是其餘所有任務。轉檔動輒幾個小時，分開排才不會擋住幾分鐘就能做完的複製與搬移。縮圖另外有自己的 worker。都不佔用處理 HTTP 的主執行緒。
 
 worker 執行前必須：
 
@@ -2346,6 +2387,134 @@ GET    /api/sync-jobs/:id/runs
 GET    /api/sync-jobs/:id/trial
 ```
 
+## 42-1. 轉檔
+
+三件事共用同一套 ffmpeg 參數（`lib/convert.ts`）與同一個服務（`services/convert.service.ts`）：使用者挑檔案轉檔、存起來的自動轉檔，以及把軌道重新包成 MKV。它們都是 task（`convert`、`remux`），但不從 `POST /api/tasks` 建立。
+
+### 轉檔規格
+
+```ts
+type ConvertSpec = {
+  format: string;                 // 新檔名的副檔名，也決定種類
+  height: number | null;          // 影片的最大高度，或圖片的最長邊；只縮小不放大
+  videoCodec: "auto" | "copy" | "h264" | "hevc" | "av1" | "vp9";
+  crf: number | null;             // 編碼器自己的刻度，null 用各編碼器的預設
+  fps: number | null;
+  audioCodec: "auto" | "copy" | "aac" | "opus" | "mp3" | "flac" | "ac3";
+  audioBitrate: number | null;    // kbps
+  quality: number | null;         // JPEG / WebP / AVIF，1 到 100
+  hardware: boolean;              // 預設 true
+};
+```
+
+```txt
+影片  mp4 mkv mov webm
+音訊  mp3 m4a flac opus ogg wav
+圖片  jpg png webp avif gif
+```
+
+只有 `format` 必填。介面上只露出格式與解析度，其餘收在「進階」。
+
+`videoCodec: "auto"` 的規則：沒有要求縮小、改影格率或指定 CRF，而且新容器裝得下原本的編碼，就直接搬過去（`-c:v copy`）；否則重新編碼，WebM 用 VP9，10-bit 的來源用 H.265 並維持 10-bit，其餘用 H.264。`audioCodec: "auto"` 同理，每一條音軌各自判斷，裝不下的轉成 AAC（WebM 是 Opus）。
+
+字幕：MKV 全部照搬（`mov_text` 轉成 SRT），MP4 / MOV 只留文字字幕並轉成 `mov_text`，WebM 轉成 WebVTT。MKV 另外保留附件（字型）。
+
+跨種類：影片可以轉成音訊格式（取第一條音軌）、GIF 或單張圖片；GIF 可以轉成影片格式。
+
+`GET /api/convert/support` 回報這台伺服器做得出哪些格式與編碼（看 `ffmpeg -encoders`），以及有沒有可用的 GPU；介面不列出做不出來的。
+
+交給 ffmpeg 的來源一律經過 `guardedInput`，只收 `MEDIA_FORMATS` 與 `PICTURE_FORMATS`；重新打包時外部字幕只收 `SUBTITLE_FORMATS`。
+
+### 寫入
+
+輸出先寫到暫存檔，完成後才改名到定位：本機位置是目的地資料夾裡的 `.kago-convert-*`（`isSystemFile` 會把它從列表藏起來，改名不必跨磁碟），遠端位置是 `/app-data/temp/convert`，完成後經 rclone 上傳。取消或失敗時暫存檔會刪除。
+
+新檔名是來源的主檔名加上新的副檔名；目的地已有同名的檔案時加上 `(2)`、`(3)`，不覆蓋任何東西。
+
+### 硬體加速
+
+`lib/convert-accel.ts` 在第一次用到時偵測，順序是 NVENC → VAAPI（每個 render node）→ VideoToolbox，每一種編碼（H.264、H.265、AV1）各試編一小段，留下第一個至少做得出一種的裝置。沿用 `TRANSCODE_HWACCEL` 與 `TRANSCODE_VAAPI_DEVICE`。
+
+`hardware` 為 true 而且影片要重新編碼時：解碼交給 GPU（畫面回到系統記憶體做濾鏡，GPU 解不了的來源會安靜地退回 CPU）；所選的編碼 GPU 做得出來就在 GPU 上編，否則用軟體編碼器。CRF 換算成各裝置的品質參數（NVENC `-cq`、VAAPI `-qp`、VideoToolbox `-q:v`），只是相近。GPU 那一次失敗時，同一個檔案以軟體重做一次。
+
+### 自動轉檔
+
+```ts
+type ConvertJob = {
+  name: string;
+  input: { rootSlug: string; path: string };
+  destination: { rootSlug: string; path: string };
+  spec: ConvertSpec;
+  options: {
+    keepSmaller: boolean;               // 轉完沒有比較小時，改送原始檔案
+    after: "keep" | "trash" | "delete"; // 來源檔案處理完之後
+    copyOthers: boolean;                // 不是媒體的檔案也帶過去
+  };
+  watch: boolean;
+};
+```
+
+每一次執行是一個 `convert` task，`destination` 欄位裡帶著 `job`。執行時走過整個輸入資料夾（略過以 `.` 開頭與系統檔案），挑出：
+
+```txt
+符合格式種類的檔案（影片格式：影片與 GIF；音訊格式：音訊；圖片格式：圖片）
+copyOthers 開啟時的其餘檔案（原樣複製）
+convert_job_files 裡沒有、或大小與修改時間已經不同的
+修改時間早於 20 秒前的
+```
+
+輸出放在目的地底下與來源相同的相對路徑，缺的資料夾逐層建立。
+
+`after` 是 `keep` 時，處理過的檔案記在 `convert_job_files`，之後不再處理；`trash` 走位置自己的垃圾桶，`delete` 直接刪除。失敗的檔案同樣記下來（`status = 'failed'`），直到它被改過或有人手動執行才再試；只要有一個失敗，那次 task 就以失敗結束。
+
+**監看**（`watch`）：主執行緒每 30 秒看一次每個開啟監看的工作，有檔案在等、而且大小與上一次看的時候相同，就以建立者的身分排入一次執行。上一次執行還沒結束時不重複排。建立者被停用、資料夾不見或失去權限時略過，原因寫進 audit log 一次。
+
+**複製資料夾結構**：把目的地底下的每一個資料夾建到輸入資料夾，不含檔案，最多 20,000 個。
+
+輸入資料夾與目的地在同一個位置時不能互相包含（輸出會被當成輸入）。改了輸入資料夾或轉檔規格的工作，`convert_job_files` 會清空。
+
+### 重新打包（MKV 軌道編輯）
+
+```ts
+type RemuxInput = {
+  source: { rootSlug: string; path: string };
+  name: string;                 // 新檔名，放在來源旁邊；已存在時拒絕
+  title?: string;
+  tracks: Array<
+    | { from: "source"; kind: "video" | "audio" | "subtitle"; index: number }  // 在同種類的軌道裡排第幾
+    | { from: "file"; kind: "audio" | "subtitle"; file: { rootSlug: string; path: string } }
+  > /* 每一條另有 language、title、default、forced */;
+  attachments: boolean;
+  chapters: boolean;
+};
+```
+
+全部 `-c copy`，只有 `mov_text` 字幕轉成 SRT。沒有送出 `language` 或 `title` 的軌道保留原本的。外部檔案各取第一條音軌或字幕。
+
+### 權限
+
+```txt
+轉檔      來源的檢視權限、目的地資料夾的編輯權限
+自動轉檔  輸入資料夾的檢視權限（after 不是 keep 時是編輯權限）、目的地的編輯權限
+重新打包  來源與外部檔案的檢視權限、來源所在資料夾的編輯權限
+```
+
+建立時檢查一次，worker 執行時再檢查一次。自動轉檔只有建立者與 ADMIN 看得到、改得了。
+
+### API
+
+```txt
+GET    /api/convert/support
+POST   /api/convert                    { sources, destination, spec }
+POST   /api/remux
+GET    /api/convert-jobs
+POST   /api/convert-jobs
+PUT    /api/convert-jobs/:id
+DELETE /api/convert-jobs/:id
+POST   /api/convert-jobs/:id/run       手動執行，之前失敗的檔案會再試
+POST   /api/convert-jobs/:id/structure 複製資料夾結構
+```
+
 ## 43. API 規格
 
 所有路由都實作在 `apps/server/src/app.ts`，輸入一律以 Zod 驗證。除了登入、初始化與公開分享（`/s/*`）以外都需要登入；標示「ADMIN」的只有管理員能呼叫。
@@ -2528,6 +2697,10 @@ DELETE /api/roots/:id               ADMIN：只能移除遠端位置
 ### Sync
 
 見 §42。
+
+### Convert
+
+見 §42-1。
 
 ### 應用程式捷徑
 
@@ -2737,6 +2910,13 @@ Kago 不會從使用者填的網址抓東西，唯一的例外是確認它允不
   sync_job_update
   sync_job_delete
   sync_job_skipped
+  convert
+  remux
+  convert_structure
+  convert_job_create
+  convert_job_update
+  convert_job_delete
+  convert_job_skipped
 
 分享
   create_share
@@ -2821,6 +3001,8 @@ MVP 之後加入的：
 影片即時轉檔、HDR、硬體加速、字幕與音軌
 遠端位置（SMB、SFTP、WebDAV、FTP）
 同步工作與排程
+檔案轉檔、自動轉檔與監看、MKV 軌道編輯
+轉檔的硬體加速與獨立的任務佇列
 單一登入（OIDC）
 應用程式捷徑
 檔案標籤的讀寫
