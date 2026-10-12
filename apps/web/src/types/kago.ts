@@ -81,18 +81,20 @@ export type ConvertSpec = {
   format: string;
   /** The tallest a video may come out, or the longest side of a picture. */
   height: number | null;
-  videoCodec: "auto" | "copy" | "h264" | "hevc" | "av1" | "vp9";
+  /** Left open, kept as it is, or an encoder by name: the codec, how deep its picture is, and `-hw` for the GPU's. */
+  videoCodec: "auto" | "copy" | "av1" | "av1-10" | "av1-hw" | "av1-hw-10" | "h264" | "h264-10" | "h264-hw" | "hevc" | "hevc-10" | "hevc-12" | "hevc-hw" | "hevc-hw-10" | "mpeg4" | "mpeg2" | "vp9" | "vp9-10";
   crf: number | null;
   fps: number | null;
   audioCodec: "auto" | "copy" | "aac" | "opus" | "mp3" | "flac" | "ac3";
   audioBitrate: number | null;
   quality: number | null;
-  /** Whether a video is decoded and encoded on the server's GPU where it has one that can. */
+  /** Whether a video is decoded on the server's GPU where it has one that can, and encoded there when the encoder is left open. */
   hardware: boolean;
 };
 /** What the server's ffmpeg can make; nothing at all without one. */
+/** `videoCodecs` names the encoders that can be asked for, the GPU's among them. */
 export type ConvertSupport = { available: boolean; formats: string[]; videoCodecs: string[]; audioCodecs: string[]; /** The GPU conversions can use and the codecs it encodes; null without one. */ hardware: { device: string; codecs: string[] } | null };
-export type ConvertJobOptions = { keepSmaller: boolean; after: "keep" | "trash" | "delete"; copyOthers: boolean };
+export type ConvertJobOptions = { keepSmaller: boolean; after: "keep" | "trash" | "delete"; copyOthers: boolean; /** The endings of the names of the files that are converted; null goes by what the format is made from. */ extensions: string[] | null };
 /** A folder that converts itself: whatever turns up in `input` comes out in `destination`. */
 export type ConvertJob = {
   id: string;

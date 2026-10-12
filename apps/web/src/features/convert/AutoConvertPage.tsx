@@ -21,7 +21,7 @@ import { toast } from "@/stores/toast";
 import { useWorkspaceStore } from "@/stores/workspace";
 import type { Actor, ConvertJob, ConvertJobOptions, ConvertSpec, FileTask, Root } from "@/types/kago";
 import { ConvertFields, specIsValid } from "./ConvertFields";
-import { CONVERT_FORMATS, describeSpec, kindLabels, kindOfFormat, specFor, supportedFormats } from "./convertSpec";
+import { CONVERT_FORMATS, DEFAULT_EXTENSIONS, describeSpec, kindOfFormat, parseExtensions, specFor, supportedFormats } from "./convertSpec";
 import { t } from "@/lib/i18n";
 
 type Folder = { rootSlug: string; path: string };
@@ -50,6 +50,7 @@ function statusGlyph(job: ConvertJob) {
 export function AutoConvertPage({ roots, user }: { roots: Root[]; user: Actor }) {
   const queryClient = useQueryClient();
   const jobs = useConvertJobs();
+  const support = useConvertSupport();
   const draft = useDraftStore((state) => state.destination);
   const [editing, setEditing] = useState<ConvertJob | true | null>(null);
   const [destination, setDestination] = useState<Folder | null>(null);
@@ -126,7 +127,7 @@ export function AutoConvertPage({ roots, user }: { roots: Root[]; user: Actor })
                     <span className="block truncate">{`${describeFolder(job.input)} → ${describeFolder(job.destination)}`}</span>
                     <span className="block truncate">
                       {[
-                        describeSpec(job.spec),
+                        describeSpec(job.spec, support.data?.hardware?.device),
                         job.watch ? t("Watching the input folder") : t("Runs only when started"),
                         job.created_by !== user.id ? t("Someone else’s") : null
                       ].filter(Boolean).join(" · ")}
@@ -179,20 +180,30 @@ function JobForm({ roots, job, destination, onSaved }: { roots: Root[]; job: Con
   const [input, setInput] = useState(() => draftOf(job?.input, roots));
   const [output, setOutput] = useState(() => draftOf(job?.destination ?? destination, roots));
   const [spec, setSpec] = useState<ConvertSpec>(() => job?.spec ?? specFor("mp4"));
-  const [options, setOptions] = useState<ConvertJobOptions>(() => job?.options ?? { keepSmaller: true, after: "keep", copyOthers: false });
+  const [options, setOptions] = useState<ConvertJobOptions>(() => job?.options ?? { keepSmaller: true, after: "keep", copyOthers: true, extensions: null });
+  // A job from before the endings could be chosen went by the kind of file, which is what the list starts as.
+  const [endings, setEndings] = useState(() => (job?.options.extensions ?? DEFAULT_EXTENSIONS[kindOfFormat(spec.format)]).join(", "));
   const [watch, setWatch] = useState(job?.watch ?? true);
   // A job made for a folder that is already in use starts with that folder's own layout to drop things into.
   const [structure, setStructure] = useState(!job && destination !== null);
 
   const from = folderOf(input);
   const to = folderOf(output);
-  const canSubmit = name.trim().length > 0 && from !== null && to !== null && specIsValid(spec);
-  const kind = kindLabels[kindOfFormat(spec.format)];
+  const extensions = parseExtensions(endings);
+  const canSubmit = name.trim().length > 0 && from !== null && to !== null && specIsValid(spec) && extensions.length > 0;
+
+  function changeSpec(next: ConvertSpec) {
+    const was = DEFAULT_EXTENSIONS[kindOfFormat(spec.format)];
+    const kind = kindOfFormat(next.format);
+    // Endings nobody has touched follow the format to another kind of file.
+    if (kind !== kindOfFormat(spec.format) && extensions.join() === was.join()) setEndings(DEFAULT_EXTENSIONS[kind].join(", "));
+    setSpec(next);
+  }
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     if (!canSubmit) return;
-    const body = JSON.stringify({ name: name.trim(), input: from, destination: to, spec, options, watch });
+    const body = JSON.stringify({ name: name.trim(), input: from, destination: to, spec, options: { ...options, extensions }, watch });
     const saved = await run(() => api<ConvertJob>(job ? `/api/convert-jobs/${job.id}` : "/api/convert-jobs", { method: job ? "PUT" : "POST", body }), t("Couldn’t save the auto-convert"));
     if (!saved) return;
     if (structure) {
@@ -216,12 +227,10 @@ function JobForm({ roots, job, destination, onSaved }: { roots: Root[]; job: Con
           if (!name.trim()) setName(baseName(folder.path) || (roots.find((root) => root.slug === folder.rootSlug)?.name ?? ""));
         }}
       />
-      <ConvertFields spec={spec} formats={supportedFormats(CONVERT_FORMATS, support.data)} support={support.data} onChange={setSpec} />
-      <p className="m-0 text-xs text-faint text-pretty">
-        {kindOfFormat(spec.format) === "video"
-          ? t("Picks up the videos and GIFs in the input folder. Other files are left alone unless you bring them along below.")
-          : t("Picks up the {kind} files in the input folder. Other files are left alone unless you bring them along below.", { kind: kind.toLowerCase() })}
-      </p>
+      <ConvertFields spec={spec} formats={supportedFormats(CONVERT_FORMATS, support.data)} support={support.data} onChange={changeSpec} />
+      <Field label={t("File extensions to convert")} hint={options.copyOthers ? t("Separated by commas or spaces. Files with any other extension are copied to the destination as they are.") : t("Separated by commas or spaces. Files with any other extension are left alone.")}>
+        <Input value={endings} spellCheck={false} autoCapitalize="off" autoCorrect="off" placeholder="mp4, mkv, mov" onChange={(event) => setEndings(event.target.value)} />
+      </Field>
       <Field label={t("Once a file has reached the destination")} hint={options.after === "delete" ? t("Deleted for good, without passing through the Trash.") : undefined}>
         <Select value={options.after} onChange={(event) => setOptions({ ...options, after: event.target.value as ConvertJobOptions["after"] })}>
           <option value="keep">{t("Leave it in the input folder")}</option>
@@ -232,7 +241,7 @@ function JobForm({ roots, job, destination, onSaved }: { roots: Root[]; job: Con
       <div className="flex flex-col gap-2">
         <Checkbox label={t("Watch the input folder and convert new files by itself")} checked={watch} onChange={(event) => setWatch(event.target.checked)} />
         <Checkbox label={t("If the conversion comes out no smaller, put the original in the destination instead")} checked={options.keepSmaller} onChange={(event) => setOptions({ ...options, keepSmaller: event.target.checked })} />
-        <Checkbox label={t("Bring along the other files too (subtitles, covers, notes)")} checked={options.copyOthers} onChange={(event) => setOptions({ ...options, copyOthers: event.target.checked })} />
+        <Checkbox label={t("Copy files with other extensions to the destination as they are")} checked={options.copyOthers} onChange={(event) => setOptions({ ...options, copyOthers: event.target.checked })} />
         <Checkbox label={t("Copy the destination’s folder structure into the input folder now (folders only, no files)")} checked={structure} onChange={(event) => setStructure(event.target.checked)} />
       </div>
       <div className="flex justify-end">

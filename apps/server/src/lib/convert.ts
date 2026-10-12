@@ -1,7 +1,7 @@
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { z } from "zod";
-import { hardwareEncoder, type ConvertAccel } from "./convert-accel.js";
+import { hardwareEncoder, type ConvertAccel, type HardwareCodec } from "./convert-accel.js";
 import { AppError } from "./errors.js";
 import { guardedInput, guardedProbe, MEDIA_FORMATS, PICTURE_FORMATS } from "./ffmpeg-input.js";
 import { logger } from "./logger.js";
@@ -20,6 +20,20 @@ type VideoFormat = (typeof CONVERT_FORMATS.video)[number];
 type AudioFormat = (typeof CONVERT_FORMATS.audio)[number];
 type ImageFormat = (typeof CONVERT_FORMATS.image)[number];
 
+/**
+ * The encoders a video can be asked for by name: the codec, then how deep its picture is where that is more than
+ * eight bits, made on the CPU or (`-hw`) on the GPU.
+ */
+export const VIDEO_ENCODERS = ["av1", "av1-10", "av1-hw", "av1-hw-10", "h264", "h264-10", "h264-hw", "hevc", "hevc-10", "hevc-12", "hevc-hw", "hevc-hw-10", "mpeg4", "mpeg2", "vp9", "vp9-10"] as const;
+export type VideoEncoderId = (typeof VIDEO_ENCODERS)[number];
+type VideoCodec = "h264" | "hevc" | "av1" | "vp9" | "mpeg4" | "mpeg2";
+type VideoEncoder = { codec: VideoCodec; depth: 8 | 10 | 12; gpu: boolean };
+
+function encoderOf(name: VideoEncoderId): VideoEncoder {
+  const [codec, ...rest] = name.split("-");
+  return { codec: codec as VideoCodec, depth: rest.includes("12") ? 12 : rest.includes("10") ? 10 : 8, gpu: rest.includes("hw") };
+}
+
 const allFormats = [...CONVERT_FORMATS.video, ...CONVERT_FORMATS.audio, ...CONVERT_FORMATS.image] as [string, ...string[]];
 
 /**
@@ -30,7 +44,7 @@ export const convertSpecSchema = z.object({
   format: z.enum(allFormats),
   /** The tallest a video may come out, or the longest side of a picture. A smaller one is never enlarged. */
   height: z.number().int().min(16).max(8640).nullable().default(null),
-  videoCodec: z.enum(["auto", "copy", "h264", "hevc", "av1", "vp9"]).default("auto"),
+  videoCodec: z.enum(["auto", "copy", ...VIDEO_ENCODERS]).default("auto"),
   /** The encoder's constant quality: lower is better and larger. Its scale is the encoder's own. */
   crf: z.number().int().min(0).max(63).nullable().default(null),
   fps: z.number().min(1).max(240).nullable().default(null),
@@ -39,7 +53,7 @@ export const convertSpecSchema = z.object({
   audioBitrate: z.number().int().min(32).max(640).nullable().default(null),
   /** For a picture format that loses detail, from 1 to 100. */
   quality: z.number().int().min(1).max(100).nullable().default(null),
-  /** Whether a video is decoded and encoded on the GPU where the server has one that can. */
+  /** Whether a video is decoded on the GPU where the server has one that can, and encoded there when the encoder is left open. */
   hardware: z.boolean().default(true)
 });
 
@@ -69,6 +83,13 @@ export function feedsFormat(name: string, format: string): boolean {
   const target = convertKindOf(format);
   if (kind === target) return true;
   return target === "video" && /\.gif$/i.test(name);
+}
+
+/** Whether a job converts the file: by the endings it was told to, or without any by what the format is made from. */
+export function jobConverts(name: string, format: string, extensions: string[] | null): boolean {
+  if (!extensions) return feedsFormat(name, format);
+  const dot = name.lastIndexOf(".");
+  return dot > 0 && extensions.includes(name.slice(dot + 1).toLowerCase());
 }
 
 /** Subtitles kept in files of their own, as the track editor takes them. */
@@ -127,18 +148,26 @@ const MUXERS: Record<string, string> = { mp4: "mp4", mkv: "matroska", mov: "mov"
 
 const even = (value: number) => Math.max(2, Math.floor(value / 2) * 2);
 
-function videoEncoder(codec: "h264" | "hevc" | "av1" | "vp9", crf: number | null, tenBit: boolean, format: string): string[] {
-  // A picture of ten bits keeps them where the codec can: it is how HDR survives being encoded again.
-  const deep = tenBit ? "yuv420p10le" : "yuv420p";
+/** What makes each codec on the CPU. */
+const SOFTWARE_ENCODERS: Record<VideoCodec, string> = { h264: "libx264", hevc: "libx265", av1: "libsvtav1", vp9: "libvpx-vp9", mpeg4: "mpeg4", mpeg2: "mpeg2video" };
+const PIXEL_FORMATS = { 8: "yuv420p", 10: "yuv420p10le", 12: "yuv420p12le" } as const;
+
+function videoEncoder({ codec, depth }: VideoEncoder, crf: number | null, format: string): string[] {
+  const head = ["-c:v", SOFTWARE_ENCODERS[codec]];
+  const pixels = ["-pix_fmt", PIXEL_FORMATS[depth]];
   switch (codec) {
     case "h264":
-      return ["-c:v", "libx264", "-preset", "medium", "-crf", String(Math.min(crf ?? 23, 51)), "-pix_fmt", "yuv420p"];
+      return [...head, "-preset", "medium", "-crf", String(Math.min(crf ?? 23, 51)), ...pixels];
     case "hevc":
-      return ["-c:v", "libx265", "-preset", "medium", "-crf", String(Math.min(crf ?? 26, 51)), "-pix_fmt", deep, "-x265-params", "log-level=error", ...(format === "mp4" || format === "mov" ? ["-tag:v", "hvc1"] : [])];
+      return [...head, "-preset", "medium", "-crf", String(Math.min(crf ?? 26, 51)), ...pixels, "-x265-params", "log-level=error", ...(format === "mp4" || format === "mov" ? ["-tag:v", "hvc1"] : [])];
     case "av1":
-      return ["-c:v", "libsvtav1", "-preset", "8", "-crf", String(crf ?? 32), "-pix_fmt", deep];
+      return [...head, "-preset", "8", "-crf", String(crf ?? 32), ...pixels];
     case "vp9":
-      return ["-c:v", "libvpx-vp9", "-crf", String(crf ?? 32), "-b:v", "0", "-row-mt", "1", "-cpu-used", "4", "-pix_fmt", "yuv420p"];
+      return [...head, "-crf", String(crf ?? 32), "-b:v", "0", "-row-mt", "1", "-cpu-used", "4", ...pixels];
+    // The two old ones have no constant quality of that kind: theirs is a quantizer from 1 to 31.
+    case "mpeg4":
+    case "mpeg2":
+      return [...head, "-q:v", String(Math.min(31, Math.max(1, crf ?? 4))), ...pixels];
   }
 }
 
@@ -146,7 +175,8 @@ const AUDIO_ENCODERS: Record<string, string> = { aac: "aac", opus: "libopus", mp
 
 /** Whether making `spec` of the file would put the GPU to work, so that a failure there is worth a second go without it. */
 export function usesHardware(spec: ConvertSpec, accel: ConvertAccel | null): accel is ConvertAccel {
-  return accel !== null && spec.hardware && convertKindOf(spec.format) === "video" && spec.videoCodec !== "copy";
+  if (accel === null || convertKindOf(spec.format) !== "video" || spec.videoCodec === "copy") return false;
+  return spec.hardware || (spec.videoCodec !== "auto" && encoderOf(spec.videoCodec).gpu);
 }
 
 /**
@@ -209,19 +239,26 @@ export function convertArgs(spec: ConvertSpec, probe: Probe, input: string, outp
   const shrink = spec.height !== null && picture.height > spec.height;
   const filtered = shrink || spec.fps !== null;
   const keepable = KEPT_VIDEO[format]?.includes(picture.codec) ?? true;
-  let codec = spec.videoCodec;
-  if (codec === "auto") codec = !filtered && spec.crf === null && keepable ? "copy" : format === "webm" ? "vp9" : picture.tenBit ? "hevc" : "h264";
-  if (codec === "copy" && !keepable) throw new AppError(422, "This video can’t be kept as it is in that format", "CONVERT_COPY_UNSUPPORTED");
-  if (format === "webm" && (codec === "h264" || codec === "hevc")) throw new AppError(422, "WebM holds only VP9 or AV1 video", "CONVERT_CODEC_UNSUPPORTED");
+  const copy = spec.videoCodec === "copy" || (spec.videoCodec === "auto" && !filtered && spec.crf === null && keepable);
+  if (copy && !keepable) throw new AppError(422, "This video can’t be kept as it is in that format", "CONVERT_COPY_UNSUPPORTED");
+  // Left open, it is what plays in the most places. A picture of ten bits keeps them: it is how HDR survives being encoded again.
+  const encoder: VideoEncoder | null = copy
+    ? null
+    : spec.videoCodec === "auto" || spec.videoCodec === "copy"
+      ? format === "webm" ? { codec: "vp9", depth: 8, gpu: false } : picture.tenBit ? { codec: "hevc", depth: 10, gpu: spec.hardware } : { codec: "h264", depth: 8, gpu: spec.hardware }
+      : encoderOf(spec.videoCodec);
+  if (encoder && format === "webm" && encoder.codec !== "vp9" && encoder.codec !== "av1") throw new AppError(422, "WebM holds only VP9 or AV1 video", "CONVERT_CODEC_UNSUPPORTED");
 
-  const gpu = codec !== "copy" && usesHardware(spec, accel) ? accel : null;
+  const gpu = encoder && usesHardware(spec, accel) ? accel : null;
   const args = [...flags, ...(gpu?.input ?? []), ...guardedInput(input, CONVERT_INPUT_FORMATS), "-map", `0:${picture.index}`];
-  if (codec === "copy") args.push("-c:v", "copy", ...(picture.codec === "hevc" && (format === "mp4" || format === "mov") ? ["-tag:v", "hvc1"] : []));
+  if (!encoder) args.push("-c:v", "copy", ...(picture.codec === "hevc" && (format === "mp4" || format === "mov") ? ["-tag:v", "hvc1"] : []));
   else {
     // The encoders want sides of even length, which a GIF need not have.
     const filters = [...(spec.fps !== null ? [`fps=${spec.fps}`] : []), shrink ? `scale=-2:${even(spec.height!)}` : "scale=trunc(iw/2)*2:trunc(ih/2)*2"];
-    const onGpu = gpu && codec !== "vp9" && gpu.codecs.includes(codec) ? hardwareEncoder(gpu, codec, spec.crf, picture.tenBit, format) : null;
-    args.push("-vf", [...filters, ...(onGpu?.filter ?? [])].join(","), ...(onGpu?.args ?? videoEncoder(codec, spec.crf, picture.tenBit, format)));
+    // An encoder of the GPU's that is asked for where there is none, or after it failed, is made up for by the CPU's of the same codec.
+    const made = gpu && encoder.gpu && encoder.depth !== 12 ? (encoder.depth === 10 ? gpu.deep : gpu.codecs) : [];
+    const onGpu = gpu && made.includes(encoder.codec as HardwareCodec) ? hardwareEncoder(gpu, encoder.codec as HardwareCodec, spec.crf, encoder.depth === 10, format) : null;
+    args.push("-vf", [...filters, ...(onGpu?.filter ?? [])].join(","), ...(onGpu?.args ?? videoEncoder(encoder, spec.crf, format)));
   }
 
   sound.forEach((stream, position) => {
@@ -250,15 +287,26 @@ export function convertArgs(spec: ConvertSpec, probe: Probe, input: string, outp
 }
 
 /** The encoder each format and codec is made with: one this build of ffmpeg lacks cannot be asked for. */
-const NEEDED: { formats: Record<string, string[]>; videoCodecs: Record<string, string>; audioCodecs: Record<string, string> } = {
+const NEEDED: { formats: Record<string, string[]>; audioCodecs: Record<string, string> } = {
   formats: { mp4: ["libx264", "aac"], mkv: ["libx264", "aac"], mov: ["libx264", "aac"], webm: ["libvpx-vp9", "libopus"], mp3: ["libmp3lame"], m4a: ["aac"], flac: ["flac"], opus: ["libopus"], ogg: ["libvorbis"], wav: [], jpg: [], png: [], webp: ["libwebp"], avif: ["libsvtav1"], gif: [] },
-  videoCodecs: { h264: "libx264", hevc: "libx265", av1: "libsvtav1", vp9: "libvpx-vp9" },
   audioCodecs: AUDIO_ENCODERS
 };
 
+/** `videoCodecs` names the encoders of `VIDEO_ENCODERS` that can be asked for. */
 export type ConvertSupport = { available: boolean; formats: string[]; videoCodecs: string[]; audioCodecs: string[]; /** The GPU conversions can use and the codecs it encodes; null without one. */ hardware: { device: string; codecs: string[] } | null };
 
-/** What this server's ffmpeg can make. Nothing at all without one. */
+/** The pictures an encoder takes, as this build of ffmpeg tells them; null when it does not say. */
+async function pixelFormats(ffmpeg: string, encoder: string): Promise<Set<string> | null> {
+  try {
+    const { stdout } = await execFileAsync(ffmpeg, ["-hide_banner", "-h", `encoder=${encoder}`], { timeout: 20_000, maxBuffer: 4 * 1024 * 1024 });
+    const listed = /Supported pixel formats:(.*)/.exec(stdout)?.[1];
+    return listed ? words(listed.trim()) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** What this server's ffmpeg can make on the CPU. Nothing at all without one. */
 export async function convertSupport(ffmpeg: string): Promise<ConvertSupport> {
   let listed: string;
   try {
@@ -268,11 +316,15 @@ export async function convertSupport(ffmpeg: string): Promise<ConvertSupport> {
   }
   const encoders = new Set(listed.split("\n").map((line) => line.trim().split(/\s+/)[1] ?? ""));
   const has = (name: string) => encoders.has(name);
+  // A deeper picture is something an encoder is built for or not.
+  const software = VIDEO_ENCODERS.map(encoderOf).filter((encoder) => !encoder.gpu && has(SOFTWARE_ENCODERS[encoder.codec]));
+  const deep = new Map<string, Set<string> | null>();
+  for (const name of new Set(software.filter((encoder) => encoder.depth > 8).map((encoder) => SOFTWARE_ENCODERS[encoder.codec]))) deep.set(name, await pixelFormats(ffmpeg, name));
   return {
     available: true,
     hardware: null,
     formats: Object.entries(NEEDED.formats).filter(([, needed]) => needed.every(has)).map(([format]) => format),
-    videoCodecs: Object.entries(NEEDED.videoCodecs).filter(([, needed]) => has(needed)).map(([codec]) => codec),
+    videoCodecs: software.filter((encoder) => encoder.depth === 8 || (deep.get(SOFTWARE_ENCODERS[encoder.codec])?.has(PIXEL_FORMATS[encoder.depth]) ?? true)).map((encoder) => (encoder.depth === 8 ? encoder.codec : `${encoder.codec}-${encoder.depth}`)),
     audioCodecs: Object.entries(NEEDED.audioCodecs).filter(([, needed]) => has(needed)).map(([codec]) => codec)
   };
 }

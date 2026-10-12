@@ -18,6 +18,8 @@ export type ConvertAccel = {
   input: string[];
   /** The codecs it encodes, each proven by a test encode. */
   codecs: HardwareCodec[];
+  /** Those of them it also encodes with a picture of ten bits. */
+  deep: HardwareCodec[];
 };
 
 const DEFAULT_QUALITY: Record<HardwareCodec, number> = { h264: 23, hevc: 26, av1: 32 };
@@ -54,7 +56,7 @@ export function hardwareEncoder(accel: ConvertAccel, codec: HardwareCodec, crf: 
 
 function candidate(device: Device, node = ""): ConvertAccel {
   const input = device === "nvenc" ? ["-hwaccel", "cuda"] : device === "vaapi" ? ["-init_hw_device", `vaapi=va:${node}`, "-hwaccel", "vaapi", "-hwaccel_device", "va", "-filter_hw_device", "va"] : ["-hwaccel", "videotoolbox"];
-  return { device, input, codecs: [] };
+  return { device, input, codecs: [], deep: [] };
 }
 
 /**
@@ -69,15 +71,16 @@ export async function detectConvertAccel(ffmpeg: string): Promise<ConvertAccel |
     : await fsp.readdir("/dev/dri").then((names) => names.filter((name) => name.startsWith("renderD")).sort().map((name) => `/dev/dri/${name}`), () => []);
   const candidates = [candidate("nvenc"), ...nodes.map((node) => candidate("vaapi", node)), candidate("videotoolbox")].filter((item) => wanted === "auto" || item.device.startsWith(wanted));
   for (const accel of candidates) {
-    for (const codec of ["h264", "hevc", "av1"] as const) {
-      const { filter, args } = hardwareEncoder(accel, codec, null, false, "mkv");
+    for (const [codec, tenBit] of [["h264", false], ["hevc", false], ["av1", false], ["hevc", true], ["av1", true]] as const) {
+      if (tenBit && !accel.codecs.includes(codec)) continue;
+      const { filter, args } = hardwareEncoder(accel, codec, null, tenBit, "mkv");
       try {
         await execFileAsync(
           ffmpeg,
           ["-nostdin", "-hide_banner", "-loglevel", "error", ...accel.input, "-f", "lavfi", "-i", "testsrc2=size=1280x720:rate=30", "-frames:v", "30", "-vf", ["scale=640:360", ...filter].join(","), ...args, "-f", "null", "-"],
           { timeout: 20_000 }
         );
-        accel.codecs.push(codec);
+        (tenBit ? accel.deep : accel.codecs).push(codec);
       } catch {
         // Not something this device does.
       }

@@ -6,7 +6,7 @@ import { z } from "zod";
 import type { Db } from "../db/db.js";
 import { row } from "../db/db.js";
 import { detectConvertAccel, type ConvertAccel } from "../lib/convert-accel.js";
-import { usesHardware, convertArgs, convertSpecSchema, ConvertStopped, convertSupport, type ConvertSupport, feedsFormat, probeMedia, remuxArgs, runFfmpeg, SUBTITLE_FORMATS, type ConvertSpec, type RemuxInput, type RemuxTrack } from "../lib/convert.js";
+import { usesHardware, convertArgs, convertSpecSchema, ConvertStopped, convertSupport, type ConvertSupport, jobConverts, probeMedia, remuxArgs, runFfmpeg, SUBTITLE_FORMATS, type ConvertSpec, type RemuxInput, type RemuxTrack } from "../lib/convert.js";
 import { AppError } from "../lib/errors.js";
 import { MEDIA_FORMATS } from "../lib/ffmpeg-input.js";
 import { nfc } from "../lib/filename.js";
@@ -42,7 +42,9 @@ export const convertJobOptionsSchema = z.object({
   /** What becomes of a file in the input folder once it has reached the destination. */
   after: z.enum(["keep", "trash", "delete"]).default("keep"),
   /** Whether what is not media (subtitles, notes) is brought across beside what is. */
-  copyOthers: z.boolean().default(false)
+  copyOthers: z.boolean().default(false),
+  /** The endings of the names of the files that are converted; any other file is one of the others. Null goes by what the format is made from. */
+  extensions: z.array(z.string().transform((value) => value.trim().replace(/^\./, "").toLowerCase()).pipe(z.string().regex(/^[a-z0-9]{1,16}$/))).min(1).max(200).nullable().default(null)
 });
 
 export type ConvertJobOptions = z.infer<typeof convertJobOptionsSchema>;
@@ -112,7 +114,11 @@ export class ConvertService {
 
   /** What can be made here, found out once. */
   support(): Promise<ConvertSupport> {
-    this.supported ??= Promise.all([convertSupport(this.ffmpeg), this.accel()]).then(([support, accel]) => ({ ...support, hardware: support.available && accel ? { device: accel.device, codecs: accel.codecs } : null }));
+    this.supported ??= Promise.all([convertSupport(this.ffmpeg), this.accel()]).then(([support, accel]) => {
+      if (!support.available || !accel) return support;
+      const onGpu = [...accel.codecs.map((codec) => `${codec}-hw`), ...accel.deep.map((codec) => `${codec}-hw-10`)];
+      return { ...support, videoCodecs: [...support.videoCodecs, ...onGpu], hardware: { device: accel.device, codecs: accel.codecs } };
+    });
     return this.supported;
   }
 
@@ -220,7 +226,7 @@ export class ConvertService {
           folders.set(dir, target);
         }
         const name = this.storage.name(safe);
-        const made = feedsFormat(name, spec.format)
+        const made = jobConverts(name, spec.format, job.options.extensions)
           ? await this.convertOne(safe, stat, target.folder, target.taken, spec, job.options.keepSmaller, handle)
           : { name: await this.copyOriginal(safe, stat, target.folder, target.taken, handle), copied: true };
         this.audit.write({ actorType: "user", actorId: actor.id, action: "convert", rootId: safe.root.id, path: safe.logicalPath, target: { jobId: job.id, rootSlug: destination.root.slug, path: path.posix.join(target.folder.logicalPath, made.name), copied: made.copied }, result: "success" });
@@ -256,7 +262,7 @@ export class ConvertService {
   private async pendingFiles(jobId: string, input: SafePath, spec: ConvertSpec, options: ConvertJobOptions, retryFailed: boolean): Promise<Walked[]> {
     const known = this.db.prepare("SELECT size, mtime_ms, status FROM convert_job_files WHERE job_id = ? AND path = ?");
     return (await this.walk(input)).filter((file) => {
-      if (file.directory || !(options.copyOthers || feedsFormat(path.posix.basename(file.rel), spec.format))) return false;
+      if (file.directory || !(options.copyOthers || jobConverts(path.posix.basename(file.rel), spec.format, options.extensions))) return false;
       const done = row<JobFile>(known.get(jobId, file.rel));
       return !done || done.size !== file.size || done.mtime_ms !== Math.round(file.mtimeMs) || (retryFailed && done.status === "failed");
     });
