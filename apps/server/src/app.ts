@@ -186,7 +186,7 @@ export async function buildApp(env: Env) {
   pruning.unref();
   void remote.pruneLocalCopies().catch(() => undefined);
   const prunePictures = () =>
-    void Promise.all([fsService.pruneThumbnails(), images.prune(), iconLibrary.prune(), apps.prune()]).then(
+    void Promise.all([fsService.pruneThumbnails(), images.prune(), iconLibrary.prune(), apps.prune(), media.pruneStoryboards()]).then(
       ([thumbnails, renditions, libraryIcons, appIcons]) => {
         if (thumbnails + renditions > 0) logger.info(`removed ${thumbnails} thumbnails and ${renditions} converted pictures unused for a month`);
         if (libraryIcons + appIcons > 0) logger.info(`removed ${libraryIcons + appIcons} app icons no longer in use`);
@@ -936,6 +936,21 @@ function registerApi(app: FastifyInstance, services: Services) {
     reply.header("Cache-Control", "private, max-age=3600");
     sandboxContent(reply);
     return sendFile(request, reply, cover, await fs.promises.stat(cover), cover.endsWith(".avif") ? "image/avif" : "image/jpeg");
+  });
+  app.get("/api/media/storyboard", async (request) => {
+    const actor = requireActor(request);
+    const query = fsQuerySchema.parse(request.query);
+    const file = await services.fsService.media(actor, query.rootSlug, query.path);
+    return services.media.storyboard(file.input, file.stat);
+  });
+  app.get("/api/media/storyboard/sheet", async (request, reply) => {
+    const actor = requireActor(request);
+    const query = mediaStreamSchema.parse(request.query);
+    const file = await services.fsService.media(actor, query.rootSlug, query.path);
+    const sheet = await services.media.storyboardSheet(file.input, file.stat, query.index);
+    reply.header("Cache-Control", "private, max-age=86400");
+    sandboxContent(reply);
+    return sendFile(request, reply, sheet, await fs.promises.stat(sheet), "image/jpeg");
   });
   app.get("/api/media/audio", async (request, reply) => {
     const actor = requireActor(request);

@@ -80,6 +80,10 @@ export const previewUrl = (rootSlug: string, path: string) =>
 export const audioStreamUrl = (rootSlug: string, path: string, start: number) =>
   `/api/media/audio?${new URLSearchParams({ rootSlug, path, start: start.toFixed(3) }).toString()}`;
 
+/** One sheet of the pictures shown over a video's timeline. */
+export const storyboardSheetUrl = (rootSlug: string, path: string, index: number, version: number) =>
+  `/api/media/storyboard/sheet?${new URLSearchParams({ rootSlug, path, index: String(index), v: String(version) }).toString()}`;
+
 /** The picture kept inside a music file, as a JPEG. `version` tells one state of the file from the next. */
 export const embeddedCoverUrl = (rootSlug: string, path: string, version: number) =>
   `/api/media/cover?${new URLSearchParams({ rootSlug, path, v: String(Math.round(version)) }).toString()}`;

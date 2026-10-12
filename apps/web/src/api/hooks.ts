@@ -4,7 +4,7 @@ import { api, apiLines, ApiError, previewUrl, serverMessage } from "./client";
 import { decodeSubtitle } from "../lib/subtitles";
 import { withSpeeds } from "../lib/taskSpeed";
 import { isTrashing, useTrashingStore } from "../stores/trashing";
-import type { Actor, AuditLog, ExternalApp, FileItem, FileList, FileMeta, FileTask, FolderSize, FrameVerdict, Group, ImageMetadata, LibraryIcon, MediaInfo, PermissionRule, Root, ShareLink, Shelf, SqlitePage, SsoConfig, SsoIdentity, SsoInfo, SqliteTable, StorageInfo, SubtitleList, SyncJob, SyncRun, SyncTrial, TrashItem, UserAccount, WorkspaceState } from "../types/kago";
+import type { Actor, AuditLog, ExternalApp, FileItem, FileList, FileMeta, FileTask, FolderSize, FrameVerdict, Group, ImageMetadata, LibraryIcon, MediaInfo, PermissionRule, Root, ShareLink, Shelf, SqlitePage, Storyboard, SsoConfig, SsoIdentity, SsoInfo, SqliteTable, StorageInfo, SubtitleList, SyncJob, SyncRun, SyncTrial, TrashItem, UserAccount, WorkspaceState } from "../types/kago";
 
 export function useSetupStatus() {
   return useQuery({ queryKey: ["auth", "setup"], queryFn: () => api<{ needsSetup: boolean; oidc: SsoInfo | null }>("/api/auth/setup") });
@@ -192,6 +192,18 @@ export function useMediaInfo(rootSlug: string, path: string, enabled = true) {
     enabled,
     retry: false,
     staleTime: 60_000
+  });
+}
+
+/** The pictures for a video's timeline. Asking is what has them made, so it is asked again until they are. */
+export function useStoryboard(rootSlug: string, path: string, enabled = true) {
+  return useQuery({
+    queryKey: ["media", "storyboard", rootSlug, path],
+    queryFn: () => api<Storyboard>(`/api/media/storyboard?${new URLSearchParams({ rootSlug, path }).toString()}`),
+    enabled,
+    retry: false,
+    staleTime: 60_000,
+    refetchInterval: (query) => (query.state.data?.status === "pending" ? 15_000 : false)
   });
 }
 

@@ -11,6 +11,7 @@ import { GlassBackdrop } from "./GlassBackdrop";
 import { t } from "@/lib/i18n";
 import { useMediaSession } from "./useMediaSession";
 import { isMediaFailure } from "./directPlayback";
+import type { TimelinePicture } from "./storyboard";
 
 const IDLE_MS = 2500;
 const SEEK_STEP = 5;
@@ -72,6 +73,7 @@ export function VideoPlayer({
   onPlaybackRequest,
   onSeekRequest,
   onSeekPreview,
+  seekPicture,
   onError
 }: {
   videoRef: RefObject<HTMLVideoElement | null>;
@@ -99,6 +101,8 @@ export function VideoPlayer({
   onPlaybackRequest?: (playing: boolean) => void;
   onSeekRequest?: (seconds: number) => void;
   onSeekPreview?: (seconds: number | null) => void;
+  /** The picture of the video at a point of its timeline, shown where the pointer is over it. */
+  seekPicture?: (seconds: number) => TimelinePicture | null;
   onError?: () => void;
 }) {
   const [container, setContainer] = useState<HTMLDivElement | null>(null);
@@ -434,6 +438,7 @@ export function VideoPlayer({
           // Committed on release: every seek in a transcoded stream may restart the encoder.
           onCommit={seekTo}
           onPreview={onSeekPreview}
+          picture={seekPicture}
         />
         <div className="flex items-center gap-1">
           {previous !== undefined ? (
@@ -533,6 +538,7 @@ export function PlayerSlider({
   onChange,
   onCommit,
   onPreview,
+  picture,
   onDragging
 }: {
   label: string;
@@ -544,6 +550,8 @@ export function PlayerSlider({
   onChange?: (value: number) => void;
   onCommit?: (value: number) => void;
   onPreview?: (value: number | null) => void;
+  /** What stands at a value, shown over the hint of it. */
+  picture?: (value: number) => TimelinePicture | null;
   onDragging?: (dragging: boolean) => void;
 }) {
   const [drag, setDrag] = useState<number | null>(null);
@@ -563,6 +571,7 @@ export function PlayerSlider({
     onDragging?.(false);
   };
   const hint = drag ?? hover;
+  const shownPicture = hint === null ? null : (picture?.(hint) ?? null);
 
   return (
     <div
@@ -607,7 +616,25 @@ export function PlayerSlider({
         className={cn("kago-player-knob absolute top-1/2 size-3.5 -translate-1/2 rounded-full opacity-0 group-hover/slider:opacity-100", drag !== null && "opacity-100")}
         style={{ left: percent(shown) }}
       />
-      {hint === null ? null : (
+      {hint === null ? null : shownPicture ? (
+        // Kept whole inside the slider: a picture half off the edge of the player is no use at either end.
+        <div
+          className="pointer-events-none absolute bottom-full mb-2 flex -translate-x-1/2 flex-col items-center gap-1.5"
+          style={{ left: `clamp(${shownPicture.width / 2}px, ${percent(hint)}, calc(100% - ${shownPicture.width / 2}px))` }}
+        >
+          <div
+            className="rounded-md bg-black shadow-[0_0_0_1px_rgb(255_255_255/0.28),0_8px_24px_rgb(0_0_0/0.5)]"
+            style={{
+              width: shownPicture.width,
+              height: shownPicture.height,
+              backgroundImage: `url("${shownPicture.url}")`,
+              backgroundPosition: `-${shownPicture.x}px -${shownPicture.y}px`,
+              backgroundSize: `${shownPicture.sheetWidth}px ${shownPicture.sheetHeight}px`
+            }}
+          />
+          <span className="kago-player-glass rounded-sm px-1.5 py-0.5 text-xs whitespace-nowrap tabular-nums">{format(hint)}</span>
+        </div>
+      ) : (
         <span className="kago-player-glass pointer-events-none absolute bottom-full mb-2 -translate-x-1/2 rounded-sm px-1.5 py-0.5 text-xs whitespace-nowrap tabular-nums" style={{ left: percent(hint) }}>
           {format(hint)}
         </span>

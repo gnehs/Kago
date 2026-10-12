@@ -374,6 +374,13 @@ export type AuditLog = {
   created_at: number;
 };
 
+/**
+ * The small pictures shown over a video's timeline: one every `interval` seconds, in sheets of `columns` by `rows`.
+ * `pending` while the server has not got round to making them, which it does only when it is not encoding.
+ */
+export type ReadyStoryboard = { status: "ready"; version: number; interval: number; count: number; width: number; height: number; columns: number; rows: number; sheets: number };
+export type Storyboard = ReadyStoryboard | { status: "pending" | "unavailable"; version: number };
+
 /** What the server knows about a video, and whether it can transcode it on the fly. */
 export type MediaInfo = {
   transcode: boolean;

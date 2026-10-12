@@ -1077,6 +1077,29 @@ test("videos are probed and transcoded to HLS on demand", {
     assert.deepEqual(info.json.qualities, [480, 360]);
     assert.equal((await admin.get("/api/media/info?rootSlug=photos&path=/public/readme.txt")).statusCode, 422);
 
+    // The pictures over the timeline are made in the background, and only while the server has processor time to spare.
+    const boardUrl = "/api/media/storyboard?rootSlug=photos&path=/public/clip.avi";
+    const sheetUrl = "/api/media/storyboard/sheet?rootSlug=photos&path=/public/clip.avi&index=0";
+    assert.equal((await admin.get(boardUrl)).json.status, "pending");
+    assert.equal((await admin.get(sheetUrl)).statusCode, 404);
+    assert.equal((await admin.get("/api/media/storyboard?rootSlug=photos&path=/public/readme.txt")).statusCode, 422);
+    if (process.platform !== "win32" && availableParallelism() > 1 && loadavg()[0] < availableParallelism() - 1) {
+      let board = null;
+      for (let tries = 0; tries < 200 && board?.status !== "ready"; tries += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        board = (await admin.get(boardUrl)).json;
+      }
+      assert.equal(board.status, "ready");
+      assert.deepEqual([board.interval, board.columns, board.rows, board.sheets], [1, 10, 10, 1]);
+      assert.ok(board.count >= 10 && board.count <= 15, "a picture for each second of the clip");
+      // A 4:3 picture fitted into the 240 by 135 box.
+      assert.deepEqual([board.width, board.height], [180, 134]);
+      const sheet = await admin.get(sheetUrl);
+      assert.equal(sheet.statusCode, 200);
+      assert.equal(sheet.headers["content-type"], "image/jpeg");
+      assert.equal((await admin.get(sheetUrl.replace("index=0", "index=1"))).statusCode, 404);
+    }
+
     // Subtitles are matched to the video by name; the rest of the name gives the language and flags.
     const publicDir = path.join(fixture.dataDir, "photos", "public");
     const coverImage = path.join(publicDir, "cover.jpg");

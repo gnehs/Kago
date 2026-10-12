@@ -12,6 +12,7 @@ import { guardedInput, guardedProbe, inputProtocols } from "../lib/ffmpeg-input.
 import { id as createId } from "../lib/ids.js";
 import { logger } from "../lib/logger.js";
 import { sharpAvailable, writeAvif } from "../lib/sharp.js";
+import { Storyboards, type StoryboardState } from "../lib/storyboard.js";
 import { streamLanguage, type PictureSubtitleFormat, type SubtitleFormat } from "../lib/subtitles.js";
 
 const execFileAsync = promisify(execFile);
@@ -275,6 +276,7 @@ export class MediaService {
   private readonly probeSlots = slots(PROBE_JOBS);
   private readonly extractSlots = slots(EXTRACT_JOBS);
   private readonly subtitleProbes = new Map<string, Array<{ index: number; language: string }>>();
+  private readonly storyboards: Storyboards;
   private readonly ticker: NodeJS.Timeout;
 
   constructor(appDataDir: string) {
@@ -282,6 +284,7 @@ export class MediaService {
     this.extractDir = path.join(appDataDir, "temp", "media-extract");
     fs.rmSync(this.baseDir, { recursive: true, force: true });
     fs.rmSync(this.extractDir, { recursive: true, force: true });
+    this.storyboards = new Storyboards(this.ffmpeg, this.ffprobe, path.join(appDataDir, "storyboards"), path.join(appDataDir, "temp", "storyboards"));
     this.available = Promise.all([execFileAsync(this.ffmpeg, ["-version"]), execFileAsync(this.ffprobe, ["-version"])]).then(
       async () => {
         this.accel = await this.detectAccel();
@@ -371,6 +374,26 @@ export class MediaService {
       (out) => picture(out, ["-c:v", "png", "-compression_level", "1", "-f", "image2pipe"]),
       (frame, out) => writeAvif({ input: frame, target: out, quality: 60 })
     );
+  }
+
+  /** The pictures shown over the timeline of a video. They are made while nothing is being encoded, so the first to ask finds none yet. */
+  async storyboard(absolutePath: string, stat: FileVersion): Promise<StoryboardState & { version: number }> {
+    const { video, duration } = await this.info(absolutePath, stat);
+    // The sheets are kept by the browser; `version` tells those of one state of the file from the next.
+    const version = Math.round(stat.mtimeMs);
+    return { version, ...await this.request(absolutePath, stat, video, duration) };
+  }
+
+  private request(absolutePath: string, stat: FileVersion, video: MediaInfo["video"], duration: number): Promise<StoryboardState> {
+    return this.storyboards.request(absolutePath, stat, video ? { duration, tonemap: video.hdr && this.tonemap ? this.tonemap.filter(video.hdr) : null } : null);
+  }
+
+  storyboardSheet(absolutePath: string, stat: FileVersion, index: number): Promise<string> {
+    return this.storyboards.sheet(absolutePath, stat, index);
+  }
+
+  pruneStoryboards(): Promise<number> {
+    return this.storyboards.prune();
   }
 
   /**
@@ -679,6 +702,7 @@ export class MediaService {
 
   stop(): void {
     clearInterval(this.ticker);
+    this.storyboards.stop();
     this.pendingPrewarms.clear();
     for (const session of [...this.sessions.values()]) this.destroy(session);
     for (const own of this.audioStreams.values()) for (const proc of own) proc.kill("SIGKILL");
@@ -701,6 +725,7 @@ export class MediaService {
 
   private async start(session: Session, index: number, sameRun = false): Promise<void> {
     this.foregroundStarts += 1;
+    this.storyboards.pump(true);
     try {
       await this.preemptSpeculation(session.id);
       if (!this.sessions.has(session.id)) throw new AppError(404, "Playback session not found", "NOT_FOUND");
@@ -987,6 +1012,7 @@ export class MediaService {
         });
         const job: PrewarmJob = { ...request, dir, proc, cancelled: false, initBytes };
         this.activePrewarm = job;
+        this.storyboards.pump(true);
         proc.stderr.on("data", () => {});
         proc.on("error", () => {});
         proc.on("close", (code, signal) => {
@@ -1148,6 +1174,8 @@ export class MediaService {
       }
     }
     this.pumpPrewarms();
+    // Last in line: a storyboard is worked on only while nobody is waiting for a picture or a sound.
+    this.storyboards.pump(this.activePrewarm !== null || this.pendingPrewarms.size > 0 || this.foregroundStarts > 0 || this.hasForegroundEncoder());
   }
 
   /** Picks the first encoder that survives a real test encode, so a GPU that is present but unusable is skipped. */

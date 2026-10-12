@@ -1,7 +1,7 @@
 import { AudioLines, Captions, CaptionsOff, Download, Info, ListVideo, X } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { api, downloadUrl, previewUrl, thumbnailUrl } from "@/api/client";
-import { useFileList, useMediaInfo, useSubtitles } from "@/api/hooks";
+import { useFileList, useMediaInfo, useStoryboard, useSubtitles } from "@/api/hooks";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { KagoDropdownMenu, KagoMenuCheckItem, KagoMenuHeading, KagoMenuNote, KagoMenuSeparator } from "@/components/kago/menu";
 import { KagoWindow } from "@/components/kago/window";
@@ -21,6 +21,7 @@ import { watchDirectPlayback } from "./directPlayback";
 import { INITIAL_RECOVERY, recoverPlayback, trackPlaybackPosition } from "./playbackRecovery";
 import { canDirectPlay, canPlayHdrStream } from "./videoCapabilities";
 import { createSeekPrewarmer } from "./seekPrewarm";
+import { readyStoryboard, storyboardSheets, timelinePicture } from "./storyboard";
 import { VideoPlaylist } from "./VideoPlaylist";
 
 const BITRATE_HINT: Record<number, string> = { 2160: "16 Mbps", 1440: "10 Mbps", 1080: "6 Mbps", 720: "3 Mbps", 480: "1.5 Mbps", 360: "0.8 Mbps" };
@@ -71,6 +72,12 @@ export function VideoPreview({
   onNavigate?: (item: FileItem) => void;
 }) {
   const info = useMediaInfo(rootSlug, path);
+  const board = readyStoryboard(useStoryboard(rootSlug, path, Boolean(info.data?.video)).data);
+  const sheets = useMemo(() => (board ? storyboardSheets(board, rootSlug, path) : []), [board, rootSlug, path]);
+  // Fetched ahead of the pointer, so the first picture asked for is already there.
+  useEffect(() => {
+    for (const url of sheets) new Image().src = url;
+  }, [sheets]);
   const folder = useFileList(rootSlug, parentPath(path), Boolean(onNavigate));
   const videos = useMemo(() => (folder.data?.items ?? []).filter((item) => item.kind === "file" && isVideoType(item.type)).sort((a, b) => collator.compare(a.name, b.name)), [folder.data]);
   const position = videos.findIndex((item) => item.path === path);
@@ -477,6 +484,7 @@ export function VideoPreview({
         onPlaybackRequest={(playing) => playbackRequest.current(playing)}
         onSeekRequest={(seconds) => seekRequest.current(seconds)}
         onSeekPreview={(seconds) => seekPreview.current(seconds)}
+        seekPicture={board ? (seconds) => timelinePicture(board, sheets, seconds) : undefined}
         onError={() => playbackError.current()}
       />
   );
