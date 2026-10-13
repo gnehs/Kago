@@ -628,6 +628,10 @@ function registerApi(app: FastifyInstance, services: Services) {
     return { ok: true };
   });
   app.get("/api/convert-jobs/:id/runs", async (request) => services.convertJobs.runs(requireActor(request), z.object({ id: z.string() }).parse(request.params).id));
+  app.get("/api/convert-jobs/:id/runs/:taskId/files", async (request) => {
+    const params = z.object({ id: z.string(), taskId: z.string() }).parse(request.params);
+    return services.convertJobs.runFiles(requireActor(request), params.id, params.taskId);
+  });
   app.post("/api/convert-jobs/:id/run", async (request) => services.convertJobs.run(requireActor(request), z.object({ id: z.string() }).parse(request.params).id));
   app.post("/api/convert-jobs/:id/structure", async (request) => services.convertJobs.copyStructure(requireActor(request), z.object({ id: z.string() }).parse(request.params).id));
 

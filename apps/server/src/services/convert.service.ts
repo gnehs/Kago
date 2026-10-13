@@ -208,7 +208,7 @@ export class ConvertService {
   private async runJob(taskId: string, actor: Actor, job: ConvertJobRun, destinationRef: FileRef, spec: ConvertSpec, handle: TaskHandle): Promise<void> {
     const counts = { converted: 0, copied: 0, failed: 0 };
     try {
-      await this.runJobFiles(actor, job, destinationRef, spec, handle, counts);
+      await this.runJobFiles(taskId, actor, job, destinationRef, spec, handle, counts);
     } finally {
       // What the run got done is said in its record however it ended.
       this.db.prepare("UPDATE convert_runs SET converted = ?, copied = ?, failed = ? WHERE task_id = ?").run(counts.converted, counts.copied, counts.failed, taskId);
@@ -216,12 +216,14 @@ export class ConvertService {
     if (counts.failed > 0) throw new AppError(422, "Some files couldn’t be converted", "CONVERT_PARTLY_FAILED");
   }
 
-  private async runJobFiles(actor: Actor, job: ConvertJobRun, destinationRef: FileRef, spec: ConvertSpec, handle: TaskHandle, counts: { converted: number; copied: number; failed: number }): Promise<void> {
+  private async runJobFiles(taskId: string, actor: Actor, job: ConvertJobRun, destinationRef: FileRef, spec: ConvertSpec, handle: TaskHandle, counts: { converted: number; copied: number; failed: number }): Promise<void> {
     const { input, destination } = await this.assertJob(actor, { input: job.input, destination: destinationRef, options: job.options });
     const work = (await this.pendingFiles(job.id, input, spec, job.options, job.retryFailed ?? false)).filter((file) => Date.now() - file.mtimeMs > SETTLE_MS);
     await handle.totals(work.length, work.reduce((sum, file) => sum + file.size, 0));
     const folders = new Map<string, { folder: SafePath; taken: Set<string> }>();
     const remember = this.db.prepare("INSERT OR REPLACE INTO convert_job_files (job_id, path, size, mtime_ms, status, output, done_at) VALUES (?, ?, ?, ?, ?, ?, ?)");
+    // The run's own record of the file, with what it measured before and after.
+    const record = this.db.prepare("INSERT INTO convert_run_files (task_id, path, status, size_in, size_out) SELECT ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM convert_runs WHERE task_id = ?)");
     for (const file of work) {
       const logical = path.posix.join(input.logicalPath, file.rel);
       handle.show(logical);
@@ -238,7 +240,7 @@ export class ConvertService {
         const name = this.storage.name(safe);
         const made = jobConverts(name, spec.format, job.options.extensions)
           ? await this.convertOne(safe, stat, target.folder, target.taken, spec, job.options.keepSmaller, handle)
-          : { name: await this.copyOriginal(safe, stat, target.folder, target.taken, handle), copied: true };
+          : { name: await this.copyOriginal(safe, stat, target.folder, target.taken, handle), copied: true, size: stat.size };
         this.audit.write({ actorType: "user", actorId: actor.id, action: "convert", rootId: safe.root.id, path: safe.logicalPath, target: { jobId: job.id, rootSlug: destination.root.slug, path: path.posix.join(target.folder.logicalPath, made.name), copied: made.copied }, result: "success" });
         if (job.options.after === "keep") remember.run(job.id, file.rel, file.size, Math.round(file.mtimeMs), made.copied ? "copied" : "done", made.name, now());
         else {
@@ -249,9 +251,11 @@ export class ConvertService {
         }
         if (made.copied) counts.copied += 1;
         else counts.converted += 1;
+        record.run(taskId, file.rel, made.copied ? "copied" : "converted", stat.size, made.size, taskId);
       } catch (error) {
         if (error instanceof ConvertStopped) throw error;
         counts.failed += 1;
+        record.run(taskId, file.rel, "failed", file.size, null, taskId);
         // Left alone until it changes or someone asks for it again: a watched folder would otherwise try it for ever.
         remember.run(job.id, file.rel, file.size, Math.round(file.mtimeMs), "failed", null, now());
         logger.warn("auto-convert could not bring a file across", { jobId: job.id, path: logical, error: error instanceof Error ? error.message : String(error) });
@@ -371,7 +375,7 @@ export class ConvertService {
   }
 
   /** Converts one file into the folder. Resolves to the name of what lies there now, and whether that is the file itself and not a conversion of it. */
-  private async convertOne(source: SafePath, stat: FileStat, folder: SafePath, taken: Set<string>, spec: ConvertSpec, keepSmaller: boolean, handle: TaskHandle): Promise<{ name: string; copied: boolean }> {
+  private async convertOne(source: SafePath, stat: FileStat, folder: SafePath, taken: Set<string>, spec: ConvertSpec, keepSmaller: boolean, handle: TaskHandle): Promise<{ name: string; copied: boolean; /** How large what lies there is. */ size: number }> {
     const own = this.storage.name(source);
     const input = this.storage.mediaInput(source);
     let counted = 0;
@@ -398,11 +402,11 @@ export class ConvertService {
       if (made.size === 0) throw new AppError(422, "This file couldn’t be converted", "CONVERT_FAILED");
       if (keepSmaller && made.size >= stat.size) {
         await fsp.rm(partial, { force: true });
-        return { name: await this.copyOriginal(source, stat, folder, taken), copied: true };
+        return { name: await this.copyOriginal(source, stat, folder, taken), copied: true, size: stat.size };
       }
       const name = this.freeName(taken, `${own.slice(0, own.length - path.extname(own).length) || own}.${spec.format}`);
       await this.place(partial, folder, name);
-      return { name, copied: false };
+      return { name, copied: false, size: made.size };
     } finally {
       await fsp.rm(partial, { force: true });
       count(stat.size);

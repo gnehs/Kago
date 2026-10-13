@@ -96,7 +96,9 @@ export type ConvertSpec = {
 export type ConvertSupport = { available: boolean; formats: string[]; videoCodecs: string[]; audioCodecs: string[]; /** The GPU conversions can use and the codecs it encodes; null without one. */ hardware: { device: string; codecs: string[] } | null };
 export type ConvertJobOptions = { keepSmaller: boolean; after: "keep" | "trash" | "delete"; copyOthers: boolean; /** The endings of the names of the files that are converted; null goes by what the format is made from. */ extensions: string[] | null };
 /** How a run of an auto-convert went, and how many files it converted, brought across as they were, or gave up on. */
-export type ConvertRun = { task_id: string; started_at: number; finished_at: number | null; status: string; error_message: string | null; scheduled: boolean; bytes: number; converted: number; copied: number; failed: number };
+export type ConvertRun = { task_id: string; started_at: number; finished_at: number | null; status: string; error_message: string | null; scheduled: boolean; bytes: number; converted: number; copied: number; failed: number; /** What the files it converted measured together, before and after. */ size_in: number; size_out: number };
+/** What became of one file of a run. `size_out` is what reached the destination; a file that failed has none. */
+export type ConvertRunFile = { path: string; status: "converted" | "copied" | "failed"; size_in: number; size_out: number | null };
 /** A folder that converts itself: whatever turns up in `input` comes out in `destination`. */
 export type ConvertJob = {
   id: string;

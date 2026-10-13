@@ -331,6 +331,19 @@ CREATE TABLE IF NOT EXISTS convert_runs (
 CREATE INDEX IF NOT EXISTS idx_convert_runs_job_started
 ON convert_runs(job_id, started_at);
 
+-- What became of each file of a run, and how large it was before and after.
+CREATE TABLE IF NOT EXISTS convert_run_files (
+  task_id TEXT NOT NULL,
+  path TEXT NOT NULL,
+  status TEXT NOT NULL,
+  size_in INTEGER NOT NULL,
+  size_out INTEGER,
+  FOREIGN KEY (task_id) REFERENCES convert_runs(task_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_convert_run_files_task
+ON convert_run_files(task_id);
+
 CREATE TABLE IF NOT EXISTS user_settings (
   user_id TEXT PRIMARY KEY,
   settings_json TEXT NOT NULL,

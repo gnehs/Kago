@@ -40,14 +40,21 @@ type ConvertJobRow = {
 };
 
 /** How a run of a job went: when, how it ended, and how many files it converted, brought across as they were, or gave up on. */
-export type ConvertRun = { task_id: string; started_at: number; finished_at: number | null; status: string; error_message: string | null; scheduled: boolean; bytes: number; converted: number; copied: number; failed: number };
+export type ConvertRun = { task_id: string; started_at: number; finished_at: number | null; status: string; error_message: string | null; scheduled: boolean; bytes: number; converted: number; copied: number; failed: number; /** What the files it converted measured together, before and after. */ size_in: number; size_out: number };
+/** What became of one file of a run. `size_out` is what reached the destination; a file that failed has none. */
+export type ConvertRunFile = { path: string; status: "converted" | "copied" | "failed"; size_in: number; size_out: number | null };
+
+/** How many of a run's files are sent at a time. */
+const MAX_RUN_FILES = 1000;
 
 /** How many runs of a job are remembered. */
 const KEPT_RUNS = 20;
 
 /** A run as it stands: what its task says for as long as the task is there, and what was kept of it after. */
 const RUNS = `SELECT r.task_id, r.started_at, COALESCE(t.finished_at, r.finished_at) AS finished_at, COALESCE(t.status, r.status) AS status,
-  CASE WHEN t.id IS NULL THEN r.error_message ELSE t.error_message END AS error_message, r.scheduled, COALESCE(t.processed_bytes, r.bytes) AS bytes, r.converted, r.copied, r.failed
+  CASE WHEN t.id IS NULL THEN r.error_message ELSE t.error_message END AS error_message, r.scheduled, COALESCE(t.processed_bytes, r.bytes) AS bytes, r.converted, r.copied, r.failed,
+  (SELECT COALESCE(SUM(f.size_in), 0) FROM convert_run_files f WHERE f.task_id = r.task_id AND f.status = 'converted') AS size_in,
+  (SELECT COALESCE(SUM(f.size_out), 0) FROM convert_run_files f WHERE f.task_id = r.task_id AND f.status = 'converted') AS size_out
   FROM convert_runs r LEFT JOIN tasks t ON t.id = r.task_id`;
 
 /** How often the watched input folders are looked at. A file counts once it measures the same two looks in a row. */
@@ -121,6 +128,14 @@ export class ConvertJobService {
   runs(actor: Actor, jobId: string): ConvertRun[] {
     const job = this.getForActor(actor, jobId);
     return rows<Omit<ConvertRun, "scheduled"> & { scheduled: number }>(this.db.prepare(`${RUNS} WHERE r.job_id = ? ORDER BY r.started_at DESC, r.rowid DESC`).all(job.id)).map((run) => ({ ...run, scheduled: Boolean(run.scheduled) }));
+  }
+
+  /** The files one of the job's runs dealt with, in the order it came to them. */
+  runFiles(actor: Actor, jobId: string, taskId: string): ConvertRunFile[] {
+    const job = this.getForActor(actor, jobId);
+    return rows<ConvertRunFile>(
+      this.db.prepare("SELECT f.path, f.status, f.size_in, f.size_out FROM convert_run_files f JOIN convert_runs r ON r.task_id = f.task_id WHERE r.job_id = ? AND f.task_id = ? ORDER BY f.rowid LIMIT ?").all(job.id, taskId, MAX_RUN_FILES)
+    );
   }
 
   /** Makes in the job's input folder every folder its destination has, so that what is dropped in one comes out in the other. */
