@@ -9,12 +9,13 @@ import { setDragDownload, setDragPreview } from "@/features/files/dragOut";
 import { FileTile } from "@/components/kago/file-icon";
 import { extensionOf, kindOfExtension, thumbnailKind, type FileKind } from "@/lib/fileKind";
 import { KAGO_DRAG_TYPE, readDraggedFiles } from "@/features/files/useFileActions";
-import { displayPath, ensureZipName, joinLogicalPath } from "@/lib/paths";
+import { baseName, displayPath, ensureZipName, joinLogicalPath } from "@/lib/paths";
 import { run } from "@/lib/run";
 import { useCompact } from "@/lib/useCompact";
 import { isInteractiveTarget, usePointerDrag } from "@/lib/usePointerDrag";
 import { cn } from "@/lib/utils";
 import { promptCompress, type CompressChoice } from "@/features/files/CompressDialog";
+import { resolveConflicts, type ConflictChoices } from "@/features/files/TransferConflicts";
 import { followTask } from "@/features/tasks/taskToast";
 import { getCanvasSize, useWorkspaceStore } from "@/stores/workspace";
 import { t } from "@/lib/i18n";
@@ -127,7 +128,16 @@ export function Shelf() {
       options = choice.options;
     }
     await run(async () => {
-      followTask(await api<FileTask>(`/api/shelves/${shelfId}/tasks`, { method: "POST", body: JSON.stringify({ type, destination: { rootSlug: active.rootSlug, path }, options }) }));
+      const destination = { rootSlug: active.rootSlug, path };
+      let conflicts: ConflictChoices | undefined;
+      if (type !== "compress") {
+        // The server gathers the Shelf's items itself, the ones to skip among them, so those are named to it.
+        const chosen = await resolveConflicts(type, items.map((item) => ({ rootSlug: item.root_slug, path: item.path })), destination);
+        if (!chosen) return;
+        if (items.every((item) => chosen[baseName(item.path)] === "skip")) return;
+        conflicts = chosen;
+      }
+      followTask(await api<FileTask>(`/api/shelves/${shelfId}/tasks`, { method: "POST", body: JSON.stringify({ type, destination, options: conflicts ? { conflicts } : options }) }));
       await queryClient.invalidateQueries({ queryKey: ["tasks"] });
     });
   }

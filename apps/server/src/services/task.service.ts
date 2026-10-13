@@ -16,9 +16,9 @@ import { isZipDirectory, isZipSymlink, openZipArchive } from "../lib/zip-archive
 import { openEncryptedZipEntry, readZipCipherHead, zipCipherOf, zipPasswordFits, ZipPasswordError, type ZipCipher } from "../lib/zip-crypto.js";
 import { SecretBox } from "../lib/secret-box.js";
 import { zipStream, type ZipEntry, type ZipOptions } from "../lib/zip-stream.js";
-import { RcloneJobStopped, refusedForPermission, type RcloneStats } from "../storage/rclone-client.js";
+import { RcloneJobStopped, refusedForPermission, type RcloneItem, type RcloneStats } from "../storage/rclone-client.js";
 import { runRclone } from "../storage/rclone-daemon.js";
-import { TRASH_FOLDER } from "../lib/system-files.js";
+import { REPLACE_PARTIAL, TRASH_FOLDER } from "../lib/system-files.js";
 import { isRemote, joinFs, transferProgress } from "../storage/remote-storage.js";
 import type { EventPublisher } from "../ws/events.js";
 import { ArchivePasswordService } from "./archive-password.service.js";
@@ -52,6 +52,22 @@ const fileRefSchema = z.object({
   path: z.string().min(1)
 });
 
+/**
+ * What a `copy` or `move` does with a source whose name the destination already has. `keep` puts it beside the one
+ * there under a name of its own. A folder landing on a folder may be merged into it instead, and the word after
+ * `merge_` is what then happens to a file the folder there already has.
+ */
+const conflictActions = ["skip", "replace", "keep", "merge_skip", "merge_replace", "merge_keep"] as const;
+type ConflictAction = (typeof conflictActions)[number];
+/** What becomes of one of two that cannot both have the name. */
+type Clash = "skip" | "replace" | "keep";
+type Conflicts = Record<string, ConflictAction>;
+
+export const transferCheckSchema = z.object({
+  sources: z.array(fileRefSchema).min(1),
+  destination: fileRefSchema
+});
+
 export const taskInputSchema = z.object({
   type: z.enum([
     "copy",
@@ -73,7 +89,9 @@ export const taskInputSchema = z.object({
     /** What a `compress` task locks the archive with, or what an `extract` task tries before the saved ones. */
     password: z.string().min(1).max(1024).optional(),
     /** Whether an `extract` task keeps the password among the saved ones once it has opened the archive. */
-    remember: z.boolean().optional()
+    remember: z.boolean().optional(),
+    /** What a `copy` or `move` does where the destination already has a source's name: an action for each such name, in NFC. Without one the task stops there. */
+    conflicts: z.record(z.string(), z.enum(conflictActions)).optional()
   }).optional()
 });
 
@@ -140,7 +158,7 @@ export class TaskService {
     }
 
     const { sources } = input;
-    const { level, password, encryption, remember } = input.options ?? {};
+    const { level, password, encryption, remember, conflicts } = input.options ?? {};
     // The task row is shown to its owner and kept for a week, so the password only ever sits in it sealed.
     const sealed = password ? this.secrets().seal(password) : undefined;
     const archiveOptions: CompressOptions | ExtractOptions =
@@ -151,7 +169,7 @@ export class TaskService {
       input.type === "download_zip"
         ? JSON.stringify({ fileName: downloadFileName(sources) })
         : input.destination
-          ? JSON.stringify({ ...input.destination, options: input.type === "compress" || input.type === "extract" ? archiveOptions : {} })
+          ? JSON.stringify({ ...input.destination, options: input.type === "compress" || input.type === "extract" ? archiveOptions : (input.type === "copy" || input.type === "move") && conflicts ? { conflicts } : {} })
           : null;
 
     await this.assertTaskPermissions(actor, input);
@@ -569,20 +587,92 @@ export class TaskService {
     }
   }
 
+  /** What is in a folder, by its names in NFC: the way `assertNameAvailable` compares them. */
+  private async entries(folder: SafePath): Promise<Map<string, FolderEntry>> {
+    const found = isRemote(folder.root)
+      ? await this.storage.remote.list(folder.root, folder.logicalPath)
+      : (await fsp.readdir(folder.absolutePath, { withFileTypes: true })).map((entry) => ({ name: entry.name, directory: entry.isDirectory() }));
+    return new Map(found.map((entry) => [nfc(entry.name), { name: entry.name, directory: entry.directory }]));
+  }
+
+  /** Whether the entry `name` of a folder is the source itself: on disk told by what it is, since two locations may show the one folder. */
+  private async isItself(source: SafePath, folder: SafePath, name: string): Promise<boolean> {
+    if (isRemote(source.root) || isRemote(folder.root)) return source.root.id === folder.root.id && source.logicalPath === path.posix.join(folder.logicalPath, name);
+    const [one, other] = await Promise.all([fsp.lstat(source.absolutePath), fsp.lstat(path.join(folder.absolutePath, name))]);
+    return one.dev === other.dev && one.ino === other.ino;
+  }
+
+  /** Whether the source lies inside the entry `name` of a folder, which then cannot make way for it. */
+  private holdsSource(source: SafePath, folder: SafePath, name: string): boolean {
+    if (isRemote(source.root) || isRemote(folder.root)) return source.root.id === folder.root.id && source.logicalPath.startsWith(`${path.posix.join(folder.logicalPath, name)}/`);
+    const relative = path.relative(path.join(folder.absolutePath, name), source.absolutePath);
+    return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
+  }
+
+  /**
+   * Which of the sources would land on a name the destination already has, for whoever is about to copy or move
+   * them to ask what is to be done, with what tells the two apart. `same` is a source found where it already is.
+   */
+  async transferConflicts(actor: Actor, input: z.infer<typeof transferCheckSchema>): Promise<{ conflicts: TransferConflict[] }> {
+    const dest = await this.paths.resolveExisting(input.destination.rootSlug, input.destination.path);
+    this.permissions.require(actor, "edit", dest.root, dest.logicalPath);
+    const there = await this.entries(dest);
+    const conflicts: TransferConflict[] = [];
+    for (const ref of input.sources) {
+      const source = await this.paths.resolveExisting(ref.rootSlug, ref.path);
+      this.permissions.require(actor, "view", source.root, source.logicalPath);
+      const name = this.storage.name(source);
+      const occupant = there.get(nfc(name));
+      if (!occupant) continue;
+      const coming = await this.storage.stat(source);
+      const held = isRemote(dest.root) ? await this.storage.remote.stat(dest.root, path.posix.join(dest.logicalPath, occupant.name)) : await fsp.lstat(path.join(dest.absolutePath, occupant.name));
+      conflicts.push({
+        rootSlug: ref.rootSlug,
+        path: ref.path,
+        name: nfc(name),
+        kind: coming.isDirectory() ? "folder" : "file",
+        size: coming.isDirectory() ? 0 : coming.size,
+        mtime: coming.mtimeMs,
+        existing: { kind: occupant.directory ? "folder" : "file", size: occupant.directory ? 0 : (held?.size ?? 0), mtime: held?.mtimeMs ?? 0 },
+        same: await this.isItself(source, dest, occupant.name)
+      });
+    }
+    return { conflicts };
+  }
+
+  /** How a source lands in a folder that may already have its name, going by what was chosen for that name. */
+  private async landing(source: SafePath, directory: boolean, dest: SafePath, there: Map<string, FolderEntry>, conflicts: Conflicts, move: boolean): Promise<Landing> {
+    const name = this.storage.name(source);
+    const occupant = there.get(nfc(name));
+    if (!occupant) return { mode: "new", name, directory };
+    const action = conflicts[nfc(name)];
+    if (!action) throw new AppError(409, "Target already exists", "TARGET_EXISTS");
+    // Onto itself there is nothing to carry, unless a second one is wanted beside it.
+    if (await this.isItself(source, dest, occupant.name)) return { mode: action === "keep" && !move ? "keep" : "skip", name, directory };
+    const merging = action.startsWith("merge_") ? (action.slice("merge_".length) as Clash) : null;
+    // Only a folder goes into a folder; anything else that was to be merged is treated like a file inside one.
+    const mergeable = directory && occupant.directory;
+    const clash = merging && !mergeable ? merging : merging ? null : (action as Clash);
+    if (clash === "skip" || clash === "keep") return { mode: clash, name, directory };
+    if (occupant.directory && this.holdsSource(source, dest, occupant.name)) throw new AppError(409, "Cannot replace or merge into a folder that holds the source", "TARGET_HOLDS_SOURCE");
+    return merging && mergeable ? { mode: "merge", name, directory, clash: merging, occupant } : { mode: "replace", name, directory, occupant };
+  }
+
   private async runCopyLike(task: FileTask, actor: Actor, move: boolean): Promise<void> {
     const sources = JSON.parse(task.sources_json) as Array<{ rootSlug: string; path: string }>;
-    const destination = JSON.parse(task.destination ?? "{}") as { rootSlug: string; path: string };
+    const destination = JSON.parse(task.destination ?? "{}") as { rootSlug: string; path: string; options?: { conflicts?: Conflicts } };
+    const conflicts = destination.options?.conflicts ?? {};
     const dest = await this.paths.resolveExisting(destination.rootSlug, destination.path);
     this.permissions.require(actor, "edit", dest.root, dest.logicalPath);
     const resolving = limiter(treeConcurrency);
     const resolved = await Promise.all(sources.map((source) => resolving(() => this.paths.resolveExisting(source.rootSlug, source.path))));
     // Anything with a remote end is carried by rclone, which reaches both sides itself.
-    if (isRemote(dest.root) || resolved.some((source) => isRemote(source.root))) return this.runTransfer(task, actor, resolved, dest, move);
+    if (isRemote(dest.root) || resolved.some((source) => isRemote(source.root))) return this.runTransfer(task, actor, resolved, dest, move, conflicts);
 
     const operations = [];
     const targetPaths = new Set<string>();
-    // Read once for all of them: what is there already, compared the way `assertNameAvailable` compares.
-    const taken = new Set((await fsp.readdir(dest.absolutePath)).map(nfc));
+    // Read once for all of them: what is there already.
+    const there = await this.entries(dest);
     let totalBytes = 0;
     let totalFiles = 0;
     for (const safeSource of resolved) {
@@ -597,60 +687,58 @@ export class TaskService {
       // Existing names are carried over as they are, so sources that only differ in normalisation still collide.
       if (targetPaths.has(nfc(target))) throw new AppError(409, "Multiple sources resolve to the same target", "TARGET_COLLISION");
       targetPaths.add(nfc(target));
-      if (taken.has(nfc(path.basename(target)))) throw new AppError(409, "Target already exists", "TARGET_EXISTS");
-      operations.push({ safeSource, target, bytes: stats.bytes, files });
+      const landing = await this.landing(safeSource, (await fsp.lstat(safeSource.absolutePath)).isDirectory(), dest, there, conflicts, move);
+      operations.push({ safeSource, landing, bytes: stats.bytes, files });
     }
+    nameKept(operations.map((operation) => operation.landing), there);
     await this.updateTotals(task.id, totalFiles, totalBytes);
 
-    for (const { safeSource, target, bytes, files } of operations) {
+    const stored = new StoredNames();
+    for (const { safeSource, landing, bytes, files } of operations) {
       await this.progress(task.id, safeSource.logicalPath);
-      let shouldCountBytesAfterOperation = false;
       let countedFiles = 0;
+      let countedBytes = 0;
       const onFile = () => {
         countedFiles += 1;
         this.countFiles(task.id, 1);
       };
-      if (move) {
-        const streamed = await movePath(safeSource.absolutePath, target, (processedBytes) => this.bumpProcessedBytes(task.id, processedBytes), onFile);
-        shouldCountBytesAfterOperation = !streamed;
-      } else {
-        await copyTree(safeSource.absolutePath, target, (processedBytes) => this.bumpProcessedBytes(task.id, processedBytes), onFile);
-      }
-      if (move) {
-        this.preferences.moved(safeSource.root.id, safeSource.logicalPath, dest.root.id, path.posix.join(dest.logicalPath, path.basename(target)));
+      const onBytes = (processedBytes: number) => {
+        countedBytes += processedBytes;
+        this.bumpProcessedBytes(task.id, processedBytes);
+      };
+      if (landing.mode !== "skip") {
+        const target = path.join(dest.absolutePath, landing.name);
+        const occupant = landing.occupant ? path.join(dest.absolutePath, landing.occupant.name) : target;
+        if (landing.mode === "merge") await mergeTree(safeSource.absolutePath, occupant, landing.clash ?? "keep", move, stored, onBytes, onFile);
+        else if (landing.mode === "replace") await replacePath(safeSource.absolutePath, occupant, target, move, onBytes, onFile);
+        else if (move) await movePath(safeSource.absolutePath, target, onBytes, onFile);
+        else await copyTree(safeSource.absolutePath, target, onBytes, onFile);
+        const movedTo = path.posix.join(dest.logicalPath, landing.name);
+        if (move) this.preferences.moved(safeSource.root.id, safeSource.logicalPath, dest.root.id, movedTo);
         this.audit.write({
           actorType: "user",
           actorId: actor.id,
-          action: "move",
+          action: move ? "move" : "copy",
           rootId: safeSource.root.id,
           path: safeSource.logicalPath,
-          target: { rootSlug: destination.rootSlug, path: path.posix.join(destination.path, path.basename(safeSource.logicalPath)) },
-          result: "success"
-        });
-      } else {
-        this.audit.write({
-          actorType: "user",
-          actorId: actor.id,
-          action: "copy",
-          rootId: safeSource.root.id,
-          path: safeSource.logicalPath,
-          target: { rootSlug: destination.rootSlug, path: path.posix.join(destination.path, path.basename(safeSource.logicalPath)) },
+          target: { rootSlug: destination.rootSlug, path: path.posix.join(destination.path, landing.name) },
           result: "success"
         });
       }
-      if (shouldCountBytesAfterOperation) this.bumpProcessedBytes(task.id, bytes);
-      // Whatever was not counted file by file: all of a folder renamed into place, or the one an empty folder stands for.
+      // Whatever was not counted on the way: a folder renamed into place, the one an empty folder stands for, what was skipped.
+      this.bumpProcessedBytes(task.id, bytes - countedBytes);
       await this.bumpProcessed(task.id, files - countedFiles);
     }
   }
 
   /** Copies or moves between locations of which at least one is remote. */
-  private async runTransfer(task: FileTask, actor: Actor, sources: SafePath[], dest: SafePath, move: boolean): Promise<void> {
-    type Operation = { source: SafePath; directory: boolean; name: string; files: number };
+  private async runTransfer(task: FileTask, actor: Actor, sources: SafePath[], dest: SafePath, move: boolean, conflicts: Conflicts): Promise<void> {
+    /** `name` is the source's own; where it lands, and under what name, is in `landing`. */
+    type Operation = { source: SafePath; directory: boolean; name: string; files: number; landing: Landing };
     const operations: Operation[] = [];
     const names = new Set<string>();
-    // Listed once for all of them: what is there already, compared the way `assertNameAvailable` compares.
-    const taken = new Set((await this.storage.names(dest)).map(nfc));
+    // Listed once for all of them: what is there already.
+    const there = await this.entries(dest);
     let totalBytes = 0;
     let totalFiles = 0;
     for (const source of sources) {
@@ -664,7 +752,7 @@ export class TaskService {
       const name = this.storage.name(source);
       if (names.has(nfc(name))) throw new AppError(409, "Multiple sources resolve to the same target", "TARGET_COLLISION");
       names.add(nfc(name));
-      if (taken.has(nfc(name))) throw new AppError(409, "Target already exists", "TARGET_EXISTS");
+      const landing = await this.landing(source, directory, dest, there, conflicts, move);
       let size: PathStats;
       if (!isRemote(source.root)) size = await collectPathStats(source.absolutePath);
       else if (directory) {
@@ -674,16 +762,17 @@ export class TaskService {
       const files = Math.max(size.files, 1);
       totalBytes += size.bytes;
       totalFiles += files;
-      operations.push({ source, directory, name, files });
+      operations.push({ source, directory, name, files, landing });
     }
+    nameKept(operations.map((operation) => operation.landing), there);
     await this.updateTotals(task.id, totalFiles, totalBytes);
 
     // Files out of one folder go in one run of rclone, which carries several at a time; a folder is a run of its own.
     const batches: Operation[][] = [];
     const byFolder = new Map<string, Operation[]>();
     for (const operation of operations) {
-      // The list rclone is handed has one name to a line.
-      if (operation.directory || /[\r\n]/.test(operation.name)) {
+      // The list rclone is handed has one name to a line, and lands each file under the name it has.
+      if (operation.directory || operation.landing.mode !== "new" || operation.landing.name !== operation.name || /[\r\n]/.test(operation.name)) {
         batches.push([operation]);
         continue;
       }
@@ -698,7 +787,7 @@ export class TaskService {
 
     const to = this.rcloneAddress(dest);
     const settle = (operation: Operation) => {
-      const movedTo = path.posix.join(dest.logicalPath, operation.name);
+      const movedTo = path.posix.join(dest.logicalPath, operation.landing.name);
       if (move) this.preferences.moved(operation.source.root.id, operation.source.logicalPath, dest.root.id, movedTo);
       this.audit.write({
         actorType: "user",
@@ -711,10 +800,17 @@ export class TaskService {
       });
     };
     for (const batch of batches) {
-      const { source, directory, name } = batch[0]!;
+      const { source, directory, landing } = batch[0]!;
       await this.progress(task.id, source.logicalPath);
       const from = this.rcloneAddress(source);
       const files = batch.reduce((sum, operation) => sum + operation.files, 0);
+      if (landing.mode === "skip") {
+        await this.bumpProcessed(task.id, files);
+        continue;
+      }
+      // Where it lands: in the folder that is there when it is merged into one, under its own name otherwise.
+      const name = landing.mode === "merge" ? landing.occupant!.name : landing.name;
+      const landsAt = { fs: to.fs, remote: to.remote ? `${to.remote}/${name}` : name };
       const folder = path.posix.dirname(source.logicalPath);
       const onBytes = transferProgress(
         (bytes) => this.countBytes(task.id, bytes),
@@ -731,6 +827,8 @@ export class TaskService {
       };
       const stopped = () => this.isCancelled(task.id);
       const carrying = { _config: { Transfers: transferConcurrency } };
+      // rclone leaves alone a file that looks like the one arriving, which where no times are kept is any of the same size.
+      const replacing = { IgnoreTimes: true };
       const list = path.join(this.appDataDir, "temp", `transfer-${id("list")}`);
       try {
         if (batch.length > 1) {
@@ -742,16 +840,38 @@ export class TaskService {
             onStats,
             stopped
           );
-        } else if (directory) {
-          await this.storage.remote.client.runJob(
-            move ? "sync/move" : "sync/copy",
-            { srcFs: joinFs(from.fs, from.remote), dstFs: joinFs(to.fs, to.remote ? `${to.remote}/${name}` : name), createEmptySrcDirs: true, ...(move ? { deleteEmptySrcDirs: true } : {}), ...carrying },
-            onStats,
-            stopped
-          );
-          if (move) await this.storage.remote.clearMoved(from.fs, from.remote);
         } else {
-          await this.storage.remote.client.runJob(move ? "operations/movefile" : "operations/copyfile", { srcFs: from.fs, srcRemote: from.remote, dstFs: to.fs, dstRemote: to.remote ? `${to.remote}/${name}` : name }, onStats, stopped);
+          // A file takes a file's place as it arrives; anything else that is in the way goes first.
+          const occupant = landing.mode === "replace" ? landing.occupant! : null;
+          if (occupant && (directory || occupant.directory || occupant.name !== name)) await this.removeTarget(dest, occupant.name, occupant.directory);
+          if (directory) {
+            const srcFs = joinFs(from.fs, from.remote);
+            const dstFs = joinFs(landsAt.fs, landsAt.remote);
+            const clash = landing.mode === "merge" ? landing.clash : "replace";
+            // Listed before anything is carried, while it can still be told which files the two folders both have.
+            const twice = clash === "keep" ? await this.sharedFiles(srcFs, dstFs) : null;
+            await this.storage.remote.client.runJob(
+              move ? "sync/move" : "sync/copy",
+              { srcFs, dstFs, createEmptySrcDirs: true, ...(move ? { deleteEmptySrcDirs: true } : {}), _config: { ...carrying._config, ...(clash !== "replace" ? { IgnoreExisting: true } : landing.mode === "merge" ? replacing : {}) } },
+              onStats,
+              stopped
+            );
+            // What was left behind for having a namesake follows, each to a name of its own beside it.
+            for (const file of twice?.files ?? []) {
+              if (stopped()) throw new RcloneJobStopped();
+              const beside = (candidate: string) => path.posix.join(path.posix.dirname(file), candidate);
+              const kept = beside(freeName((candidate) => twice!.held.has(beside(candidate)), path.posix.basename(file), false));
+              twice!.held.add(kept);
+              await this.storage.remote.client.runJob(move ? "operations/movefile" : "operations/copyfile", { srcFs, srcRemote: file, dstFs, dstRemote: kept }, () => undefined, stopped);
+            }
+            if (move) {
+              // The folders those files were holding open are empty now.
+              if (twice?.files.length) await this.storage.remote.client.call("operations/rmdirs", { fs: srcFs, remote: "", leaveRoot: true }).catch(() => undefined);
+              await this.storage.remote.clearMoved(from.fs, from.remote);
+            }
+          } else {
+            await this.storage.remote.client.runJob(move ? "operations/movefile" : "operations/copyfile", { srcFs: from.fs, srcRemote: from.remote, dstFs: landsAt.fs, dstRemote: landsAt.remote, ...(occupant ? { _config: replacing } : {}) }, onStats, stopped);
+          }
         }
       } catch (error) {
         // A run that stops half way has moved some of its files for good, and those are told like any other.
@@ -760,8 +880,8 @@ export class TaskService {
           if (left) for (const operation of batch) if (!left.includes(operation.name)) settle(operation);
         }
         if (error instanceof RcloneJobStopped) {
-          // Like a cancelled copy on disk, a cancelled copy to a remote takes its unfinished target with it.
-          if (!move) for (const operation of batch) await this.removeTarget(dest, operation.name, operation.directory).catch(() => undefined);
+          // Like a cancelled copy on disk, a cancelled copy to a remote takes its unfinished target with it, unless that was there before.
+          if (!move) for (const operation of batch) if (!operation.landing.occupant) await this.removeTarget(dest, operation.landing.name, operation.directory).catch(() => undefined);
           throw new TaskCancelledError();
         }
         throw transferFailure(error);
@@ -772,6 +892,14 @@ export class TaskService {
       // rclone counts no transfer for what the remote moved by itself, so the rest is counted once it is done.
       await this.bumpProcessed(task.id, files - countedFiles);
     }
+  }
+
+  /** The files two folders both have, as rclone names them, with everything the second one holds. */
+  private async sharedFiles(srcFs: string, dstFs: string): Promise<{ files: string[]; held: Set<string> }> {
+    const tree = async (fs: string) => (await this.storage.remote.client.call<{ list: RcloneItem[] }>("operations/list", { fs, remote: "", opt: { recurse: true } })).list;
+    const [coming, there] = await Promise.all([tree(srcFs), tree(dstFs)]);
+    const files = new Set(there.filter((item) => !item.IsDir).map((item) => item.Path));
+    return { files: coming.filter((item) => !item.IsDir && files.has(item.Path)).map((item) => item.Path), held: new Set(there.map((item) => item.Path)) };
   }
 
   /** Refuses to touch one of a server's shares, or with `child` to put something beside them. */
@@ -1802,6 +1930,14 @@ type RestorableTrashItem = {
   deleted_by: string;
 };
 
+type FolderEntry = { name: string; directory: boolean };
+
+/** Where a source of a copy or move ends up: `occupant` is what has its name there, when that makes way or takes it in. */
+type Landing = { mode: "new" | "skip" | "keep" | "replace" | "merge"; name: string; directory: boolean; clash?: Clash; occupant?: FolderEntry };
+
+/** Sizes are of files only, and a time is 0 where the location keeps none. */
+export type TransferConflict = { rootSlug: string; path: string; name: string; kind: "file" | "folder"; size: number; mtime: number; existing: { kind: "file" | "folder"; size: number; mtime: number }; same: boolean };
+
 type PathStats = {
   bytes: number;
   /** The files in it, folders not counted. */
@@ -1851,6 +1987,12 @@ class StoredNames {
     (await this.load(folder)).set(nfc(name), name);
   }
 
+  /** A name the folder does not have yet, as close to `name` as there is; see `freeName`. */
+  async free(folder: string, name: string, directory: boolean): Promise<string> {
+    const names = await this.load(folder);
+    return freeName((candidate) => names.has(nfc(candidate)), name, directory);
+  }
+
   private async load(folder: string): Promise<Map<string, string>> {
     let names = this.folders.get(folder);
     if (!names) {
@@ -1862,6 +2004,26 @@ class StoredNames {
       this.folders.set(folder, names);
     }
     return names;
+  }
+}
+
+/** The name with a number after it, before the extension of a file: the first one nothing has yet. */
+function freeName(isTaken: (name: string) => boolean, name: string, directory: boolean): string {
+  const { name: stem, ext } = directory ? { name, ext: "" } : path.parse(name);
+  for (let copy = 2; ; copy += 1) {
+    const candidate = `${stem} ${copy}${ext}`;
+    if (!isTaken(candidate)) return candidate;
+  }
+}
+
+/** Gives each source that is to be kept beside its namesake a name neither the folder nor another source has. */
+function nameKept(landings: Landing[], there: Map<string, FolderEntry>): void {
+  const names = new Set([...there.keys(), ...landings.map((landing) => nfc(landing.name))]);
+  for (const landing of landings) {
+    if (landing.mode !== "keep") continue;
+    landing.name = freeName((candidate) => names.has(nfc(candidate)), nfc(landing.name), landing.directory);
+    landing.mode = "new";
+    names.add(landing.name);
   }
 }
 
@@ -1969,7 +2131,8 @@ async function assertTargetOutsideSource(sourcePath: string, targetPath: string)
   const stat = await fsp.lstat(sourcePath);
   if (!stat.isDirectory()) return;
   const relative = path.relative(path.resolve(sourcePath), path.resolve(targetPath));
-  if (relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))) {
+  // Landing where it already is, a folder is not inside itself: it has its own name against it, and that is asked about.
+  if (relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative)) {
     throw new AppError(409, "Cannot copy or move a folder into itself", "TARGET_INSIDE_SOURCE");
   }
 }
@@ -2036,6 +2199,67 @@ async function copyTree(sourcePath: string, targetPath: string, onBytes: (bytes:
   if (!stop.signal.aborted) return;
   if (failure instanceof TaskCancelledError) await fsp.rm(targetPath, { recursive: true, force: true });
   throw failure;
+}
+
+/**
+ * Puts a file or folder in the place of what is at `occupant`. It is carried to a name of its own first, so that
+ * what was there goes only once its replacement has arrived whole, and a moved source goes last of all.
+ */
+async function replacePath(sourcePath: string, occupant: string, targetPath: string, move: boolean, onBytes: (bytes: number) => void, onFile?: () => void): Promise<void> {
+  const arriving = path.join(path.dirname(targetPath), `${REPLACE_PARTIAL}${id("temp")}`);
+  // A move within one disk is a rename; anything else is copied.
+  const renamed =
+    move &&
+    (await fsp.rename(sourcePath, arriving).then(
+      () => true,
+      (error: unknown) => {
+        if (isNodeError(error, "EXDEV")) return false;
+        throw error;
+      }
+    ));
+  try {
+    if (!renamed) await copyTree(sourcePath, arriving, onBytes, onFile);
+    await fsp.rm(occupant, { recursive: true, force: true });
+    await fsp.rename(arriving, targetPath);
+  } catch (error) {
+    if (renamed) await fsp.rename(arriving, sourcePath).catch(() => undefined);
+    else await fsp.rm(arriving, { recursive: true, force: true }).catch(() => undefined);
+    throw error;
+  }
+  if (move && !renamed) await fsp.rm(sourcePath, { recursive: true, force: false });
+}
+
+/**
+ * Puts what a folder holds into one that is already there. What the target does not have is carried whole, a
+ * folder it has is merged in turn, and `clash` says what becomes of anything else the two both have.
+ * A moved folder goes once it is empty, which it is not when something of it was skipped.
+ */
+async function mergeTree(sourcePath: string, targetPath: string, clash: Clash, move: boolean, names: StoredNames, onBytes: (bytes: number) => void, onFile?: () => void): Promise<void> {
+  for (const entry of await fsp.readdir(sourcePath, { withFileTypes: true })) {
+    assertFileOrFolder(entry);
+    const from = path.join(sourcePath, entry.name);
+    const carry = (to: string) => (move ? movePath(from, to, onBytes, onFile) : copyTree(from, to, onBytes, onFile));
+    const existing = await names.find(targetPath, entry.name);
+    if (existing === undefined) {
+      await carry(path.join(targetPath, entry.name));
+      await names.add(targetPath, entry.name);
+      continue;
+    }
+    const occupant = path.join(targetPath, existing);
+    // A link there is something in the way like any file, and never a folder to put things in.
+    if (entry.isDirectory() && (await fsp.lstat(occupant)).isDirectory()) await mergeTree(from, occupant, clash, move, names, onBytes, onFile);
+    else if (clash === "replace") await replacePath(from, occupant, occupant, move, onBytes, onFile);
+    else if (clash === "keep") {
+      const kept = await names.free(targetPath, nfc(entry.name), entry.isDirectory());
+      await carry(path.join(targetPath, kept));
+      await names.add(targetPath, kept);
+    }
+  }
+  if (move) {
+    await fsp.rmdir(sourcePath).catch((error: unknown) => {
+      if (!isNodeError(error, "ENOTEMPTY") && !isNodeError(error, "EEXIST")) throw error;
+    });
+  }
 }
 
 async function preservePathMetadata(targetPath: string, stat: Stats): Promise<void> {

@@ -204,6 +204,83 @@ test("a remote location behaves like a local one", { skip: remote ? false : "KAG
     assert.equal((await api.get(`/api/fs/meta?${q("/album/docs")}`)).status, 404);
     assert.equal((await api.post("/api/tasks", { type: "copy", sources: [{ rootSlug: slug, path: "/docs" }], destination: { rootSlug: slug, path: "/docs/nested" } })).status, 409);
 
+    // A name the destination already has is dealt with the way the task was told to.
+    {
+      const lay = async (folder, files) => {
+        for (const [name, text] of Object.entries(files)) {
+          await mkdir(path.dirname(path.join(dataDir, "local", folder, name)), { recursive: true });
+          await writeFile(path.join(dataDir, "local", folder, name), text);
+        }
+      };
+      // Each pair is of one size, as a remote that keeps no times has nothing else to tell them apart by.
+      await lay("clash", { "a.txt": "new a", "b.txt": "new b", "box/one.txt": "new one", "box/two.txt": "new two", "box/deep/x.txt": "new x" });
+      await lay("held", { "a.txt": "old a", "box/one.txt": "old one", "box/old.txt": "old", "box/deep/x.txt": "old x" });
+      const tree = async (folder, prefix = "") => {
+        const found = {};
+        for (const item of (await api.get(`/api/fs/list?${q(folder)}`)).json.items.sort((a, b) => (a.name < b.name ? -1 : 1))) {
+          if (item.kind === "folder") Object.assign(found, await tree(item.path, `${prefix}${item.name}/`));
+          else found[`${prefix}${item.name}`] = (await api.get(`/api/fs/preview?${q(item.path)}`)).text;
+        }
+        return found;
+      };
+      const reset = async () => {
+        if ((await api.get(`/api/fs/meta?${q("/clash")}`)).status === 200) assert.equal((await task({ type: "delete", sources: [{ rootSlug: slug, path: "/clash" }] })).status, "done");
+        assert.equal((await api.post("/api/fs/mkdir", { rootSlug: slug, path: "/", name: "clash" })).status, 200);
+        assert.equal((await task({ type: "copy", sources: ["a.txt", "box"].map((name) => ({ rootSlug: "local", path: `/held/${name}` })), destination: { rootSlug: slug, path: "/clash" } })).status, "done");
+      };
+      const held = { "a.txt": "old a", "box/deep/x.txt": "old x", "box/old.txt": "old", "box/one.txt": "old one" };
+      const send = (type, conflicts, names = ["a.txt", "b.txt", "box"], from = "local", folder = "/clash") =>
+        task({ type, sources: names.map((name) => ({ rootSlug: from, path: `${folder}/${name}` })), destination: { rootSlug: slug, path: "/clash" }, options: { conflicts } });
+      await reset();
+      const asked = await api.post("/api/tasks/conflicts", { sources: ["a.txt", "b.txt", "box"].map((name) => ({ rootSlug: "local", path: `/clash/${name}` })), destination: { rootSlug: slug, path: "/clash" } });
+      assert.deepEqual(asked.json.conflicts.map((conflict) => [conflict.name, conflict.kind, conflict.size, conflict.existing.kind, conflict.existing.size, conflict.same]), [["a.txt", "file", 5, "file", 5, false], ["box", "folder", 0, "folder", 0, false]]);
+      assert.equal((await api.post("/api/tasks/conflicts", { sources: [{ rootSlug: slug, path: "/clash/box" }], destination: { rootSlug: slug, path: "/clash" } })).json.conflicts[0].same, true);
+      assert.equal((await send("copy", { "a.txt": "skip" })).error_message, "Target already exists");
+      assert.deepEqual(await tree("/clash"), held);
+      const skipped = await send("copy", { "a.txt": "skip", box: "skip" });
+      assert.deepEqual([skipped.status, skipped.total_files, skipped.processed_files], ["done", 5, 5]);
+      assert.deepEqual(await tree("/clash"), { ...held, "b.txt": "new b" });
+      await reset();
+      assert.equal((await send("copy", { "a.txt": "keep", box: "keep" })).status, "done");
+      assert.deepEqual(await tree("/clash"), { ...held, "a 2.txt": "new a", "b.txt": "new b", "box 2/deep/x.txt": "new x", "box 2/one.txt": "new one", "box 2/two.txt": "new two" });
+      await reset();
+      assert.equal((await send("copy", { "a.txt": "replace", box: "replace" })).status, "done");
+      assert.deepEqual(await tree("/clash"), { "a.txt": "new a", "b.txt": "new b", "box/deep/x.txt": "new x", "box/one.txt": "new one", "box/two.txt": "new two" });
+      await reset();
+      assert.equal((await send("copy", { box: "merge_skip" }, ["box"])).status, "done");
+      assert.deepEqual(await tree("/clash"), { ...held, "box/two.txt": "new two" });
+      await reset();
+      assert.equal((await send("copy", { box: "merge_replace" }, ["box"])).status, "done");
+      assert.deepEqual(await tree("/clash"), { "a.txt": "old a", "box/deep/x.txt": "new x", "box/old.txt": "old", "box/one.txt": "new one", "box/two.txt": "new two" });
+      await reset();
+      assert.equal((await send("copy", { box: "merge_keep" }, ["box"])).status, "done");
+      const both = { ...held, "box/deep/x 2.txt": "new x", "box/one 2.txt": "new one", "box/two.txt": "new two" };
+      assert.deepEqual(await tree("/clash"), both);
+      // Within the remote, and moved: the source folder goes once it is empty, and stays with whatever was skipped.
+      const stage = async () => {
+        await reset();
+        if ((await api.get(`/api/fs/meta?${q("/coming")}`)).status === 200) assert.equal((await task({ type: "delete", sources: [{ rootSlug: slug, path: "/coming" }] })).status, "done");
+        assert.equal((await api.post("/api/fs/mkdir", { rootSlug: slug, path: "/", name: "coming" })).status, 200);
+        assert.equal((await task({ type: "copy", sources: ["a.txt", "box"].map((name) => ({ rootSlug: "local", path: `/clash/${name}` })), destination: { rootSlug: slug, path: "/coming" } })).status, "done");
+      };
+      await stage();
+      assert.equal((await send("move", { "a.txt": "keep", box: "merge_keep" }, ["a.txt", "box"], slug, "/coming")).status, "done");
+      assert.deepEqual(await tree("/clash"), { ...both, "a 2.txt": "new a" });
+      assert.deepEqual((await api.get(`/api/fs/list?${q("/coming")}`)).json.items, []);
+      await stage();
+      assert.equal((await send("move", { "a.txt": "replace", box: "merge_skip" }, ["a.txt", "box"], slug, "/coming")).status, "done");
+      assert.deepEqual(await tree("/clash"), { ...held, "a.txt": "new a", "box/two.txt": "new two" });
+      assert.deepEqual(await tree("/coming"), { "box/deep/x.txt": "new x", "box/one.txt": "new one" });
+      // Fetched to the disk, where the folder of that name is merged the same way.
+      await stage();
+      assert.equal((await task({ type: "move", sources: [{ rootSlug: slug, path: "/coming/box" }], destination: { rootSlug: "local", path: "/held" }, options: { conflicts: { box: "merge_replace" } } })).status, "done");
+      assert.equal(await readFile(path.join(dataDir, "local", "held", "box", "one.txt"), "utf8"), "new one");
+      assert.equal(await readFile(path.join(dataDir, "local", "held", "box", "old.txt"), "utf8"), "old");
+      assert.deepEqual(await tree("/coming"), { "a.txt": "new a" });
+      for (const name of ["clash", "coming"]) assert.equal((await task({ type: "delete", sources: [{ rootSlug: slug, path: `/${name}` }] })).status, "done");
+      for (const name of ["clash", "held"]) await rm(path.join(dataDir, "local", name), { recursive: true });
+    }
+
     // Many files picked at once travel together, whatever their names, and nothing beside them does.
     {
       const picks = ["a b.txt", "#hash.txt", ";semi.txt", "[x]{y}.txt", "が.txt", "plain.txt"];

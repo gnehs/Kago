@@ -12,6 +12,7 @@ import { followTask } from "@/features/tasks/taskToast";
 import { isUploadCancelled, uploadForm, uploadLabel } from "@/stores/uploads";
 import { folderTitle, useWorkspaceStore } from "@/stores/workspace";
 import { startExtract } from "./ArchivePassword";
+import { resolveConflicts } from "./TransferConflicts";
 import { MAX_BATCH_RENAME, promptBatchRename } from "./BatchRenameDialog";
 import { promptCompress } from "./CompressDialog";
 import { promptConvert } from "@/features/convert/ConvertDialog";
@@ -46,9 +47,14 @@ async function createTask(queryClient: QueryClient, body: Record<string, unknown
 
 const isInFolder = (source: FileRef, folder: FileRef) => source.rootSlug === folder.rootSlug && parentPath(source.path) === folder.path;
 
+/** Copies or moves the sources into a folder, asking first about each name the folder already has. */
 export function transferFiles(queryClient: QueryClient, type: "copy" | "move", sources: FileRef[], destination: FileRef) {
   return run(async () => {
-    followTask(await createTask(queryClient, { type, sources, destination }));
+    const conflicts = await resolveConflicts(type, sources, destination);
+    if (!conflicts) return;
+    const carried = sources.filter((source) => conflicts[baseName(source.path)] !== "skip");
+    if (carried.length === 0) return;
+    followTask(await createTask(queryClient, { type, sources: carried, destination, options: { conflicts } }));
   });
 }
 

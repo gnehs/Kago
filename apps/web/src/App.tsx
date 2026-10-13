@@ -11,6 +11,7 @@ import { useSsoNotice } from "./features/auth/sso";
 import { ArchivePasswordDialogHost } from "./features/files/ArchivePassword";
 import { BatchRenameDialogHost } from "./features/files/BatchRenameDialog";
 import { CompressDialogHost } from "./features/files/CompressDialog";
+import { TransferConflictDialogHost } from "./features/files/TransferConflicts";
 import { ConvertDialogHost } from "./features/convert/ConvertDialog";
 import { TrackEditorHost } from "./features/convert/TrackEditor";
 import { VideoPage } from "./features/files/VideoPage";
@@ -30,6 +31,7 @@ export function App() {
       </Routes>
       <KagoDialogHost />
       <CompressDialogHost />
+      <TransferConflictDialogHost />
       <ConvertDialogHost />
       <TrackEditorHost />
       <BatchRenameDialogHost />

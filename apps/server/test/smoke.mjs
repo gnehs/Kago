@@ -122,6 +122,94 @@ test("minimum file-manager demo flow", async () => {
     await rm(path.join(fixture.dataDir, "photos", "counted"), { recursive: true });
     await rm(path.join(fixture.dataDir, "photos", "counted-to"), { recursive: true });
 
+    // A name the destination already has stops a copy or move, unless the task says what to do with it.
+    const clashDir = path.join(fixture.dataDir, "photos", "clash");
+    const lay = async (files) => {
+      for (const [name, text] of Object.entries(files)) {
+        await mkdir(path.dirname(path.join(clashDir, name)), { recursive: true });
+        await writeFile(path.join(clashDir, name), text);
+      }
+    };
+    const tree = async (dir, prefix = "") => {
+      const found = {};
+      for (const entry of (await readdir(dir, { withFileTypes: true })).sort((a, b) => (a.name < b.name ? -1 : 1))) {
+        if (entry.isDirectory()) Object.assign(found, { [`${prefix}${entry.name}/`]: "" }, await tree(path.join(dir, entry.name), `${prefix}${entry.name}/`));
+        else found[`${prefix}${entry.name}`] = await readFile(path.join(dir, entry.name), "utf8");
+      }
+      return found;
+    };
+    const clashing = async (type, names, conflicts, to = "/clash/to") => {
+      const task = await admin.post("/api/tasks", { type, sources: names.map((name) => ({ rootSlug: "photos", path: `/clash/from/${name}` })), destination: { rootSlug: "photos", path: to }, options: { conflicts } });
+      return waitTask(admin, task.json.id);
+    };
+    const relay = async () => {
+      await rm(clashDir, { recursive: true, force: true });
+      await lay({ "from/a.txt": "new a", "from/b.txt": "new b", "from/box/one.txt": "new one", "from/box/two.txt": "new two", "from/box/deep/x.txt": "new x", "to/a.txt": "old a", "to/a 2.txt": "old a 2", "to/box/one.txt": "old one", "to/box/old.txt": "old", "to/box/deep/x.txt": "old x" });
+    };
+    await relay();
+    // Each comes with what tells it from the one there: a file's size, and when either was last changed.
+    await utimes(path.join(clashDir, "from", "a.txt"), 1_700_000_100, 1_700_000_100);
+    await utimes(path.join(clashDir, "to", "a.txt"), 1_700_000_000, 1_700_000_000);
+    const asked = await admin.post("/api/tasks/conflicts", { sources: ["a.txt", "b.txt", "box"].map((name) => ({ rootSlug: "photos", path: `/clash/from/${name}` })), destination: { rootSlug: "photos", path: "/clash/to" } });
+    assert.deepEqual(asked.json.conflicts.map(({ mtime, existing, ...conflict }) => ({ ...conflict, existing: { kind: existing.kind, size: existing.size } })), [
+      { rootSlug: "photos", path: "/clash/from/a.txt", name: "a.txt", kind: "file", size: 5, existing: { kind: "file", size: 5 }, same: false },
+      { rootSlug: "photos", path: "/clash/from/box", name: "box", kind: "folder", size: 0, existing: { kind: "folder", size: 0 }, same: false }
+    ]);
+    assert.deepEqual([asked.json.conflicts[0].mtime, asked.json.conflicts[0].existing.mtime], [1_700_000_100_000, 1_700_000_000_000]);
+    const inPlace = await admin.post("/api/tasks/conflicts", { sources: [{ rootSlug: "photos", path: "/clash/from/a.txt" }], destination: { rootSlug: "photos", path: "/clash/from" } });
+    assert.equal(inPlace.json.conflicts[0].same, true);
+    // Without an answer for every name nothing is carried.
+    assert.equal((await clashing("copy", ["a.txt", "b.txt", "box"], { "a.txt": "skip" })).error_message, "Target already exists");
+    assert.equal((await tree(path.join(clashDir, "to")))["b.txt"], undefined);
+    // Skipped, the one there stays; kept, the new one gets the first name that is free; replaced, the one there goes whole.
+    assert.deepEqual(await clashing("copy", ["a.txt", "b.txt", "box"], { "a.txt": "keep", box: "skip" }).then((task) => [task.status, task.total_files, task.processed_files]), ["done", 5, 5]);
+    assert.deepEqual(await tree(path.join(clashDir, "to")), { "a 2.txt": "old a 2", "a 3.txt": "new a", "a.txt": "old a", "b.txt": "new b", "box/": "", "box/deep/": "", "box/deep/x.txt": "old x", "box/old.txt": "old", "box/one.txt": "old one" });
+    await relay();
+    assert.equal((await clashing("copy", ["a.txt", "box"], { "a.txt": "replace", box: "replace" })).status, "done");
+    assert.deepEqual(await tree(path.join(clashDir, "to")), { "a 2.txt": "old a 2", "a.txt": "new a", "box/": "", "box/deep/": "", "box/deep/x.txt": "new x", "box/one.txt": "new one", "box/two.txt": "new two" });
+    assert.equal((await tree(path.join(clashDir, "from")))["box/one.txt"], "new one");
+    // Merged, a folder takes what it lacks, and what both have goes the way that was chosen for it.
+    await relay();
+    assert.equal((await clashing("copy", ["box"], { box: "merge_skip" })).status, "done");
+    assert.deepEqual(await tree(path.join(clashDir, "to", "box")), { "deep/": "", "deep/x.txt": "old x", "old.txt": "old", "one.txt": "old one", "two.txt": "new two" });
+    await relay();
+    assert.equal((await clashing("copy", ["box"], { box: "merge_replace" })).status, "done");
+    assert.deepEqual(await tree(path.join(clashDir, "to", "box")), { "deep/": "", "deep/x.txt": "new x", "old.txt": "old", "one.txt": "new one", "two.txt": "new two" });
+    await relay();
+    assert.equal((await clashing("copy", ["box"], { box: "merge_keep" })).status, "done");
+    assert.deepEqual(await tree(path.join(clashDir, "to", "box")), { "deep/": "", "deep/x 2.txt": "new x", "deep/x.txt": "old x", "old.txt": "old", "one 2.txt": "new one", "one.txt": "old one", "two.txt": "new two" });
+    // Moved, the source folder goes once it is empty, and stays with whatever was skipped.
+    await relay();
+    assert.deepEqual(await clashing("move", ["a.txt", "box"], { "a.txt": "replace", box: "merge_replace" }).then((task) => [task.status, task.total_files, task.processed_files]), ["done", 4, 4]);
+    assert.deepEqual(await tree(path.join(clashDir, "from")), { "b.txt": "new b" });
+    assert.deepEqual(await tree(path.join(clashDir, "to")), { "a 2.txt": "old a 2", "a.txt": "new a", "box/": "", "box/deep/": "", "box/deep/x.txt": "new x", "box/old.txt": "old", "box/one.txt": "new one", "box/two.txt": "new two" });
+    await relay();
+    assert.equal((await clashing("move", ["box"], { box: "merge_skip" })).status, "done");
+    assert.deepEqual(await tree(path.join(clashDir, "from", "box")), { "deep/": "", "deep/x.txt": "new x", "one.txt": "new one" });
+    assert.equal((await tree(path.join(clashDir, "to", "box")))["two.txt"], "new two");
+    await relay();
+    assert.equal((await clashing("move", ["a.txt", "box"], { "a.txt": "keep", box: "replace" })).status, "done");
+    assert.deepEqual(await tree(path.join(clashDir, "to")), { "a 2.txt": "old a 2", "a 3.txt": "new a", "a.txt": "old a", "box/": "", "box/deep/": "", "box/deep/x.txt": "new x", "box/one.txt": "new one", "box/two.txt": "new two" });
+    assert.deepEqual(await tree(path.join(clashDir, "from")), { "b.txt": "new b" });
+    // A file and a folder of one name are not merged: the choice made for files inside decides.
+    await relay();
+    await lay({ "from/mixed/in.txt": "new in", "to/mixed": "old file" });
+    assert.equal((await clashing("copy", ["mixed"], { mixed: "merge_keep" })).status, "done");
+    assert.equal((await tree(path.join(clashDir, "to")))["mixed 2/in.txt"], "new in");
+    assert.equal((await clashing("copy", ["mixed"], { mixed: "merge_replace" })).status, "done");
+    assert.equal((await tree(path.join(clashDir, "to")))["mixed/in.txt"], "new in");
+    // Copied where it already is, an item is doubled when both are to be kept, and otherwise left alone.
+    assert.equal((await clashing("copy", ["a.txt", "box"], { "a.txt": "keep", box: "keep" }, "/clash/from")).status, "done");
+    assert.equal((await tree(path.join(clashDir, "from")))["a 2.txt"], "new a");
+    assert.equal((await tree(path.join(clashDir, "from")))["box 2/deep/x.txt"], "new x");
+    assert.equal((await clashing("copy", ["a.txt"], { "a.txt": "replace" }, "/clash/from")).status, "done");
+    assert.equal((await tree(path.join(clashDir, "from")))["a.txt"], "new a");
+    // A folder cannot make way for something it holds itself.
+    await lay({ "from/box/box/inner.txt": "inner" });
+    assert.equal((await clashing("copy", ["box/box"], { box: "replace" }, "/clash/from")).error_message, "Cannot replace or merge into a folder that holds the source");
+    assert.equal((await tree(path.join(clashDir, "from")))["box/box/inner.txt"], "inner");
+    await rm(clashDir, { recursive: true });
+
     // A folder of many files is copied several at a time, and still arrives whole, each file with its own time.
     const manyDir = path.join(fixture.dataDir, "photos", "many");
     const manyNames = Array.from({ length: 240 }, (_, index) => `d${index % 6}/deep${index % 4}/f${index}.txt`);

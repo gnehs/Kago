@@ -43,7 +43,7 @@ import { syncJobSchema, SyncService } from "./services/sync.service.js";
 import { convertInputSchema, remuxInputSchema } from "./services/convert.service.js";
 import { convertJobSchema, ConvertJobService } from "./services/convert-job.service.js";
 import { archivePasswordSchema } from "./services/archive-password.service.js";
-import { taskInputSchema, TaskService } from "./services/task.service.js";
+import { taskInputSchema, TaskService, transferCheckSchema } from "./services/task.service.js";
 import { workspaceSchema, WorkspaceService } from "./services/workspace.service.js";
 import { WorkerManager } from "./workers/worker-manager.js";
 import { normalizeRemoteConfig, providers, remoteConfigSchema } from "./storage/providers.js";
@@ -1073,6 +1073,7 @@ function registerApi(app: FastifyInstance, services: Services) {
 
   app.get("/api/tasks", async (request) => services.tasks.list(requireActor(request)));
   app.post("/api/tasks", async (request) => services.tasks.create(requireActor(request), taskInputSchema.parse(request.body)));
+  app.post("/api/tasks/conflicts", async (request) => services.tasks.transferConflicts(requireActor(request), transferCheckSchema.parse(request.body)));
   app.delete("/api/tasks", async (request) => services.tasks.clearFinished(requireActor(request)));
   app.get("/api/tasks/:id", async (request) => {
     const actor = requireActor(request);
