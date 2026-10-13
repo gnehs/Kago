@@ -39,6 +39,17 @@ type ConvertJobRow = {
   updated_at: number;
 };
 
+/** How a run of a job went: when, how it ended, and how many files it converted, brought across as they were, or gave up on. */
+export type ConvertRun = { task_id: string; started_at: number; finished_at: number | null; status: string; error_message: string | null; scheduled: boolean; bytes: number; converted: number; copied: number; failed: number };
+
+/** How many runs of a job are remembered. */
+const KEPT_RUNS = 20;
+
+/** A run as it stands: what its task says for as long as the task is there, and what was kept of it after. */
+const RUNS = `SELECT r.task_id, r.started_at, COALESCE(t.finished_at, r.finished_at) AS finished_at, COALESCE(t.status, r.status) AS status,
+  CASE WHEN t.id IS NULL THEN r.error_message ELSE t.error_message END AS error_message, r.scheduled, COALESCE(t.processed_bytes, r.bytes) AS bytes, r.converted, r.copied, r.failed
+  FROM convert_runs r LEFT JOIN tasks t ON t.id = r.task_id`;
+
 /** How often the watched input folders are looked at. A file counts once it measures the same two looks in a row. */
 const WATCH_INTERVAL_MS = 30_000;
 
@@ -106,6 +117,12 @@ export class ConvertJobService {
     return this.begin(actor, job, true, false);
   }
 
+  /** The job's last runs, newest first. */
+  runs(actor: Actor, jobId: string): ConvertRun[] {
+    const job = this.getForActor(actor, jobId);
+    return rows<Omit<ConvertRun, "scheduled"> & { scheduled: number }>(this.db.prepare(`${RUNS} WHERE r.job_id = ? ORDER BY r.started_at DESC, r.rowid DESC`).all(job.id)).map((run) => ({ ...run, scheduled: Boolean(run.scheduled) }));
+  }
+
   /** Makes in the job's input folder every folder its destination has, so that what is dropped in one comes out in the other. */
   async copyStructure(actor: Actor, jobId: string) {
     const job = this.inputOf(this.getForActor(actor, jobId));
@@ -155,7 +172,15 @@ export class ConvertJobService {
   private async begin(actor: Actor, job: ConvertJobRow, retryFailed: boolean, scheduled: boolean) {
     const input = this.inputOf(job);
     const task = await this.tasks.createConvert(actor, { sources: [input.input], destination: input.destination, spec: input.spec }, { id: job.id, input: input.input, options: input.options, retryFailed }, scheduled);
-    this.db.prepare("UPDATE convert_jobs SET last_run_at = ?, last_task_id = ? WHERE id = ?").run(now(), task.id, job.id);
+    // The task of the run before stays only for as long as the job points at it, so how it ended is written down now.
+    if (job.last_task_id) {
+      const last = row<ConvertRun>(this.db.prepare(`${RUNS} WHERE r.task_id = ?`).get(job.last_task_id));
+      if (last) this.db.prepare("UPDATE convert_runs SET finished_at = ?, status = ?, error_message = ?, bytes = ? WHERE task_id = ?").run(last.finished_at, last.status, last.error_message, last.bytes, last.task_id);
+    }
+    const ts = now();
+    this.db.prepare("INSERT INTO convert_runs (task_id, job_id, started_at, status, scheduled) VALUES (?, ?, ?, ?, ?)").run(task.id, job.id, ts, task.status, scheduled ? 1 : 0);
+    this.db.prepare("DELETE FROM convert_runs WHERE job_id = ? AND task_id NOT IN (SELECT task_id FROM convert_runs WHERE job_id = ? ORDER BY started_at DESC, rowid DESC LIMIT ?)").run(job.id, job.id, KEPT_RUNS);
+    this.db.prepare("UPDATE convert_jobs SET last_run_at = ?, last_task_id = ? WHERE id = ?").run(ts, task.id, job.id);
     return task;
   }
 

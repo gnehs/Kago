@@ -4,7 +4,7 @@ import { api, apiLines, ApiError, previewUrl, serverMessage } from "./client";
 import { decodeSubtitle } from "../lib/subtitles";
 import { withSpeeds } from "../lib/taskSpeed";
 import { isTrashing, useTrashingStore } from "../stores/trashing";
-import type { Actor, AuditLog, ConvertJob, ConvertSupport, ExternalApp, FileItem, FileList, FileMeta, FileTask, FolderSize, FrameVerdict, Group, ImageMetadata, LibraryIcon, MediaInfo, PermissionRule, Root, ShareLink, Shelf, SqlitePage, Storyboard, SsoConfig, SsoIdentity, SsoInfo, SqliteTable, StorageInfo, SubtitleList, SyncJob, SyncRun, SyncTrial, TrashItem, UserAccount, WorkspaceState } from "../types/kago";
+import type { Actor, AuditLog, ConvertJob, ConvertRun, ConvertSupport, ExternalApp, FileItem, FileList, FileMeta, FileTask, FolderSize, FrameVerdict, Group, ImageMetadata, LibraryIcon, MediaInfo, PermissionRule, Root, ShareLink, Shelf, SqlitePage, Storyboard, SsoConfig, SsoIdentity, SsoInfo, SqliteTable, StorageInfo, SubtitleList, SyncJob, SyncRun, SyncTrial, TrashItem, UserAccount, WorkspaceState } from "../types/kago";
 
 export function useSetupStatus() {
   return useQuery({ queryKey: ["auth", "setup"], queryFn: () => api<{ needsSetup: boolean; oidc: SsoInfo | null }>("/api/auth/setup") });
@@ -67,6 +67,11 @@ export function useSyncTrial(job: SyncJob | null, enabled = true) {
 /** A job's last runs, asked for again when another one starts and while one is still going. What was fetched stays while `enabled` is off. */
 export function useSyncRuns(job: SyncJob | null, enabled = true) {
   return useQuery({ queryKey: ["sync-runs", job?.id, job?.last_run_at, job?.last_status], queryFn: () => api<SyncRun[]>(`/api/sync-jobs/${job!.id}/runs`), enabled: enabled && job !== null });
+}
+
+/** An auto-convert's last runs, asked for again as `useSyncRuns` does. */
+export function useConvertRuns(job: ConvertJob | null, enabled = true) {
+  return useQuery({ queryKey: ["convert-runs", job?.id, job?.last_run_at, job?.last_status], queryFn: () => api<ConvertRun[]>(`/api/convert-jobs/${job!.id}/runs`), enabled: enabled && job !== null });
 }
 
 export function useSshKey(enabled = true) {

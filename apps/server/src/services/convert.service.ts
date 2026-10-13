@@ -181,7 +181,7 @@ export class ConvertService {
   async run(task: FileTask, actor: Actor, handle: TaskHandle): Promise<void> {
     const { convert: spec, job, ...destination } = JSON.parse(task.destination ?? "{}") as FileRef & { convert?: unknown; job?: ConvertJobRun };
     const parsed = convertSpecSchema.parse(spec);
-    if (job) return this.runJob(actor, { ...job, options: convertJobOptionsSchema.parse(job.options) }, destination, parsed, handle);
+    if (job) return this.runJob(task.id, actor, { ...job, options: convertJobOptionsSchema.parse(job.options) }, destination, parsed, handle);
 
     const input = convertInputSchema.parse({ sources: JSON.parse(task.sources_json), destination, spec: parsed });
     const folder = await this.writableFolder(actor, input.destination);
@@ -205,13 +205,23 @@ export class ConvertService {
   }
 
   /** Goes through a job's input folder and brings what is new in it to the destination, keeping the folders it lies in. */
-  private async runJob(actor: Actor, job: ConvertJobRun, destinationRef: FileRef, spec: ConvertSpec, handle: TaskHandle): Promise<void> {
+  private async runJob(taskId: string, actor: Actor, job: ConvertJobRun, destinationRef: FileRef, spec: ConvertSpec, handle: TaskHandle): Promise<void> {
+    const counts = { converted: 0, copied: 0, failed: 0 };
+    try {
+      await this.runJobFiles(actor, job, destinationRef, spec, handle, counts);
+    } finally {
+      // What the run got done is said in its record however it ended.
+      this.db.prepare("UPDATE convert_runs SET converted = ?, copied = ?, failed = ? WHERE task_id = ?").run(counts.converted, counts.copied, counts.failed, taskId);
+    }
+    if (counts.failed > 0) throw new AppError(422, "Some files couldn’t be converted", "CONVERT_PARTLY_FAILED");
+  }
+
+  private async runJobFiles(actor: Actor, job: ConvertJobRun, destinationRef: FileRef, spec: ConvertSpec, handle: TaskHandle, counts: { converted: number; copied: number; failed: number }): Promise<void> {
     const { input, destination } = await this.assertJob(actor, { input: job.input, destination: destinationRef, options: job.options });
     const work = (await this.pendingFiles(job.id, input, spec, job.options, job.retryFailed ?? false)).filter((file) => Date.now() - file.mtimeMs > SETTLE_MS);
     await handle.totals(work.length, work.reduce((sum, file) => sum + file.size, 0));
     const folders = new Map<string, { folder: SafePath; taken: Set<string> }>();
     const remember = this.db.prepare("INSERT OR REPLACE INTO convert_job_files (job_id, path, size, mtime_ms, status, output, done_at) VALUES (?, ?, ?, ?, ?, ?, ?)");
-    let failed = 0;
     for (const file of work) {
       const logical = path.posix.join(input.logicalPath, file.rel);
       handle.show(logical);
@@ -237,16 +247,17 @@ export class ConvertService {
           else await fsp.rm(safe.absolutePath);
           this.db.prepare("DELETE FROM convert_job_files WHERE job_id = ? AND path = ?").run(job.id, file.rel);
         }
+        if (made.copied) counts.copied += 1;
+        else counts.converted += 1;
       } catch (error) {
         if (error instanceof ConvertStopped) throw error;
-        failed += 1;
+        counts.failed += 1;
         // Left alone until it changes or someone asks for it again: a watched folder would otherwise try it for ever.
         remember.run(job.id, file.rel, file.size, Math.round(file.mtimeMs), "failed", null, now());
         logger.warn("auto-convert could not bring a file across", { jobId: job.id, path: logical, error: error instanceof Error ? error.message : String(error) });
       }
       handle.files(1);
     }
-    if (failed > 0) throw new AppError(422, "Some files couldn’t be converted", "CONVERT_PARTLY_FAILED");
   }
 
   /** How many files of a job's input folder are waiting and have stopped changing. `seen` is what each measured at the last look. */

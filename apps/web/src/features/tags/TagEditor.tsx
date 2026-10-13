@@ -115,22 +115,38 @@ function TagForm({ tag, taken, onSave, onClose }: { tag: ListedTag | null; /** T
 /** A list of tags with `tag` in it: one of that name already there is replaced where it stands. */
 const withTag = <T extends FileTag>(tags: T[], tag: T) => (tags.some((item) => item.name === tag.name) ? tags.map((item) => (item.name === tag.name ? tag : item)) : [...tags, tag]);
 
-/** The tags of one file or folder, stored on the file itself. */
-export function TagEditor({ rootSlug, path, tags, readonly }: { rootSlug: string; path: string; tags: FileTag[]; readonly: boolean }) {
+/** A file or folder to tag, with the tags it has now. */
+export type TagTarget = { path: string; tags: FileTag[] };
+
+/** The tags of the selected files and folders, stored on the files themselves. Putting one on or taking one off reaches every one of them. */
+export function TagEditor({ rootSlug, targets, readonly }: { rootSlug: string; targets: TagTarget[]; readonly: boolean }) {
   const queryClient = useQueryClient();
+  // Every tag any of them has, each listed once.
+  const tags = targets.flatMap((target) => target.tags).filter((tag, index, all) => all.findIndex((item) => item.name === tag.name) === index);
   // The only tags there are to put on: the ones kept at hand in the settings. Putting one on a file never adds to them.
   const mine = useSettingsStore((state) => state.settings.tags) ?? [];
-  const handy = mine.filter((tag) => !tags.some((item) => item.name === tag.name));
+  // A tag only some of them have is still there to put on the rest.
+  const handy = mine.filter((tag) => !targets.every((target) => target.tags.some((item) => item.name === tag.name)));
 
-  const save = (next: FileTag[], fallback: string) =>
+  /** Writes the tags of each file `change` gives a new list for, one after another. */
+  const save = (change: (tags: FileTag[]) => FileTag[] | null, fallback: string) =>
     run(async () => {
-      const meta = await api<FileMeta>("/api/fs/tags", { method: "PUT", body: JSON.stringify({ rootSlug, path, tags: next }) });
-      queryClient.setQueryData(["fs", "meta", rootSlug, path], meta);
-      await queryClient.invalidateQueries({ queryKey: ["fs", "list", rootSlug] });
-      return meta;
+      try {
+        for (const target of targets) {
+          const next = change(target.tags);
+          if (!next) continue;
+          const meta = await api<FileMeta>("/api/fs/tags", { method: "PUT", body: JSON.stringify({ rootSlug, path: target.path, tags: next }) });
+          queryClient.setQueryData(["fs", "meta", rootSlug, target.path], meta);
+        }
+      } finally {
+        // The ones written before a failure are tagged all the same.
+        await queryClient.invalidateQueries({ queryKey: ["fs", "list", rootSlug] });
+      }
     }, fallback);
+  const has = (list: FileTag[], name: string) => list.some((item) => item.name === name);
   // The file keeps a name and a colour; the shape stays in the list.
-  const add = ({ name, color }: ListedTag) => save(withTag(tags, { name, color }), t("Couldn’t add the tag"));
+  const add = ({ name, color }: ListedTag) => save((list) => (has(list, name) ? null : withTag(list, { name, color })), t("Couldn’t add the tag"));
+  const remove = (name: string) => save((list) => (has(list, name) ? list.filter((item) => item.name !== name) : null), t("Couldn’t remove the tag"));
 
   return (
     <div className="flex flex-col gap-2">
@@ -141,7 +157,7 @@ export function TagEditor({ rootSlug, path, tags, readonly }: { rootSlug: string
               key={tag.name}
               dot={dot(tag)}
               removeLabel={t("Remove tag {name}", { name: tag.name })}
-              onRemove={readonly ? undefined : () => void save(tags.filter((item) => item.name !== tag.name), t("Couldn’t remove the tag"))}
+              onRemove={readonly ? undefined : () => void remove(tag.name)}
             >
               {tag.name}
             </KagoChip>
@@ -163,6 +179,7 @@ export function TagEditor({ rootSlug, path, tags, readonly }: { rootSlug: string
             </ul>
           ) : null}
           {mine.length === 0 ? <p className="m-0 text-xs text-muted">{t("Set up your tags in Settings to put them on files.")}</p> : null}
+          {targets.length > 1 ? <p className="m-0 text-xs text-muted">{t("Tags go on all {count} selected items.", { count: targets.length })}</p> : null}
         </>
       )}
     </div>

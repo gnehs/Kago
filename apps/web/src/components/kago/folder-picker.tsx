@@ -13,6 +13,7 @@ import { locationTone } from "./app-icon";
 import { KagoDialog, KagoDialogActions } from "./dialog";
 import { FileIcon } from "./file-icon";
 import { t } from "@/lib/i18n";
+import { KagoSpinner } from "@/components/kago/empty-state";
 
 export type FolderRef = { rootSlug: string; path: string };
 
@@ -65,13 +66,16 @@ function Picker({ roots, initial, writable, onCancel, onChoose }: { roots: Root[
   // Opened down to where it points, so the folder chosen last is in sight.
   const [expanded, setExpanded] = useState(() => new Set(lineage(selected).slice(0, -1).map(keyOf).concat(offered.length === 1 ? [keyOf({ rootSlug: offered[0]!.slug, path: "/" })] : [])));
   const [naming, setNaming] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
   const root = offered.find((item) => item.slug === selected.rootSlug);
   const expand = (folder: FolderRef) => setExpanded((current) => new Set(current).add(keyOf(folder)));
 
   async function createFolder() {
     const name = nfc(naming ?? "").trim();
-    if (!name) return;
+    if (!name || creating) return;
+    setCreating(true);
     const made = await run(() => api<{ path: string }>("/api/fs/mkdir", { method: "POST", body: JSON.stringify({ rootSlug: selected.rootSlug, path: selected.path, name }) }), t("Couldn’t create the folder"));
+    setCreating(false);
     if (!made) return;
     await queryClient.invalidateQueries({ queryKey: ["fs", "list", selected.rootSlug, selected.path] });
     expand(selected);
@@ -115,7 +119,7 @@ function Picker({ roots, initial, writable, onCancel, onChoose }: { roots: Root[
           }}
         >
           <Input autoFocus aria-label={t("New folder")} placeholder={t("untitled folder")} value={naming} onChange={(event) => setNaming(event.target.value)} onKeyDown={(event) => event.key === "Escape" && (event.stopPropagation(), setNaming(null))} />
-          <Button type="submit" disabled={!naming.trim()}>{t("Create")}</Button>
+          <Button type="submit" disabled={!naming.trim() || creating}>{creating ? <KagoSpinner className="text-inherit" /> : null}{t("Create")}</Button>
         </form>
       )}
       <KagoDialogActions>

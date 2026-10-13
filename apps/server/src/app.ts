@@ -627,6 +627,7 @@ function registerApi(app: FastifyInstance, services: Services) {
     services.convertJobs.delete(requireActor(request), z.object({ id: z.string() }).parse(request.params).id);
     return { ok: true };
   });
+  app.get("/api/convert-jobs/:id/runs", async (request) => services.convertJobs.runs(requireActor(request), z.object({ id: z.string() }).parse(request.params).id));
   app.post("/api/convert-jobs/:id/run", async (request) => services.convertJobs.run(requireActor(request), z.object({ id: z.string() }).parse(request.params).id));
   app.post("/api/convert-jobs/:id/structure", async (request) => services.convertJobs.copyStructure(requireActor(request), z.object({ id: z.string() }).parse(request.params).id));
 

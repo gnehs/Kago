@@ -13,7 +13,7 @@ import { formatDate, formatSize, isPicture, isVideoType, kindLabel } from "@/lib
 import { displayPath } from "@/lib/paths";
 import { usePointerDrag } from "@/lib/usePointerDrag";
 import { useWorkspaceStore } from "@/stores/workspace";
-import type { FilmRecipe, FileWindow, ImageMetadata } from "@/types/kago";
+import type { FileItem, FilmRecipe, FileWindow, ImageMetadata } from "@/types/kago";
 import { FileThumbnail } from "./FileThumbnail";
 import { videoInfoGroups } from "./videoInfo";
 import { t } from "@/lib/i18n";
@@ -22,7 +22,7 @@ const MIN_WIDTH = 260;
 const MAX_WIDTH = 440;
 
 /** Panel inside a file window describing its selection, or its folder when nothing is selected. */
-export function Inspector({ window: activeWindow }: { window: FileWindow }) {
+export function Inspector({ window: activeWindow, selection }: { window: FileWindow; /** The selected items as the window lists them. */ selection: FileItem[] }) {
   const width = useWorkspaceStore((state) => Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, state.inspector.width ?? 300)));
   const store = useWorkspaceStore.getState;
   const rootSlug = activeWindow.rootSlug;
@@ -39,6 +39,8 @@ export function Inspector({ window: activeWindow }: { window: FileWindow }) {
   const root = roots.data?.find((root) => root.slug === rootSlug);
   const rootId = root?.id;
   const readonly = Boolean(root?.readonly);
+  // Tags go on the whole selection. The item on show has its tags from its own info, which is the first to hear of a change.
+  const tagTargets = selection.length > 1 ? selection.filter((item) => !item.readonly).map((item) => ({ path: item.path, tags: (item.path === path ? meta.data?.tags : item.tags) ?? [] })) : [{ path, tags: meta.data?.tags ?? [] }];
   const pathShares = (shares.data ?? []).filter((share) => share.root_id === rootId && share.path === path);
   // The share form only opens on request, and only for the item it was opened on.
   const [sharingKey, setSharingKey] = useState<string | null>(null);
@@ -103,9 +105,9 @@ export function Inspector({ window: activeWindow }: { window: FileWindow }) {
             : null}
 
           {/* Tags are kept on the file itself: on the server's own disk, or on an SMB server. Other locations have no place for them. */}
-          {(readonly && !meta.data.tags?.length) || (root && root.provider !== "local" && root.provider !== "smb") ? null : (
+          {(readonly && !tagTargets.some((target) => target.tags.length)) || (root && root.provider !== "local" && root.provider !== "smb") ? null : (
             <DetailSection title={t("Tags")}>
-              <TagEditor rootSlug={rootSlug} path={path} tags={meta.data.tags ?? []} readonly={readonly} />
+              <TagEditor rootSlug={rootSlug} targets={tagTargets} readonly={readonly} />
             </DetailSection>
           )}
 

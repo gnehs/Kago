@@ -5,7 +5,7 @@ import { create } from "zustand";
 import { api } from "@/api/client";
 import { useMediaInfo } from "@/api/hooks";
 import { KagoDialog, KagoDialogActions } from "@/components/kago/dialog";
-import { KagoLoading } from "@/components/kago/empty-state";
+import { KagoLoading, KagoSpinner } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { Button } from "@/components/ui/button";
 import { Checkbox, Field, Input, Select } from "@/components/ui/input";
@@ -262,7 +262,7 @@ function TrackEditor({ request, onClose }: { request: EditorRequest; onClose: ()
       <footer className="shrink-0 rounded-b-lg border-t border-line bg-elevated p-3">
         <KagoDialogActions>
           <Button onClick={onClose}>{t("Cancel")}</Button>
-          <Button type="submit" variant="default" disabled={!canSubmit}>{t("Repack")}</Button>
+          <Button type="submit" variant="default" disabled={!canSubmit}>{busy ? <KagoSpinner className="text-inherit" /> : null}{t("Repack")}</Button>
         </KagoDialogActions>
       </footer>
     </form>

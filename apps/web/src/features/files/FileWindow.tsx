@@ -480,7 +480,7 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
             </div>
           </KagoContextMenu>
         )}
-        {win.inspectorOpen ? <Inspector window={win} /> : null}
+        {win.inspectorOpen ? <Inspector window={win} selection={selectedItems} /> : null}
       </div>
 
       <footer className="kago-toolbar flex h-8 shrink-0 items-center gap-1 border-t border-line-strong px-3 text-xs text-muted">

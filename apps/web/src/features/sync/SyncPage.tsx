@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Ban, Check, Clock, Ellipsis, FileDiff, History, Pause, Pencil, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import { api } from "@/api/client";
 import { useSyncJobs } from "@/api/hooks";
-import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
+import { KagoEmptyState, KagoLoading, KagoSpinner } from "@/components/kago/empty-state";
 import { FolderField } from "@/components/kago/folder-picker";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { KagoDropdownMenu, KagoMenuItem, KagoMenuSeparator } from "@/components/kago/menu";
@@ -50,15 +50,18 @@ export function SyncPage({ roots, user }: { roots: Root[]; user: Actor }) {
   const [editing, setEditing] = useState<SyncJob | true | null>(null);
   const [trialOf, setTrialOf] = useState<string | null>(null);
   const [runsOf, setRunsOf] = useState<string | null>(null);
+  const [starting, setStarting] = useState<string | null>(null);
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["sync-jobs"] });
   const describeEndpoint = (endpoint: SyncEndpoint) => displayPath(roots.find((root) => root.slug === endpoint.rootSlug)?.name ?? endpoint.rootSlug, endpoint.path);
 
   async function start(job: SyncJob) {
+    setStarting(job.id);
     await run(async () => {
       await api<FileTask>(`/api/sync-jobs/${job.id}/run`, { method: "POST" });
       toast(t("{name} started", { name: job.name }));
       await Promise.all([refresh(), queryClient.invalidateQueries({ queryKey: ["tasks"] })]);
     }, t("Couldn’t start the sync"));
+    setStarting(null);
   }
 
   async function remove(job: SyncJob) {
@@ -117,7 +120,7 @@ export function SyncPage({ roots, user }: { roots: Root[]; user: Actor }) {
                   </>
                 }
               >
-                <Button disabled={running} onClick={() => void start(job)}>{t("Run now")}</Button>
+                <Button disabled={running || starting === job.id} onClick={() => void start(job)}>{starting === job.id ? <KagoSpinner className="text-inherit" /> : null}{t("Run now")}</Button>
                 {/* Running it is what a row is for; the rest is asked for now and then, and waits in the menu, whose button is the same kind of button. */}
                 <KagoDropdownMenu
                   raised
@@ -173,16 +176,19 @@ function SyncForm({ roots, job, onSaved }: { roots: Root[]; job: SyncJob | null;
   const schedule: SyncSchedule | null = when === "manual" ? null : when === "interval" ? { kind: "interval", minutes } : when === "daily" ? { kind: "daily", time } : { kind: "weekly", weekday, time };
   const from = endpointOf(source);
   const to = endpointOf(destination);
+  const [saving, setSaving] = useState(false);
   const canSubmit = name.trim().length > 0 && from !== null && to !== null && (when !== "interval" || (Number.isInteger(minutes) && minutes >= 5));
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    if (!canSubmit) return;
+    if (!canSubmit || saving) return;
     const body = JSON.stringify({ name: name.trim(), source: from, destination: to, options: { mode, dryRun }, schedule, enabled });
+    setSaving(true);
     const saved = await run(async () => {
       await api(job ? `/api/sync-jobs/${job.id}` : "/api/sync-jobs", { method: job ? "PUT" : "POST", body });
       return true;
     }, t("Couldn’t save the sync"));
+    setSaving(false);
     if (saved) await onSaved();
   }
 
@@ -231,7 +237,7 @@ function SyncForm({ roots, job, onSaved }: { roots: Root[]; job: SyncJob | null;
         {when === "manual" ? null : <Checkbox label={t("Run on schedule")} checked={enabled} onChange={(event) => setEnabled(event.target.checked)} />}
       </div>
       <div className="col-span-2 flex justify-end">
-        <Button type="submit" variant="default" disabled={!canSubmit}>{job ? t("Save") : t("Add sync")}</Button>
+        <Button type="submit" variant="default" disabled={!canSubmit || saving}>{saving ? <KagoSpinner className="text-inherit" /> : null}{job ? t("Save") : t("Add sync")}</Button>
       </div>
     </form>
   );

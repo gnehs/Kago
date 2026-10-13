@@ -312,6 +312,25 @@ CREATE TABLE IF NOT EXISTS convert_job_files (
   FOREIGN KEY (job_id) REFERENCES convert_jobs(id) ON DELETE CASCADE
 );
 
+-- How the runs of an auto-convert went, kept after their tasks are forgotten. A run whose task is still there is read from the task.
+CREATE TABLE IF NOT EXISTS convert_runs (
+  task_id TEXT PRIMARY KEY,
+  job_id TEXT NOT NULL,
+  started_at INTEGER NOT NULL,
+  finished_at INTEGER,
+  status TEXT NOT NULL,
+  error_message TEXT,
+  scheduled INTEGER NOT NULL DEFAULT 0,
+  bytes INTEGER NOT NULL DEFAULT 0,
+  converted INTEGER NOT NULL DEFAULT 0,
+  copied INTEGER NOT NULL DEFAULT 0,
+  failed INTEGER NOT NULL DEFAULT 0,
+  FOREIGN KEY (job_id) REFERENCES convert_jobs(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_convert_runs_job_started
+ON convert_runs(job_id, started_at);
+
 CREATE TABLE IF NOT EXISTS user_settings (
   user_id TEXT PRIMARY KEY,
   settings_json TEXT NOT NULL,

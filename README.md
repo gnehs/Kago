@@ -134,6 +134,7 @@ Settings → Sync stores sync jobs: bring the contents of one folder to another,
 - **No smaller after converting**: you can have the original sent to the destination instead, rather than keeping the larger of the two.
 - **File extensions**: only files whose extension is in the list you set are converted (it starts as the common ones for the format's kind). Files with any other extension are copied to the destination as they are, or left alone when that option is unticked.
 - **Once a file is done**: leave it in the input folder, move it to the Trash, or delete it. A file that is left is not processed twice unless it changes.
+- **History**: the row's menu lists the last 20 runs: when each started and how it ended, and how many files it converted, copied as they were, or failed on.
 - A file that fails stays where it is and is remembered, and is tried again only when it changes or the auto-convert is run by hand, not every 30 seconds.
 - The input folder and the destination can't contain one another. An auto-convert runs as the person who created it, and needs View permission for the input folder (Edit when it removes its sources) and Edit permission for the destination.
 

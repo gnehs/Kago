@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Ban, Check, Clock, Ellipsis, Eye, FileVideo, FolderTree, Pause, Pencil, Plus, RefreshCw, Trash2, X } from "lucide-react";
+import { Ban, Check, Clock, Ellipsis, Eye, FileVideo, FolderTree, History, Pause, Pencil, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import { create } from "zustand";
 import { api } from "@/api/client";
 import { useConvertJobs, useConvertSupport } from "@/api/hooks";
-import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
+import { KagoEmptyState, KagoLoading, KagoSpinner } from "@/components/kago/empty-state";
 import { FolderField } from "@/components/kago/folder-picker";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { KagoDropdownMenu, KagoMenuItem, KagoMenuSeparator } from "@/components/kago/menu";
@@ -21,6 +21,7 @@ import { toast } from "@/stores/toast";
 import { useWorkspaceStore } from "@/stores/workspace";
 import type { Actor, ConvertJob, ConvertJobOptions, ConvertSpec, FileTask, Root } from "@/types/kago";
 import { ConvertFields, specIsValid } from "./ConvertFields";
+import { ConvertRunsDialog } from "./ConvertRunsDialog";
 import { CONVERT_FORMATS, DEFAULT_EXTENSIONS, describeSpec, kindOfFormat, parseExtensions, specFor, supportedFormats } from "./convertSpec";
 import { t } from "@/lib/i18n";
 
@@ -54,6 +55,17 @@ export function AutoConvertPage({ roots, user }: { roots: Root[]; user: Actor })
   const draft = useDraftStore((state) => state.destination);
   const [editing, setEditing] = useState<ConvertJob | true | null>(null);
   const [destination, setDestination] = useState<Folder | null>(null);
+  const [runsOf, setRunsOf] = useState<string | null>(null);
+  // What each job has been asked for and has not answered yet. Copying a large folder's structure takes a while.
+  const [busy, setBusy] = useState<Record<string, "start" | "structure">>({});
+  const during = async (job: ConvertJob, what: "start" | "structure", action: () => Promise<unknown>) => {
+    setBusy((current) => ({ ...current, [job.id]: what }));
+    try {
+      await action();
+    } finally {
+      setBusy(({ [job.id]: _, ...rest }) => rest);
+    }
+  };
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["convert-jobs"] });
   const describeFolder = (folder: Folder) => displayPath(roots.find((root) => root.slug === folder.rootSlug)?.name ?? folder.rootSlug, folder.path);
 
@@ -65,21 +77,19 @@ export function AutoConvertPage({ roots, user }: { roots: Root[]; user: Actor })
     useDraftStore.setState({ destination: null });
   }, [draft]);
 
-  async function start(job: ConvertJob) {
-    await run(async () => {
+  const start = (job: ConvertJob) => during(job, "start", () =>
+    run(async () => {
       await api<FileTask>(`/api/convert-jobs/${job.id}/run`, { method: "POST" });
       toast(t("{name} started", { name: job.name }));
       await Promise.all([refresh(), queryClient.invalidateQueries({ queryKey: ["tasks"] })]);
-    }, t("Couldn’t start the conversion"));
-  }
+    }, t("Couldn’t start the conversion")));
 
-  async function copyStructure(job: ConvertJob) {
-    await run(async () => {
+  const copyStructure = (job: ConvertJob) => during(job, "structure", () =>
+    run(async () => {
       const { created } = await api<{ created: number }>(`/api/convert-jobs/${job.id}/structure`, { method: "POST" });
       toast(created > 0 ? t("Created {count} folder in the input folder | Created {count} folders in the input folder", { count: created }) : t("The input folder already has every folder of the destination"));
       await queryClient.invalidateQueries({ queryKey: ["fs"] });
-    }, t("Couldn’t copy the folder structure"));
-  }
+    }, t("Couldn’t copy the folder structure")));
 
   async function remove(job: ConvertJob) {
     if (!(await confirmAction({ title: t("Delete this auto-convert?"), subject: { icon: <KagoStatusIcon large><FileVideo /></KagoStatusIcon>, name: job.name, detail: `${describeFolder(job.input)} → ${describeFolder(job.destination)}` }, description: t("Files it has already converted stay where they are."), confirmLabel: t("Delete"), destructive: true }))) return;
@@ -117,10 +127,13 @@ export function AutoConvertPage({ roots, user }: { roots: Root[]; user: Actor })
           {jobs.data.map((job) => {
             const last = job.last_status ? taskStatus({ status: job.last_status } as FileTask) : null;
             const running = job.last_status === "queued" || job.last_status === "running";
+            const structuring = busy[job.id] === "structure";
             return (
               <Row
                 key={job.id}
-                icon={<KagoStatusIcon tone={last?.tone} label={last?.label ?? (job.watch ? t("Watching") : t("No runs yet"))}>{statusGlyph(job)}</KagoStatusIcon>}
+                icon={structuring
+                  ? <KagoStatusIcon label={t("Copying the folder structure…")}><RefreshCw className="animate-spin" /></KagoStatusIcon>
+                  : <KagoStatusIcon tone={last?.tone} label={last?.label ?? (job.watch ? t("Watching") : t("No runs yet"))}>{statusGlyph(job)}</KagoStatusIcon>}
                 title={job.name}
                 subtitle={
                   <>
@@ -134,7 +147,7 @@ export function AutoConvertPage({ roots, user }: { roots: Root[]; user: Actor })
                     </span>
                     {/* How it last went has a line to itself: on one with the rest it is the first thing pushed out of sight. */}
                     <span className="block truncate">
-                      {[
+                      {structuring ? t("Copying the folder structure…") : [
                         last && isActiveTask({ status: job.last_status } as FileTask) ? last.label : null,
                         job.last_error ? taskErrorLabel(job.last_error) : job.last_run_at ? t("Last run {date}", { date: formatUnixDate(job.last_run_at) }) : null,
                         job.failed > 0 ? t("{count} file failed | {count} files failed", { count: job.failed }) : null
@@ -143,13 +156,14 @@ export function AutoConvertPage({ roots, user }: { roots: Root[]; user: Actor })
                   </>
                 }
               >
-                <Button disabled={running} onClick={() => void start(job)}>{t("Run now")}</Button>
+                <Button disabled={running || job.id in busy} onClick={() => void start(job)}>{busy[job.id] === "start" ? <KagoSpinner className="text-inherit" /> : null}{t("Run now")}</Button>
                 <KagoDropdownMenu
                   raised
                   label={t("More actions")}
                   menu={
                     <>
-                      <KagoMenuItem icon={<FolderTree />} onClick={() => void copyStructure(job)}>{t("Copy the folder structure to the input folder")}</KagoMenuItem>
+                      <KagoMenuItem icon={<FolderTree />} disabled={job.id in busy} onClick={() => void copyStructure(job)}>{t("Copy the folder structure to the input folder")}</KagoMenuItem>
+                      <KagoMenuItem icon={<History />} disabled={!job.last_run_at} onClick={() => setRunsOf(job.id)}>{t("History")}</KagoMenuItem>
                       <KagoMenuItem icon={<Pencil />} onClick={() => { setDestination(null); setEditing(job); }}>{t("Edit")}</KagoMenuItem>
                       <KagoMenuSeparator />
                       <KagoMenuItem icon={<Trash2 />} destructive onClick={() => void remove(job)}>{t("Delete")}</KagoMenuItem>
@@ -163,6 +177,7 @@ export function AutoConvertPage({ roots, user }: { roots: Root[]; user: Actor })
           })}
         </RowList>
       ) : null}
+      <ConvertRunsDialog job={jobs.data?.find((job) => job.id === runsOf) ?? null} onClose={() => setRunsOf(null)} />
     </Page>
   );
 }
@@ -186,6 +201,7 @@ function JobForm({ roots, job, destination, onSaved }: { roots: Root[]; job: Con
   const [watch, setWatch] = useState(job?.watch ?? true);
   // A job made for a folder that is already in use starts with that folder's own layout to drop things into.
   const [structure, setStructure] = useState(!job && destination !== null);
+  const [saving, setSaving] = useState<"job" | "structure" | null>(null);
 
   const from = folderOf(input);
   const to = folderOf(output);
@@ -202,11 +218,13 @@ function JobForm({ roots, job, destination, onSaved }: { roots: Root[]; job: Con
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    if (!canSubmit) return;
+    if (!canSubmit || saving) return;
     const body = JSON.stringify({ name: name.trim(), input: from, destination: to, spec, options: { ...options, extensions }, watch });
+    setSaving("job");
     const saved = await run(() => api<ConvertJob>(job ? `/api/convert-jobs/${job.id}` : "/api/convert-jobs", { method: job ? "PUT" : "POST", body }), t("Couldn’t save the auto-convert"));
-    if (!saved) return;
+    if (!saved) return setSaving(null);
     if (structure) {
+      setSaving("structure");
       await run(async () => {
         const { created } = await api<{ created: number }>(`/api/convert-jobs/${saved.id}/structure`, { method: "POST" });
         if (created > 0) toast(t("Created {count} folder in the input folder | Created {count} folders in the input folder", { count: created }));
@@ -245,7 +263,10 @@ function JobForm({ roots, job, destination, onSaved }: { roots: Root[]; job: Con
         <Checkbox label={t("Copy the destination’s folder structure into the input folder now (folders only, no files)")} checked={structure} onChange={(event) => setStructure(event.target.checked)} />
       </div>
       <div className="flex justify-end">
-        <Button type="submit" variant="default" disabled={!canSubmit}>{job ? t("Save") : t("Add auto-convert")}</Button>
+        <Button type="submit" variant="default" disabled={!canSubmit || saving !== null}>
+          {saving ? <KagoSpinner className="text-inherit" /> : null}
+          {saving === "structure" ? t("Copying the folder structure…") : job ? t("Save") : t("Add auto-convert")}
+        </Button>
       </div>
     </form>
   );
