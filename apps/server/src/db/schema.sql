@@ -299,19 +299,6 @@ CREATE TABLE IF NOT EXISTS convert_jobs (
   FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
 );
 
--- What a job has already dealt with and left in its input folder, as the file was then: one that has changed since is new again.
-CREATE TABLE IF NOT EXISTS convert_job_files (
-  job_id TEXT NOT NULL,
-  path TEXT NOT NULL,
-  size INTEGER NOT NULL,
-  mtime_ms INTEGER NOT NULL,
-  status TEXT NOT NULL,
-  output TEXT,
-  done_at INTEGER NOT NULL,
-  PRIMARY KEY (job_id, path),
-  FOREIGN KEY (job_id) REFERENCES convert_jobs(id) ON DELETE CASCADE
-);
-
 -- How the runs of an auto-convert went, kept after their tasks are forgotten. A run whose task is still there is read from the task.
 CREATE TABLE IF NOT EXISTS convert_runs (
   task_id TEXT PRIMARY KEY,

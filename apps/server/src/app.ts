@@ -13,7 +13,6 @@ import { openDb } from "./db/db.js";
 import { AppError, publicError, systemAccount } from "./lib/errors.js";
 import { isPictureFormat } from "./lib/subtitles.js";
 import { nfc } from "./lib/filename.js";
-import { now } from "./lib/ids.js";
 import { logger } from "./lib/logger.js";
 import { randomToken } from "./lib/crypto.js";
 import { SecretBox } from "./lib/secret-box.js";
@@ -57,7 +56,6 @@ export async function buildApp(env: Env) {
   const proxies = env.trustProxy ?? false;
   // A number is how many proxies stand in front: that many hops of what they forward are believed, and no more.
   const app = Fastify({ logger: false, bodyLimit: 1024 * 1024 * 25, trustProxy: typeof proxies === "number" ? (_address: string, hop: number) => hop < proxies : proxies });
-  const bootedAt = now();
   const db = openDb(env);
   const events = new EventHub();
   const audit = new AuditService(db);
@@ -192,10 +190,6 @@ export async function buildApp(env: Env) {
   mediaWorkers.start();
   sync.start();
   convertJobs.start();
-  void tasks.convert.sweepPartials(bootedAt).then(
-    (removed) => removed > 0 && logger.info(`removed ${removed} half-written files left by interrupted conversions`),
-    () => undefined
-  );
   const pruning = setInterval(() => void remote.pruneLocalCopies().catch(() => undefined), 60 * 60 * 1000);
   pruning.unref();
   void remote.pruneLocalCopies().catch(() => undefined);

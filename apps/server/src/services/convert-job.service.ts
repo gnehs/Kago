@@ -103,8 +103,6 @@ export class ConvertJobService {
     this.db
       .prepare("UPDATE convert_jobs SET name = ?, input_json = ?, destination_json = ?, spec_json = ?, options_json = ?, watch = ?, updated_at = ? WHERE id = ?")
       .run(input.name, JSON.stringify(input.input), JSON.stringify(input.destination), JSON.stringify(input.spec), JSON.stringify(input.options), input.watch ? 1 : 0, now(), jobId);
-    // Another folder, or another format, is another job as far as what has been done goes.
-    if (existing.input_json !== JSON.stringify(input.input) || existing.spec_json !== JSON.stringify(input.spec)) this.db.prepare("DELETE FROM convert_job_files WHERE job_id = ?").run(jobId);
     this.seen.delete(jobId);
     this.audit.write({ actorType: "user", actorId: actor.id, action: "convert_job_update", target: { jobId }, result: "success" });
     return this.publicJob(this.get(jobId));
@@ -243,8 +241,6 @@ export class ConvertJobService {
 
   private publicJob(job: ConvertJobRow) {
     const last = this.lastTask(job);
-    const counts = rows<{ status: string; count: number }>(this.db.prepare("SELECT status, COUNT(*) AS count FROM convert_job_files WHERE job_id = ? GROUP BY status").all(job.id));
-    const count = (status: string) => counts.find((item) => item.status === status)?.count ?? 0;
     return {
       id: job.id,
       name: job.name,
@@ -257,7 +253,7 @@ export class ConvertJobService {
       last_status: last?.status ?? null,
       last_error: last?.error_message ?? null,
       /** Files that failed and are left in the input folder until they change or the job is started by hand. */
-      failed: count("failed"),
+      failed: this.tasks.convert.failedFiles(job.id).size,
       created_by: job.created_by
     };
   }

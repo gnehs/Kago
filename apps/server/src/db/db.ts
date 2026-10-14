@@ -31,6 +31,8 @@ export function openDb(env: Env, options: { interruptRunningTasks?: boolean } = 
   dropRsync(db);
   // Kago once kept tags of its own beside the ones kept on the files. Only the latter are left.
   db.exec("DROP TABLE IF EXISTS file_tags; DROP TABLE IF EXISTS tags");
+  // What an auto-convert had done was once kept apart from the folders; the destination now tells it.
+  db.exec("DROP TABLE IF EXISTS convert_job_files");
   // A person's list of tags was first kept under another name, and so was the note of a file's tags being changed.
   db.exec(`
     UPDATE user_settings SET settings_json = json_remove(json_set(settings_json, '$.tags', json_extract(settings_json, '$.finderTags')), '$.finderTags')
