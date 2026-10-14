@@ -25,7 +25,7 @@ import { isBrowserViewable } from "./lib/viewable.js";
 import { AuditService } from "./services/audit.service.js";
 import { AuthService, MAX_PASSWORD, changePasswordSchema, createUserSchema, loginSchema, patchUserSchema, resetPasswordSchema, setupAdminSchema } from "./services/auth.service.js";
 import { CompatibilityService } from "./services/compatibility.service.js";
-import { FsService, avatarSchema, fileTagsSchema, fsQuerySchema, maxUploadFiles, mkdirSchema, renameManySchema, renameSchema, sqliteRowsSchema, thumbnailQuerySchema, writeTextSchema, zipQuerySchema } from "./services/fs.service.js";
+import { FsService, avatarSchema, fileTagsSchema, fsQuerySchema, maxUploadFiles, mkdirSchema, renameManySchema, renameSchema, searchQuerySchema, sqliteRowsSchema, thumbnailQuerySchema, writeTextSchema, zipQuerySchema } from "./services/fs.service.js";
 import { ImageService } from "./services/image.service.js";
 import { appUrl, externalAppOrderSchema, externalAppSchema, ExternalAppService } from "./services/external-app.service.js";
 import { createGroupSchema, GroupService } from "./services/group.service.js";
@@ -791,6 +791,31 @@ function registerApi(app: FastifyInstance, services: Services) {
           } catch (error) {
             if (gone.signal.aborted) return;
             // The answer has begun and can no longer be turned into a refusal; its last line says what went wrong.
+            yield line(publicError(error).body);
+          }
+        })()
+      )
+    );
+  });
+  // A search is always sent line by line: what was searched, the matches a folder at a time, then whether it went through everything.
+  app.get("/api/fs/search", async (request, reply) => {
+    const actor = requireActor(request);
+    const query = searchQuerySchema.parse(request.query);
+    const gone = new AbortController();
+    reply.raw.on("close", () => gone.abort());
+    const { batches, state, ...folder } = await services.fsService.search(actor, query.rootSlug, query.path, query.q, gone.signal);
+    const line = (value: unknown) => Buffer.from(`${JSON.stringify(value)}\n`);
+    reply.header("Content-Type", "application/x-ndjson; charset=utf-8");
+    reply.header("X-Accel-Buffering", "no");
+    return reply.send(
+      Readable.from(
+        (async function* () {
+          yield line(folder);
+          try {
+            for await (const items of batches) yield line({ items });
+            yield line({ done: true, truncated: state.truncated });
+          } catch (error) {
+            if (gone.signal.aborted) return;
             yield line(publicError(error).body);
           }
         })()

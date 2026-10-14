@@ -31,6 +31,8 @@ export const fsQuerySchema = z.object({
 });
 
 /** The picture to make a profile picture of, and the square of it to keep: without one, the middle. */
+export const searchQuerySchema = fsQuerySchema.extend({ q: z.string().trim().min(1).max(200) });
+
 export const avatarSchema = fsQuerySchema.extend({
   crop: z
     .object({
@@ -120,6 +122,8 @@ const LIST_STAT_BATCH = 8;
 /** How many entries of a folder are handed over together, and how long the first of them waits for the rest. */
 const LIST_BATCH = 500;
 const LIST_BATCH_MS = 200;
+/** How many matches a search hands over before it stops: past that, the words asked for say too little. */
+const MAX_SEARCH_RESULTS = 1000;
 /** How many batches may be waiting on what was asked about their entries while the folder is read further. */
 const LIST_BATCHES_AHEAD = 3;
 
@@ -322,6 +326,82 @@ export class FsService {
       }
     }
     return total;
+  }
+
+  /**
+   * What a folder and every folder inside it hold whose name has each word of `query` in it, handed over as found:
+   * the nearest first, since a folder is read through before those inside it. Nothing keeps an index of names, so
+   * the folders are read as they are listed, without what the system left behind and without following a symlink.
+   * Stops at `MAX_SEARCH_RESULTS`, and says so with `truncated`.
+   */
+  async search(actor: Actor, rootSlug: string, logicalPath: string, query: string, signal?: AbortSignal) {
+    const { safe, readonly } = await this.listable(actor, rootSlug, logicalPath);
+    const words = nfc(query).toLocaleLowerCase().split(/\s+/).filter(Boolean);
+    if (words.length === 0) throw new AppError(400, "Nothing to search for", "INVALID_QUERY");
+    const matches = (name: string) => {
+      const folded = nfc(name).toLocaleLowerCase();
+      return words.every((word) => folded.includes(word));
+    };
+    const state = { truncated: false };
+    const batches = this.storage.isRemote(safe) ? this.remoteSearch(safe, matches, state) : this.localSearch(safe, readonly, matches, state, signal);
+    return { rootSlug: safe.root.slug, path: safe.logicalPath, readonly, batches, state };
+  }
+
+  private async *localSearch(safe: SafePath, readonly: boolean, matches: (name: string) => boolean, state: { truncated: boolean }, signal?: AbortSignal): AsyncGenerator<ListedItem[]> {
+    let found = 0;
+    const pending = [{ absolutePath: safe.absolutePath, logicalPath: safe.logicalPath }];
+    for (let index = 0; index < pending.length; index += 1) {
+      signal?.throwIfAborted();
+      const folder = pending[index]!;
+      // A folder that cannot be read, or that went away meanwhile, holds nothing to find.
+      const entries = await fsp.readdir(folder.absolutePath, { withFileTypes: true }).catch(() => []);
+      const named: string[] = [];
+      for (const entry of entries) {
+        if (entry.name.includes("\0") || isSystemFile(entry.name)) continue;
+        if (entry.isDirectory()) pending.push({ absolutePath: path.join(folder.absolutePath, entry.name), logicalPath: path.posix.join(folder.logicalPath, entry.name) });
+        if (matches(entry.name)) named.push(entry.name);
+      }
+      if (named.length === 0) continue;
+      const items = await this.describe({ ...safe, ...folder }, readonly, named.slice(0, MAX_SEARCH_RESULTS - found));
+      found += items.length;
+      if (items.length > 0) yield items;
+      if (found >= MAX_SEARCH_RESULTS) {
+        state.truncated = true;
+        return;
+      }
+    }
+  }
+
+  // A remote is asked for everything inside the folder at once, and the names are looked through here.
+  private async *remoteSearch(safe: SafePath, matches: (name: string) => boolean, state: { truncated: boolean }): AsyncGenerator<ListedItem[]> {
+    const entries = (await this.storage.remote.walk(safe.root, safe.logicalPath)).filter((entry) => {
+      const segments = entry.path.split("/");
+      return !segments.some((segment) => segment.includes("\0") || isSystemFile(segment)) && matches(segments.at(-1)!);
+    });
+    if (entries.length > MAX_SEARCH_RESULTS) state.truncated = true;
+    // The nearest first, as in a folder of the server's own.
+    const found = entries.sort((a, b) => a.path.split("/").length - b.path.split("/").length).slice(0, MAX_SEARCH_RESULTS);
+    const byFolder = new Map<string, typeof found>();
+    for (const entry of found) {
+      const folder = path.posix.join(safe.logicalPath, path.posix.dirname(entry.path));
+      byFolder.set(folder, [...(byFolder.get(folder) ?? []), entry]);
+    }
+    for (const [folder, inside] of byFolder) {
+      const tags = await this.storage.remote.fileTags(safe.root, folder, inside.map((entry) => entry.name)).catch(() => new Map<string, FileTag[]>());
+      yield inside.map((entry) => {
+        const logicalPath = path.posix.join(folder, entry.name);
+        return {
+          name: nfc(entry.name),
+          path: logicalPath,
+          kind: entry.directory ? "folder" : "file",
+          size: entry.size,
+          mtime: entry.mtimeMs,
+          type: entry.directory ? "folder" : lookup(entry.name) || "application/octet-stream",
+          readonly: Boolean(safe.root.readonly) || this.storage.remote.isFixed(safe.root, logicalPath),
+          tags: tags.get(entry.name) ?? []
+        };
+      });
+    }
   }
 
   async setFileTags(actor: Actor, input: z.infer<typeof fileTagsSchema>) {

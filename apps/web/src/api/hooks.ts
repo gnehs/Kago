@@ -143,6 +143,47 @@ export function useFileList(rootSlug: string, path: string, enabled = true) {
   return useQuery({ ...fileListQuery(useQueryClient(), rootSlug, path), select, enabled });
 }
 
+export type FolderSearch = Omit<FileList, "partial"> & { query: string; partial: boolean; truncated: boolean };
+
+type FolderSearchLine = Omit<FileList, "items" | "partial"> | { items: FileItem[] } | { done: true; truncated: boolean } | { error: string; code?: string };
+
+/**
+ * What a folder and the folders inside it hold whose name has every word of `query` in it, shown as it is found.
+ * Kept under the folder's own listing, so whatever refreshes the folder searches it again.
+ */
+export function useFolderSearch(rootSlug: string, path: string, query: string) {
+  const select = useWithoutTrashing();
+  const client = useQueryClient();
+  const queryKey = ["fs", "list", rootSlug, path, "search", query];
+  return useQuery({
+    queryKey,
+    queryFn: async ({ signal }): Promise<FolderSearch> => {
+      const items: FileItem[] = [];
+      let folder: Omit<FileList, "items" | "partial"> | undefined;
+      let shown = 0;
+      for await (const line of apiLines<FolderSearchLine>(`/api/fs/search?${new URLSearchParams({ rootSlug, path, q: query }).toString()}`, signal)) {
+        if ("error" in line) throw new ApiError(serverMessage(line.error), line.code ?? "REQUEST_FAILED", 500);
+        if ("done" in line) return { ...folder!, query, items, partial: false, truncated: line.truncated };
+        if (!("items" in line)) folder = line;
+        else {
+          items.push(...line.items);
+          if (folder && performance.now() - shown >= 250) {
+            client.setQueryData<FolderSearch>(queryKey, { ...folder, query, items: [...items], partial: true, truncated: false });
+            shown = performance.now();
+          }
+        }
+      }
+      // An answer cut short has no last line.
+      throw new ApiError(serverMessage(undefined), "REQUEST_FAILED", 500);
+    },
+    select: (search: FolderSearch) => ({ ...search, ...select({ ...search }) }),
+    enabled: query.length > 0,
+    // Typing on keeps the matches of what was typed before until there are new ones.
+    placeholderData: keepPreviousData,
+    retry: false
+  });
+}
+
 const folderContents = (results: UseQueryResult<FileList>[]) => results.map((result) => result.data?.items);
 
 /** The contents of several folders at once, in the order asked; a folder still loading has none yet. */

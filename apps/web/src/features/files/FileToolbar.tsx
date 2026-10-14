@@ -88,9 +88,17 @@ export function FileToolbar({ window, folderView, rootName, readonly, canGoBack,
 
       <label className="kago-well hidden h-7 w-40 items-center gap-1.5 rounded-full px-2.5 @2xl:flex">
         <Search className="size-3.5 text-faint" />
-        <input aria-label={t("Filter this folder")} placeholder={t("Filter")} className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-faint" value={search} onChange={(event) => onSearch(event.target.value)} />
+        <input
+          type="search"
+          aria-label={t("Search this folder and its subfolders")}
+          placeholder={t("Search")}
+          className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-faint [&::-webkit-search-cancel-button]:hidden"
+          value={search}
+          onChange={(event) => onSearch(event.target.value)}
+          onKeyDown={(event) => event.key === "Escape" && search && (event.stopPropagation(), onSearch(""))}
+        />
         {search ? (
-          <button aria-label={t("Clear filter")} className="text-faint hover:text-ink" onClick={() => onSearch("")}><X className="size-3.5" /></button>
+          <button aria-label={t("Clear search")} className="text-faint hover:text-ink" onClick={() => onSearch("")}><X className="size-3.5" /></button>
         ) : null}
       </label>
 

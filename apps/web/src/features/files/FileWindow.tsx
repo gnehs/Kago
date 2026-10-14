@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Archive, ArchiveRestore, Ban, CircleUserRound, ClipboardPaste, Copy, Download, ExternalLink, FileOutput, FileVideo, Folder, FolderInput, FolderOpen, FolderPlus, FolderUp, Inbox, Info, ListVideo, PanelTop, Pencil, Play, Plus, RefreshCw, Scissors, SquareArrowOutUpRight, Trash2, Upload, Wallpaper, X } from "lucide-react";
-import { useFileList, useFolderContents } from "@/api/hooks";
+import { useFileList, useFolderContents, useFolderSearch } from "@/api/hooks";
 import { KagoBadge } from "@/components/kago/badge";
 import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
@@ -70,6 +70,14 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
   const uploadInput = useRef<HTMLInputElement>(null);
   const folderInput = useRef<HTMLInputElement>(null);
   const [search, setSearch] = useState("");
+  // The folders below are searched once typing pauses; clearing the field goes back to the folder at once.
+  const [query, setQuery] = useState("");
+  const typed = nfc(search.trim());
+  useEffect(() => {
+    if (!typed) return setQuery("");
+    const timer = setTimeout(() => setQuery(typed), 250);
+    return () => clearTimeout(timer);
+  }, [typed]);
   const [anchorPath, setAnchorPath] = useState<string | null>(null);
   const [menuItem, setMenuItem] = useState<FileItem | null>(null);
   // What is being held over the window: files from outside the browser, which would be uploaded, or items of Kago's own.
@@ -89,27 +97,32 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
   }
 
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
-  // Folders open in place in the list view only, and a search looks through the window's own folder.
-  const showsTree = win.viewMode === "list" && !search.trim();
+  // Folders open in place in the list view only; a search lists what it found, wherever inside the folder that is.
+  const searching = Boolean(typed);
+  const showsTree = win.viewMode === "list" && !searching;
   const inColumns = win.viewMode === "columns";
   const lastSelected = win.selectedItems.at(-1);
   // In the column view the selection says how far in the columns go: every folder between the window's own and the one the selection is in.
   const trail = useMemo(() => {
     const folders: string[] = [];
-    if (!inColumns || search.trim() || !lastSelected || !isInside(lastSelected, win.logicalPath)) return folders;
+    if (!inColumns || searching || !lastSelected || !isInside(lastSelected, win.logicalPath)) return folders;
     for (let path = parentPath(lastSelected); path !== win.logicalPath && path !== "/"; path = parentPath(path)) folders.unshift(path);
     return folders;
-  }, [inColumns, search, lastSelected, win.logicalPath]);
+  }, [inColumns, searching, lastSelected, win.logicalPath]);
   const expandedPaths = useMemo(() => (showsTree ? [...expanded] : trail), [showsTree, expanded, trail]);
   const expandedContents = useFolderContents(win.rootSlug, expandedPaths);
 
   const error = classifyFileWindowError(fileList.error);
   const readonly = Boolean(fileList.data?.readonly);
   const allItems = useMemo(() => sortItems(fileList.data?.items ?? [], win.sortBy, win.sortDirection), [fileList.data, win.sortBy, win.sortDirection]);
+  const searched = useFolderSearch(win.rootSlug, win.logicalPath, searching ? query : "");
+  // Matches kept from before are shown only while they are of this folder and of a search still being typed.
+  const results = searching && searched.data?.rootSlug === win.rootSlug && searched.data.path === win.logicalPath ? searched.data : undefined;
+  const found = useMemo(() => (results ? sortItems(results.items, win.sortBy, win.sortDirection) : []), [results, win.sortBy, win.sortDirection]);
+  const searchPending = searching && (query !== typed || !results || results.query !== query || results.partial);
   // What the window's own folder lists, with the folders opened in place in the list view.
   const { items: listed, depths } = useMemo(() => {
-    const query = nfc(search.trim()).toLocaleLowerCase();
-    if (query) return { items: allItems.filter((item) => item.name.toLocaleLowerCase().includes(query)), depths: [] };
+    if (searching) return { items: found, depths: [] };
     if (!showsTree || expandedPaths.length === 0) return { items: allItems, depths: [] };
     // Each open folder is followed by its own contents, sorted like the rest and one level further in.
     const contents = new Map(expandedPaths.map((path, index) => [path, expandedContents[index]]));
@@ -125,7 +138,7 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
     };
     walk(allItems, 0);
     return { items, depths };
-  }, [allItems, search, showsTree, expandedPaths, expandedContents, win.sortBy, win.sortDirection]);
+  }, [allItems, searching, found, showsTree, expandedPaths, expandedContents, win.sortBy, win.sortDirection]);
 
   // The columns down to the folder the selection is in. A folder that is no longer where the selection says ends them.
   const columnsAbove = useMemo(() => {
@@ -153,8 +166,8 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
   const items = columns ? columns[activeColumn]?.items ?? listed : listed;
   const selectedItems = useMemo(() => {
     const selected = new Set(win.selectedItems);
-    return (search.trim() ? allItems : items).filter((item) => selected.has(item.path));
-  }, [allItems, items, search, win.selectedItems]);
+    return items.filter((item) => selected.has(item.path));
+  }, [items, win.selectedItems]);
   const selectedPaths = selectedItems.map((item) => item.path);
   // What the folder holds, for the status bar: how many of each, and how much the files weigh.
   const summary = useMemo(() => {
@@ -453,13 +466,13 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
           <KagoContextMenu menu={renderMenu(menuTargets)} className="flex min-h-0 min-w-0 flex-1">
             {/* The columns scroll one by one, so there is no one area for a rubber band to be drawn across. */}
             <div ref={setScroller} className={cn("relative min-w-0 flex-1 select-none", columns && listed.length > 0 ? "flex overflow-hidden" : "overflow-auto")} onContextMenuCapture={() => setMenuItem(null)} {...(columns ? {} : marquee.handlers)}>
-              {fileList.isLoading ? <KagoLoading /> : null}
-              {fileList.data && listed.length === 0 ? (
+              {fileList.isLoading || (searching && listed.length === 0 && searchPending && !searched.isError) ? <KagoLoading /> : null}
+              {fileList.data && listed.length === 0 && !(searching && searchPending && !searched.isError) ? (
                 <KagoEmptyState
                   className="h-full"
                   icon={<Folder />}
-                  title={search ? t("No matching items") : t("This folder is empty")}
-                  description={search ? t("Nothing here has “{query}” in its name.", { query: search.trim() }) : readonly ? t("This location is read-only.") : t("Drag files in, or upload from the toolbar.")}
+                  title={searching ? (searched.isError ? t("Couldn’t load") : t("No matching items")) : t("This folder is empty")}
+                  description={searching ? (searched.isError ? searched.error.message : t("Nothing in this folder or its subfolders has “{query}” in its name.", { query: typed })) : readonly ? t("This location is read-only.") : t("Drag files in, or upload from the toolbar.")}
                 />
               ) : null}
               {listed.length === 0 ? null : columns ? (
@@ -474,7 +487,7 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
                   onDropInto={readonly ? undefined : dropInto}
                 />
               ) : (
-                <FileList window={win} items={items} tree={tree} scroller={scroller} layout={layout} onSelect={selectItem} onOpen={openItem} onContextItem={onContextItem} onDropInto={readonly ? undefined : (event, folder) => dropInto(event, folder.path)} />
+                <FileList window={win} items={items} tree={tree} locateFrom={searching ? win.logicalPath : undefined} scroller={scroller} layout={layout} onSelect={selectItem} onOpen={openItem} onContextItem={onContextItem} onDropInto={readonly ? undefined : (event, folder) => dropInto(event, folder.path)} />
               )}
               {marquee.style ? <div className="pointer-events-none absolute border border-accent bg-accent/15" style={marquee.style} /> : null}
             </div>
@@ -496,7 +509,7 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
             <KagoIconButton label={t("Move to Trash")} className="size-6" disabled={readonly} onClick={() => void actions.trash(selectedPaths)}><Trash2 /></KagoIconButton>
           </>
         ) : (
-          <span className="truncate">{error ? t("Couldn’t load") : search ? t("{count} of {total} items match", { count: items.length, total: allItems.length }) : summary}{!error && fileList.data?.partial ? ` · ${t("Loading…")}` : ""}</span>
+          <span className="truncate">{error ? t("Couldn’t load") : searching ? (results?.truncated ? t("Showing the first {count} matches", { count: found.length }) : t("{count} item found | {count} items found", { count: found.length })) : summary}{!error && (searching ? searchPending : fileList.data?.partial) ? ` · ${searching ? t("Searching…") : t("Loading…")}` : ""}</span>
         )}
       </footer>
 

@@ -3,7 +3,7 @@ import { ArrowDown, ArrowUp, ChevronRight } from "lucide-react";
 import { KagoLoading } from "@/components/kago/empty-state";
 import { TagDots } from "@/features/tags/TagDots";
 import { formatDate, formatSize, kindLabel } from "@/lib/format";
-import { baseName } from "@/lib/paths";
+import { baseName, parentPath } from "@/lib/paths";
 import { cn } from "@/lib/utils";
 import { useClipboardStore } from "@/stores/clipboard";
 import { setFolderView } from "@/stores/settings";
@@ -21,6 +21,8 @@ type FileListProps = {
   items: FileItem[];
   /** Folders opened in place, in the list view. */
   tree?: FileTree;
+  /** The folder a search was made in: each item found below it says which folder inside it it is in. */
+  locateFrom?: string;
   /** The scroll container the list sits in, and where each item is laid out inside it. */
   scroller: HTMLElement | null;
   layout: FileLayout;
@@ -111,7 +113,7 @@ export function FileList(props: FileListProps) {
 }
 
 function ListView(props: ViewProps) {
-  const { window, items, tree, layout, selectedPaths } = props;
+  const { window, items, tree, locateFrom, layout, selectedPaths } = props;
   const range = useVisibleRange(props.scroller, layout, items.length);
   return (
     <div className="@container min-w-0" role="listbox" aria-multiselectable>
@@ -151,6 +153,7 @@ function ListView(props: ViewProps) {
                 <FileIcon item={item} />
                 <span className="truncate">{item.name}</span>
                 <TagDots tags={item.tags} />
+                {locateFrom !== undefined && whereIn(locateFrom, item) ? <span className={cn("ml-1 min-w-0 shrink-[2] truncate text-xs", !selected && "text-muted")} dir="rtl" title={whereIn(locateFrom, item)}><bdi>{whereIn(locateFrom, item)}</bdi></span> : null}
               </span>
               <span className={cn("hidden w-36 truncate tabular-nums @md:block", !selected && "text-muted")}>{formatDate(item.mtime)}</span>
               <span className={cn("w-20 text-right tabular-nums", !selected && "text-muted")}>{item.kind === "folder" ? "—" : formatSize(item.size)}</span>
@@ -161,6 +164,13 @@ function ListView(props: ViewProps) {
       </div>
     </div>
   );
+}
+
+/** Where inside `folder` an item lies, as the path from there to the folder holding it; nothing when it is in `folder` itself. */
+function whereIn(folder: string, item: FileItem) {
+  const parent = parentPath(item.path);
+  if (parent === folder) return "";
+  return folder === "/" ? parent.slice(1) : parent.slice(folder.length + 1);
 }
 
 /** How far each level of an opened folder is set in from the one above. */
@@ -210,7 +220,7 @@ function GridView(props: ViewProps) {
         const selected = selectedPaths.has(item.path);
         return (
           // Every cell is the same height whatever the length of its name, so rows can be placed without measuring them.
-          <div key={item.path} role="option" className={cn("flex flex-col items-center gap-1 overflow-hidden rounded-md p-1.5", stateClass(props, item))} style={{ height: layout.cellHeight }} {...itemProps(props, item, range.start + offset)}>
+          <div key={item.path} role="option" title={props.locateFrom !== undefined ? whereIn(props.locateFrom, item) || undefined : undefined} className={cn("flex flex-col items-center gap-1 overflow-hidden rounded-md p-1.5", stateClass(props, item))} style={{ height: layout.cellHeight }} {...itemProps(props, item, range.start + offset)}>
             <div className={cn("flex shrink-0 items-center justify-center rounded-md", selected && "bg-hover ring-1 ring-line ring-inset")} style={{ width: icon + 8, height: icon + 8 }}>
               <FileThumbnail rootSlug={window.rootSlug} item={item} size={icon} />
             </div>
