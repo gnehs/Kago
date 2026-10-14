@@ -1312,6 +1312,7 @@ export const zhTW: Dictionary = {
   "Only files can be converted": "只有檔案可以轉檔",
   "The input folder and the destination overlap": "輸入資料夾與目的地互相重疊",
   "Some files couldn’t be converted": "有些檔案無法轉檔",
+  "This file is still being copied or moved by another task": "這個檔案還在被其他任務複製或移動",
   "This folder has too many folders in it to copy its structure": "這個資料夾裡的資料夾太多，無法複製結構",
   "The video no longer has one of the chosen tracks": "影片裡已經沒有其中一條選取的軌道",
   "One of the added files has no sound in it": "加入的檔案中有一個沒有聲音",

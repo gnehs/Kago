@@ -91,9 +91,17 @@ export type TaskHandle = {
 
 type Walked = { rel: string; size: number; mtimeMs: number; directory: boolean };
 type JobFile = { size: number; mtime_ms: number; status: string };
+/** A file a conversion has brought across, as its task keeps it so that a retry of the task leaves it be. */
+type Converted = { rootSlug: string; path: string; size: number; mtimeMs: number; output: string };
 
 /** Names in a folder that are already spoken for, compared the way a disk that does not mind the case would. */
 const nameKey = (name: string) => nfc(name).toLowerCase();
+
+/** The tasks that bring files into a folder, and so may have one there that is not whole yet. */
+const writerTypes = ["copy", "move", "extract", "compress", "sync"];
+/** A place as the busy ones are told apart, standing also for all that lies under it. */
+const placeKey = (rootSlug: string, logicalPath: string) => `${rootSlug}:${nameKey(path.posix.resolve("/", logicalPath))}`;
+const sourceBusy = () => new AppError(409, "This file is still being copied or moved by another task", "CONVERT_SOURCE_BUSY");
 
 /** Converting media with ffmpeg: files picked by hand, folders gone through by a saved job, and tracks packed into Matroska. */
 export class ConvertService {
@@ -154,7 +162,30 @@ export class ConvertService {
 
   async assertConvert(actor: Actor, input: ConvertInput): Promise<void> {
     await this.writableFolder(actor, input.destination);
-    for (const source of input.sources) await this.file(actor, source);
+    const busy = this.busyPlaces();
+    for (const source of input.sources) {
+      const { safe } = await this.file(actor, source);
+      if (this.isBusy(safe.root.slug, safe.logicalPath, busy)) throw sourceBusy();
+    }
+  }
+
+  /** Where Kago's own running tasks are still writing, or for a move still taking away. */
+  private busyPlaces(): string[] {
+    const tasks = this.db.prepare(`SELECT type, sources_json, destination FROM tasks WHERE status = 'running' AND type IN (${writerTypes.map(() => "?").join(", ")})`).all(...writerTypes) as Array<Pick<FileTask, "type" | "sources_json" | "destination">>;
+    const places: string[] = [];
+    for (const task of tasks) {
+      const destination = JSON.parse(task.destination ?? "{}") as Partial<FileRef> & { sync?: { destination?: Partial<FileRef> } };
+      const into = task.type === "sync" ? destination.sync?.destination : destination;
+      if (into?.rootSlug && into.path) places.push(placeKey(into.rootSlug, into.path));
+      // A move between disks takes its sources away only once they have arrived.
+      if (task.type === "move") for (const source of JSON.parse(task.sources_json) as FileRef[]) places.push(placeKey(source.rootSlug, source.path));
+    }
+    return places;
+  }
+
+  private isBusy(rootSlug: string, logicalPath: string, places: string[]): boolean {
+    const key = placeKey(rootSlug, logicalPath);
+    return places.some((place) => key === place || key.startsWith(place.endsWith("/") ? place : `${place}/`));
   }
 
   /** Checks both ends of a job and returns the folders they are. */
@@ -179,7 +210,7 @@ export class ConvertService {
   }
 
   async run(task: FileTask, actor: Actor, handle: TaskHandle): Promise<void> {
-    const { convert: spec, job, ...destination } = JSON.parse(task.destination ?? "{}") as FileRef & { convert?: unknown; job?: ConvertJobRun };
+    const { convert: spec, job, converted = [], ...destination } = JSON.parse(task.destination ?? "{}") as FileRef & { convert?: unknown; job?: ConvertJobRun; converted?: Converted[] };
     const parsed = convertSpecSchema.parse(spec);
     if (job) return this.runJob(task.id, actor, { ...job, options: convertJobOptionsSchema.parse(job.options) }, destination, parsed, handle);
 
@@ -191,9 +222,21 @@ export class ConvertService {
     const taken = await this.taken(folder);
     let failed = 0;
     for (const { safe, stat } of sources) {
+      // Done by the run this one retries, and neither it nor what it became has changed since.
+      const before = converted.find((file) => file.rootSlug === safe.root.slug && file.path === safe.logicalPath);
+      if (before && before.size === stat.size && before.mtimeMs === Math.round(stat.mtimeMs) && taken.has(nameKey(before.output))) {
+        handle.bytes(stat.size);
+        handle.files(1);
+        continue;
+      }
       handle.show(safe.logicalPath);
       try {
+        if (this.isBusy(safe.root.slug, safe.logicalPath, this.busyPlaces())) throw sourceBusy();
         const made = await this.convertOne(safe, stat, folder, taken, parsed, false, handle);
+        const record = { rootSlug: safe.root.slug, path: safe.logicalPath, size: stat.size, mtimeMs: Math.round(stat.mtimeMs), output: made.name };
+        if (before) converted[converted.indexOf(before)] = record;
+        else converted.push(record);
+        this.db.prepare("UPDATE tasks SET destination = ? WHERE id = ?").run(JSON.stringify({ ...destination, convert: spec, converted }), task.id);
         this.audit.write({ actorType: "user", actorId: actor.id, action: "convert", rootId: safe.root.id, path: safe.logicalPath, target: { rootSlug: folder.root.slug, path: path.posix.join(folder.logicalPath, made.name), format: parsed.format }, result: "success" });
       } catch (error) {
         if (error instanceof ConvertStopped || sources.length === 1) throw error;
@@ -218,7 +261,8 @@ export class ConvertService {
 
   private async runJobFiles(taskId: string, actor: Actor, job: ConvertJobRun, destinationRef: FileRef, spec: ConvertSpec, handle: TaskHandle, counts: { converted: number; copied: number; failed: number }): Promise<void> {
     const { input, destination } = await this.assertJob(actor, { input: job.input, destination: destinationRef, options: job.options });
-    const work = (await this.pendingFiles(job.id, input, spec, job.options, job.retryFailed ?? false)).filter((file) => Date.now() - file.mtimeMs > SETTLE_MS);
+    const busy = this.busyPlaces();
+    const work = (await this.pendingFiles(job.id, input, spec, job.options, job.retryFailed ?? false)).filter((file) => Date.now() - file.mtimeMs > SETTLE_MS && !this.isBusy(input.root.slug, path.posix.join(input.logicalPath, file.rel), busy));
     await handle.totals(work.length, work.reduce((sum, file) => sum + file.size, 0));
     const folders = new Map<string, { folder: SafePath; taken: Set<string> }>();
     const remember = this.db.prepare("INSERT OR REPLACE INTO convert_job_files (job_id, path, size, mtime_ms, status, output, done_at) VALUES (?, ?, ?, ?, ?, ?, ?)");
@@ -226,6 +270,11 @@ export class ConvertService {
     const record = this.db.prepare("INSERT INTO convert_run_files (task_id, path, status, size_in, size_out) SELECT ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM convert_runs WHERE task_id = ?)");
     for (const file of work) {
       const logical = path.posix.join(input.logicalPath, file.rel);
+      // Something began writing here since the run started; the next look brings it across once that is done.
+      if (this.isBusy(input.root.slug, logical, this.busyPlaces())) {
+        handle.files(1);
+        continue;
+      }
       handle.show(logical);
       try {
         const safe = await this.paths.resolveExisting(input.root.slug, logical);
@@ -264,11 +313,12 @@ export class ConvertService {
     }
   }
 
-  /** How many files of a job's input folder are waiting and have stopped changing. `seen` is what each measured at the last look. */
+  /** How many files of a job's input folder are waiting, have stopped changing and are no task's to write. `seen` is what each measured at the last look. */
   async ready(job: { id: string; input: FileRef; spec: ConvertSpec; options: ConvertJobOptions }, seen: Map<string, number>): Promise<number> {
     const input = await this.folder(job.input);
     const pending = await this.pendingFiles(job.id, input, job.spec, job.options, false);
-    const ready = pending.filter((file) => Date.now() - file.mtimeMs > SETTLE_MS && seen.get(file.rel) === file.size).length;
+    const busy = this.busyPlaces();
+    const ready = pending.filter((file) => Date.now() - file.mtimeMs > SETTLE_MS && seen.get(file.rel) === file.size && !this.isBusy(input.root.slug, path.posix.join(input.logicalPath, file.rel), busy)).length;
     seen.clear();
     for (const file of pending) seen.set(file.rel, file.size);
     return ready;
@@ -358,6 +408,43 @@ export class ConvertService {
     for (let count = 2; taken.has(nameKey(name)); count += 1) name = nfc(`${base} (${count})${extension}`);
     taken.add(nameKey(name));
     return name;
+  }
+
+  /**
+   * Takes away what the conversions Kago stopped in the middle of, when it last went down, left half-written.
+   * `since` is when this start began, in seconds: those are the conversions marked interrupted since, and what was written before it is theirs.
+   */
+  async sweepPartials(since: number): Promise<number> {
+    const before = since * 1000;
+    let removed = await this.removePartials(path.join(this.appDataDir, "temp", "convert"), false, before);
+    const cut = this.db.prepare("SELECT destination FROM tasks WHERE type IN ('convert', 'remux') AND status = 'interrupted' AND finished_at >= ?").all(since) as Array<Pick<FileTask, "destination">>;
+    for (const task of cut) {
+      const { job, ...destination } = JSON.parse(task.destination ?? "{}") as FileRef & { job?: unknown };
+      try {
+        const folder = await this.folder(destination);
+        // A remote's are written in the app data, gone through above.
+        if (isRemote(folder.root)) continue;
+        // A job's run puts what it makes in the folders of the input it mirrors.
+        removed += await this.removePartials(folder.absolutePath, Boolean(job), before);
+      } catch (error) {
+        logger.warn("could not clear what an interrupted conversion left", { destination, error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+    return removed;
+  }
+
+  private async removePartials(dir: string, deep: boolean, before: number): Promise<number> {
+    const entries = await fsp.readdir(dir, { withFileTypes: true }).catch(() => []);
+    let removed = 0;
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      if (entry.isFile() && entry.name.startsWith(CONVERT_PARTIAL)) {
+        // One begun since this start is a conversion running now.
+        const stat = await fsp.stat(full).catch(() => null);
+        if (stat && stat.mtimeMs < before && (await fsp.rm(full, { force: true }).then(() => true, () => false))) removed += 1;
+      } else if (deep && entry.isDirectory() && !isSystemFile(entry.name)) removed += await this.removePartials(full, true, before);
+    }
+    return removed;
   }
 
   /** Where a file is written before it is whole: beside where it will lie on disk, or for a remote in the app data. */

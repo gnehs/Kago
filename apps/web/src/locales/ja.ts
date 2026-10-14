@@ -1312,6 +1312,7 @@ export const ja: Dictionary = {
   "Only files can be converted": "変換できるのはファイルだけです",
   "The input folder and the destination overlap": "入力フォルダと保存先が重なっています",
   "Some files couldn’t be converted": "一部のファイルを変換できませんでした",
+  "This file is still being copied or moved by another task": "このファイルは別のタスクでコピーまたは移動中です",
   "This folder has too many folders in it to copy its structure": "フォルダが多すぎるため、構造をコピーできません",
   "The video no longer has one of the chosen tracks": "選んだトラックのひとつがビデオにもうありません",
   "One of the added files has no sound in it": "追加したファイルのひとつに音声がありません",

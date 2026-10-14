@@ -1312,6 +1312,7 @@ export const zhCN: Dictionary = {
   "Only files can be converted": "只有文件可以转换",
   "The input folder and the destination overlap": "输入文件夹与目的地互相重叠",
   "Some files couldn’t be converted": "有些文件无法转换",
+  "This file is still being copied or moved by another task": "这个文件还在被其他任务复制或移动",
   "This folder has too many folders in it to copy its structure": "这个文件夹里的文件夹太多，无法复制结构",
   "The video no longer has one of the chosen tracks": "视频里已经没有其中一条所选的轨道",
   "One of the added files has no sound in it": "添加的文件中有一个没有声音",
