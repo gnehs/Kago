@@ -2,7 +2,7 @@ import { z } from "zod";
 import { lookup } from "mime-types";
 import type { Db } from "../db/db.js";
 import { row, rows } from "../db/db.js";
-import { AttemptLimiter } from "../lib/attempts.js";
+import { AttemptLimiter, guesserOf } from "../lib/attempts.js";
 import { hashPassword, randomToken, sha256, verifyPassword } from "../lib/crypto.js";
 import { AppError } from "../lib/errors.js";
 import { id, now } from "../lib/ids.js";
@@ -193,6 +193,8 @@ export class ShareService {
   }
 
   private counted(shareId: string, visitor: ShareVisitor): boolean {
+    // Without the visit's own cookie, everyone behind one address would ride on the first of them to be counted.
+    if (!visitor.session) return false;
     return Boolean(this.db.prepare("SELECT 1 FROM share_visits WHERE share_id = ? AND visitor = ? AND seen_at > ?").get(shareId, visitorKey(visitor), now() - SHARE_VISIT_SECONDS));
   }
 
@@ -247,9 +249,10 @@ export class ShareService {
     const share = this.resolveToken(token, visitor);
     if (!share.password_hash) return { shareId: share.id, accessToken: this.accessTokenForShare(share) };
     // A link is handed around, so its password is the one anyone at all may guess at.
+    const guesser = guesserOf(address);
     const attempt = this.attempts.begin([
-      { key: `share:${address}:${share.id}`, limit: SHARE_TRIES },
-      { key: `share-from:${address}`, limit: SHARE_TRIES_PER_ADDRESS }
+      { key: `share:${guesser}:${share.id}`, limit: SHARE_TRIES },
+      { key: `share-from:${guesser}`, limit: SHARE_TRIES_PER_ADDRESS }
     ]);
     if (!(await verifyPassword(password, share.password_hash))) {
       this.audit.write({

@@ -677,6 +677,10 @@ export class TaskService {
     let totalFiles = 0;
     for (const safeSource of resolved) {
       this.permissions.require(actor, move ? "edit" : "view", safeSource.root, safeSource.logicalPath);
+      // A location's top holds its trash, which is nobody's to carry elsewhere.
+      if (move) this.assertNotFixed(safeSource);
+      else if (safeSource.logicalPath === "/") throw new AppError(400, "Invalid path", "INVALID_PATH");
+      this.assertNotFixed(dest, this.storage.name(safeSource));
       const stats = await collectPathStats(safeSource.absolutePath);
       // A folder with no file in it still counts as one thing to carry.
       const files = Math.max(stats.files, 1);
@@ -902,10 +906,12 @@ export class TaskService {
     return { files: coming.filter((item) => !item.IsDir && files.has(item.Path)).map((item) => item.Path), held: new Set(there.map((item) => item.Path)) };
   }
 
-  /** Refuses to touch one of a server's shares, or with `child` to put something beside them. */
+  /** Refuses to make, replace, move or remove a location's top, its trash, or one of a server's shares; with `child`, to put that name beside `safe`. */
   private assertNotFixed(safe: SafePath, child?: string): void {
-    if (!isRemote(safe.root)) return;
-    if (this.storage.remote.isFixed(safe.root, child === undefined ? safe.logicalPath : path.posix.join(safe.logicalPath, child))) throw sharesAreFixed();
+    const target = child === undefined ? safe.logicalPath : path.posix.join(safe.logicalPath, child);
+    if (target === "/") throw new AppError(400, "Invalid path", "INVALID_PATH");
+    if (isRemote(safe.root) && this.storage.remote.isFixed(safe.root, target)) throw sharesAreFixed();
+    if (this.paths.isTrash(safe.root, target)) throw new AppError(400, "Invalid path", "INVALID_PATH");
   }
 
   /** A path as rclone is told it: the remote's name and a path in it, or the server's own disk. */
@@ -926,9 +932,8 @@ export class TaskService {
     for (const source of sources) {
       const safe = await this.paths.resolveExisting(source.rootSlug, source.path);
       this.permissions.require(actor, "edit", safe.root, safe.logicalPath);
+      this.assertNotFixed(safe);
       if (isRemote(safe.root)) {
-        if (safe.logicalPath === "/") throw new AppError(400, "Invalid path", "INVALID_PATH");
-        this.assertNotFixed(safe);
         // A remote keeps its own trash, so nothing has to be fetched to throw it away.
         operations.push({ safe, trashPath: `${this.storage.remote.trashFolder(safe.root, safe.logicalPath)}/${Date.now()}-${id("trash")}-${this.storage.name(safe)}`, bytes: 0 });
         continue;
@@ -971,9 +976,9 @@ export class TaskService {
   /** Throws one file away in the middle of other work, the way `runTrash` does a list of them. */
   private async trashNow(actor: Actor, safe: SafePath): Promise<void> {
     this.permissions.require(actor, "edit", safe.root, safe.logicalPath);
+    this.assertNotFixed(safe);
     let trashPath: string;
     if (isRemote(safe.root)) {
-      this.assertNotFixed(safe);
       trashPath = `${this.storage.remote.trashFolder(safe.root, safe.logicalPath)}/${Date.now()}-${id("trash")}-${this.storage.name(safe)}`;
       await this.storage.remote.mkdir(safe.root, path.posix.dirname(trashPath));
       await this.storage.remote.move(safe.root, safe.logicalPath, trashPath, false);
@@ -1040,7 +1045,6 @@ export class TaskService {
     for (const source of sources) {
       const safe = await this.paths.resolveExisting(source.rootSlug, source.path);
       this.permissions.require(actor, "edit", safe.root, safe.logicalPath);
-      if (safe.logicalPath === "/") throw new AppError(400, "Invalid path", "INVALID_PATH");
       this.assertNotFixed(safe);
       await this.progress(task.id, safe.logicalPath);
       if (isRemote(safe.root)) await this.storage.remote.remove(safe.root, safe.logicalPath, (await this.storage.stat(safe)).isDirectory());
@@ -1205,7 +1209,7 @@ export class TaskService {
           entries.push(addEntry(safe, logicalPath, entryName, directory, directory ? 0 : stat.size, stat.mtime, absolutePath));
           if (!directory) return;
           for (const child of (await fsp.readdir(absolutePath)).sort()) {
-            if (!isSafeLogicalSegment(child)) continue;
+            if (!isSafeLogicalSegment(child) || this.paths.isTrash(safe.root, path.posix.join(logicalPath, child))) continue;
             const normalized = nfc(child);
             await collectLocal(path.join(absolutePath, child), path.posix.join(logicalPath, normalized), `${entryName}/${normalized}`);
           }
@@ -1354,7 +1358,7 @@ export class TaskService {
           if (isZipSymlink(entry)) throw new AppError(400, "Symlink zip entries are not allowed", "ZIP_SYMLINK_FORBIDDEN");
           const processedBytes = isRemote(dest.root)
             ? await this.extractEntryRemote(entry, zip, dest, remainingBytes, archive.password)
-            : await this.extractEntry(entry, zip, dest.absolutePath, storedNames, remainingBytes, archive.password);
+            : await this.extractEntry(entry, zip, dest, storedNames, remainingBytes, archive.password);
           remainingBytes -= processedBytes;
           await this.bumpProcessedBytes(task.id, processedBytes);
           await this.bumpProcessed(task.id);
@@ -1423,8 +1427,10 @@ export class TaskService {
     return openEncryptedZipEntry(zip, entry, cipher, password);
   }
 
-  private async extractEntry(entry: yauzl.Entry, zip: yauzl.ZipFile, destinationPath: string, storedNames: StoredNames, remainingBytes: number, password?: string): Promise<number> {
+  private async extractEntry(entry: yauzl.Entry, zip: yauzl.ZipFile, dest: SafePath, storedNames: StoredNames, remainingBytes: number, password?: string): Promise<number> {
     const segments = this.safeZipEntrySegments(entry);
+    if (this.paths.isTrash(dest.root, path.posix.join(dest.logicalPath, ...segments))) throw new AppError(400, "Unsafe zip entry", "UNSAFE_ZIP_ENTRY");
+    const destinationPath = dest.absolutePath;
     const fileName = isZipDirectory(entry) ? undefined : segments.pop()!;
     // Folders merge into the one already there, spelled as it is stored; a file never lands beside its NFC/NFD twin.
     const resolved: string[] = [];
@@ -1644,6 +1650,7 @@ export class TaskService {
         const safe = await this.paths.resolveExisting(source.rootSlug, source.path);
         this.permissions.require(actor, input.type === "move" ? "edit" : "view", safe.root, safe.logicalPath);
         if (input.type === "move") this.assertNotFixed(safe);
+        else if (safe.logicalPath === "/") throw new AppError(400, "Invalid path", "INVALID_PATH");
         this.assertNotFixed(dest, this.storage.name(safe));
         if (isRemote(safe.root) || isRemote(dest.root)) assertNotIntoItself(safe, dest);
         else await assertTargetOutsideSource(safe.absolutePath, path.join(dest.absolutePath, path.basename(safe.absolutePath)));
@@ -2056,7 +2063,6 @@ function safeJoin(rootPath: string, segments: string[]): string {
   }
   return target;
 }
-
 
 async function assertRealPathInside(rootPath: string, targetPath: string): Promise<void> {
   const rootReal = await fsp.realpath(rootPath);

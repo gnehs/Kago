@@ -7,7 +7,7 @@ import { pipeline } from "node:stream/promises";
 import { lookup } from "mime-types";
 import { z } from "zod";
 import { AppError } from "../lib/errors.js";
-import { assertNameAvailable, nfc } from "../lib/filename.js";
+import { assertNameAvailable, isSafeLogicalSegment, nfc, safeRelativeZipPath } from "../lib/filename.js";
 import { fileTagSchema, readFileTags, writeFileTags, type FileTag } from "../lib/file-tags.js";
 import { MAX_SQLITE_PAGE, sqliteOverview, sqliteRows } from "../lib/sqlite-preview.js";
 import { isPictureFormat, parseSubtitleName } from "../lib/subtitles.js";
@@ -466,25 +466,28 @@ export class FsService {
     });
 
     const storage = this.storage;
+    const paths = this.paths;
     async function* walkRemote(safe: SafePath, name: string): AsyncGenerator<ZipEntry> {
       const stat = await storage.stat(safe);
       const open = (logicalPath: string) => () => storage.remote.open(safe.root, logicalPath);
       yield { name, open: open(safe.logicalPath), directory: stat.isDirectory(), size: stat.size, mtime: stat.mtime };
       if (!stat.isDirectory()) return;
       for (const entry of await storage.remote.walk(safe.root, safe.logicalPath)) {
+        // A name another system reads a separator in would climb out of the folder it is unpacked into.
+        if (!safeRelativeZipPath(entry.path)) continue;
         const logicalPath = path.posix.join(safe.logicalPath, entry.path);
-        if (entry.path.includes("\0")) continue;
         yield { name: `${name}/${nfc(entry.path)}`, open: open(logicalPath), directory: entry.directory, size: entry.size, mtime: new Date(entry.mtimeMs) };
       }
     }
-    async function* walk(absolutePath: string, logicalPath: string, name: string): AsyncGenerator<ZipEntry> {
+    async function* walk(root: SafePath["root"], absolutePath: string, logicalPath: string, name: string): AsyncGenerator<ZipEntry> {
       const stat = await fsp.lstat(absolutePath);
       if (stat.isSymbolicLink() || (!stat.isFile() && !stat.isDirectory())) return;
       yield { name, open: () => fs.createReadStream(absolutePath), directory: stat.isDirectory(), size: stat.size, mtime: stat.mtime };
       if (!stat.isDirectory()) return;
       for (const child of (await fsp.readdir(absolutePath)).sort()) {
-        if (child.includes("\0")) continue;
-        yield* walk(path.join(absolutePath, child), path.posix.join(logicalPath, child), `${name}/${nfc(child)}`);
+        const childPath = path.posix.join(logicalPath, child);
+        if (!isSafeLogicalSegment(child) || paths.isTrash(root, childPath)) continue;
+        yield* walk(root, path.join(absolutePath, child), childPath, `${name}/${nfc(child)}`);
       }
     }
     async function* entries(): AsyncGenerator<ZipEntry> {
@@ -496,7 +499,7 @@ export class FsService {
         for (let copy = 2; taken.has(name); copy += 1) name = `${path.parse(base).name} ${copy}${path.parse(base).ext}`;
         taken.add(name);
         if (storage.isRemote(safe)) yield* walkRemote(safe, name);
-        else yield* walk(safe.absolutePath, safe.logicalPath, name);
+        else yield* walk(safe.root, safe.absolutePath, safe.logicalPath, name);
       }
     }
     return { fileName: sources.length === 1 ? `${nfc(storage.name(sources[0]!))}.zip` : "Kago.zip", entries: entries() };

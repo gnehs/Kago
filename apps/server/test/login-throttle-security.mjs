@@ -37,6 +37,14 @@ test("one address trying many accounts is cut off as a whole", async () => {
   assert.equal(refused, 10);
 });
 
+test("addresses of one IPv6 network count as one guesser", async () => {
+  const auth = harness();
+  await createUser(auth, "user@example.test");
+  for (let attempt = 0; attempt < 5; attempt += 1) await assert.rejects(signIn(auth, "user@example.test", "wrong", `2001:db8:1:2::${attempt + 1}`), { code: "INVALID_LOGIN" });
+  await assert.rejects(signIn(auth, "user@example.test", "wrong", "2001:db8:1:2:ffff:ffff:ffff:ffff"), { code: "TOO_MANY_ATTEMPTS" });
+  await assert.rejects(signIn(auth, "user@example.test", "wrong", "2001:db8:1:3::1"), { code: "INVALID_LOGIN" });
+});
+
 test("guesses sent all at once are counted as many", async () => {
   const auth = harness();
   await createUser(auth, "user@example.test");

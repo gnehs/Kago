@@ -7,6 +7,18 @@ import { RcloneClient, RcloneError, RcloneJobStopped, rcloneSocketPath } from ".
 
 const START_TIMEOUT_MS = 15_000;
 
+/**
+ * rclone answers anyone who can reach its socket, and the socket may sit in the shared temp dir, so its folder
+ * must be this account's alone: one that another account made first, or a link to elsewhere, is not used.
+ */
+function privateFolder(folder: string): boolean {
+  fs.mkdirSync(folder, { recursive: true, mode: 0o700 });
+  const stat = fs.lstatSync(folder);
+  if (!stat.isDirectory() || (process.getuid && stat.uid !== process.getuid())) return false;
+  if ((stat.mode & 0o077) !== 0) fs.chmodSync(folder, 0o700);
+  return true;
+}
+
 const rcloneBinary = () => process.env.RCLONE_PATH ?? "rclone";
 const rcloneConfigPath = (appDataDir: string) => path.join(appDataDir, "rclone", "rclone.conf");
 const rcloneCacheDir = (appDataDir: string) => path.join(appDataDir, "temp", "rclone");
@@ -56,7 +68,10 @@ export class RcloneDaemon {
   }
 
   private async start(): Promise<boolean> {
-    fs.mkdirSync(path.dirname(this.socketPath), { recursive: true, mode: 0o700 });
+    if (!privateFolder(path.dirname(this.socketPath))) {
+      logger.warn("the folder for rclone's socket belongs to another account; remote locations are disabled", { folder: path.dirname(this.socketPath) });
+      return false;
+    }
     fs.mkdirSync(path.dirname(this.configPath), { recursive: true, mode: 0o700 });
     fs.rmSync(this.socketPath, { force: true });
     fs.writeFileSync(this.configPath, "", { mode: 0o600 });

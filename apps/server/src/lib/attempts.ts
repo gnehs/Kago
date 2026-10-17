@@ -1,4 +1,21 @@
+import { isIPv6 } from "node:net";
 import { AppError } from "./errors.js";
+
+/**
+ * Who is guessing, going by where the tries come from. One IPv6 subscriber is handed a whole /64, and could
+ * otherwise start from a fresh address for every few guesses, so an IPv6 address counts by its network.
+ */
+export function guesserOf(address: string): string {
+  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(address);
+  if (mapped) return mapped[1]!;
+  const bare = address.split("%", 1)[0]!;
+  if (!isIPv6(bare)) return address;
+  const [head = "", tail] = bare.split("::");
+  const left = head ? head.split(":") : [];
+  const right = tail ? tail.split(":") : [];
+  const groups = tail === undefined ? left : [...left, ...Array<string>(Math.max(0, 8 - left.length - right.length)).fill("0"), ...right];
+  return `${groups.slice(0, 4).map((group) => parseInt(group, 16).toString(16)).join(":")}::/64`;
+}
 
 /** How long a run of guesses is remembered for; a slower guesser than this is counted from zero. */
 const WINDOW_MS = 15 * 60_000;

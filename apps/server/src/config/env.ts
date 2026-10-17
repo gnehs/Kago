@@ -26,7 +26,7 @@ export function loadEnv(): Env {
   const nodeEnv = process.env.NODE_ENV ?? "development";
   fs.mkdirSync(appDataDir, { recursive: true });
   fs.mkdirSync(dataDir, { recursive: true });
-  const sessionSecret = resolveSessionSecret(appDataDir, nodeEnv);
+  const sessionSecret = resolveSessionSecret(appDataDir);
 
   if (Boolean(process.env.ADMIN_EMAIL) !== Boolean(process.env.ADMIN_PASSWORD)) {
     throw new Error("ADMIN_EMAIL and ADMIN_PASSWORD must be provided together");
@@ -59,9 +59,9 @@ function resolveTrustProxy(value = ""): boolean | number | string {
   return /^\d+$/.test(setting) ? Number(setting) : setting;
 }
 
-function resolveSessionSecret(appDataDir: string, nodeEnv: string): string {
+function resolveSessionSecret(appDataDir: string): string {
   if (process.env.SESSION_SECRET) return process.env.SESSION_SECRET;
-  if (nodeEnv !== "production") return "kago-local-development-secret";
+  // Even outside production the secret signs what the server trusts, so it is never a constant anyone can read here.
 
   const secretPath = path.join(appDataDir, "session.secret");
   try {

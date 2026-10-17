@@ -472,8 +472,22 @@ test("minimum file-manager demo flow", async () => {
     assert.equal(refusedView.json().code, "PREVIEW_UNSUPPORTED");
     const svgShare = await admin.post("/api/shares", { rootSlug: "photos", path: "/public/drawing.svg", mode: "view_only" });
     assert.match((await app.inject({ method: "GET", url: `/s/${svgShare.json.token}/preview` })).headers["content-security-policy"], /sandbox/);
+    // An uploaded script or stylesheet comes back as plain bytes, so no page of Kago's origin can load it as its own.
+    await writeFile(path.join(fixture.dataDir, "photos", "public", "evil.js"), "alert(1)");
+    const scriptShare = await admin.post("/api/shares", { rootSlug: "photos", path: "/public/evil.js", mode: "download" });
+    const scriptLoads = [
+      await app.inject({ method: "GET", url: `/s/${scriptShare.json.token}/download` }),
+      await admin.get(`/api/fs/download?rootSlug=photos&path=${encodeURIComponent("/public/evil.js")}`, { accept: "*/*" }),
+      await admin.get(`/api/fs/preview?rootSlug=photos&path=${encodeURIComponent("/public/evil.js")}`, { accept: "*/*" })
+    ];
+    for (const loaded of scriptLoads) {
+      assert.equal(loaded.statusCode, 200);
+      assert.equal(loaded.headers["content-type"], "application/octet-stream");
+      assert.equal(loaded.headers["x-content-type-options"], "nosniff");
+    }
     await rm(path.join(fixture.dataDir, "photos", "public", "bundle.zip"));
     await rm(path.join(fixture.dataDir, "photos", "public", "drawing.svg"));
+    await rm(path.join(fixture.dataDir, "photos", "public", "evil.js"));
 
         const uploadShare = await admin.post("/api/shares", {
       rootSlug: "photos",
@@ -566,6 +580,10 @@ test("security boundaries reject unsafe requests", async () => {
     });
     assert.equal(missingCsrf.statusCode, 403);
     assert.equal(JSON.parse(missingCsrf.payload).code, "CSRF_REQUIRED");
+    // The router decodes the path, so an escaped letter must not walk around the header check.
+    const escapedPath = await app.inject({ method: "POST", url: "/%61pi/auth/logout" });
+    assert.equal(escapedPath.statusCode, 403);
+    assert.equal(JSON.parse(escapedPath.payload).code, "CSRF_REQUIRED");
 
     assert.equal((await admin.post("/api/auth/setup", {
       email: "admin@example.test",
@@ -634,11 +652,18 @@ test("security boundaries reject unsafe requests", async () => {
       mode: "download",
       maxDownloads: 1
     });
-    assert.equal((await app.inject({ method: "GET", url: `/s/${limitedShare.json.token}/download` })).statusCode, 200);
+    const visit = await app.inject({ method: "GET", url: `/s/${limitedShare.json.token}`, headers: { accept: "application/json" } });
+    const visitCookie = String(visit.headers["set-cookie"]).split(";", 1)[0];
+    const asVisitor = (part) => app.inject({ method: "GET", url: `/s/${limitedShare.json.token}/${part}`, headers: { cookie: visitCookie } });
+    assert.equal((await asVisitor("download")).statusCode, 200);
     // Whoever was counted may look and download again; the limit is on how many people, not how many requests.
-    assert.equal((await app.inject({ method: "GET", url: `/s/${limitedShare.json.token}/preview` })).statusCode, 200);
-    assert.equal((await app.inject({ method: "GET", url: `/s/${limitedShare.json.token}/download` })).statusCode, 200);
+    assert.equal((await asVisitor("preview")).statusCode, 200);
+    assert.equal((await asVisitor("download")).statusCode, 200);
     assert.equal((await admin.get("/api/shares")).json.find((item) => item.id === limitedShare.json.id).download_count, 1);
+    // Without the visit's cookie, a request from the same address is somebody else behind it, and is counted.
+    const sameAddress = await app.inject({ method: "GET", url: `/s/${limitedShare.json.token}/download` });
+    assert.equal(sameAddress.statusCode, 410);
+    assert.equal(JSON.parse(sameAddress.payload).code, "SHARE_LIMIT_REACHED");
     const limitedAgain = await app.inject({ method: "GET", url: `/s/${limitedShare.json.token}/download`, remoteAddress: "203.0.113.9" });
     assert.equal(limitedAgain.statusCode, 410);
     assert.equal(JSON.parse(limitedAgain.payload).code, "SHARE_LIMIT_REACHED");

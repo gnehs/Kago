@@ -132,6 +132,11 @@ export class PathService {
     }
   }
 
+  /** Whether the path is, or lies in, a location's trash, which only the trash's own code may reach. */
+  isTrash(root: Root, logicalPath: string): boolean {
+    return isRemote(root) ? this.remote.isTrash(root, logicalPath) : isLocalTrash(logicalPath);
+  }
+
   private isInside(rootReal: string, targetReal: string): boolean {
     const relative = path.relative(rootReal, targetReal);
     return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));

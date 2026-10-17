@@ -38,7 +38,7 @@ import { folderViewQuerySchema, folderViewSchema, PreferenceService, settingsSch
 import { remoteRootPatchSchema, remoteRootSchema, rootPatchSchema, RootService } from "./services/root.service.js";
 import { SHARE_VISIT_SECONDS, ShareService, shareSchema, type ShareVisitor } from "./services/share.service.js";
 import { ShelfService } from "./services/shelf.service.js";
-import { StorageService } from "./services/storage.service.js";
+import { StorageService, type FileSource } from "./services/storage.service.js";
 import { syncJobSchema, SyncService } from "./services/sync.service.js";
 import { convertInputSchema, remuxInputSchema } from "./services/convert.service.js";
 import { convertJobSchema, ConvertJobService } from "./services/convert-job.service.js";
@@ -106,7 +106,8 @@ export async function buildApp(env: Env) {
   });
 
   function auditRequestFailure(request: FastifyRequest, code: string, statusCode: number): void {
-    if (!request.url.startsWith("/api/") && !request.url.startsWith("/s/")) return;
+    const route = auditRoute(request);
+    if (!route.startsWith("/api/") && !route.startsWith("/s/")) return;
     const actor = auth.actorFromRequest(request);
     audit.write({
       actorType: actor ? "user" : "system",
@@ -119,8 +120,8 @@ export async function buildApp(env: Env) {
     });
   }
 
+  // Asked of every changing method whatever the raw URL says: the router decodes `/%61pi/` into `/api/`.
   app.addHook("preHandler", async (request) => {
-    if (!request.url.startsWith("/api/") && !request.url.startsWith("/s/")) return;
     if (!["POST", "PUT", "PATCH", "DELETE"].includes(request.method)) return;
     if (request.headers["x-kago-csrf"] !== "1") {
       throw new AppError(403, "Missing CSRF header", "CSRF_REQUIRED");
@@ -271,11 +272,16 @@ function sandboxContent(reply: FastifyReply): void {
   reply.header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'none'; sandbox");
 }
 
-/** Raw user files must never run scripts with the application's origin when opened directly. */
-function protectFilePreview(reply: FastifyReply, contentType: string, fileName: string): void {
-  // Fetch-based code and office viewers can still read attachments; direct navigation downloads active documents.
-  reply.header("Content-Disposition", contentDisposition(isBrowserViewable(contentType) ? "inline" : "attachment", fileName));
+/**
+ * Sends someone's file from Kago's own origin, where it must never run as the application. Opened directly it is
+ * sandboxed, and only what a browser shows by itself goes inline. Anything that isn't a picture, a sound or a video
+ * goes as plain bytes, so a page can't load an uploaded script or stylesheet as its own; fetch-based viewers still read it.
+ */
+function sendUserFile(request: FastifyRequest, reply: FastifyReply, source: FileSource, contentType: string, fileName: string, save = false) {
+  reply.header("Content-Disposition", contentDisposition(!save && isBrowserViewable(contentType) ? "inline" : "attachment", fileName));
   sandboxContent(reply);
+  const passive = isBrowserViewable(contentType) || /^(image|audio|video)\//.test(contentType);
+  return sendSource(request, reply, source, passive ? contentType : "application/octet-stream");
 }
 
 function resolveWebDist(env: Env): string {
@@ -845,8 +851,7 @@ function registerApi(app: FastifyInstance, services: Services) {
     const actor = requireActor(request);
     const query = fsQuerySchema.parse(request.query);
     const file = await services.fsService.download(actor, query.rootSlug, query.path);
-    reply.header("Content-Disposition", contentDisposition("attachment", file.name));
-    return sendSource(request, reply, file.source, file.contentType);
+    return sendUserFile(request, reply, file.source, file.contentType, file.name, true);
   });
   // Folders and selections as one archive, at an address that can be handed to the browser before anything is prepared.
   app.get("/api/fs/download-zip", async (request, reply) => {
@@ -862,8 +867,7 @@ function registerApi(app: FastifyInstance, services: Services) {
     const actor = requireActor(request);
     const query = fsQuerySchema.parse(request.query);
     const file = await services.fsService.preview(actor, query.rootSlug, query.path);
-    protectFilePreview(reply, file.contentType, file.name);
-    return sendSource(request, reply, file.source, file.contentType);
+    return sendUserFile(request, reply, file.source, file.contentType, file.name);
   });
   app.put("/api/fs/content", async (request) => services.fsService.writeText(requireActor(request), writeTextSchema.parse(request.body)));
   app.get("/api/fs/sqlite", async (request) => {
@@ -1246,8 +1250,7 @@ function registerApi(app: FastifyInstance, services: Services) {
     const safe = await services.shares.publicDownload(params.token, shareVisitor(request, params.token), shareAccessCookie(request, params.token));
     const stat = await services.storage.stat(safe);
     if (!stat.isFile()) throw new AppError(400, "Path is not a file", "NOT_FILE");
-    reply.header("Content-Disposition", contentDisposition("attachment", services.storage.name(safe)));
-    return sendSource(request, reply, services.storage.source(safe, stat), lookup(safe.logicalPath) || "application/octet-stream");
+    return sendUserFile(request, reply, services.storage.source(safe, stat), lookup(safe.logicalPath) || "application/octet-stream", services.storage.name(safe), true);
   });
 
   app.get("/s/:token/preview", async (request, reply) => {
@@ -1257,8 +1260,7 @@ function registerApi(app: FastifyInstance, services: Services) {
     if (!stat.isFile()) throw new AppError(400, "Path is not a file", "NOT_FILE");
     const contentType = lookup(safe.logicalPath) || "application/octet-stream";
     if (!isBrowserViewable(contentType)) throw new AppError(415, "This kind of file cannot be viewed in the browser", "PREVIEW_UNSUPPORTED");
-    protectFilePreview(reply, contentType, services.storage.name(safe));
-    return sendSource(request, reply, services.storage.source(safe, stat), contentType);
+    return sendUserFile(request, reply, services.storage.source(safe, stat), contentType, services.storage.name(safe));
   });
 
   app.post("/s/:token/upload", async (request) => {

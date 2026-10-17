@@ -4,7 +4,7 @@ import type { Env } from "../config/env.js";
 import type { Db } from "../db/db.js";
 import { row, rows } from "../db/db.js";
 import { hashPassword, randomToken, sha256, verifyPassword } from "../lib/crypto.js";
-import { attemptKeyPart, AttemptLimiter } from "../lib/attempts.js";
+import { attemptKeyPart, AttemptLimiter, guesserOf } from "../lib/attempts.js";
 import { AppError } from "../lib/errors.js";
 import { id, now } from "../lib/ids.js";
 import type { Actor, PublicUser, User } from "./types.js";
@@ -206,7 +206,7 @@ export class AuthService {
   }
 
   async login(request: FastifyRequest, reply: FastifyReply, email: string, password: string): Promise<Actor> {
-    const address = request.ip ?? "";
+    const address = guesserOf(request.ip ?? "");
     // Counted before the password is looked at: checking one is the costly part, and is what a guesser wants done for free.
     const attempt = this.attempts.begin([
       { key: `login:${address}:${attemptKeyPart(email.toLowerCase())}`, limit: LOGIN_TRIES },
