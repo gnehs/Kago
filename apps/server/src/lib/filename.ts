@@ -4,6 +4,19 @@ import { AppError } from "./errors.js";
 /** Names Kago writes are always NFC; names it reads are left as they are on disk and only compared in NFC. */
 export const nfc = (value: string) => value.normalize("NFC");
 
+/** One name inside a folder, never a way out of it or a separator on any system the file may end up on. */
+export function isSafeLogicalSegment(segment: string): boolean {
+  return Boolean(segment) && segment !== "." && segment !== ".." && !segment.includes("\0") && !segment.includes("/") && !segment.includes("\\");
+}
+
+/** A path below some folder, split into safe names, or null when any part of it could climb out. */
+export function safeRelativeZipPath(value: string): string[] | null {
+  if (!value || value.includes("\0") || value.includes("\\") || value.startsWith("/") || /^[A-Za-z]:/.test(value)) return null;
+  const segments = value.split("/").filter(Boolean);
+  if (segments.length === 0 || segments.some((segment) => !isSafeLogicalSegment(segment))) return null;
+  return segments;
+}
+
 export const sameName = (a: string, b: string) => a === b || nfc(a) === nfc(b);
 
 /**

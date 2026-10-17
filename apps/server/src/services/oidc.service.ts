@@ -6,7 +6,7 @@ import { row, rows } from "../db/db.js";
 import { AttemptLimiter } from "../lib/attempts.js";
 import { randomToken, sha256 } from "../lib/crypto.js";
 import { AppError } from "../lib/errors.js";
-import { TokenError, UnknownKeyError, verifyIdToken, type IdTokenClaims, type Jwk } from "../lib/id-token.js";
+import { isRecord, TokenError, UnknownKeyError, verifyIdToken, type IdTokenClaims, type Jwk } from "../lib/id-token.js";
 import { id, now } from "../lib/ids.js";
 import { logger } from "../lib/logger.js";
 import type { SecretBox } from "../lib/secret-box.js";
@@ -47,7 +47,6 @@ const isHttpUrl = (value: string) => {
 };
 
 const withoutTrailingSlash = (value: string) => value.replace(/\/+$/, "");
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
 /** The way RFC 6749 wants a client's name and secret written before they go into a Basic header. */
 const formEncode = (value: string) => new URLSearchParams({ v: value }).toString().slice(2);

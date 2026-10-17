@@ -30,8 +30,6 @@ const schemes: Record<string, Scheme> = {
   EdDSA: { kty: "OKP", hash: null, crv: "Ed25519" }
 };
 
-export const signingAlgorithms = Object.keys(schemes);
-
 const keyTypes: Record<Scheme["kty"], string> = { RSA: "rsa", EC: "ec", OKP: "ed25519" };
 
 /** A token with a great many groups in it is still far smaller than this. */
@@ -41,7 +39,7 @@ const CLOCK_SKEW = 60;
 /** With no key named in the token, each published key of the right kind is tried, up to this many. */
 const MAX_KEYS_TRIED = 8;
 
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
+export const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
 
 function decodePart(part: string): Record<string, unknown> {
   if (!/^[A-Za-z0-9_-]+$/.test(part)) throw new TokenError("ID token is malformed");

@@ -6,7 +6,7 @@ import { z } from "zod";
 import type { Db } from "../db/db.js";
 import { detectConvertAccel, type ConvertAccel } from "../lib/convert-accel.js";
 import { usesHardware, convertArgs, convertSpecSchema, ConvertStopped, convertSupport, type ConvertSupport, jobConverts, probeMedia, remuxArgs, runFfmpeg, SUBTITLE_FORMATS, type ConvertSpec, type RemuxInput, type RemuxTrack } from "../lib/convert.js";
-import { AppError } from "../lib/errors.js";
+import { AppError, errnoIs } from "../lib/errors.js";
 import { MEDIA_FORMATS } from "../lib/ffmpeg-input.js";
 import { nfc } from "../lib/filename.js";
 import { id, now } from "../lib/ids.js";
@@ -14,7 +14,7 @@ import { logger } from "../lib/logger.js";
 import { CONVERT_PARTIAL, isSystemFile } from "../lib/system-files.js";
 import { isRemote } from "../storage/remote-storage.js";
 import type { AuditService } from "./audit.service.js";
-import { sharesAreFixed, type PathService, type SafePath } from "./path.service.js";
+import { foldersOverlap, sharesAreFixed, type PathService, type SafePath } from "./path.service.js";
 import type { PermissionService } from "./permission.service.js";
 import type { FileStat, StorageService } from "./storage.service.js";
 import type { Actor, FileRef, FileTask } from "./types.js";
@@ -193,13 +193,8 @@ export class ConvertService {
     const input = await this.folder(job.input);
     this.permissions.require(actor, job.options.after === "keep" ? "view" : "edit", input.root, input.logicalPath);
     const destination = await this.writableFolder(actor, job.destination);
-    if (input.root.id === destination.root.id) {
-      const inside = (outer: string, inner: string) => outer === "/" || inner === outer || inner.startsWith(`${outer}/`);
-      // What comes out would be taken for something that came in.
-      if (inside(input.logicalPath, destination.logicalPath) || inside(destination.logicalPath, input.logicalPath)) {
-        throw new AppError(400, "The input folder and the destination overlap", "CONVERT_OVERLAP");
-      }
-    }
+    // What comes out would be taken for something that came in.
+    if (foldersOverlap(input, destination)) throw new AppError(400, "The input folder and the destination overlap", "CONVERT_OVERLAP");
     return { input, destination };
   }
 
@@ -420,7 +415,7 @@ export class ConvertService {
       }
       const target = await this.paths.resolveForCreate(base.root.slug, logical);
       if (isRemote(target.root)) await this.storage.remote.mkdir(target.root, target.logicalPath);
-      else await fsp.mkdir(target.absolutePath).catch((error: unknown) => (isCode(error, "EEXIST") ? undefined : Promise.reject(error)));
+      else await fsp.mkdir(target.absolutePath).catch((error: unknown) => (errnoIs(error, "EEXIST") ? undefined : Promise.reject(error)));
       current = await this.paths.resolveExisting(base.root.slug, target.logicalPath);
     }
     if (!(await this.storage.stat(current)).isDirectory()) throw new AppError(409, "Target already exists", "TARGET_EXISTS");
@@ -579,4 +574,3 @@ export class ConvertService {
   }
 }
 
-const isCode = (error: unknown, code: string) => Boolean(error && typeof error === "object" && "code" in error && error.code === code);

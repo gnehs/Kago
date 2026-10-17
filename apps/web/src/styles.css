@@ -480,10 +480,6 @@
     box-shadow: var(--kago-well-shadow);
   }
 
-  .kago-well.kago-track {
-    background: var(--kago-well-track);
-  }
-
   .kago-well:is(input, select, textarea):focus,
   .kago-well:focus-within {
     box-shadow:

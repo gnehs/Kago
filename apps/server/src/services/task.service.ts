@@ -8,8 +8,8 @@ import { z } from "zod";
 import type { Db } from "../db/db.js";
 import { row, rows } from "../db/db.js";
 import { ConvertStopped } from "../lib/convert.js";
-import { AppError, fileSystemRefusal } from "../lib/errors.js";
-import { assertNameAvailable, nfc } from "../lib/filename.js";
+import { AppError, errnoIs, fileSystemRefusal } from "../lib/errors.js";
+import { assertNameAvailable, isSafeLogicalSegment, nfc, safeRelativeZipPath } from "../lib/filename.js";
 import { id, now } from "../lib/ids.js";
 import { logger } from "../lib/logger.js";
 import { isZipDirectory, isZipSymlink, openZipArchive } from "../lib/zip-archive.js";
@@ -25,7 +25,7 @@ import { ArchivePasswordService } from "./archive-password.service.js";
 import type { AuditService } from "./audit.service.js";
 import { convertInputSchema, convertJobOptionsSchema, ConvertService, remuxInputSchema, type ConvertInput, type ConvertJobRun, type RemuxInputSpec, type TaskHandle } from "./convert.service.js";
 import type { FsService } from "./fs.service.js";
-import { sharesAreFixed, type PathService, type SafePath } from "./path.service.js";
+import { foldersOverlap, sharesAreFixed, type PathService, type SafePath } from "./path.service.js";
 import type { Level, PermissionService } from "./permission.service.js";
 import type { PreferenceService } from "./preference.service.js";
 import type { StorageService } from "./storage.service.js";
@@ -1284,7 +1284,7 @@ export class TaskService {
     try {
       size = (await fsp.stat(filePath)).size;
     } catch (error) {
-      if (isMissingPathError(error)) throw new AppError(410, "Download has expired", "TASK_DOWNLOAD_EXPIRED");
+      if (errnoIs(error, "ENOENT")) throw new AppError(410, "Download has expired", "TASK_DOWNLOAD_EXPIRED");
       throw error;
     }
     this.audit.write({ actorType: "user", actorId: actor.id, action: "download", target: { taskId, sources }, result: "success" });
@@ -1541,12 +1541,7 @@ export class TaskService {
     this.permissions.require(actor, "edit", destination.root, destination.logicalPath);
     // What lands in the destination would be new shares if it were the top of a whole server.
     this.assertNotFixed(destination, "new");
-    if (source.root.id === destination.root.id) {
-      const inside = (outer: string, inner: string) => outer === "/" || inner === outer || inner.startsWith(`${outer}/`);
-      if (inside(source.logicalPath, destination.logicalPath) || inside(destination.logicalPath, source.logicalPath)) {
-        throw new AppError(400, "The source and the destination overlap", "SYNC_OVERLAP");
-      }
-    }
+    if (foldersOverlap(source, destination)) throw new AppError(400, "The source and the destination overlap", "SYNC_OVERLAP");
     return { source, destination };
   }
 
@@ -1997,7 +1992,7 @@ class StoredNames {
     let names = this.folders.get(folder);
     if (!names) {
       const entries = await fsp.readdir(folder).catch((error: unknown) => {
-        if (isMissingPathError(error)) return [] as string[];
+        if (errnoIs(error, "ENOENT")) return [] as string[];
         throw error;
       });
       names = new Map(entries.map((entry) => [nfc(entry), entry]));
@@ -2062,16 +2057,6 @@ function safeJoin(rootPath: string, segments: string[]): string {
   return target;
 }
 
-function isSafeLogicalSegment(segment: string): boolean {
-  return Boolean(segment) && segment !== "." && segment !== ".." && !segment.includes("\0") && !segment.includes("/") && !segment.includes("\\");
-}
-
-function safeRelativeZipPath(value: string): string[] | null {
-  if (!value || value.includes("\0") || value.includes("\\") || value.startsWith("/") || /^[A-Za-z]:/.test(value)) return null;
-  const segments = value.split("/").filter(Boolean);
-  if (segments.length === 0 || segments.some((segment) => !isSafeLogicalSegment(segment))) return null;
-  return segments;
-}
 
 async function assertRealPathInside(rootPath: string, targetPath: string): Promise<void> {
   const rootReal = await fsp.realpath(rootPath);
@@ -2213,7 +2198,7 @@ async function replacePath(sourcePath: string, occupant: string, targetPath: str
     (await fsp.rename(sourcePath, arriving).then(
       () => true,
       (error: unknown) => {
-        if (isNodeError(error, "EXDEV")) return false;
+        if (errnoIs(error, "EXDEV")) return false;
         throw error;
       }
     ));
@@ -2257,7 +2242,7 @@ async function mergeTree(sourcePath: string, targetPath: string, clash: Clash, m
   }
   if (move) {
     await fsp.rmdir(sourcePath).catch((error: unknown) => {
-      if (!isNodeError(error, "ENOTEMPTY") && !isNodeError(error, "EEXIST")) throw error;
+      if (!errnoIs(error, "ENOTEMPTY") && !errnoIs(error, "EEXIST")) throw error;
     });
   }
 }
@@ -2272,7 +2257,7 @@ async function movePath(sourcePath: string, targetPath: string, onBytes: (bytes:
     await fsp.rename(sourcePath, targetPath);
     return false;
   } catch (error) {
-    if (!isNodeError(error, "EXDEV")) throw error;
+    if (!errnoIs(error, "EXDEV")) throw error;
     await copyTree(sourcePath, targetPath, onBytes, onFile);
     await fsp.rm(sourcePath, { recursive: true, force: false });
     return true;
@@ -2293,7 +2278,7 @@ async function assertNoExistingSymlinkSegments(rootPath: string, targetPath: str
     try {
       stat = await fsp.lstat(current);
     } catch (error) {
-      if (isMissingPathError(error)) return;
+      if (errnoIs(error, "ENOENT")) return;
       throw error;
     }
     if (stat.isSymbolicLink()) {
@@ -2302,10 +2287,4 @@ async function assertNoExistingSymlinkSegments(rootPath: string, targetPath: str
   }
 }
 
-function isMissingPathError(error: unknown): boolean {
-  return isNodeError(error, "ENOENT");
-}
 
-function isNodeError(error: unknown, code: string): boolean {
-  return Boolean(error && typeof error === "object" && "code" in error && error.code === code);
-}

@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { RootService } from "./root.service.js";
 import type { Root } from "./types.js";
-import { AppError } from "../lib/errors.js";
+import { AppError, errnoIs } from "../lib/errors.js";
 import { nfc, sameName } from "../lib/filename.js";
 import { TRASH_FOLDER } from "../lib/system-files.js";
 import { isRemote, type RemoteEntry, type RemoteStorage } from "../storage/remote-storage.js";
@@ -141,6 +141,13 @@ export class PathService {
 /** Whether the path is, or lies in, the trash folder at the top of a local location. A disk that does not mind the case finds it under any. */
 const isLocalTrash = (logicalPath: string) => logicalPath.split("/").find(Boolean)?.toLowerCase() === TRASH_FOLDER;
 
+/** Whether two folders of one location hold one another, so that work between them would feed on its own output. */
+export const foldersOverlap = (a: SafePath, b: SafePath) => {
+  if (a.root.id !== b.root.id) return false;
+  const inside = (outer: string, inner: string) => outer === "/" || inner === outer || inner.startsWith(`${outer}/`);
+  return inside(a.logicalPath, b.logicalPath) || inside(b.logicalPath, a.logicalPath);
+};
+
 /** Refuses what would make, rename, move or remove one of a server's shares. */
 export const sharesAreFixed = () => new AppError(403, "The shares of a server can’t be changed from here", "REMOTE_SHARES_FIXED");
 
@@ -159,7 +166,7 @@ async function lstatExisting(targetPath: string) {
   try {
     return await fs.lstat(targetPath);
   } catch (error) {
-    if (isMissingPathError(error)) throw new AppError(404, "Path not found", "PATH_NOT_FOUND");
+    if (errnoIs(error, "ENOENT")) throw new AppError(404, "Path not found", "PATH_NOT_FOUND");
     throw error;
   }
 }
@@ -168,7 +175,7 @@ async function lstatIfExists(targetPath: string) {
   try {
     return await fs.lstat(targetPath);
   } catch (error) {
-    if (isMissingPathError(error)) return null;
+    if (errnoIs(error, "ENOENT")) return null;
     throw error;
   }
 }
@@ -177,7 +184,7 @@ async function readdirIfExists(targetPath: string): Promise<string[]> {
   try {
     return await fs.readdir(targetPath);
   } catch (error) {
-    if (isMissingPathError(error)) return [];
+    if (errnoIs(error, "ENOENT")) return [];
     throw error;
   }
 }
@@ -186,11 +193,8 @@ async function resolveRealPath(targetPath: string): Promise<string> {
   try {
     return await fs.realpath(targetPath);
   } catch (error) {
-    if (isMissingPathError(error)) throw new AppError(404, "Path not found", "PATH_NOT_FOUND");
+    if (errnoIs(error, "ENOENT")) throw new AppError(404, "Path not found", "PATH_NOT_FOUND");
     throw error;
   }
 }
 
-function isMissingPathError(error: unknown): boolean {
-  return Boolean(error && typeof error === "object" && "code" in error && error.code === "ENOENT");
-}

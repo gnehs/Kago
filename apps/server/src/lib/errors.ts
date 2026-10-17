@@ -1,5 +1,9 @@
 import { logger } from "./logger.js";
 
+export function errnoIs(error: unknown, code: string): error is NodeJS.ErrnoException {
+  return error instanceof Error && "code" in error && error.code === code;
+}
+
 export class AppError extends Error {
   constructor(
     public readonly statusCode: number,

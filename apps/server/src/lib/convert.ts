@@ -2,7 +2,7 @@ import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { z } from "zod";
 import { hardwareEncoder, type ConvertAccel, type HardwareCodec } from "./convert-accel.js";
-import { AppError } from "./errors.js";
+import { AppError, errnoIs } from "./errors.js";
 import { guardedInput, guardedProbe, MEDIA_FORMATS, PICTURE_FORMATS } from "./ffmpeg-input.js";
 import { logger } from "./logger.js";
 
@@ -388,7 +388,7 @@ export function runFfmpeg(ffmpeg: string, args: string[], onSeconds: (seconds: n
     });
     child.once("error", (error) => {
       clearInterval(watch);
-      reject(isMissing(error) ? new AppError(501, "ffmpeg is not installed on the server", "FFMPEG_MISSING") : error);
+      reject(errnoIs(error, "ENOENT") ? new AppError(501, "ffmpeg is not installed on the server", "FFMPEG_MISSING") : error);
     });
     child.once("close", (code) => {
       clearInterval(watch);
@@ -400,4 +400,3 @@ export function runFfmpeg(ffmpeg: string, args: string[], onSeconds: (seconds: n
   });
 }
 
-const isMissing = (error: unknown) => Boolean(error && typeof error === "object" && "code" in error && error.code === "ENOENT");

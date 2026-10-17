@@ -70,7 +70,7 @@ function hevcCodec(profile: HevcProfile, level: number): string {
 }
 
 /** ffprobe pixel formats that identify common 4:2:0, 4:2:2, and 4:4:4 layouts. */
-function chromaSampling(pixelFormat: string): string {
+export function chromaSampling(pixelFormat: string): string {
   const planar = /^yuvj?a?(4\d\d)p/.exec(pixelFormat)?.[1];
   if (planar) return [...planar].join(":");
   if (/^(nv12|nv21|p01\d)/.test(pixelFormat)) return "4:2:0";

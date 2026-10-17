@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import { randomBytes } from "node:crypto";
 import path from "node:path";
+import { errnoIs } from "../lib/errors.js";
 
 export type Env = {
   port: number;
@@ -68,7 +69,7 @@ function resolveSessionSecret(appDataDir: string, nodeEnv: string): string {
     if (existing.length >= 32) return existing;
     throw new Error("Existing session.secret is too short");
   } catch (error) {
-    if (!isNodeError(error, "ENOENT")) throw error;
+    if (!errnoIs(error, "ENOENT")) throw error;
   }
 
   const secret = randomBytes(48).toString("base64url");
@@ -76,13 +77,10 @@ function resolveSessionSecret(appDataDir: string, nodeEnv: string): string {
     fs.writeFileSync(secretPath, `${secret}\n`, { mode: 0o600, flag: "wx" });
     return secret;
   } catch (error) {
-    if (!isNodeError(error, "EEXIST")) throw error;
+    if (!errnoIs(error, "EEXIST")) throw error;
     const existing = fs.readFileSync(secretPath, "utf8").trim();
     if (existing.length >= 32) return existing;
     throw new Error("Existing session.secret is too short");
   }
 }
 
-function isNodeError(error: unknown, code: string): error is NodeJS.ErrnoException {
-  return error instanceof Error && "code" in error && error.code === code;
-}

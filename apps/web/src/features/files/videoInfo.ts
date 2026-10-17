@@ -1,6 +1,7 @@
 import { formatClock } from "@/lib/format";
 import { t } from "@/lib/i18n";
 import { languageLabel } from "@/lib/subtitles";
+import { chromaSampling } from "./videoCapabilities";
 import type { MediaInfo, SubtitleTrack } from "@/types/kago";
 
 /** One titled list of facts about a video: its picture, its audio tracks, its subtitles. */
@@ -26,14 +27,6 @@ function levelLabel(codec: string, level: number): string {
   if (codec === "h264") return (level / 10).toFixed(1);
   if (codec === "hevc") return (level / 30).toFixed(1);
   if (codec === "av1") return `${2 + (level >> 2)}.${level & 3}`;
-  return "";
-}
-
-/** How much colour is kept beside brightness, read off ffmpeg's pixel format: `yuv420p10le` is 4:2:0. */
-export function chromaSampling(pixelFormat: string): string {
-  const planar = /^yuvj?a?(4\d\d)p/.exec(pixelFormat)?.[1];
-  if (planar) return [...planar].join(":");
-  if (/^(nv12|nv21|p01\d)/.test(pixelFormat)) return "4:2:0";
   return "";
 }
 

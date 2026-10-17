@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { errnoIs } from "./errors.js";
 
 /**
  * Seals what must not sit in the database as it was typed: the passwords and keys of remote locations.
@@ -36,7 +37,7 @@ function loadKey(file: string): Buffer {
     if (existing.length === 32) return existing;
     throw new Error("Existing storage.key is not a 256-bit key");
   } catch (error) {
-    if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+    if (!errnoIs(error, "ENOENT")) throw error;
   }
   const key = crypto.randomBytes(32);
   try {
@@ -44,7 +45,7 @@ function loadKey(file: string): Buffer {
     return key;
   } catch (error) {
     // The task worker opens the same file; whichever thread wrote it first decides the key.
-    if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
+    if (!errnoIs(error, "EEXIST")) throw error;
     return Buffer.from(fs.readFileSync(file, "utf8").trim(), "base64url");
   }
 }

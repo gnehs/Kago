@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { logger } from "../lib/logger.js";
-import { AppError } from "../lib/errors.js";
+import { AppError, errnoIs } from "../lib/errors.js";
 import { RcloneClient, RcloneError, RcloneJobStopped, rcloneSocketPath } from "./rclone-client.js";
 
 const START_TIMEOUT_MS = 15_000;
@@ -73,7 +73,7 @@ export class RcloneDaemon {
     });
     const exited = new Promise<void>((resolve) => {
       child.once("error", (error) => {
-        if ("code" in error && error.code === "ENOENT") {
+        if (errnoIs(error, "ENOENT")) {
           this.missing = true;
           logger.warn("rclone not found; remote locations are disabled");
         } else logger.warn("rclone could not be started", error.message);
@@ -136,7 +136,7 @@ export function runRclone(appDataDir: string, args: string[], onLog: (entry: Rec
     });
     child.on("error", (error) => {
       clearInterval(watcher);
-      if ("code" in error && error.code === "ENOENT") reject(new AppError(503, "Remote locations are not available", "REMOTE_UNAVAILABLE"));
+      if (errnoIs(error, "ENOENT")) reject(new AppError(503, "Remote locations are not available", "REMOTE_UNAVAILABLE"));
       else reject(error);
     });
     child.on("close", (code) => {
