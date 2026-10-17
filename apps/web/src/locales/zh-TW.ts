@@ -752,6 +752,7 @@ export const zhTW: Dictionary = {
   "Invalid path": "路徑無效",
   "Invalid path separator": "路徑分隔符號無效",
   "Path not found": "找不到這個路徑",
+  "Preview not found": "找不到預覽",
   "Symlink paths are not allowed": "不支援符號連結",
   "Path escapes root": "路徑超出了這個位置的範圍",
   "Permission principal not found": "找不到規則要套用的使用者或群組",

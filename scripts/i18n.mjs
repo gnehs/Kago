@@ -20,7 +20,13 @@ const serverMessages = [String.raw`new AppError\(\s*\d+,\s*${literal}`, String.r
 for (const entry of fs.readdirSync(serverSrc, { recursive: true, withFileTypes: true })) {
   if (!entry.isFile() || !entry.name.endsWith(".ts")) continue;
   const text = fs.readFileSync(path.join(entry.parentPath, entry.name), "utf8");
-  for (const pattern of serverMessages) for (const match of text.matchAll(new RegExp(pattern, "g"))) used.add(JSON.parse(`"${match[1]}"`));
+  for (const pattern of serverMessages) {
+    for (const match of text.matchAll(new RegExp(pattern, "g"))) {
+      const message = JSON.parse(`"${match[1]}"`);
+      // A lowercase-and-hyphens code such as `queue-full` is for the program reading it, not for a person.
+      if (!/^[a-z]+(?:-[a-z]+)*$/.test(message)) used.add(message);
+    }
+  }
 }
 
 const placeholders = (text) => [...new Set(text.match(/\{\w+\}/g))].sort().join(" ");

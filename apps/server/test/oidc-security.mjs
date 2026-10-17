@@ -321,10 +321,10 @@ test("a session is ended when the provider no longer stands behind it, and kept 
   const asked = kago.provider.hits;
   kago.provider.down = true;
   overdue(patient);
-  await new Promise((resolve) => setTimeout(resolve, 150));
+  assert.equal(kago.auth.actorForSession(patient.cookies.kago_session).id, actor.id);
+  await until(() => kago.provider.hits > asked);
   assert.equal(kago.auth.actorForSession(patient.cookies.kago_session).id, actor.id);
   assert.equal(kago.db.prepare("SELECT COUNT(*) AS count FROM sessions WHERE oidc_checked_at = 0").get().count, 2);
-  assert.ok(kago.provider.hits > asked);
   kago.provider.down = false;
 
   // The provider takes the sign-in back: the session ends, and the log says why.

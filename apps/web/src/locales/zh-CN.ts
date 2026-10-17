@@ -752,6 +752,7 @@ export const zhCN: Dictionary = {
   "Invalid path": "路径无效",
   "Invalid path separator": "路径分隔符无效",
   "Path not found": "找不到这个路径",
+  "Preview not found": "找不到预览",
   "Symlink paths are not allowed": "不支持符号链接",
   "Path escapes root": "路径超出了这个位置的范围",
   "Permission principal not found": "找不到规则要应用的用户或群组",

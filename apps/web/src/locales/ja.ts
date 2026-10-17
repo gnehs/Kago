@@ -752,6 +752,7 @@ export const ja: Dictionary = {
   "Invalid path": "パスが正しくありません",
   "Invalid path separator": "パスの区切り文字が正しくありません",
   "Path not found": "パスが見つかりません",
+  "Preview not found": "プレビューが見つかりません",
   "Symlink paths are not allowed": "シンボリックリンクには対応していません",
   "Path escapes root": "パスがこの場所の外に出ています",
   "Permission principal not found": "ルールの適用先のユーザーまたはグループが見つかりません",
