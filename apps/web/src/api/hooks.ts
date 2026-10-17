@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { api, apiLines, ApiError, previewUrl, serverMessage } from "./client";
 import { decodeSubtitle } from "../lib/subtitles";
 import { withSpeeds } from "../lib/taskSpeed";
-import { isTrashing, useTrashingStore } from "../stores/trashing";
+import { isLeaving, useLeavingStore } from "../stores/leaving";
 import type { Actor, AuditLog, ConvertJob, ConvertRun, ConvertRunFile, ConvertSupport, ExternalApp, FileItem, FileList, FileMeta, FileTask, FolderSize, FrameVerdict, Group, ImageMetadata, LibraryIcon, MediaInfo, PermissionRule, Root, ShareLink, Shelf, SqlitePage, Storyboard, SsoConfig, SsoIdentity, SsoInfo, SqliteTable, StorageInfo, SubtitleList, SyncJob, SyncRun, SyncTrial, TrashItem, UserAccount, WorkspaceState } from "../types/kago";
 
 export function useSetupStatus() {
@@ -95,11 +95,11 @@ export function useSaveWorkspace() {
   });
 }
 
-/** A listing without the items already on their way to the Trash. */
-function useWithoutTrashing() {
-  const trashing = useTrashingStore((state) => state.tasks);
+/** A listing without the items already on their way out of it. */
+function useWithoutLeaving() {
+  const leaving = useLeavingStore((state) => state.tasks);
   return (list: FileList): FileList =>
-    Object.keys(trashing).length === 0 ? list : { ...list, items: list.items.filter((item) => !isTrashing(trashing, list.rootSlug, item.path)) };
+    Object.keys(leaving).length === 0 ? list : { ...list, items: list.items.filter((item) => !isLeaving(leaving, list.rootSlug, item.path)) };
 }
 
 type FileListLine = Omit<FileList, "items"> | { items: FileItem[] } | { done: true } | { error: string; code?: string };
@@ -139,7 +139,7 @@ function fileListQuery(client: QueryClient, rootSlug: string, path: string) {
 }
 
 export function useFileList(rootSlug: string, path: string, enabled = true) {
-  const select = useWithoutTrashing();
+  const select = useWithoutLeaving();
   return useQuery({ ...fileListQuery(useQueryClient(), rootSlug, path), select, enabled });
 }
 
@@ -152,7 +152,7 @@ type FolderSearchLine = Omit<FileList, "items" | "partial"> | { items: FileItem[
  * Kept under the folder's own listing, so whatever refreshes the folder searches it again.
  */
 export function useFolderSearch(rootSlug: string, path: string, query: string) {
-  const select = useWithoutTrashing();
+  const select = useWithoutLeaving();
   const client = useQueryClient();
   const queryKey = ["fs", "list", rootSlug, path, "search", query];
   return useQuery({
@@ -188,7 +188,7 @@ const folderContents = (results: UseQueryResult<FileList>[]) => results.map((res
 
 /** The contents of several folders at once, in the order asked; a folder still loading has none yet. */
 export function useFolderContents(rootSlug: string, paths: string[]) {
-  const select = useWithoutTrashing();
+  const select = useWithoutLeaving();
   const client = useQueryClient();
   return useQueries({
     // Same keys as `useFileList`, so whatever refreshes a folder's window refreshes it here too.

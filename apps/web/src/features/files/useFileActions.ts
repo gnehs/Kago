@@ -7,7 +7,7 @@ import type { UploadTree } from "@/lib/uploadTree";
 import { useClipboardStore, type FileRef } from "@/stores/clipboard";
 import { chooseAction, promptText } from "@/stores/dialogs";
 import { toast } from "@/stores/toast";
-import { hideTrashing } from "@/stores/trashing";
+import { hideLeaving } from "@/stores/leaving";
 import { followTask } from "@/features/tasks/taskToast";
 import { isUploadCancelled, uploadForm, uploadLabel } from "@/stores/uploads";
 import { folderTitle, useWorkspaceStore } from "@/stores/workspace";
@@ -54,7 +54,10 @@ export function transferFiles(queryClient: QueryClient, type: "copy" | "move", s
     if (!conflicts) return;
     const carried = sources.filter((source) => conflicts[baseName(source.path)] !== "skip");
     if (carried.length === 0) return;
-    followTask(await createTask(queryClient, { type, sources: carried, destination, options: { conflicts } }));
+    const task = await createTask(queryClient, { type, sources: carried, destination, options: { conflicts } });
+    // Left in view until the server is done, a moved item looks untouched and gets moved again.
+    if (type === "move") hideLeaving(task.id, carried);
+    followTask(task);
   });
 }
 
@@ -122,7 +125,7 @@ export function trashFiles(queryClient: QueryClient, sources: FileRef[]) {
     }
     const task = await createTask(queryClient, { type, sources });
     // The server moves them in the background; here they are gone at once.
-    hideTrashing(task.id, sources);
+    hideLeaving(task.id, sources);
     toast(type === "delete" ? t("Deleted {count} item | Deleted {count} items", { count: sources.length }) : t("Moved {count} item to Trash | Moved {count} items to Trash", { count: sources.length }));
     return task;
   });
