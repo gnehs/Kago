@@ -170,9 +170,11 @@ export function TagEditor({ rootSlug, targets, readonly }: { rootSlug: string; t
             <ul className="m-0 flex list-none flex-wrap gap-1 p-0" aria-label={t("Your tags")}>
               {handy.map((tag) => (
                 <li key={tag.name}>
-                  <button type="button" title={t("Add tag {name}", { name: tag.name })} className="flex h-6 items-center gap-1.5 rounded-full border border-line px-2 hover:bg-hover" onClick={() => void add(tag)}>
+                  <button type="button" title={t("Add tag {name}", { name: tag.name })} className="group flex h-6 items-center gap-1.5 rounded-full border border-dashed border-line pr-1.5 pl-2 hover:border-solid hover:bg-hover" onClick={() => void add(tag)}>
+                    {/* A dashed edge and a plus mark it as one to add, not one the file has. */}
                     {dot(tag)}
                     {tag.name}
+                    <Plus aria-hidden className="size-3.5 text-muted group-hover:text-current" />
                   </button>
                 </li>
               ))}
