@@ -356,14 +356,22 @@ export function remuxArgs(inputs: RemuxInput[], tracks: RemuxTrack[], options: {
   return [...args, "-dn", "-f", "matroska", output];
 }
 
+/** How tall the picture `convertArgs` makes of a video is, or null when the format is not a video. */
+export function outputHeight(spec: ConvertSpec, probe: Probe): number | null {
+  const picture = probe.streams.find((stream) => stream.type === "video" && !stream.attachedPic);
+  if (convertKindOf(spec.format) !== "video" || !picture?.height) return null;
+  return spec.height !== null && picture.height > spec.height ? even(spec.height) : picture.height;
+}
+
 /** Thrown out of `runFfmpeg` when `stopped` said to give up. */
 export class ConvertStopped extends Error {}
 
 /**
- * Runs ffmpeg to its end. `onSeconds` hears how far into the output it has got; `stopped` is asked now and then
- * whether to go on, and ends it when not. What ffmpeg complained of goes to the log, not to whoever asked.
+ * Runs ffmpeg to its end. `onSeconds` hears how far into the output it has got, and `onFps` how many frames a second
+ * it is making; `stopped` is asked now and then whether to go on, and ends it when not. What ffmpeg complained of
+ * goes to the log, not to whoever asked.
  */
-export function runFfmpeg(ffmpeg: string, args: string[], onSeconds: (seconds: number) => void, stopped: () => boolean): Promise<void> {
+export function runFfmpeg(ffmpeg: string, args: string[], onSeconds: (seconds: number) => void, stopped: () => boolean, onFps?: (fps: number) => void): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn(ffmpeg, args, { stdio: ["ignore", "pipe", "pipe"] });
     let complaint = "";
@@ -381,6 +389,8 @@ export function runFfmpeg(ffmpeg: string, args: string[], onSeconds: (seconds: n
       for (const line of lines) {
         const match = /^out_time_(?:us|ms)=(\d+)/.exec(line);
         if (match) onSeconds(Number(match[1]) / 1_000_000);
+        const fps = /^fps=([\d.]+)/.exec(line);
+        if (fps && onFps) onFps(Number(fps[1]));
       }
     });
     child.stderr.setEncoding("utf8").on("data", (chunk: string) => {

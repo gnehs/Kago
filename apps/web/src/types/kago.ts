@@ -376,6 +376,8 @@ export type FileTask = {
   processed_bytes: number;
   /** Bytes a second while it runs. Worked out here from one fetch of the list to the next; the server does not send it. */
   speed?: number;
+  /** How many frames a second a conversion is making its video at, and how tall that comes out. */
+  pace?: { fps: number; height: number | null };
   sources_json: string;
   destination: string | null;
   current_path: string | null;

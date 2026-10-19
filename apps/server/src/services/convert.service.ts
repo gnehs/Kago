@@ -5,7 +5,7 @@ import { pipeline } from "node:stream/promises";
 import { z } from "zod";
 import type { Db } from "../db/db.js";
 import { detectConvertAccel, type ConvertAccel } from "../lib/convert-accel.js";
-import { usesHardware, convertArgs, convertSpecSchema, ConvertStopped, convertSupport, type ConvertSupport, jobConverts, probeMedia, remuxArgs, runFfmpeg, SUBTITLE_FORMATS, type ConvertSpec, type RemuxInput, type RemuxTrack } from "../lib/convert.js";
+import { usesHardware, convertArgs, convertSpecSchema, ConvertStopped, convertSupport, type ConvertSupport, jobConverts, outputHeight, probeMedia, remuxArgs, runFfmpeg, SUBTITLE_FORMATS, type ConvertSpec, type RemuxInput, type RemuxTrack } from "../lib/convert.js";
 import { AppError, errnoIs } from "../lib/errors.js";
 import { MEDIA_FORMATS } from "../lib/ffmpeg-input.js";
 import { nfc } from "../lib/filename.js";
@@ -87,6 +87,8 @@ export type TaskHandle = {
   totals(files: number, bytes: number): Promise<void>;
   bytes(bytes: number): void;
   files(files: number): void;
+  /** How many frames a second a video is being made at, and how tall it comes out. */
+  pace(fps: number, height: number | null): void;
   stopped(): boolean;
 };
 
@@ -476,7 +478,11 @@ export class ConvertService {
     try {
       const probe = await probeMedia(this.ffprobe, input);
       const accel = await this.accel();
-      const encode = (gpu: ConvertAccel | null) => runFfmpeg(this.ffmpeg, convertArgs(spec, probe, input, partial, gpu), (seconds) => count(probe.duration > 0 ? (stat.size * seconds) / probe.duration : 0), handle.stopped);
+      const height = outputHeight(spec, probe);
+      // What the file before this one was made at says nothing of this one.
+      handle.pace(0, height);
+      const encode = (gpu: ConvertAccel | null) =>
+        runFfmpeg(this.ffmpeg, convertArgs(spec, probe, input, partial, gpu), (seconds) => count(probe.duration > 0 ? (stat.size * seconds) / probe.duration : 0), handle.stopped, height === null ? undefined : (fps) => handle.pace(fps, height));
       if (!usesHardware(spec, accel)) await encode(null);
       else {
         // A file the GPU chokes on (an odd size, a profile the driver lacks) is still one the CPU can do.

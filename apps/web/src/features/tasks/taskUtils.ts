@@ -49,7 +49,12 @@ export function taskProgressLabel(task: FileTask) {
 }
 
 /** How fast a running task is going, once that can be told and while it is going at all. */
-export const taskSpeedLabel = (task: FileTask) => (task.status === "running" && task.speed ? `${formatSize(task.speed)}/s` : undefined);
+/** A video being converted is told by its frames a second and how tall it comes out; anything else by its bytes. */
+export function taskSpeedLabel(task: FileTask): string | undefined {
+  if (task.status !== "running") return undefined;
+  if (task.pace?.fps && task.pace.height) return `${Math.round(task.pace.fps)}fps@${task.pace.height}p`;
+  return task.speed ? `${formatSize(task.speed)}/s` : undefined;
+}
 
 /** The server reports task failures in English; the ones a user can act on are worded for a task rather than a request. */
 const errorLabels: Record<string, string> = {

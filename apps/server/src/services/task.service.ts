@@ -129,6 +129,8 @@ class TaskCancelledError extends Error {}
 
 export class TaskService {
   private readonly progressBuffers = new Map<string, ProgressBuffer>();
+  /** How fast a running conversion is making its video. Kept only here: it is of no use once the task stops. */
+  private readonly paces = new Map<string, { fps: number; height: number | null }>();
   private readonly cancelChecks = new Map<string, number>();
   private secretBox: SecretBox | null = null;
   readonly archivePasswords: ArchivePasswordService;
@@ -293,6 +295,7 @@ export class TaskService {
       totals: (files, bytes) => this.updateTotals(taskId, files, bytes),
       bytes: (bytes) => this.countBytes(taskId, bytes),
       files: (files) => this.countFiles(taskId, files),
+      pace: (fps, height) => this.paces.set(taskId, { fps, height }),
       stopped: () => this.isCancelled(taskId)
     };
   }
@@ -326,13 +329,15 @@ export class TaskService {
       );
   }
 
-  list(actor: Actor): FileTask[] {
-    if (actor.role === "ADMIN") {
-      return rows<FileTask>(this.db.prepare("SELECT * FROM tasks WHERE cleared = 0 ORDER BY created_at DESC LIMIT 200").all());
-    }
-    return rows<FileTask>(
-      this.db.prepare("SELECT * FROM tasks WHERE cleared = 0 AND created_by = ? ORDER BY created_at DESC LIMIT 200").all(actor.id)
-    );
+  list(actor: Actor): Array<FileTask & { pace?: { fps: number; height: number | null } }> {
+    const tasks =
+      actor.role === "ADMIN"
+        ? rows<FileTask>(this.db.prepare("SELECT * FROM tasks WHERE cleared = 0 ORDER BY created_at DESC LIMIT 200").all())
+        : rows<FileTask>(this.db.prepare("SELECT * FROM tasks WHERE cleared = 0 AND created_by = ? ORDER BY created_at DESC LIMIT 200").all(actor.id));
+    return tasks.map((task) => {
+      const pace = task.status === "running" ? this.paces.get(task.id) : undefined;
+      return pace ? { ...task, pace } : task;
+    });
   }
 
   /** Forgets the finished tasks the actor can see. */
@@ -584,6 +589,7 @@ export class TaskService {
       this.events.publish({ type: "task.failed", userId: task.created_by, taskId: task.id, error: message });
     } finally {
       this.cancelChecks.delete(task.id);
+      this.paces.delete(task.id);
     }
   }
 
