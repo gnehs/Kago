@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { taskDownloadUrl } from "@/api/client";
+import { dropLeft } from "@/api/hooks";
 import { askForArchivePassword, pendingExtracts } from "@/features/files/ArchivePassword";
 import { pendingDownloads } from "@/features/files/useFileActions";
 import { announcedTypes, settleTask, taskFailed, taskFinished } from "@/features/tasks/taskToast";
@@ -59,6 +60,7 @@ export function useRealtime(userId: string, onRemoteWorkspaceChange: () => void)
         // A failed or cancelled move leaves items behind, which the fresh listing brings back.
         if (type === "task.done" || type === "task.failed" || message.patch?.status === "cancelled") {
           const { taskId } = message;
+          if (type === "task.done" && taskId) dropLeft(queryClient, taskId);
           void queryClient.invalidateQueries({ queryKey: ["fs"] }).finally(() => showLeaving(taskId));
         }
       }

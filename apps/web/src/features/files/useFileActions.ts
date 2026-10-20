@@ -7,7 +7,7 @@ import type { UploadTree } from "@/lib/uploadTree";
 import { useClipboardStore, type FileRef } from "@/stores/clipboard";
 import { chooseAction, promptText } from "@/stores/dialogs";
 import { toast } from "@/stores/toast";
-import { hideLeaving } from "@/stores/leaving";
+import { hideLeaving, showLeaving } from "@/stores/leaving";
 import { followTask } from "@/features/tasks/taskToast";
 import { isUploadCancelled, uploadForm, uploadLabel } from "@/stores/uploads";
 import { folderTitle, useWorkspaceStore } from "@/stores/workspace";
@@ -39,8 +39,20 @@ export function readDraggedFiles(dataTransfer: DataTransfer): FileRef[] {
 /** Download archives requested in this tab; each one starts downloading as soon as its task finishes. */
 export const pendingDownloads = new Set<string>();
 
-async function createTask(queryClient: QueryClient, body: Record<string, unknown>) {
-  const task = await api<FileTask>("/api/tasks", { method: "POST", body: JSON.stringify(body) });
+/**
+ * `leaving` are hidden from their folders before the task is asked for: a quick one is over before its id is back,
+ * and hiding them only then would leave them hidden for good.
+ */
+async function createTask(queryClient: QueryClient, body: Record<string, unknown>, leaving?: FileRef[]) {
+  const asking = leaving && `asking:${crypto.randomUUID()}`;
+  if (asking) hideLeaving(asking, leaving);
+  let task: FileTask;
+  try {
+    task = await api<FileTask>("/api/tasks", { method: "POST", body: JSON.stringify(body) });
+  } finally {
+    if (asking) showLeaving(asking);
+  }
+  if (leaving) hideLeaving(task.id, leaving);
   await queryClient.invalidateQueries({ queryKey: ["tasks"] });
   return task;
 }
@@ -54,10 +66,8 @@ export function transferFiles(queryClient: QueryClient, type: "copy" | "move", s
     if (!conflicts) return;
     const carried = sources.filter((source) => conflicts[baseName(source.path)] !== "skip");
     if (carried.length === 0) return;
-    const task = await createTask(queryClient, { type, sources: carried, destination, options: { conflicts } });
     // Left in view until the server is done, a moved item looks untouched and gets moved again.
-    if (type === "move") hideLeaving(task.id, carried);
-    followTask(task);
+    followTask(await createTask(queryClient, { type, sources: carried, destination, options: { conflicts } }, type === "move" ? carried : undefined));
   });
 }
 
@@ -123,9 +133,8 @@ export function trashFiles(queryClient: QueryClient, sources: FileRef[]) {
       if (!choice) return;
       if (choice === "alternative") type = "delete";
     }
-    const task = await createTask(queryClient, { type, sources });
     // The server moves them in the background; here they are gone at once.
-    hideLeaving(task.id, sources);
+    const task = await createTask(queryClient, { type, sources }, sources);
     toast(type === "delete" ? t("Deleted {count} item | Deleted {count} items", { count: sources.length }) : t("Moved {count} item to Trash | Moved {count} items to Trash", { count: sources.length }));
     return task;
   });

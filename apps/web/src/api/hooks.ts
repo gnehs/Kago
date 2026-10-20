@@ -102,6 +102,18 @@ function useWithoutLeaving() {
     Object.keys(leaving).length === 0 ? list : { ...list, items: list.items.filter((item) => !isLeaving(leaving, list.rootSlug, item.path)) };
 }
 
+/**
+ * Takes what a finished task carried away out of every listing kept, before they stop being hidden. A folder not on
+ * screen is read again only once it is shown, and until that reading is whole it would show them back in place.
+ */
+export function dropLeft(client: QueryClient, taskId: string) {
+  const left = useLeavingStore.getState().tasks[taskId];
+  if (!left) return;
+  client.setQueriesData<FileList>({ queryKey: ["fs", "list"] }, (list) =>
+    list?.items ? { ...list, items: list.items.filter((item) => !isLeaving({ [taskId]: left }, list.rootSlug, item.path)) } : list
+  );
+}
+
 type FileListLine = Omit<FileList, "items"> | { items: FileItem[] } | { done: true } | { error: string; code?: string };
 
 /**
