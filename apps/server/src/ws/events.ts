@@ -13,9 +13,18 @@ export type ServerEvent =
   | { type: "permission.updated"; userId?: string }
   | { type: "roots.updated" }
   | { type: "apps.updated"; userId?: string }
-  | { type: "share.updated"; userId: string };
+  | { type: "share.updated"; userId: string }
+  | FsChanged;
 
-type ClientContext = Pick<Actor, "id" | "role">;
+/**
+ * What changed in a location: `paths` are folders that hold something else now, `gone` items that are no longer where
+ * they were, and `trees` folders anything inside which may have changed. It goes to whoever may see the location.
+ */
+export type FsChanged = { type: "fs.changed"; rootSlug: string; paths: string[]; gone?: string[]; trees?: string[] };
+
+type ClientContext = Pick<Actor, "id" | "role" | "disabled">;
+/** Whether someone may see what is in a location; without one, nobody hears of changes in any. */
+type ViewCheck = (actor: ClientContext, rootSlug: string) => boolean;
 type SessionValidator = () => ClientContext | null;
 type ClientSubscription = { userId: string; validateSession: SessionValidator };
 
@@ -25,6 +34,8 @@ export type EventPublisher = {
 
 export class EventHub implements EventPublisher {
   private readonly clients = new Map<WebSocket, ClientSubscription>();
+
+  constructor(private readonly canView: ViewCheck = () => false) {}
 
   add(client: WebSocket, validateSession: SessionValidator): void {
     const actor = this.readCurrentActor(validateSession);
@@ -45,7 +56,7 @@ export class EventHub implements EventPublisher {
         this.closeRevokedClient(client);
         continue;
       }
-      if (!canReceive(actor, event)) continue;
+      if (event.type === "fs.changed" ? !this.canView(actor, event.rootSlug) : !canReceive(actor, event)) continue;
       if (client.readyState === client.OPEN) client.send(payload);
     }
   }

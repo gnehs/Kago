@@ -37,7 +37,7 @@ export class PermissionService {
     private readonly audit: AuditService
   ) {}
 
-  can(actor: Actor, level: Level, root: Root): { allowed: boolean; reason?: string } {
+  can(actor: Pick<Actor, "id" | "role" | "disabled">, level: Level, root: Root): { allowed: boolean; reason?: string } {
     if (actor.disabled) return { allowed: false, reason: "User disabled" };
     if (root.readonly && level === "edit") return { allowed: false, reason: "Root is readonly" };
     if (actor.role === "ADMIN") return { allowed: true };

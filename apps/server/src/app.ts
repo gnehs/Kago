@@ -57,7 +57,6 @@ export async function buildApp(env: Env) {
   // A number is how many proxies stand in front: that many hops of what they forward are believed, and no more.
   const app = Fastify({ logger: false, bodyLimit: 1024 * 1024 * 25, trustProxy: typeof proxies === "number" ? (_address: string, hop: number) => hop < proxies : proxies });
   const db = openDb(env);
-  const events = new EventHub();
   const audit = new AuditService(db);
   const secrets = new SecretBox(env.appDataDir);
   const roots = new RootService(db, env.dataDir, secrets);
@@ -67,10 +66,18 @@ export async function buildApp(env: Env) {
   const storage = new StorageService(remote);
   const paths = new PathService(roots, remote);
   const permissions = new PermissionService(db, audit);
+  // A change in a location is told only to those who may see what is in it.
+  const events = new EventHub((actor, rootSlug) => {
+    try {
+      return permissions.can(actor, "view", roots.getBySlug(rootSlug)).allowed;
+    } catch {
+      return false;
+    }
+  });
   const auth = new AuthService(db, env);
   const images = new ImageService(env.appDataDir);
   const preferences = new PreferenceService(db, roots, paths, events);
-  const fsService = new FsService(paths, permissions, audit, storage, env.appDataDir, preferences, images);
+  const fsService = new FsService(paths, permissions, audit, storage, env.appDataDir, preferences, images, events);
   const workspace = new WorkspaceService(db, roots, paths);
   const tasks = new TaskService(db, paths, permissions, audit, events, env.appDataDir, fsService, storage, preferences);
   const shelves = new ShelfService(db, paths, permissions, events, audit, storage);

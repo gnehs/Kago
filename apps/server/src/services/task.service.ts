@@ -30,6 +30,7 @@ import type { Level, PermissionService } from "./permission.service.js";
 import type { PreferenceService } from "./preference.service.js";
 import type { StorageService } from "./storage.service.js";
 import { SyncReport } from "./sync-report.js";
+import { taskChanges } from "./task-changes.js";
 import type { Actor, FileTask, Root } from "./types.js";
 
 const maxExtractEntries = 10_000;
@@ -574,6 +575,7 @@ export class TaskService {
       else if (task.type === "convert") await this.convert.run(task, actor, this.handle(task.id));
       else if (task.type === "remux") await this.convert.runRemux(task, actor, this.handle(task.id));
       if (this.finish(task.id, "done")) this.events.publish({ type: "task.done", userId: task.created_by, taskId: task.id });
+      for (const change of taskChanges(this.db, task)) this.events.publish(change);
     } catch (error) {
       if (error instanceof TaskCancelledError || error instanceof RcloneJobStopped || error instanceof ConvertStopped) {
         this.flushProgress(task.id, true);

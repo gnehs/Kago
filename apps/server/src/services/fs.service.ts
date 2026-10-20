@@ -21,6 +21,7 @@ import type { PermissionService } from "./permission.service.js";
 import type { PreferenceService } from "./preference.service.js";
 import type { StorageService } from "./storage.service.js";
 import type { Actor } from "./types.js";
+import type { EventPublisher, FsChanged } from "../ws/events.js";
 
 /** Subtitles are read whole by the player; anything larger is not a text subtitle. */
 const MAX_SUBTITLE_BYTES = 16 * 1024 * 1024;
@@ -149,9 +150,18 @@ export class FsService {
     private readonly appDataDir: string,
     private readonly preferences: PreferenceService,
     /** Absent in the task worker, which then draws no thumbnails for camera RAW. */
-    private readonly images?: ImageService
+    private readonly images?: ImageService,
+    /** Absent in the task worker, whose tasks tell of what they changed when they finish. */
+    private readonly events?: EventPublisher
   ) {
     this.thumbnailer = new Thumbnailer(path.join(appDataDir, "thumbnails"));
+  }
+
+  /** Tells whoever may see the location which of its folders hold something else now, and what is no longer where it was. */
+  private changed(rootSlug: string, paths: string[], gone: string[] = []): void {
+    const event: FsChanged = { type: "fs.changed", rootSlug, paths };
+    if (gone.length > 0) event.gone = gone;
+    this.events?.publish(event);
   }
 
   async list(actor: Actor, rootSlug: string, logicalPath: string) {
@@ -430,6 +440,7 @@ export class FsService {
       target: { tags: tags.map((tag) => tag.name) },
       result: "success"
     });
+    this.changed(safe.root.slug, [path.posix.dirname(safe.logicalPath)]);
     return this.meta(actor, input.rootSlug, safe.logicalPath);
   }
 
@@ -553,6 +564,7 @@ export class FsService {
       path: safe.logicalPath,
       result: "success"
     });
+    this.changed(safe.root.slug, [path.posix.dirname(safe.logicalPath)]);
     return this.meta(actor, input.rootSlug, safe.logicalPath);
   }
 
@@ -640,6 +652,7 @@ export class FsService {
       path: target.logicalPath,
       result: "success"
     });
+    this.changed(target.root.slug, [parent.logicalPath]);
     return this.meta(actor, rootSlug, target.logicalPath);
   }
 
@@ -659,6 +672,7 @@ export class FsService {
         target: { to: target.logicalPath },
         result: "success"
       });
+      this.changed(source.root.slug, [path.posix.dirname(source.logicalPath)], target.logicalPath === source.logicalPath ? [] : [source.logicalPath]);
       return this.meta(actor, rootSlug, target.logicalPath);
     };
     if (this.storage.isRemote(source)) {
@@ -790,6 +804,13 @@ export class FsService {
         result: "success"
       });
     }
+    if (changed.length > 0) {
+      this.changed(
+        changed[0]!.source.root.slug,
+        [...new Set(changed.map((move) => path.posix.dirname(move.source.logicalPath)))],
+        changed.map((move) => move.source.logicalPath)
+      );
+    }
     return { items: moves.map((move) => ({ from: move.source.logicalPath, path: move.target.logicalPath })) };
   }
 
@@ -822,6 +843,7 @@ export class FsService {
       path: target.logicalPath,
       result: "success"
     });
+    this.changed(target.root.slug, [parent.logicalPath]);
     return this.meta(actor, rootSlug, target.logicalPath);
   }
 
@@ -840,6 +862,7 @@ export class FsService {
       path: target.logicalPath,
       result: "success"
     });
+    this.changed(target.root.slug, [parent.logicalPath]);
     return { rootSlug, path: target.logicalPath, name: nfc(fileName) };
   }
 

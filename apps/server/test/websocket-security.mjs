@@ -93,6 +93,39 @@ test("a user still receives their own events but not another user's", async (t) 
   assert.equal(socket.closeCode, undefined);
 });
 
+test("changes in a location reach only those who may see it, whoever made them", async (t) => {
+  const { auth } = harness(t);
+  await createUser(auth, "viewer@example.test", "USER");
+  await createUser(auth, "outsider@example.test", "USER");
+  const viewer = await signIn(auth, "viewer@example.test");
+  const outsider = await signIn(auth, "outsider@example.test");
+  const viewerSocket = new FakeSocket();
+  const outsiderSocket = new FakeSocket();
+  const events = new EventHub((actor, rootSlug) => rootSlug === "shared" && actor.id === viewer.actor.id);
+  events.add(viewerSocket, () => auth.actorForSession(viewer.token));
+  events.add(outsiderSocket, () => auth.actorForSession(outsider.token));
+
+  const change = { type: "fs.changed", rootSlug: "shared", paths: ["/"], gone: ["/secret.txt"] };
+  events.publish(change);
+  events.publish({ ...change, rootSlug: "private" });
+
+  assert.deepEqual(viewerSocket.messages, [change]);
+  assert.deepEqual(outsiderSocket.messages, []);
+});
+
+test("without a way to tell who may see a location, nobody hears of changes in it", async (t) => {
+  const { auth } = harness(t);
+  await createUser(auth, "admin@example.test", "ADMIN");
+  const signedIn = await signIn(auth, "admin@example.test");
+  const socket = new FakeSocket();
+  const events = new EventHub();
+  events.add(socket, () => auth.actorForSession(signedIn.token));
+
+  events.publish({ type: "fs.changed", rootSlug: "anywhere", paths: ["/"] });
+
+  assert.deepEqual(socket.messages, []);
+});
+
 function harness(t) {
   const db = new DatabaseSync(":memory:");
   db.exec(`
