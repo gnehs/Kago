@@ -365,12 +365,13 @@ export function planRename(items: FileItem[], parts: RenamePart[], info: Map<str
     return { stem: cleaned, name: finalExtension ? `${cleaned}.${finalExtension}` : cleaned };
   });
 
-  // Whatever is not being renamed keeps its name, and two of the batch cannot share one.
+  // Whatever is not being renamed keeps its name, and two of the batch cannot share one. Names that differ only in case
+  // are taken for one, as a case-insensitive disk takes them.
   const batch = new Set(items.map((item) => item.path));
   const taken = new Map<string, number>();
   const count = (path: string) => taken.set(path, (taken.get(path) ?? 0) + 1);
-  for (const path of existing) if (!batch.has(path)) count(nfc(path));
-  const targets = items.map((item, index) => `${parentPath(item.path) === "/" ? "" : nfc(parentPath(item.path))}/${names[index]!.name}`);
+  for (const path of existing) if (!batch.has(path)) count(nfc(path).toLowerCase());
+  const targets = items.map((item, index) => `${parentPath(item.path) === "/" ? "" : nfc(parentPath(item.path))}/${names[index]!.name}`.toLowerCase());
   targets.forEach(count);
 
   const rows = items.map((item, index): RenameRow => {
