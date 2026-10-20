@@ -146,12 +146,34 @@ export class PathService {
 /** Whether the path is, or lies in, the trash folder at the top of a local location. A disk that does not mind the case finds it under any. */
 const isLocalTrash = (logicalPath: string) => logicalPath.split("/").find(Boolean)?.toLowerCase() === TRASH_FOLDER;
 
-/** Whether two folders of one location hold one another, so that work between them would feed on its own output. */
-export const foldersOverlap = (a: SafePath, b: SafePath) => {
+/**
+ * Whether two folders hold one another, so that work between them would feed on its own output. On disk that is
+ * told by what the folders are: two locations may be two mounts of one disk, one of them inside the other.
+ */
+export const foldersOverlap = async (a: SafePath, b: SafePath): Promise<boolean> => {
+  if (!isRemote(a.root) && !isRemote(b.root)) return (await liesWithin(a.absolutePath, b.absolutePath)) || liesWithin(b.absolutePath, a.absolutePath);
   if (a.root.id !== b.root.id) return false;
   const inside = (outer: string, inner: string) => outer === "/" || inner === outer || inner.startsWith(`${outer}/`);
   return inside(a.logicalPath, b.logicalPath) || inside(b.logicalPath, a.logicalPath);
 };
+
+/**
+ * Whether the path `inner` is the folder `outer` or lies somewhere in it. Spelling alone cannot tell: the same folder
+ * can be reached under two paths that have nothing in common, when a disk is mounted twice. So each folder on the
+ * way up from `inner` is compared with `outer` by its device and inode; `inner` itself need not exist yet.
+ */
+export async function liesWithin(inner: string, outer: string): Promise<boolean> {
+  const relative = path.relative(path.resolve(outer), path.resolve(inner));
+  if (relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))) return true;
+  const folder = await fs.stat(outer).catch(() => null);
+  // A disk that numbers nothing cannot say which folder is which.
+  if (!folder || folder.ino === 0) return false;
+  for (let current = path.resolve(inner); ; current = path.dirname(current)) {
+    const stat = await fs.stat(current).catch(() => null);
+    if (stat && stat.dev === folder.dev && stat.ino === folder.ino) return true;
+    if (path.dirname(current) === current) return false;
+  }
+}
 
 /** Refuses what would make, rename, move or remove one of a server's shares. */
 export const sharesAreFixed = () => new AppError(403, "The shares of a server can’t be changed from here", "REMOTE_SHARES_FIXED");

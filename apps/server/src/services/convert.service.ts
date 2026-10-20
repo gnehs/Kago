@@ -196,7 +196,7 @@ export class ConvertService {
     this.permissions.require(actor, job.options.after === "keep" ? "view" : "edit", input.root, input.logicalPath);
     const destination = await this.writableFolder(actor, job.destination);
     // What comes out would be taken for something that came in.
-    if (foldersOverlap(input, destination)) throw new AppError(400, "The input folder and the destination overlap", "CONVERT_OVERLAP");
+    if (await foldersOverlap(input, destination)) throw new AppError(400, "The input folder and the destination overlap", "CONVERT_OVERLAP");
     return { input, destination };
   }
 
