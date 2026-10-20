@@ -250,14 +250,18 @@ function Children({ tree, rootSlug, path, depth }: { tree: Tree; rootSlug: strin
     <span className="truncate py-1 text-xs text-faint" style={{ paddingLeft: 24 + depth * INDENT }}>{text}</span>
   );
 
-  if (!folders) return list.isError ? note(t("Couldn’t load")) : null;
-  if (folders.length === 0) return note(t("No folders inside"));
+  // A folder still being read has only shown the first of what it holds, and one whose reading failed may not have shown all.
+  const status = list.isError ? note(t("Couldn’t load")) : list.data?.partial ? note(t("Loading…")) : null;
+
+  if (!folders) return list.isError ? status : null;
+  if (folders.length === 0) return status ?? note(t("No folders inside"));
   return (
     <>
       {folders.slice(0, MAX_CHILDREN).map((folder) => (
         <Node key={folder.path} tree={tree} rootSlug={rootSlug} path={folder.path} label={nfc(folder.name)} depth={depth} locked={folder.readonly} />
       ))}
       {folders.length > MAX_CHILDREN ? note(t("{count} more folder | {count} more folders", { count: folders.length - MAX_CHILDREN })) : null}
+      {status}
     </>
   );
 }

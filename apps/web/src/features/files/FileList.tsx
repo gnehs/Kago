@@ -235,8 +235,11 @@ function GridView(props: ViewProps) {
   );
 }
 
-/** One column of the column view: a folder, and what it holds once that is known. */
-export type FileColumn = { folder: string; items: FileItem[] | undefined };
+/**
+ * One column of the column view: a folder, and what it holds once that is known. `loading` while only the first of
+ * it has come, and `failed` when it could not be read whole.
+ */
+export type FileColumn = { folder: string; items: FileItem[] | undefined; loading?: boolean; failed?: boolean };
 
 type FileColumnsProps = Pick<FileListProps, "window" | "onOpen" | "onContextItem"> & {
   /** The window's folder first, then each folder opened from the column before it. */
@@ -313,7 +316,9 @@ function Column({ column, index, opened, revealers, onSelect, onSelectColumn, on
         onDropInto(event, column.folder);
       }}
     >
-      {column.items === undefined ? (
+      {items.length === 0 && column.failed ? (
+        <p className="m-0 px-3 py-2.5 text-faint">{t("Couldn’t load")}</p>
+      ) : items.length === 0 && (column.items === undefined || column.loading) ? (
         <KagoLoading />
       ) : items.length === 0 ? (
         <p className="m-0 px-3 py-2.5 text-faint">{t("Empty folder")}</p>
@@ -333,6 +338,8 @@ function Column({ column, index, opened, revealers, onSelect, onSelectColumn, on
           })}
         </div>
       )}
+      {/* What came before the reading failed is shown, but not as all there is. */}
+      {items.length > 0 && column.failed ? <p className="m-0 px-3 py-2.5 text-faint">{t("Couldn’t load")}</p> : null}
     </div>
   );
 }

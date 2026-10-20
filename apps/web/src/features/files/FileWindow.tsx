@@ -114,20 +114,23 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
   const expandedPaths = useMemo(() => (showsTree ? [...expanded] : trail), [showsTree, expanded, trail]);
   const expandedContents = useFolderContents(win.rootSlug, expandedPaths);
 
-  const error = classifyFileWindowError(fileList.error);
+  // A folder that could not be read again goes on showing what it held, unless it is gone or out of reach.
+  const failure = classifyFileWindowError(fileList.error);
+  const error = failure && (!fileList.data || failure.kind !== "unknown") ? failure : null;
   const readonly = Boolean(fileList.data?.readonly);
   const allItems = useMemo(() => sortItems(fileList.data?.items ?? [], win.sortBy, win.sortDirection), [fileList.data, win.sortBy, win.sortDirection]);
   const searched = useFolderSearch(win.rootSlug, win.logicalPath, searching ? query : "");
   // Matches kept from before are shown only while they are of this folder and of a search still being typed.
   const results = searching && searched.data?.rootSlug === win.rootSlug && searched.data.path === win.logicalPath ? searched.data : undefined;
   const found = useMemo(() => (results ? sortItems(results.items, win.sortBy, win.sortDirection) : []), [results, win.sortBy, win.sortDirection]);
-  const searchPending = searching && (query !== typed || !results || results.query !== query || results.partial);
+  // A search that failed is over, whatever it had found by then.
+  const searchPending = searching && (query !== typed || (!searched.isError && (!results || results.query !== query || results.partial)));
   // What the window's own folder lists, with the folders opened in place in the list view.
   const { items: listed, depths } = useMemo(() => {
     if (searching) return { items: found, depths: [] };
     if (!showsTree || expandedPaths.length === 0) return { items: allItems, depths: [] };
     // Each open folder is followed by its own contents, sorted like the rest and one level further in.
-    const contents = new Map(expandedPaths.map((path, index) => [path, expandedContents[index]]));
+    const contents = new Map(expandedPaths.map((path, index) => [path, expandedContents[index]?.items]));
     const items: FileItem[] = [];
     const depths: number[] = [];
     const walk = (list: FileItem[], depth: number) => {
@@ -150,7 +153,7 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
       const before = columns.at(-1)!.items;
       if (before && !before.some((item) => item.path === folder && item.kind === "folder")) break;
       const inside = expandedContents[index];
-      columns.push({ folder, items: inside && sortItems(inside, win.sortBy, win.sortDirection) });
+      columns.push({ folder, items: inside?.items && sortItems(inside.items, win.sortBy, win.sortDirection), loading: inside?.loading, failed: inside?.failed });
     }
     return columns;
   }, [inColumns, win.logicalPath, listed, trail, expandedContents, win.sortBy, win.sortDirection]);
@@ -159,7 +162,10 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
   const opened = columnsAbove && win.selectedItems.length === 1 && columnsAbove.length === trail.length + 1 ? deepest?.items?.find((item) => item.path === lastSelected && item.kind === "folder")?.path : undefined;
   const openedList = useFileList(win.rootSlug, opened ?? win.logicalPath, Boolean(opened));
   const columns = useMemo(
-    () => (columnsAbove && opened ? [...columnsAbove, { folder: opened, items: openedList.data ? sortItems(openedList.data.items, win.sortBy, win.sortDirection) : openedList.isError ? [] : undefined }] : columnsAbove),
+    () =>
+      columnsAbove && opened
+        ? [...columnsAbove, { folder: opened, items: openedList.data && sortItems(openedList.data.items, win.sortBy, win.sortDirection), loading: !openedList.isError && openedList.data?.partial !== false, failed: openedList.isError }]
+        : columnsAbove,
     [columnsAbove, opened, openedList.data, openedList.isError, win.sortBy, win.sortDirection]
   );
   /** The column the selection is in, which is the one the keyboard moves through. */
@@ -528,7 +534,7 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
             <KagoIconButton label={t("Move to Trash")} className="size-6" disabled={readonly} onClick={() => void actions.trash(selectedPaths)}><Trash2 /></KagoIconButton>
           </>
         ) : (
-          <span className="truncate">{error ? t("Couldn’t load") : searching ? (results?.truncated ? t("Showing the first {count} matches", { count: found.length }) : t("{count} item found | {count} items found", { count: found.length })) : summary}{!error && (searching ? searchPending : fileList.data?.partial) ? ` · ${searching ? t("Searching…") : t("Loading…")}` : ""}</span>
+          <span className="truncate">{error ? t("Couldn’t load") : searching ? (results?.truncated ? t("Showing the first {count} matches", { count: found.length }) : t("{count} item found | {count} items found", { count: found.length })) : summary}{error ? "" : searching ? (searchPending ? ` · ${t("Searching…")}` : searched.isError && results ? ` · ${t("Couldn’t load")}` : "") : fileList.isError ? ` · ${t("Couldn’t load")}` : fileList.data?.partial ? ` · ${t("Loading…")}` : ""}</span>
         )}
       </footer>
 

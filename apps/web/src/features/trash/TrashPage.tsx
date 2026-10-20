@@ -24,7 +24,8 @@ export function TrashPage() {
   async function restore(itemId: string) {
     await run(async () => {
       followTask(await api<FileTask>(`/api/trash/${itemId}/restore`, { method: "POST" }));
-      await Promise.all(["trash", "tasks", "fs"].map((key) => queryClient.invalidateQueries({ queryKey: [key] })));
+      // Nothing is back in its folder until the task has put it there, which the server tells of then.
+      await Promise.all(["trash", "tasks"].map((key) => queryClient.invalidateQueries({ queryKey: [key] })));
     }, t("Couldn’t restore"));
   }
 

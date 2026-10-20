@@ -1,5 +1,6 @@
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { api, ApiError, apiLines, downloadUrl, serverMessage } from "@/api/client";
+import { dropLeft } from "@/api/hooks";
 import { formatSize } from "@/lib/format";
 import { baseName, ensureZipName, isInside, isWithin, joinLogicalPath, needsNormalizing, nfc, parentPath, triggerDownload } from "@/lib/paths";
 import { run } from "@/lib/run";
@@ -7,7 +8,7 @@ import type { UploadTree } from "@/lib/uploadTree";
 import { useClipboardStore, type FileRef } from "@/stores/clipboard";
 import { chooseAction, promptText } from "@/stores/dialogs";
 import { toast } from "@/stores/toast";
-import { hideLeaving, showLeaving } from "@/stores/leaving";
+import { hideLeaving, leavingSettled, showLeaving } from "@/stores/leaving";
 import { followTask } from "@/features/tasks/taskToast";
 import { isUploadCancelled, uploadForm, uploadLabel } from "@/stores/uploads";
 import { folderTitle, useWorkspaceStore } from "@/stores/workspace";
@@ -52,6 +53,8 @@ async function createTask(queryClient: QueryClient, body: Record<string, unknown
   } finally {
     if (asking) showLeaving(asking);
   }
+  // Its end may have been heard before this answer: finished, what it carried is taken out of the listings that kept it.
+  if (leaving && leavingSettled(task.id)) dropLeft(queryClient, leaving);
   if (leaving) hideLeaving(task.id, leaving);
   await queryClient.invalidateQueries({ queryKey: ["tasks"] });
   return task;
@@ -167,7 +170,7 @@ export function renameFile(queryClient: QueryClient, item: FileRef & { name: str
     useWorkspaceStore.getState().followFolder(item, { rootSlug: item.rootSlug, path: renamed.path });
     onRenamed?.(renamed.path);
     // The item may sit in a folder opened in place rather than in the window's own.
-    await queryClient.invalidateQueries({ queryKey: ["fs", "list", item.rootSlug] });
+    await queryClient.invalidateQueries({ queryKey: ["fs", "list", item.rootSlug, parentPath(item.path)], exact: true }, { cancelRefetch: false });
   }, t("Couldn’t rename"));
 }
 
@@ -249,8 +252,8 @@ export function useFileActions(window: FileWindow) {
   const refs = (paths: string[]): FileRef[] => paths.map((path) => ({ rootSlug: window.rootSlug, path }));
   const here = (path = window.logicalPath): FileRef => ({ rootSlug: window.rootSlug, path });
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["fs", "list", window.rootSlug, window.logicalPath] });
-  /** An upload can land in folders other windows are showing, so every listing of the root is refetched. */
-  const refreshRoot = (rootSlug = window.rootSlug) => queryClient.invalidateQueries({ queryKey: ["fs", "list", rootSlug] });
+  /** An upload can land in folders other windows are showing, so every listing of the root is refetched; searches are not. */
+  const refreshRoot = (rootSlug = window.rootSlug) => queryClient.invalidateQueries({ queryKey: ["fs", "list", rootSlug], predicate: (query) => query.queryKey.length === 4 }, { cancelRefetch: false });
   const clearSelection = () => useWorkspaceStore.getState().selectItems(window.id, []);
 
   return {

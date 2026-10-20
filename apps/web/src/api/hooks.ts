@@ -1,8 +1,10 @@
-import { keepPreviousData, useMutation, useQueries, useQuery, useQueryClient, type QueryClient, type UseQueryResult } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQueries, useQuery, useQueryClient, type Query, type QueryClient, type QueryKey, type UseQueryResult } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { api, apiLines, ApiError, previewUrl, serverMessage } from "./client";
 import { decodeSubtitle } from "../lib/subtitles";
 import { withSpeeds } from "../lib/taskSpeed";
+import { parentPath } from "../lib/paths";
+import type { FileRef } from "../stores/clipboard";
 import { isLeaving, useLeavingStore } from "../stores/leaving";
 import type { Actor, AuditLog, ConvertJob, ConvertRun, ConvertRunFile, ConvertSupport, ExternalApp, FileItem, FileList, FileMeta, FileTask, FolderSize, FrameVerdict, Group, ImageMetadata, LibraryIcon, MediaInfo, PermissionRule, Root, ShareLink, Shelf, SqlitePage, Storyboard, SsoConfig, SsoIdentity, SsoInfo, SqliteTable, StorageInfo, SubtitleList, SyncJob, SyncRun, SyncTrial, TrashItem, UserAccount, WorkspaceState } from "../types/kago";
 
@@ -105,16 +107,81 @@ function useWithoutLeaving() {
 /**
  * Takes what a finished task carried away out of every listing kept, before they stop being hidden. A folder not on
  * screen is read again only once it is shown, and until that reading is whole it would show them back in place.
+ * What was inside a folder that left goes with it, out of what a search found.
  */
-export function dropLeft(client: QueryClient, taskId: string) {
-  const left = useLeavingStore.getState().tasks[taskId];
-  if (!left) return;
+export function dropLeft(client: QueryClient, left: FileRef[]) {
+  if (left.length === 0) return;
+  const gone = (rootSlug: string, path: string) => left.some((ref) => ref.rootSlug === rootSlug && (path === ref.path || path.startsWith(`${ref.path}/`)));
   client.setQueriesData<FileList>({ queryKey: ["fs", "list"] }, (list) =>
-    list?.items ? { ...list, items: list.items.filter((item) => !isLeaving({ [taskId]: left }, list.rootSlug, item.path)) } : list
+    // A listing that holds none of them is left as it is, rather than made to look newly read.
+    list?.items?.some((item) => gone(list.rootSlug, item.path)) ? { ...list, items: list.items.filter((item) => !gone(list.rootSlug, item.path)) } : undefined
   );
 }
 
-type FileListLine = Omit<FileList, "items"> | { items: FileItem[] } | { done: true } | { error: string; code?: string };
+/** Readings to be made once more when the one under way is over, by the key they are kept under. */
+const rereads = new Map<string, Promise<unknown>>();
+
+/**
+ * Has what is kept under exactly this key asked for again where it is shown, without giving up a reading under way:
+ * a large folder on a slow disk takes seconds to read, and starting over would throw that away. A reading begun
+ * before the change may have missed it, though, so one more follows it.
+ */
+function refreshKey(client: QueryClient, queryKey: QueryKey): Promise<unknown> {
+  const query = client.getQueryCache().find({ queryKey, exact: true });
+  const again = () => client.invalidateQueries({ queryKey, exact: true }, { cancelRefetch: false });
+  if (!query?.promise || query.state.fetchStatus !== "fetching") return again();
+  let reread = rereads.get(query.queryHash);
+  if (!reread) {
+    reread = query.promise.catch(() => undefined).then(() => (rereads.delete(query.queryHash), again()));
+    rereads.set(query.queryHash, reread);
+  }
+  return reread;
+}
+
+/** What changed in a location: folders that hold something else now, items that are no longer where they were, and folders anything inside which may have changed. */
+export type FolderChange = { rootSlug: string; paths: string[]; gone?: string[]; trees?: string[] };
+
+const under = (path: string, folder: string) => path === folder || path.startsWith(folder === "/" ? "/" : `${folder}/`);
+
+/**
+ * Brings what is kept of a location up to date with a change in it. Listings shown are read again; ones not shown are
+ * forgotten, so that they are read when shown rather than shown as they were, with what left still in place. How much
+ * a folder holds changes with anything inside it.
+ */
+export function foldersChanged(client: QueryClient, { rootSlug, paths, gone = [], trees = [] }: FolderChange): Promise<unknown> {
+  dropLeft(client, gone.map((path) => ({ rootSlug, path })));
+  const wholly = [...gone, ...trees];
+  const stale = (path: string) => paths.includes(path) || wholly.some((folder) => under(path, folder));
+  const holds = (path: string) => [...paths, ...trees].some((changed) => under(changed, path));
+  const work: Array<Promise<unknown>> = [];
+  for (const query of client.getQueryCache().findAll({ queryKey: ["fs"] })) {
+    const [, kind, slug, path, search] = query.queryKey as [string, string, unknown, unknown, unknown];
+    if (slug !== rootSlug || typeof path !== "string") continue;
+    if (kind === "list" && search === "search") {
+      // A search goes on showing what it found; the next one made there searches again.
+      if (holds(path)) void client.invalidateQueries({ queryKey: query.queryKey, exact: true, refetchType: "none" });
+    } else if (kind === "list") {
+      if (!stale(path)) continue;
+      if (query.isActive()) work.push(refreshKey(client, query.queryKey));
+      else client.removeQueries({ queryKey: query.queryKey, exact: true });
+    } else if (kind === "size") {
+      if (stale(path) || holds(path)) work.push(refreshKey(client, query.queryKey));
+    } else if (kind === "meta") {
+      // An item's tags and name are its own, and change with the folder it is in.
+      if (stale(path) || paths.includes(parentPath(path))) work.push(refreshKey(client, query.queryKey));
+    }
+  }
+  return Promise.all(work);
+}
+
+/**
+ * What arrived of a listing or search before it was left is kept as though it were all there was, and as freshly
+ * read: it is only ever good for showing while the rest is on its way, so coming back reads it again. A whole one
+ * is fresh for the second every query is.
+ */
+const untilWhole = (query: Query<FileList> | Query<FolderSearch>) => (query.state.data?.partial ? 0 : 1000);
+
+type FileListLine =Omit<FileList, "items"> | { items: FileItem[] } | { done: true } | { error: string; code?: string };
 
 /**
  * A folder's listing, read as the server sends it. One opened for the first time fills while it is read, so the
@@ -146,7 +213,8 @@ function fileListQuery(client: QueryClient, rootSlug: string, path: string) {
       // An answer cut short has no last line.
       if (!folder || !whole) throw new ApiError(serverMessage(undefined), "REQUEST_FAILED", 500);
       return { ...folder, items, partial: false };
-    }
+    },
+    staleTime: untilWhole
   };
 }
 
@@ -192,13 +260,18 @@ export function useFolderSearch(rootSlug: string, path: string, query: string) {
     enabled: query.length > 0,
     // Typing on keeps the matches of what was typed before until there are new ones.
     placeholderData: keepPreviousData,
+    staleTime: untilWhole,
     retry: false
   });
 }
 
-const folderContents = (results: UseQueryResult<FileList>[]) => results.map((result) => result.data?.items);
+/** What is known of a folder's contents: `loading` while there is none or only the first of it, `failed` when it could not be read whole. */
+export type FolderContents = { items?: FileItem[]; loading: boolean; failed: boolean };
 
-/** The contents of several folders at once, in the order asked; a folder still loading has none yet. */
+const folderContents = (results: UseQueryResult<FileList>[]): FolderContents[] =>
+  results.map((result) => ({ items: result.data?.items, loading: !result.isError && (!result.data || result.data.partial), failed: result.isError }));
+
+/** The contents of several folders at once, in the order asked. */
 export function useFolderContents(rootSlug: string, paths: string[]) {
   const select = useWithoutLeaving();
   const client = useQueryClient();

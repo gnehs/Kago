@@ -7,6 +7,7 @@ import { KagoDialog, KagoDialogActions } from "@/components/kago/dialog";
 import { Card, Row, RowList } from "@/components/kago/page";
 import { Button } from "@/components/ui/button";
 import { Field, FieldGroup, Input } from "@/components/ui/input";
+import { parentPath } from "@/lib/paths";
 import { run } from "@/lib/run";
 import { saveSettings, useSettingsStore } from "@/stores/settings";
 import { cn } from "@/lib/utils";
@@ -140,7 +141,9 @@ export function TagEditor({ rootSlug, targets, readonly }: { rootSlug: string; t
         }
       } finally {
         // The ones written before a failure are tagged all the same.
-        await queryClient.invalidateQueries({ queryKey: ["fs", "list", rootSlug] });
+        // Only the folders they are in list their tags.
+        const folders = new Set(targets.map((target) => parentPath(target.path)));
+        await Promise.all([...folders].map((folder) => queryClient.invalidateQueries({ queryKey: ["fs", "list", rootSlug, folder], exact: true }, { cancelRefetch: false })));
       }
     }, fallback);
   const has = (list: FileTag[], name: string) => list.some((item) => item.name === name);
