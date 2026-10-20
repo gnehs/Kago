@@ -25,7 +25,7 @@ import { isBrowserViewable } from "./lib/viewable.js";
 import { AuditService } from "./services/audit.service.js";
 import { AuthService, MAX_PASSWORD, changePasswordSchema, createUserSchema, loginSchema, patchUserSchema, resetPasswordSchema, setupAdminSchema } from "./services/auth.service.js";
 import { CompatibilityService } from "./services/compatibility.service.js";
-import { FsService, avatarSchema, fileTagsSchema, fsQuerySchema, maxUploadFiles, mkdirSchema, renameManySchema, renameSchema, searchQuerySchema, sqliteRowsSchema, thumbnailQuerySchema, writeTextSchema, zipQuerySchema } from "./services/fs.service.js";
+import { FsService, avatarSchema, fileTagsSchema, fsQuerySchema, maxUploadFiles, mkdirSchema, renameManySchema, renameSchema, searchQuerySchema, sqliteRowsSchema, thumbnailQuerySchema, uploadConflictSchema, writeTextSchema, zipQuerySchema } from "./services/fs.service.js";
 import { ImageService } from "./services/image.service.js";
 import { appUrl, externalAppOrderSchema, externalAppSchema, ExternalAppService } from "./services/external-app.service.js";
 import { createGroupSchema, GroupService } from "./services/group.service.js";
@@ -1069,7 +1069,7 @@ function registerApi(app: FastifyInstance, services: Services) {
   app.post("/api/fs/mkdir", async (request) => {
     const actor = requireActor(request);
     const input = mkdirSchema.parse(request.body);
-    return services.fsService.mkdir(actor, input.rootSlug, input.path, input.name);
+    return services.fsService.mkdir(actor, input.rootSlug, input.path, input.name, input.conflict);
   });
   app.post("/api/fs/rename", async (request) => {
     const actor = requireActor(request);
@@ -1094,10 +1094,11 @@ function registerApi(app: FastifyInstance, services: Services) {
       }
       // The destination fields are sent ahead of the files.
       const input = uploadRequestSchema.parse(fields);
-      uploaded.push(await services.fsService.upload(actor, input.rootSlug, input.path, part.filename, part.file));
+      uploaded.push(await services.fsService.upload(actor, input.rootSlug, input.path, part.filename, part.file, input.conflicts?.[part.filename.normalize("NFC")]));
     }
     if (uploaded.length === 0) throw new AppError(400, "At least one file is required", "UPLOAD_FILE_REQUIRED");
-    return { items: uploaded };
+    // A file left out where one of its name was already has nothing to say of itself.
+    return { items: uploaded.filter((item) => item !== null) };
   });
 
   app.get("/api/tasks", async (request) => services.tasks.list(requireActor(request)));
@@ -1321,5 +1322,18 @@ const PICTURE_FORMATS: Record<string, string> = { hdmv_pgs_subtitle: "pgs", dvd_
 
 const uploadRequestSchema = z.object({
   rootSlug: z.string().min(1),
-  path: z.string().min(1)
+  path: z.string().min(1),
+  /** What to do with each file whose name the folder already has, by its name in NFC. A form field is text, so it comes as JSON. */
+  conflicts: z
+    .string()
+    .transform((value, context) => {
+      try {
+        return JSON.parse(value) as unknown;
+      } catch {
+        context.addIssue({ code: "custom", message: "Invalid JSON" });
+        return z.NEVER;
+      }
+    })
+    .pipe(z.record(z.string(), uploadConflictSchema))
+    .optional()
 });

@@ -1,4 +1,5 @@
 import fsp from "node:fs/promises";
+import path from "node:path";
 import { AppError } from "./errors.js";
 
 /** Names Kago writes are always NFC; names it reads are left as they are on disk and only compared in NFC. */
@@ -28,5 +29,15 @@ export async function assertNameAvailable(directory: string, name: string, ignor
   const entries = await fsp.readdir(directory);
   if (entries.some((entry) => entry !== ignore && sameName(entry, name))) {
     throw new AppError(409, "Target already exists", "TARGET_EXISTS");
+  }
+}
+
+/** The name with a number after it, before the extension of a file: the first one none of `names` reads the same as. */
+export function keptName(names: string[], name: string, directory: boolean): string {
+  const taken = new Set(names.map(nfc));
+  const { name: stem, ext } = directory ? { name, ext: "" } : path.parse(name);
+  for (let copy = 2; ; copy += 1) {
+    const candidate = `${stem} ${copy}${ext}`;
+    if (!taken.has(nfc(candidate))) return candidate;
   }
 }

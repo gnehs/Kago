@@ -7,7 +7,7 @@ import { pipeline } from "node:stream/promises";
 import { lookup } from "mime-types";
 import { z } from "zod";
 import { AppError } from "../lib/errors.js";
-import { assertNameAvailable, isSafeLogicalSegment, nfc, safeRelativeZipPath } from "../lib/filename.js";
+import { assertNameAvailable, isSafeLogicalSegment, keptName, nfc, safeRelativeZipPath, sameName } from "../lib/filename.js";
 import { fileTagSchema, readFileTags, writeFileTags, type FileTag } from "../lib/file-tags.js";
 import { MAX_SQLITE_PAGE, sqliteOverview, sqliteRows } from "../lib/sqlite-preview.js";
 import { isPictureFormat, parseSubtitleName } from "../lib/subtitles.js";
@@ -57,8 +57,14 @@ export const zipQuerySchema = z.object({
 export const mkdirSchema = z.object({
   rootSlug: z.string().min(1),
   path: z.string().min(1),
-  name: z.string().min(1).max(255).refine((value) => !value.includes("/") && value !== ".." && !value.includes("\0"))
+  name: z.string().min(1).max(255).refine((value) => !value.includes("/") && value !== ".." && !value.includes("\0")),
+  /** Where the name is taken, by a folder to go into, beside it under another name, or in place of a file. */
+  conflict: z.enum(["merge", "keep", "replace"]).optional()
 });
+
+/** What an upload does where the folder already has a file's name. */
+export const uploadConflictSchema = z.enum(["skip", "replace", "keep"]);
+export type UploadConflict = z.infer<typeof uploadConflictSchema>;
 
 export const renameSchema = z.object({
   rootSlug: z.string().min(1),
@@ -607,9 +613,16 @@ export class FsService {
     return found.filter((item) => item !== null).sort((a, b) => Number(b.default) - Number(a.default) || a.name.localeCompare(b.name));
   }
 
-  async mkdir(actor: Actor, rootSlug: string, parentPath: string, name: string) {
+  /** With `conflict`, a name already taken is no refusal: a folder of it is gone into, or the new one is named or put as asked. */
+  async mkdir(actor: Actor, rootSlug: string, parentPath: string, wanted: string, conflict?: "merge" | "keep" | "replace") {
     const parent = await this.paths.resolveExisting(rootSlug, parentPath);
     this.permissions.require(actor, "edit", parent.root, parent.logicalPath);
+    let name = wanted;
+    const occupant = conflict ? await this.occupant(parent, name) : null;
+    if (occupant?.directory && conflict === "merge") return this.meta(actor, rootSlug, path.posix.join(parent.logicalPath, occupant.name));
+    if (occupant && conflict === "keep") name = keptName(await this.storage.names(parent), name, true);
+    // Only a file gives way to a folder: one folder in place of another would take everything in it along.
+    else if (occupant && !occupant.directory && conflict === "replace") await this.removeFile(parent, occupant.name);
     const targetLogical = path.posix.join(parent.logicalPath, name);
     const target = await this.paths.resolveForCreate(rootSlug, targetLogical);
     if (this.storage.isRemote(parent)) {
@@ -780,14 +793,27 @@ export class FsService {
     return { items: moves.map((move) => ({ from: move.source.logicalPath, path: move.target.logicalPath })) };
   }
 
-  async upload(actor: Actor, rootSlug: string, parentPath: string, fileName: string, stream: NodeJS.ReadableStream) {
+  /** With `conflict`, a name already taken is no refusal: the file is left out, takes the place of the one there, or goes beside it. Resolves to null when left out. */
+  async upload(actor: Actor, rootSlug: string, parentPath: string, fileName: string, stream: NodeJS.ReadableStream, conflict?: UploadConflict) {
     if (!fileName || fileName.includes("/") || fileName.includes("..") || fileName.includes("\0") || fileName.length > 255) {
       throw new AppError(400, "Invalid filename", "INVALID_FILENAME");
     }
     const parent = await this.paths.resolveExisting(rootSlug, parentPath);
     this.permissions.require(actor, "edit", parent.root, parent.logicalPath);
-    const target = await this.paths.resolveForCreate(rootSlug, path.posix.join(parent.logicalPath, fileName));
-    await this.writeNewFile(parent, target, stream);
+    let name = fileName;
+    const occupant = conflict ? await this.occupant(parent, name) : null;
+    if (occupant && conflict === "skip") {
+      // The rest of the request comes after this file, so it is read through all the same.
+      for await (const chunk of stream) void chunk;
+      return null;
+    }
+    // A file replaced keeps the spelling of the one it replaces, so the two are never side by side. A folder is never replaced by a file; asked to, the name is refused as taken.
+    const replacing = occupant && !occupant.directory && conflict === "replace";
+    if (replacing) name = occupant.name;
+    else if (occupant && conflict === "keep") name = keptName(await this.storage.names(parent), name, false);
+    const target = await this.paths.resolveForCreate(rootSlug, path.posix.join(parent.logicalPath, name));
+    if (replacing) await this.replaceFile(parent, target, stream);
+    else await this.writeNewFile(parent, target, stream);
     this.audit.write({
       actorType: "user",
       actorId: actor.id,
@@ -958,6 +984,31 @@ export class FsService {
       path: logicalPath,
       result: "success"
     });
+  }
+
+  /** The entry of `parent` whose name reads the same as `name`, as it is spelled there, or null when there is none. */
+  private async occupant(parent: SafePath, name: string): Promise<{ name: string; directory: boolean } | null> {
+    const found = (await this.storage.names(parent)).find((entry) => sameName(entry, name));
+    if (found === undefined) return null;
+    const logicalPath = path.posix.join(parent.logicalPath, found);
+    const directory = this.storage.isRemote(parent) ? Boolean((await this.storage.remote.stat(parent.root, logicalPath))?.directory) : (await fsp.lstat(path.join(parent.absolutePath, found))).isDirectory();
+    return { name: found, directory };
+  }
+
+  private async removeFile(parent: SafePath, name: string): Promise<void> {
+    if (this.storage.isRemote(parent)) await this.storage.remote.remove(parent.root, path.posix.join(parent.logicalPath, name), false);
+    else await fsp.unlink(path.join(parent.absolutePath, name));
+  }
+
+  /** Stores an uploaded stream in place of the file at `target`; the one there goes only once the new one has arrived whole. */
+  private async replaceFile(parent: SafePath, target: SafePath, stream: NodeJS.ReadableStream): Promise<void> {
+    if (this.storage.isRemote(parent)) {
+      await this.storage.remote.write(target.root, target.logicalPath, Readable.from(stream));
+      return;
+    }
+    const temp = path.join(parent.absolutePath, `.kago-upload-${randomUUID()}`);
+    await this.writeUploadStream(stream, fs.createWriteStream(temp, { flags: "wx", mode: 0o666 }), temp);
+    await fsp.rename(temp, target.absolutePath);
   }
 
   /** Stores an uploaded stream as a file that was not there before. */
