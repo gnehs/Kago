@@ -76,11 +76,13 @@ export function useShortcuts({ enabled, onOpenPalette }: { enabled: boolean; onO
         // Leave the shortcut to the browser when there is text selected or no file to pick up.
         if (active.selectedItems.length === 0 || globalThis.getSelection()?.toString()) return;
         event.preventDefault();
+        // What can't be taken out of its folder can't be cut, as the menu says by leaving Cut disabled.
+        if (key === "x" && (view?.readonly || items.some((item) => item.readonly && active.selectedItems.includes(item.path)))) return;
         setClipboard(key === "c" ? "copy" : "cut", active.selectedItems.map((path) => ({ rootSlug: active.rootSlug, path })));
       } else if (mod && key === "v") {
-        if (!useClipboardStore.getState().clip) return;
+        if (!useClipboardStore.getState().clip || !view || view.readonly) return;
         event.preventDefault();
-        void pasteClipboard(queryClient, { rootSlug: active.rootSlug, path: active.logicalPath });
+        void pasteClipboard(queryClient, { rootSlug: active.rootSlug, path: view.folder });
       } else if (event.key === "Backspace" && active.logicalPath !== "/") {
         event.preventDefault();
         store.updateWindow(active.id, { logicalPath: parentPath(active.logicalPath), selectedItems: [] });

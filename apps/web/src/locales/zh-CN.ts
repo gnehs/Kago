@@ -1340,6 +1340,7 @@ export const zhCN: Dictionary = {
   "Cannot replace or merge into a folder that holds the source": "要移动或复制的项目就在那个同名文件夹里，无法替换或合并",
   "Being copied": "要复制的",
   "Being moved": "要移动的",
+  "Being uploaded": "要上传的",
   "Already there": "原有的",
   "Newer": "较新",
 };

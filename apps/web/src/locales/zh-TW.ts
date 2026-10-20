@@ -1340,6 +1340,7 @@ export const zhTW: Dictionary = {
   "Cannot replace or merge into a folder that holds the source": "要搬移或複製的項目就在那個同名資料夾裡，無法取代或合併",
   "Being copied": "要複製的",
   "Being moved": "要搬移的",
+  "Being uploaded": "要上傳的",
   "Already there": "原有的",
   "Newer": "較新",
 };

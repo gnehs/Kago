@@ -7,6 +7,12 @@ export function parentPath(value: string) {
   return parts.length ? `/${parts.join("/")}` : "/";
 }
 
+/** True for anything inside the folder, however deep, but not for the folder itself. */
+export const isInside = (path: string, folder: string) => (folder === "/" ? path !== "/" : path.startsWith(`${folder}/`));
+
+/** True for the folder itself and for anything inside it. */
+export const isWithin = (path: string, folder: string) => path === folder || isInside(path, folder);
+
 const rawBaseName = (value: string) => value.split("/").filter(Boolean).at(-1) ?? "";
 
 /** Display name of a path. */

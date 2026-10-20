@@ -1,7 +1,8 @@
 import { create } from "zustand";
 import type { ExternalApp, FileItem, FileTab, FileWindow, Root, WorkspaceState } from "../types/kago";
 import { ghostWindowOut } from "../lib/motion";
-import { baseName } from "../lib/paths";
+import { baseName, isWithin } from "../lib/paths";
+import type { FileRef } from "./clipboard";
 import { isCompact } from "../lib/useCompact";
 import { randomId } from "../lib/utils";
 import { toast } from "./toast";
@@ -65,6 +66,8 @@ type WorkspaceStore = WorkspaceState & {
   updateInspector: (patch: Partial<WorkspaceState["inspector"]>) => void;
   updateShelf: (patch: Partial<WorkspaceState["shelf"]>) => void;
   selectItems: (id: string, items: string[]) => void;
+  /** Takes every window and tab showing a folder, or one inside it, along to where that folder is now. */
+  followFolder: (from: FileRef, to: FileRef) => void;
   snapshot: () => WorkspaceState;
 };
 
@@ -409,6 +412,23 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   updateShelf: (patch) => set((state) => ({ shelf: { ...state.shelf, ...patch } })),
   selectItems: (id, items) =>
     set((state) => ({ windows: state.windows.map((window) => (window.id === id ? { ...window, selectedItems: items } : window)) })),
+  followFolder: (from, to) =>
+    set((state) => {
+      const moved = (rootSlug: string, path: string) => (rootSlug === from.rootSlug && isWithin(path, from.path) ? to.path + path.slice(from.path.length) : null);
+      return {
+        windows: state.windows.map((window) => {
+          const tabs = window.tabs?.map((tab) => {
+            const path = moved(tab.rootSlug, tab.logicalPath);
+            return path === null ? tab : { ...tab, rootSlug: to.rootSlug, logicalPath: path };
+          });
+          const path = moved(window.rootSlug, window.logicalPath);
+          if (path === null) return tabs?.some((tab, index) => tab !== window.tabs![index]) ? { ...window, tabs } : window;
+          // What it had selected is inside the folder too, and stays selected where it now is.
+          const selectedItems = window.selectedItems.map((item) => moved(window.rootSlug, item) ?? item);
+          return { ...window, tabs, rootSlug: to.rootSlug, logicalPath: path, title: folderTitle(to.rootSlug, path), selectedItems, updatedAt: ts() };
+        })
+      };
+    }),
   snapshot: () => {
     const { activeWindowId, windows, sidebar, inspector, shelf } = get();
     // Only file windows are persisted, so an active app window is saved as "none".

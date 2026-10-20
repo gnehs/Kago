@@ -123,6 +123,10 @@ export type FileView = {
   tree?: FileTree;
   /** Set in the column view: steps out to the column before, or into the one after. `items` are those of the column the selection is in. */
   columns?: { left: () => void; right: () => void };
+  /** Where a paste goes: the window's folder, or in the column view the one being looked at. */
+  folder: string;
+  /** Nothing can be put into the folder, or taken out of it. */
+  readonly: boolean;
 };
 
 /** Folders opened in place in the list view: their contents follow them, one level further in. */

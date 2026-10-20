@@ -21,9 +21,11 @@ export type ConflictChoices = Record<string, ConflictAction>;
 
 /** What tells one of the two from the other. A size is a file's only, and a time is 0 where the location keeps none. */
 type Details = { kind: "file" | "folder"; size: number; mtime: number };
-type Conflict = Details & { rootSlug: string; path: string; name: string; /** The one the destination has. */ existing: Details; /** It is where it would be put already. */ same: boolean };
+/** What brings items into a folder: a copy, a move, or an upload from this device. */
+type Arrival = "copy" | "move" | "upload";
+export type Conflict = Details & { rootSlug: string; path: string; name: string; /** The one the destination has. */ existing: Details; /** It is where it would be put already. */ same: boolean };
 type Answer = { action: ConflictAction; /** The same goes for every conflict still to come. */ all: boolean };
-type ConflictRequest = { type: "copy" | "move"; conflict: Conflict; folder: string; remaining: number; resolve: (answer: Answer | null) => void };
+type ConflictRequest = { type: Arrival; conflict: Conflict; folder: string; remaining: number; resolve: (answer: Answer | null) => void };
 
 const useConflictStore = create<{ request: ConflictRequest | null }>(() => ({ request: null }));
 
@@ -40,9 +42,15 @@ function settle(answer: Answer | null) {
 }
 
 const mergeable = (conflict: Conflict) => conflict.kind === "folder" && conflict.existing.kind === "folder";
+/** An upload arrives file by file, so a folder already there can be gone into or kept beside, but not replaced whole. */
+const replaceable = (type: Arrival, conflict: Conflict) => type !== "upload" || conflict.existing.kind === "file";
 
 /** Only a folder goes into a folder: for anything else, merging means what was chosen for the files inside. */
-const fitted = (action: ConflictAction, conflict: Conflict): ConflictAction => (action.startsWith("merge_") && !mergeable(conflict) ? (action.slice("merge_".length) as Clash) : action);
+function fitted(type: Arrival, action: ConflictAction, conflict: Conflict): ConflictAction {
+  const fit = action.startsWith("merge_") && !mergeable(conflict) ? (action.slice("merge_".length) as Clash) : action;
+  if (fit !== "replace" || replaceable(type, conflict)) return fit;
+  return mergeable(conflict) ? "merge_replace" : "keep";
+}
 
 /**
  * Finds which of the sources the destination already has by name, and asks what to do with each.
@@ -50,6 +58,11 @@ const fitted = (action: ConflictAction, conflict: Conflict): ConflictAction => (
  */
 export async function resolveConflicts(type: "copy" | "move", sources: FileRef[], destination: FileRef): Promise<ConflictChoices | null> {
   const { conflicts } = await api<{ conflicts: Conflict[] }>("/api/tasks/conflicts", { method: "POST", body: JSON.stringify({ sources, destination }) });
+  return askConflicts(type, conflicts, destination);
+}
+
+/** Asks what to do with each of the conflicts found; see `resolveConflicts`. */
+export async function askConflicts(type: Arrival, conflicts: Conflict[], destination: FileRef): Promise<ConflictChoices | null> {
   const choices: ConflictChoices = {};
   const asked = conflicts.filter((conflict) => !conflict.same);
   // Put where it already is, a copy can only be a second one beside it, and a move has nothing to do.
@@ -61,7 +74,7 @@ export async function resolveConflicts(type: "copy" | "move", sources: FileRef[]
       if (!answer) return null;
       if (answer.all) forAll = answer.action;
       choices[conflict.name] = answer.action;
-    } else choices[conflict.name] = fitted(forAll, conflict);
+    } else choices[conflict.name] = fitted(type, forAll, conflict);
   }
   return choices;
 }
@@ -106,7 +119,7 @@ export function TransferConflictDialogHost() {
   const options = [
     ...(mergeable(conflict) ? [{ value: "merge" as const, label: t("Merge"), icon: <Combine /> }] : []),
     { value: "keep" as const, label: t("Keep both"), icon: <CopyPlus /> },
-    { value: "replace" as const, label: t("Replace"), icon: <Replace /> },
+    ...(replaceable(type, conflict) ? [{ value: "replace" as const, label: t("Replace"), icon: <Replace /> }] : []),
     { value: "skip" as const, label: t("Skip"), icon: <SkipForward /> }
   ];
   const explained = {
@@ -134,7 +147,7 @@ export function TransferConflictDialogHost() {
           </div>
           {/* The two side by side, the one arriving first: what there is to tell them apart by. */}
           <div className="grid grid-cols-2 divide-x divide-line rounded-md border border-line">
-            <Side label={type === "copy" ? t("Being copied") : t("Being moved")} details={conflict} newer={dated && conflict.mtime > existing.mtime} />
+            <Side label={type === "copy" ? t("Being copied") : type === "move" ? t("Being moved") : t("Being uploaded")} details={conflict} newer={dated && conflict.mtime > existing.mtime} />
             <Side label={t("Already there")} details={existing} newer={dated && existing.mtime > conflict.mtime} />
           </div>
           <KagoChoice label={t("What to do with it")} options={options} value={choice} onChange={setChoice} />

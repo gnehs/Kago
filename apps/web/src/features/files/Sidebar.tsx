@@ -187,8 +187,8 @@ function Node({ tree, rootSlug, path, label, depth, locked }: { tree: Tree; root
                 <KagoMenuSeparator />
                 <KagoMenuItem icon={<Copy />} onClick={() => setClipboard("copy", [here])}>{t("Copy")}</KagoMenuItem>
                 <KagoMenuItem icon={<Scissors />} disabled={readonly} onClick={() => setClipboard("cut", [here])}>{t("Cut")}</KagoMenuItem>
-                {/* A window showing the folder, or one inside it, follows it to its new name. */}
-                <KagoMenuItem icon={<Pencil />} disabled={readonly} onClick={() => void renameFile(queryClient, { ...here, name: label }, (renamed) => inside !== null && tree.onNavigate({ rootSlug, path: renamed + inside }))}>{t("Rename")}</KagoMenuItem>
+                {/* Every window showing the folder, or one inside it, follows it to its new name; renameFile sees to that. */}
+                <KagoMenuItem icon={<Pencil />} disabled={readonly} onClick={() => void renameFile(queryClient, { ...here, name: label })}>{t("Rename")}</KagoMenuItem>
                 <KagoMenuItem icon={<Download />} onClick={() => void downloadFiles(queryClient, rootSlug, [{ path, kind: "folder" }])}>{t("Download")}</KagoMenuItem>
                 <KagoMenuSeparator />
                 {/* A window left inside a folder that is gone steps out to the one that held it. */}

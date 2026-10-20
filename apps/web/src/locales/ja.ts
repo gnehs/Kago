@@ -1340,6 +1340,7 @@ export const ja: Dictionary = {
   "Cannot replace or merge into a folder that holds the source": "移動またはコピーする項目がその同名フォルダの中にあるため、置き換えも統合もできません",
   "Being copied": "コピーする項目",
   "Being moved": "移動する項目",
+  "Being uploaded": "アップロードする項目",
   "Already there": "すでにある項目",
   "Newer": "新しい",
 };

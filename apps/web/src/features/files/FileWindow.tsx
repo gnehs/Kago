@@ -13,7 +13,7 @@ import { KagoWindow } from "@/components/kago/window";
 import { OPEN_ITEM_EVENT } from "@/features/workspace/useShortcuts";
 import { isArchive } from "@/lib/fileKind";
 import { formatSize, isCueSheet, isMusicFile, isPicture, isVideoType } from "@/lib/format";
-import { nfc, parentPath } from "@/lib/paths";
+import { isInside, nfc, parentPath } from "@/lib/paths";
 import { run } from "@/lib/run";
 import { droppedTree, flatTree, pickedFolderTree } from "@/lib/uploadTree";
 import { cn } from "@/lib/utils";
@@ -31,7 +31,7 @@ import { useFolderView } from "./folderView";
 import { Inspector } from "./Inspector";
 import { Sidebar } from "./Sidebar";
 import { TabStrip } from "./TabStrip";
-import { readDraggedFiles, useFileActions, type FileRef } from "./useFileActions";
+import { placeable, readDraggedFiles, useFileActions, type FileRef } from "./useFileActions";
 import { useMarqueeSelection } from "./useMarqueeSelection";
 import { videoPageUrl } from "./VideoPage";
 import { classifyFileWindowError, WindowErrorState } from "./WindowErrorState";
@@ -57,8 +57,6 @@ function sortItems(items: FileItem[], sortBy: FolderView["sortBy"], direction: F
 /** A place a window has been: back and forward go between them, across locations too. */
 type Place = { rootSlug: string; path: string };
 
-const isInside = (path: string, folder: string) => (folder === "/" ? path !== "/" : path.startsWith(`${folder}/`));
-
 export function FileWindowView({ window: frame, roots }: { window: FileWindow; roots: Root[] }) {
   const store = useWorkspaceStore.getState;
   const rootName = roots.find((root) => root.slug === frame.rootSlug)?.name ?? frame.rootSlug;
@@ -80,6 +78,10 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
   }, [typed]);
   const [anchorPath, setAnchorPath] = useState<string | null>(null);
   const [menuItem, setMenuItem] = useState<FileItem | null>(null);
+  // The folder a right click on empty space was in: in the column view, that of the column clicked.
+  const [menuFolder, setMenuFolder] = useState<string | null>(null);
+  // Where the files picked for an upload go, set as the picker is opened.
+  const uploadFolder = useRef<string | null>(null);
   // What is being held over the window: files from outside the browser, which would be uploaded, or items of Kago's own.
   const [dropActive, setDropActive] = useState<false | "files" | "items">(false);
   const [dropChoice, setDropChoice] = useState<{ sources: FileRef[]; destination: FileRef; x: number; y: number } | null>(null);
@@ -259,8 +261,8 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
   // Keyboard shortcuts act on what the window lists, which is more than what is rendered.
   const hasError = Boolean(error);
   useEffect(() => {
-    if (hasError) fileViews.set(win.id, { items: [], reveal: () => undefined });
-    else if (!columns) fileViews.set(win.id, { items, reveal: (index) => scroller && revealIndex(scroller, layout, index), tree });
+    if (hasError) fileViews.set(win.id, { items: [], reveal: () => undefined, folder: win.logicalPath, readonly: true });
+    else if (!columns) fileViews.set(win.id, { items, reveal: (index) => scroller && revealIndex(scroller, layout, index), tree, folder: win.logicalPath, readonly });
     else {
       const select = (column: number, item: FileItem | undefined) => {
         if (!item) return;
@@ -270,6 +272,9 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
       fileViews.set(win.id, {
         items,
         reveal: (index) => columnReveal.current[activeColumn]?.(index),
+        // The folder a column was opened for is the one being looked at; failing that, the one the selection is in.
+        folder: opened ?? columns[activeColumn]!.folder,
+        readonly,
         columns: {
           // Left steps out to the folder this column was opened from; right steps into the one selected.
           left: () => select(activeColumn - 1, columns[activeColumn - 1]?.items?.find((item) => item.path === columns[activeColumn]!.folder)),
@@ -278,7 +283,7 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
       });
     }
     return () => void fileViews.delete(win.id);
-  }, [win.id, items, hasError, scroller, layout, tree, columns, activeColumn, opened]);
+  }, [win.id, win.logicalPath, items, hasError, readonly, scroller, layout, tree, columns, activeColumn, opened]);
 
   const navigate = (logicalPath: string, rootSlug = win.rootSlug) => store().updateWindow(win.id, { rootSlug, logicalPath, selectedItems: [] });
   const goTo = useCallback((folder: Place) => useWorkspaceStore.getState().updateWindow(frame.id, { rootSlug: folder.rootSlug, logicalPath: folder.path, selectedItems: [] }), [frame.id]);
@@ -341,18 +346,32 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
       void actions.upload(dropped, destination.path, destination.rootSlug);
       return;
     }
-    // Dropping items onto the folder they already live in, or a folder onto itself, is a no-op.
-    const sources = readDraggedFiles(event.dataTransfer).filter((source) => source.rootSlug !== destination.rootSlug || (parentPath(source.path) !== path && source.path !== path));
+    // Dropping items onto the folder they already live in is a no-op, and no folder goes into itself or one inside it.
+    const sources = placeable(
+      readDraggedFiles(event.dataTransfer).filter((source) => source.rootSlug !== destination.rootSlug || parentPath(source.path) !== path),
+      destination
+    );
     const rect = event.currentTarget.closest("[data-window]")?.getBoundingClientRect();
     if (sources.length === 0 || !rect) return;
     setDropChoice({ sources, destination, x: Math.min(event.clientX - rect.left, rect.width - 180), y: Math.min(event.clientY - rect.top, rect.height - 130) });
   }
 
+  /** A right click in the file area, before an item hears of it. On empty space the menu is for the folder there: in the column view, the column's. */
+  function onAreaMenu(event: React.MouseEvent) {
+    setMenuItem(null);
+    setMenuFolder((event.target as Element).closest<HTMLElement>("[data-folder]")?.dataset.folder ?? null);
+  }
+
   // Right-clicking acts on the whole selection when the clicked item is part of it.
   const menuTargets = menuItem && selectedItems.some((item) => item.path === menuItem.path) ? selectedItems : menuItem ? [menuItem] : [];
 
-  /** Every action for a set of items, or for the folder itself when there are none. Shared by right click and the toolbar. */
-  function renderMenu(targets: FileItem[]) {
+  function pickUpload(input: HTMLInputElement | null, folder: string) {
+    uploadFolder.current = folder;
+    input?.click();
+  }
+
+  /** Every action for a set of items, or for `folder` when there are none. Shared by right click and the toolbar. */
+  function renderMenu(targets: FileItem[], folder = win.logicalPath) {
     const paths = targets.map((item) => item.path);
     const single = targets.length === 1 ? targets[0]! : null;
     const count = targets.length;
@@ -392,7 +411,7 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
         <KagoMenuItem icon={<Copy />} shortcut="⌘C" onClick={() => actions.copy(paths)}>{t("Copy")}</KagoMenuItem>
         <KagoMenuItem icon={<Scissors />} shortcut="⌘X" disabled={readonly || targets.some((item) => item.readonly)} onClick={() => actions.cut(paths)}>{t("Cut")}</KagoMenuItem>
         {single ? <KagoMenuItem icon={<Pencil />} disabled={readonly || single.readonly} onClick={() => void actions.rename(single)}>{t("Rename")}</KagoMenuItem> : null}
-        {count > 1 ? <KagoMenuItem icon={<Pencil />} disabled={readonly || targets.some((item) => item.readonly)} onClick={() => void actions.renameMany(targets, allItems)}>{t("Rename {count} item… | Rename {count} items…", { count })}</KagoMenuItem> : null}
+        {count > 1 ? <KagoMenuItem icon={<Pencil />} disabled={readonly || targets.some((item) => item.readonly)} onClick={() => void actions.renameMany(targets)}>{t("Rename {count} item… | Rename {count} items…", { count })}</KagoMenuItem> : null}
         <KagoMenuItem icon={<FolderPlus />} disabled={readonly || targets.some((item) => item.readonly)} onClick={() => void actions.newFolderWith(paths)}>{count > 1 ? t("New folder with {count} item | New folder with {count} items", { count }) : t("New folder with selection")}</KagoMenuItem>
         <KagoMenuItem icon={<Archive />} disabled={readonly} onClick={() => void actions.compress(paths)}>{count > 1 ? t("Compress {count} item | Compress {count} items", { count }) : t("Compress")}</KagoMenuItem>
         {targets.every(isArchive) ? <KagoMenuItem icon={<ArchiveRestore />} disabled={readonly} onClick={() => void actions.extract(paths)}>{t("Extract here")}</KagoMenuItem> : null}
@@ -406,14 +425,14 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
       <>
         {clip ? (
           <>
-            <KagoMenuItem icon={<ClipboardPaste />} shortcut="⌘V" disabled={readonly} onClick={() => void actions.paste()}>{t("Paste {count} item | Paste {count} items", { count: clip.items.length })}</KagoMenuItem>
+            <KagoMenuItem icon={<ClipboardPaste />} shortcut="⌘V" disabled={readonly} onClick={() => void actions.paste(folder)}>{t("Paste {count} item | Paste {count} items", { count: clip.items.length })}</KagoMenuItem>
             <KagoMenuSeparator />
           </>
         ) : null}
-        <KagoMenuItem icon={<FolderPlus />} disabled={readonly} onClick={() => void actions.newFolder()}>{t("New folder")}</KagoMenuItem>
-        <KagoMenuItem icon={<Upload />} disabled={readonly} onClick={() => uploadInput.current?.click()}>{t("Upload files")}</KagoMenuItem>
-        <KagoMenuItem icon={<FolderUp />} disabled={readonly} onClick={() => folderInput.current?.click()}>{t("Upload folder")}</KagoMenuItem>
-        <KagoMenuItem icon={<FileVideo />} disabled={readonly} onClick={() => autoConvertInto({ rootSlug: win.rootSlug, path: win.logicalPath })}>{t("Auto-convert into this folder…")}</KagoMenuItem>
+        <KagoMenuItem icon={<FolderPlus />} disabled={readonly} onClick={() => void actions.newFolder(folder)}>{t("New folder")}</KagoMenuItem>
+        <KagoMenuItem icon={<Upload />} disabled={readonly} onClick={() => pickUpload(uploadInput.current, folder)}>{t("Upload files")}</KagoMenuItem>
+        <KagoMenuItem icon={<FolderUp />} disabled={readonly} onClick={() => pickUpload(folderInput.current, folder)}>{t("Upload folder")}</KagoMenuItem>
+        <KagoMenuItem icon={<FileVideo />} disabled={readonly} onClick={() => autoConvertInto({ rootSlug: win.rootSlug, path: folder })}>{t("Auto-convert into this folder…")}</KagoMenuItem>
         <KagoMenuSeparator />
         <KagoMenuItem icon={<PanelTop />} shortcut="⌥T" onClick={() => store().openTab(win.id, win)}>{t("New tab")}</KagoMenuItem>
         <KagoMenuItem icon={<ExternalLink />} onClick={() => store().openWindow({ rootSlug: win.rootSlug, logicalPath: win.logicalPath, title: win.title })}>{t("Open this folder in a new window (⌥N)")}</KagoMenuItem>
@@ -452,7 +471,7 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
         onGo={go}
         onNavigate={(path) => navigate(path)}
         onNewFolder={() => void actions.newFolder()}
-        onUpload={() => uploadInput.current?.click()}
+        onUpload={() => pickUpload(uploadInput.current, win.logicalPath)}
         menu={error ? null : renderMenu(selectedItems)}
       />
 
@@ -463,9 +482,9 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
             <WindowErrorState error={error} window={win} onRetry={() => void fileList.refetch()} />
           </div>
         ) : (
-          <KagoContextMenu menu={renderMenu(menuTargets)} className="flex min-h-0 min-w-0 flex-1">
+          <KagoContextMenu menu={renderMenu(menuTargets, menuFolder ?? win.logicalPath)} className="flex min-h-0 min-w-0 flex-1">
             {/* The columns scroll one by one, so there is no one area for a rubber band to be drawn across. */}
-            <div ref={setScroller} className={cn("relative min-w-0 flex-1 select-none", columns && listed.length > 0 ? "flex overflow-hidden" : "overflow-auto")} onContextMenuCapture={() => setMenuItem(null)} {...(columns ? {} : marquee.handlers)}>
+            <div ref={setScroller} className={cn("relative min-w-0 flex-1 select-none", columns && listed.length > 0 ? "flex overflow-hidden" : "overflow-auto")} onContextMenuCapture={onAreaMenu} {...(columns ? {} : marquee.handlers)}>
               {fileList.isLoading || (searching && listed.length === 0 && searchPending && !searched.isError) ? <KagoLoading /> : null}
               {fileList.data && listed.length === 0 && !(searching && searchPending && !searched.isError) ? (
                 <KagoEmptyState
@@ -570,7 +589,7 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
         multiple
         hidden
         onChange={(event) => {
-          void actions.upload(flatTree(Array.from(event.target.files ?? [])));
+          void actions.upload(flatTree(Array.from(event.target.files ?? [])), uploadFolder.current ?? win.logicalPath);
           event.target.value = "";
         }}
       />
@@ -580,7 +599,7 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
         hidden
         {...{ webkitdirectory: "" }}
         onChange={(event) => {
-          void actions.upload(pickedFolderTree(Array.from(event.target.files ?? [])));
+          void actions.upload(pickedFolderTree(Array.from(event.target.files ?? [])), uploadFolder.current ?? win.logicalPath);
           event.target.value = "";
         }}
       />

@@ -298,6 +298,7 @@ function Column({ column, index, opened, revealers, onSelect, onSelectColumn, on
       role="listbox"
       aria-multiselectable
       aria-label={baseName(column.folder) || undefined}
+      data-folder={column.folder}
       className={cn("relative w-56 shrink-0 overflow-x-hidden overflow-y-auto border-r border-line", dropTarget === column.folder && "bg-hover")}
       onClick={(event) => onBlank(event) && onSelectColumn(index)}
       onDragOver={(event) => {
