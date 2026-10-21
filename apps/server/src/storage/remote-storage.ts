@@ -25,6 +25,8 @@ export type RemoteEntry = { name: string; directory: boolean; size: number; mtim
 
 export const isRemote = (root: Root) => root.provider !== "local";
 
+const DEFAULT_PORTS: Record<string, string> = { smb: "445", sftp: "22", ftp: "21" };
+
 /** The files of remote locations, addressed the way the rest of Kago addresses any file: a root and a logical path. */
 export class RemoteStorage {
   private readonly cacheDir: string;
@@ -46,6 +48,27 @@ export class RemoteStorage {
   /** A path inside the location as rclone wants it: relative, without a leading slash. */
   rel(logicalPath: string): string {
     return logicalPath.replace(/^\/+/, "");
+  }
+
+  /**
+   * Which server a path is on and where on it, so that two locations reaching one server can be told apart from two
+   * servers: a whole SMB server and one of its shares added as another location are the same folders. A path an FTP or
+   * SFTP server starts from the account's own folder belongs to that account; SMB does not mind the case.
+   */
+  place(root: Root, logicalPath: string): { server: string; path: string } {
+    const config = this.roots.remoteConfig(root);
+    const { host = "", port = "", user = "", url = "" } = config.params;
+    const fromHome = !config.base.startsWith("/");
+    const segments = [...segmentsOf(config.base), ...segmentsOf(logicalPath)];
+    let server: string;
+    if (config.type === "webdav") {
+      const address = URL.canParse(url) ? new URL(url) : null;
+      server = address ? `webdav://${address.host}${address.pathname.replace(/\/+$/, "")}` : `webdav:${url}`;
+    } else {
+      server = `${config.type}://${config.type !== "smb" && fromHome ? `${user}@` : ""}${host.toLowerCase()}:${port || DEFAULT_PORTS[config.type]}`;
+    }
+    const where = segments.join("/");
+    return { server, path: config.type === "smb" ? where.toLowerCase() : where };
   }
 
   /**

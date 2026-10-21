@@ -14,7 +14,7 @@ import { logger } from "../lib/logger.js";
 import { CONVERT_PARTIAL, isSystemFile } from "../lib/system-files.js";
 import { isRemote } from "../storage/remote-storage.js";
 import type { AuditService } from "./audit.service.js";
-import { foldersOverlap, sharesAreFixed, type PathService, type SafePath } from "./path.service.js";
+import { sharesAreFixed, type PathService, type SafePath } from "./path.service.js";
 import type { PermissionService } from "./permission.service.js";
 import type { FileStat, StorageService } from "./storage.service.js";
 import type { Actor, FileRef, FileTask } from "./types.js";
@@ -196,7 +196,7 @@ export class ConvertService {
     this.permissions.require(actor, job.options.after === "keep" ? "view" : "edit", input.root, input.logicalPath);
     const destination = await this.writableFolder(actor, job.destination);
     // What comes out would be taken for something that came in.
-    if (await foldersOverlap(input, destination)) throw new AppError(400, "The input folder and the destination overlap", "CONVERT_OVERLAP");
+    if (await this.paths.overlap(input, destination)) throw new AppError(400, "The input folder and the destination overlap", "CONVERT_OVERLAP");
     return { input, destination };
   }
 

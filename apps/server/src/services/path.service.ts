@@ -139,6 +139,23 @@ export class PathService {
     return isRemote(root) ? this.remote.isTrash(root, logicalPath) : isLocalTrash(logicalPath);
   }
 
+  /**
+   * Whether two folders hold one another, so that work between them would feed on its own output. On disk that is
+   * told by what the folders are: two locations may be two mounts of one disk, one of them inside the other.
+   */
+  async overlap(a: SafePath, b: SafePath): Promise<boolean> {
+    if (!isRemote(a.root) && !isRemote(b.root)) return (await liesWithin(a.absolutePath, b.absolutePath)) || liesWithin(b.absolutePath, a.absolutePath);
+    return this.holds(a, b) || this.holds(b, a);
+  }
+
+  /** Whether the remote folder `outer` is `inner` or holds it, wherever on the server the two locations start. */
+  holds(outer: SafePath, inner: SafePath): boolean {
+    if (!isRemote(outer.root) || !isRemote(inner.root)) return false;
+    const a = this.remote.place(outer.root, outer.logicalPath);
+    const b = this.remote.place(inner.root, inner.logicalPath);
+    return a.server === b.server && (a.path === "" || b.path === a.path || b.path.startsWith(`${a.path}/`));
+  }
+
   private isInside(rootReal: string, targetReal: string): boolean {
     const relative = path.relative(rootReal, targetReal);
     return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
@@ -148,16 +165,6 @@ export class PathService {
 /** Whether the path is, or lies in, the trash folder at the top of a local location. A disk that does not mind the case finds it under any. */
 const isLocalTrash = (logicalPath: string) => logicalPath.split("/").find(Boolean)?.toLowerCase() === TRASH_FOLDER;
 
-/**
- * Whether two folders hold one another, so that work between them would feed on its own output. On disk that is
- * told by what the folders are: two locations may be two mounts of one disk, one of them inside the other.
- */
-export const foldersOverlap = async (a: SafePath, b: SafePath): Promise<boolean> => {
-  if (!isRemote(a.root) && !isRemote(b.root)) return (await liesWithin(a.absolutePath, b.absolutePath)) || liesWithin(b.absolutePath, a.absolutePath);
-  if (a.root.id !== b.root.id) return false;
-  const inside = (outer: string, inner: string) => outer === "/" || inner === outer || inner.startsWith(`${outer}/`);
-  return inside(a.logicalPath, b.logicalPath) || inside(b.logicalPath, a.logicalPath);
-};
 
 /**
  * Whether the path `inner` is the folder `outer` or lies somewhere in it. Spelling alone cannot tell: the same folder

@@ -13,7 +13,7 @@ import { AuditService } from "../src/services/audit.service.ts";
 import { AuthService } from "../src/services/auth.service.ts";
 import { convertJobOptionsSchema } from "../src/services/convert.service.ts";
 import { FsService } from "../src/services/fs.service.ts";
-import { foldersOverlap, PathService } from "../src/services/path.service.ts";
+import { PathService } from "../src/services/path.service.ts";
 import { PermissionService } from "../src/services/permission.service.ts";
 import { PreferenceService } from "../src/services/preference.service.ts";
 import { RootService } from "../src/services/root.service.ts";
@@ -279,8 +279,35 @@ test("a folder can't go into itself through a location that is another's folder 
   // Refused before it is queued, and again before it runs.
   await assert.rejects(run("copy", [{ rootSlug: "data", path: "/photos" }], { rootSlug: "photos", path: "/Albums" }), { code: "TARGET_INSIDE_SOURCE" });
   assert.deepEqual(await readdir(path.join(dataDir, "photos", "Albums")), []);
-  assert.equal(await foldersOverlap(await paths.resolveExisting("data", "/photos"), await paths.resolveExisting("photos", "/Albums")), true);
-  assert.equal(await foldersOverlap(await paths.resolveExisting("data", "/photos/Albums"), await paths.resolveExisting("photos", "/")), true);
+  assert.equal(await paths.overlap(await paths.resolveExisting("data", "/photos"), await paths.resolveExisting("photos", "/Albums")), true);
+  assert.equal(await paths.overlap(await paths.resolveExisting("data", "/photos/Albums"), await paths.resolveExisting("photos", "/")), true);
+});
+
+test("two locations on one server overlap where their folders do", async (t) => {
+  const { roots, paths } = await harness(t);
+  const remote = (name, type, base, params) => roots.createRemote({ name, readonly: false, config: { type, base, params } });
+  const at = (root, logicalPath) => ({ root, logicalPath, absolutePath: "" });
+  const nas = remote("NAS", "smb", "", { host: "NAS.local" });
+  const photos = remote("Photos", "smb", "photos", { host: "nas.local", port: "445", user: "someone" });
+  const other = remote("Other", "smb", "photos", { host: "other.local" });
+
+  // A mirror from a share's folder into the whole server's copy of that share would empty the share.
+  assert.equal(await paths.overlap(at(photos, "/sub"), at(nas, "/Photos")), true);
+  assert.equal(await paths.overlap(at(nas, "/photos/sub/deeper"), at(photos, "/")), true);
+  assert.equal(paths.holds(at(nas, "/photos"), at(photos, "/sub")), true);
+  assert.equal(await paths.overlap(at(photos, "/sub"), at(nas, "/music")), false);
+  assert.equal(await paths.overlap(at(photos, "/sub"), at(other, "/sub")), false);
+
+  // SFTP and FTP paths without a leading slash start from the account's own folder.
+  const home = remote("Home", "sftp", "files", { host: "box", user: "ann" });
+  const homeAgain = remote("Home again", "sftp", "", { host: "box", port: "22", user: "ann" });
+  const bob = remote("Bob", "sftp", "files", { host: "box", user: "bob" });
+  assert.equal(await paths.overlap(at(home, "/"), at(homeAgain, "/files/a")), true);
+  assert.equal(await paths.overlap(at(home, "/"), at(bob, "/")), false);
+
+  const dav = remote("Dav", "webdav", "", { url: "https://Cloud.example.com/dav/" });
+  const davFolder = remote("Dav folder", "webdav", "team", { url: "https://cloud.example.com/dav" });
+  assert.equal(await paths.overlap(at(dav, "/team/x"), at(davFolder, "/")), true);
 });
 
 test("an archive or an extracted file that finds its name taken leaves the file there alone", async (t) => {

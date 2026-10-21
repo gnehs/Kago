@@ -25,7 +25,7 @@ import { ArchivePasswordService } from "./archive-password.service.js";
 import type { AuditService } from "./audit.service.js";
 import { convertInputSchema, convertJobOptionsSchema, ConvertService, remuxInputSchema, type ConvertInput, type ConvertJobRun, type RemuxInputSpec, type TaskHandle } from "./convert.service.js";
 import type { FsService } from "./fs.service.js";
-import { foldersOverlap, liesWithin, sharesAreFixed, type PathService, type SafePath } from "./path.service.js";
+import { liesWithin, sharesAreFixed, type PathService, type SafePath } from "./path.service.js";
 import type { Level, PermissionService } from "./permission.service.js";
 import type { PreferenceService } from "./preference.service.js";
 import type { StorageService } from "./storage.service.js";
@@ -760,7 +760,7 @@ export class TaskService {
       if (source.logicalPath === "/") throw new AppError(400, "Invalid path", "INVALID_PATH");
       if (move) this.assertNotFixed(source);
       this.assertNotFixed(dest, this.storage.name(source));
-      assertNotIntoItself(source, dest);
+      this.assertNotIntoItself(source, dest);
       const stat = await this.storage.stat(source);
       const directory = stat.isDirectory();
       const name = this.storage.name(source);
@@ -933,6 +933,11 @@ export class TaskService {
   }
 
   /** Refuses to make, replace, move or remove a location's top, its trash, or one of a server's shares; with `child`, to put that name beside `safe`. */
+  /** `assertTargetOutsideSource` for locations that have no path on disk to compare. */
+  private assertNotIntoItself(source: SafePath, dest: SafePath): void {
+    if (this.paths.holds(source, dest)) throw new AppError(409, "Cannot copy or move a folder into itself", "TARGET_INSIDE_SOURCE");
+  }
+
   private assertNotFixed(safe: SafePath, child?: string): void {
     const target = child === undefined ? safe.logicalPath : path.posix.join(safe.logicalPath, child);
     if (target === "/") throw new AppError(400, "Invalid path", "INVALID_PATH");
@@ -1632,7 +1637,7 @@ export class TaskService {
     this.permissions.require(actor, "edit", destination.root, destination.logicalPath);
     // What lands in the destination would be new shares if it were the top of a whole server.
     this.assertNotFixed(destination, "new");
-    if (await foldersOverlap(source, destination)) throw new AppError(400, "The source and the destination overlap", "SYNC_OVERLAP");
+    if (await this.paths.overlap(source, destination)) throw new AppError(400, "The source and the destination overlap", "SYNC_OVERLAP");
     return { source, destination };
   }
 
@@ -1737,7 +1742,7 @@ export class TaskService {
         if (input.type === "move") this.assertNotFixed(safe);
         else if (safe.logicalPath === "/") throw new AppError(400, "Invalid path", "INVALID_PATH");
         this.assertNotFixed(dest, this.storage.name(safe));
-        if (isRemote(safe.root) || isRemote(dest.root)) assertNotIntoItself(safe, dest);
+        if (isRemote(safe.root) || isRemote(dest.root)) this.assertNotIntoItself(safe, dest);
         else await assertTargetOutsideSource(safe.absolutePath, path.join(dest.absolutePath, path.basename(safe.absolutePath)));
       }
       return;
@@ -2043,14 +2048,6 @@ function syncSpecOf(task: FileTask): SyncSpec {
   const spec = (JSON.parse(task.destination ?? "{}") as { sync?: SyncSpec }).sync;
   if (!spec) throw new AppError(400, "Invalid sync task", "INVALID_SYNC_TASK");
   return { ...spec, source: syncEndpointSchema.parse(spec.source), destination: syncEndpointSchema.parse(spec.destination), options: syncOptionsSchema.parse(spec.options ?? {}) };
-}
-
-/** `assertTargetOutsideSource` for locations that have no path on disk to compare. */
-function assertNotIntoItself(source: SafePath, dest: SafePath): void {
-  if (source.root.id !== dest.root.id) return;
-  if (dest.logicalPath === source.logicalPath || dest.logicalPath.startsWith(`${source.logicalPath}/`)) {
-    throw new AppError(409, "Cannot copy or move a folder into itself", "TARGET_INSIDE_SOURCE");
-  }
 }
 
 /** rclone's reasons are for the log; the task says only that the transfer failed or was refused, unless Kago itself refused it. */
