@@ -285,6 +285,11 @@ export class ConvertService {
           ? await this.convertOne(safe, stat, target.folder, target.taken, spec, job.options.keepSmaller, handle)
           : { name: await this.copyOriginal(safe, stat, target.folder, target.taken, handle), copied: true, size: stat.size };
         this.audit.write({ actorType: "user", actorId: actor.id, action: "convert", rootId: safe.root.id, path: safe.logicalPath, target: { jobId: job.id, rootSlug: destination.root.slug, path: path.posix.join(target.folder.logicalPath, made.name), copied: made.copied }, result: "success" });
+        // A source that changed while it was read, as one still arriving does, is more than what was made of it.
+        if (job.options.after === "trash" || job.options.after === "delete") {
+          const now = await this.storage.stat({ ...safe, entry: undefined });
+          if (now.size !== stat.size || now.mtimeMs !== stat.mtimeMs) throw new AppError(409, "The file changed while it was converted", "CONVERT_SOURCE_CHANGED");
+        }
         if (job.options.after === "trash") await this.trash(actor, safe);
         else if (job.options.after === "delete") {
           if (isRemote(safe.root)) await this.storage.remote.remove(safe.root, safe.logicalPath, false);

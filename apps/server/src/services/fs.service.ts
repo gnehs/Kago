@@ -11,7 +11,7 @@ import { assertNameAvailable, isSafeLogicalSegment, keptName, nfc, safeRelativeZ
 import { fileTagSchema, readFileTags, writeFileTags, type FileTag } from "../lib/file-tags.js";
 import { MAX_SQLITE_PAGE, sqliteOverview, sqliteRows } from "../lib/sqlite-preview.js";
 import { isPictureFormat, parseSubtitleName } from "../lib/subtitles.js";
-import { isSystemFile } from "../lib/system-files.js";
+import { isSystemFile, UPLOAD_PARTIAL } from "../lib/system-files.js";
 import { Thumbnailer, type Crop, type ThumbnailSource } from "../lib/thumbnailer.js";
 import type { ZipEntry } from "../lib/zip-stream.js";
 import type { AuditService } from "./audit.service.js";
@@ -1029,8 +1029,7 @@ export class FsService {
       await this.storage.remote.write(target.root, target.logicalPath, Readable.from(stream));
       return;
     }
-    const temp = path.join(parent.absolutePath, `.kago-upload-${randomUUID()}`);
-    await this.writeUploadStream(stream, fs.createWriteStream(temp, { flags: "wx", mode: 0o666 }), temp);
+    const temp = await this.receive(parent, stream);
     await fsp.rename(temp, target.absolutePath);
   }
 
@@ -1042,8 +1041,26 @@ export class FsService {
       return;
     }
     await assertNameAvailable(parent.absolutePath, path.basename(target.absolutePath));
-    const writeStream = fs.createWriteStream(target.absolutePath, { flags: "wx", mode: 0o666 });
-    await this.writeUploadStream(stream, writeStream, target.absolutePath);
+    const temp = await this.receive(parent, stream);
+    try {
+      // The name may have been taken while the file arrived, and a rename would take its place without a word.
+      await assertNameAvailable(parent.absolutePath, path.basename(target.absolutePath));
+      if (await fsp.lstat(target.absolutePath).catch(() => null)) throw new AppError(409, "Target already exists", "TARGET_EXISTS");
+      await fsp.rename(temp, target.absolutePath);
+    } catch (error) {
+      await fsp.rm(temp, { force: true });
+      throw error;
+    }
+  }
+
+  /**
+   * Stores an uploaded stream under a hidden name in `parent`, to be renamed once it is whole. Until then nothing
+   * else, a watched folder's conversion least of all, takes it for a finished file.
+   */
+  private async receive(parent: SafePath, stream: NodeJS.ReadableStream): Promise<string> {
+    const temp = path.join(parent.absolutePath, `${UPLOAD_PARTIAL}${randomUUID()}`);
+    await this.writeUploadStream(stream, fs.createWriteStream(temp, { flags: "wx", mode: 0o666 }), temp);
+    return temp;
   }
 
   private async writeUploadStream(stream: NodeJS.ReadableStream, writeStream: fs.WriteStream, targetPath: string): Promise<void> {

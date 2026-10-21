@@ -1,13 +1,17 @@
 import assert from "node:assert/strict";
 import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import fsp from "node:fs/promises";
+import fs from "node:fs";
+import { PassThrough } from "node:stream";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { openDb } from "../src/db/db.ts";
+import { convertSpecSchema } from "../src/lib/convert.ts";
 import { SecretBox } from "../src/lib/secret-box.ts";
 import { AuditService } from "../src/services/audit.service.ts";
 import { AuthService } from "../src/services/auth.service.ts";
+import { convertJobOptionsSchema } from "../src/services/convert.service.ts";
 import { FsService } from "../src/services/fs.service.ts";
 import { foldersOverlap, PathService } from "../src/services/path.service.ts";
 import { PermissionService } from "../src/services/permission.service.ts";
@@ -59,7 +63,7 @@ async function harness(t, folders = ["family", "other"]) {
     return tasks.get(created.id);
   };
   const trashed = () => db.prepare("SELECT * FROM trash_items WHERE restored_at IS NULL").all();
-  return { dataDir, appDataDir, db, tasks, actor, roots, paths, run, trashed, family: path.join(dataDir, "family"), other: path.join(dataDir, "other") };
+  return { dataDir, appDataDir, db, tasks, fsService, actor, roots, paths, run, trashed, family: path.join(dataDir, "family"), other: path.join(dataDir, "other") };
 }
 
 /** Puts back every fs function a test swapped out. */
@@ -76,6 +80,18 @@ const exists = (file) => stat(file).then(() => true, () => false);
 async function chmodAll(dir) {
   await chmod(dir, 0o755).catch(() => undefined);
   for (const entry of await readdir(dir, { withFileTypes: true }).catch(() => [])) if (entry.isDirectory()) await chmodAll(path.join(dir, entry.name));
+}
+
+/** Puts a file at `target` just before a write opens it, as another writer, or another spelling on a volume that does not mind the case, does. */
+function takenBeforeOpen(t, target, content) {
+  const open = fs.open;
+  fs.open = (file, ...rest) => {
+    if (String(file) === target) fs.writeFileSync(target, content);
+    return open(file, ...rest);
+  };
+  t.after(() => {
+    fs.open = open;
+  });
 }
 
 /** Makes every rename from under `from` into `to` find another disk, as a move between two mounts does. */
@@ -265,4 +281,93 @@ test("a folder can't go into itself through a location that is another's folder 
   assert.deepEqual(await readdir(path.join(dataDir, "photos", "Albums")), []);
   assert.equal(await foldersOverlap(await paths.resolveExisting("data", "/photos"), await paths.resolveExisting("photos", "/Albums")), true);
   assert.equal(await foldersOverlap(await paths.resolveExisting("data", "/photos/Albums"), await paths.resolveExisting("photos", "/")), true);
+});
+
+test("an archive or an extracted file that finds its name taken leaves the file there alone", async (t) => {
+  const { run, family } = await harness(t);
+  await mkdir(path.join(family, "pack"));
+  await writeFile(path.join(family, "pack", "README.txt"), "from zip");
+  assert.equal((await run("compress", [{ rootSlug: "family", path: "/pack/README.txt" }], { rootSlug: "family", path: "/a.zip" })).status, "done");
+
+  takenBeforeOpen(t, path.join(family, "Archive.zip"), "precious archive");
+  const compressed = await run("compress", [{ rootSlug: "family", path: "/pack/README.txt" }], { rootSlug: "family", path: "/Archive.zip" });
+  assert.equal(compressed.status, "failed");
+  assert.equal(await read(path.join(family, "Archive.zip")), "precious archive");
+
+  await mkdir(path.join(family, "dest"));
+  takenBeforeOpen(t, path.join(family, "dest", "README.txt"), "precious readme");
+  const extracted = await run("extract", [{ rootSlug: "family", path: "/a.zip" }], { rootSlug: "family", path: "/dest" });
+  assert.equal(extracted.status, "failed");
+  assert.match(extracted.error_message, /already exists/);
+  assert.equal(await read(path.join(family, "dest", "README.txt")), "precious readme");
+});
+
+test("a merge never puts a file in place of a folder, or a folder in place of a file", async (t) => {
+  const { run, family, other } = await harness(t);
+  await mkdir(path.join(family, "A", "notes"), { recursive: true });
+  await writeFile(path.join(family, "A", "photos"), "a file");
+  await writeFile(path.join(family, "A", "notes", "n.txt"), "note");
+  await mkdir(path.join(other, "A", "photos"), { recursive: true });
+  await writeFile(path.join(other, "A", "photos", "0.jpg"), "img");
+  await writeFile(path.join(other, "A", "notes"), "a notes file");
+
+  for (const type of ["copy", "move"]) {
+    assert.equal((await run(type, [{ rootSlug: "family", path: "/A" }], { rootSlug: "other", path: "/" }, { A: "merge_replace" })).status, "done");
+    assert.equal(await read(path.join(other, "A", "photos", "0.jpg")), "img");
+    assert.equal(await read(path.join(other, "A", "notes")), "a notes file");
+  }
+  assert.deepEqual((await readdir(path.join(other, "A"))).sort(), ["notes", "notes 2", "notes 3", "photos", "photos 2", "photos 3"]);
+});
+
+test("an upload is out of sight until it has arrived, and never takes the place of what took its name meanwhile", async (t) => {
+  const { fsService, actor, family } = await harness(t);
+  const stream = new PassThrough();
+  const upload = fsService.upload(actor, "family", "/", "clip.mov", stream);
+  stream.write("half");
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.deepEqual((await fsService.list(actor, "family", "/")).items, []);
+  assert.equal(await exists(path.join(family, "clip.mov")), false);
+  stream.end(" and the rest");
+  await upload;
+  assert.equal(await read(path.join(family, "clip.mov")), "half and the rest");
+
+  const late = new PassThrough();
+  const racing = fsService.upload(actor, "family", "/", "late.txt", late);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  await writeFile(path.join(family, "late.txt"), "got here first");
+  late.end("arrived late");
+  await assert.rejects(racing, { code: "TARGET_EXISTS" });
+  assert.equal(await read(path.join(family, "late.txt")), "got here first");
+  assert.deepEqual((await readdir(family)).sort(), ["clip.mov", "late.txt"]);
+});
+
+test("a watched folder's conversion leaves a source that changed while it was read", async (t) => {
+  const { tasks, actor, family, other } = await harness(t);
+  await mkdir(path.join(family, "in"));
+  const source = path.join(family, "in", "notes.txt");
+  await writeFile(source, "first part");
+  const settled = new Date(Date.now() - 60_000);
+  await fsp.utimes(source, settled, settled);
+  // More of it arrives while it is being brought across.
+  const utimes = fsp.utimes;
+  fsp.utimes = async (target, ...rest) => {
+    if (path.basename(String(target)).startsWith(".kago-convert-")) await fsp.appendFile(source, " and more");
+    return utimes(target, ...rest);
+  };
+
+  const job = { id: "job_test", input: { rootSlug: "family", path: "/in" }, options: convertJobOptionsSchema.parse({ after: "delete", copyOthers: true }) };
+  const created = await tasks.createConvert(actor, { sources: [{ rootSlug: "family", path: "/in" }], destination: { rootSlug: "other", path: "/" }, spec: convertSpecSchema.parse({ format: "mp4" }) }, job);
+  await tasks.runTask(tasks.claimNext("media"), actor);
+  assert.equal(tasks.get(created.id).status, "failed");
+  assert.equal(await read(source), "first part and more");
+});
+
+test("nothing may be given a name Kago keeps for its own", async (t) => {
+  const { fsService, actor, family } = await harness(t);
+  await writeFile(path.join(family, "a.txt"), "a");
+  const refused = { code: "INVALID_FILENAME" };
+  await assert.rejects(fsService.mkdir(actor, "family", "/", ".kago-replace-1-x"), refused);
+  await assert.rejects(fsService.upload(actor, "family", "/", ".kago-convert-x", PassThrough.from(["x"])), refused);
+  await assert.rejects(fsService.rename(actor, "family", "/a.txt", ".kago-upload-x"), refused);
+  assert.deepEqual(await readdir(family), ["a.txt"]);
 });

@@ -1346,6 +1346,8 @@ export class TaskService {
       try {
         await pipeline(archive, createWriteStream(targetPath, { flags: "wx" }));
       } catch (error) {
+        // A file that was in the way is someone's, not a half-written archive.
+        if (errnoIs(error, "EEXIST")) throw new AppError(409, "Target already exists", "TARGET_EXISTS");
         await fsp.rm(targetPath, { force: true });
         throw error;
       }
@@ -1551,6 +1553,8 @@ export class TaskService {
     try {
       await pipeline(await this.openZipEntry(zip, entry, password), bounded, createWriteStream(target, { flags: "wx", mode: 0o666 }));
     } catch (error) {
+      // A volume that does not mind the case can hold the name under another spelling, which is not ours to take away.
+      if (errnoIs(error, "EEXIST")) throw new AppError(409, "Target already exists", "TARGET_EXISTS");
       await fsp.rm(target, { force: true });
       throw error;
     }
@@ -2415,9 +2419,11 @@ async function mergeTree(sourcePath: string, targetPath: string, clash: Clash, m
     }
     const occupant = path.join(targetPath, existing);
     // A link there is something in the way like any file, and never a folder to put things in.
-    if (entry.isDirectory() && (await fsp.lstat(occupant)).isDirectory()) await mergeTree(from, occupant, clash, move, names, onBytes, onFile);
-    else if (clash === "replace") await replacePath(from, occupant, occupant, move, onBytes, onFile);
-    else if (clash === "keep") {
+    const folderThere = (await fsp.lstat(occupant)).isDirectory();
+    if (entry.isDirectory() && folderThere) await mergeTree(from, occupant, clash, move, names, onBytes, onFile);
+    else if (clash === "replace" && entry.isDirectory() === folderThere) await replacePath(from, occupant, occupant, move, onBytes, onFile);
+    // Nobody was asked about a file and a folder that share a name deep inside a merge, so neither takes the other's place.
+    else if (clash === "keep" || clash === "replace") {
       const kept = await names.free(targetPath, nfc(entry.name), entry.isDirectory());
       await carry(path.join(targetPath, kept));
       await names.add(targetPath, kept);
