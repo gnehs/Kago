@@ -9,6 +9,7 @@ import { Shelf } from "@/features/shelves/Shelf";
 import { useTaskToasts } from "@/features/tasks/taskToast";
 import { PreviewWindowView } from "@/features/files/PreviewWindow";
 import { AppWindowView } from "@/features/windows/AppWindow";
+import { useRecentStore } from "@/stores/recent";
 import { loadSettings, useSettingsStore, wallpaperUrl } from "@/stores/settings";
 import { setCanvasSize, setRootNames, useWorkspaceStore } from "@/stores/workspace";
 import type { Actor, Root } from "@/types/kago";
@@ -35,6 +36,7 @@ export function Workspace({ user }: { user: Actor }) {
   useEffect(() => {
     useSettingsStore.setState({ hydrated: false });
     void loadSettings();
+    useRecentStore.getState().signIn(user.id);
   }, [user.id]);
 
   // The browser's tab is named after the window in front, as a taskbar entry would be.

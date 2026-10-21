@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { CircleUserRound, Info, ListChecks, LogOut, Search, Settings } from "lucide-react";
 import { api } from "@/api/client";
 import { useRoots, useTasks } from "@/api/hooks";
@@ -100,14 +99,13 @@ export function TopBar({ user, onOpenPalette }: { user: Actor; onOpenPalette: ()
 
 /** Who is signed in, at the far end of the bar: their picture, and behind it what belongs to the account. */
 function UserMenu({ user }: { user: Actor }) {
-  const queryClient = useQueryClient();
   const name = user.displayName || user.email;
   const picture = avatarUrl(user.id, user.avatar);
 
   async function logout() {
     await api("/api/auth/logout", { method: "POST" });
     markSignedOut();
-    await queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
+    location.assign("/");
   }
 
   return (

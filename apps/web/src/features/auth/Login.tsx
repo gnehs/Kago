@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { api } from "@/api/client";
 import { useSetupStatus } from "@/api/hooks";
 import { KagoLoading, KagoSpinner } from "@/components/kago/empty-state";
@@ -22,7 +21,6 @@ export function Login() {
   const [error, setError] = useState(() => (came.error ? ssoErrorMessage(came.error) : ""));
   const [busy, setBusy] = useState(false);
   const [refused, setRefused] = useState(0);
-  const queryClient = useQueryClient();
 
   useEffect(() => {
     if (leaving) location.replace(ssoStartUrl());
@@ -34,7 +32,8 @@ export function Login() {
     setError("");
     try {
       await api("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
-      await queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
+      // The page starts over, so nothing the last account had open, cached or queued is shown to this one.
+      location.reload();
     } catch (err) {
       setError(errorMessage(err, t("Couldn’t sign in")));
       setRefused((count) => count + 1);
