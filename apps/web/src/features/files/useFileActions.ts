@@ -4,6 +4,7 @@ import { dropLeft } from "@/api/hooks";
 import { formatSize } from "@/lib/format";
 import { baseName, ensureZipName, isInside, isWithin, joinLogicalPath, needsNormalizing, nfc, parentPath, triggerDownload } from "@/lib/paths";
 import { run } from "@/lib/run";
+import { randomId } from "@/lib/utils";
 import type { UploadTree } from "@/lib/uploadTree";
 import { useClipboardStore, type FileRef } from "@/stores/clipboard";
 import { chooseAction, promptText } from "@/stores/dialogs";
@@ -45,7 +46,7 @@ export const pendingDownloads = new Set<string>();
  * and hiding them only then would leave them hidden for good.
  */
 async function createTask(queryClient: QueryClient, body: Record<string, unknown>, leaving?: FileRef[]) {
-  const asking = leaving && `asking:${crypto.randomUUID()}`;
+  const asking = leaving && `asking:${randomId()}`;
   if (asking) hideLeaving(asking, leaving);
   let task: FileTask;
   try {
