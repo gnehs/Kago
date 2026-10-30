@@ -6,7 +6,7 @@ import { useUploadStore, type Upload } from "@/stores/uploads";
 import { t } from "@/lib/i18n";
 
 /** The shape of a notification that counts: a card with a bar in it, where one that only says something is a pill. */
-const card = "flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-1.5 rounded-lg py-2 pr-1.5 pl-3";
+const card = "flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-1.5 py-2 pr-1.5 pl-3";
 
 export function KagoToaster() {
   const { toasts, dismiss, hold, release } = useToastStore();
@@ -19,7 +19,7 @@ export function KagoToaster() {
         <div
           key={toast.id}
           data-leaving={toast.leaving ? "" : undefined}
-          className={cn("kago-toast pointer-events-auto kago-glass", toast.progress ? card : "flex max-w-full items-center gap-2 rounded-md py-1.5 pr-1.5 pl-3 sm:max-w-md", toast.kind === "error" && "text-danger")}
+          className={cn("kago-toast pointer-events-auto kago-glass rounded-lg", toast.progress ? card : "flex max-w-full items-center gap-2 py-1.5 pr-1.5 pl-3 sm:max-w-md", toast.kind === "error" && "text-danger")}
           // A count changes too often to be read out each time; what it ends as is.
           aria-live={toast.progress ? "off" : undefined}
           // Still being read: it does not go while the pointer is on it.
@@ -81,7 +81,7 @@ function UploadCard({ upload }: { upload: Upload }) {
         upload.speed > 0 ? t("{duration} left", { duration: formatDuration((upload.total - upload.loaded) / upload.speed) }) : null
       ].filter(Boolean).join(" · ");
   return (
-    <div className={cn("kago-toast pointer-events-auto kago-glass", card)} aria-live="off">
+    <div className={cn("kago-toast pointer-events-auto kago-glass rounded-lg", card)} aria-live="off">
       <Count title={t("Uploading {name}", { name: upload.label })} value={upload.loaded} max={upload.total} details={details} close={<Close label={t("Cancel upload")} hint={t("Cancel upload")} onClick={upload.cancel} />} />
     </div>
   );
