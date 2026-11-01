@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Archive, ArchiveRestore, Ban, CircleUserRound, ClipboardPaste, Copy, Download, ExternalLink, FileOutput, FileVideo, Folder, FolderInput, FolderOpen, FolderPlus, FolderUp, Inbox, Info, ListVideo, PanelTop, Pencil, Play, Plus, RefreshCw, Scissors, SquareArrowOutUpRight, Trash2, Upload, Wallpaper, X } from "lucide-react";
+import { Archive, ArchiveRestore, Ban, CircleUserRound, ClipboardPaste, Copy, Download, ExternalLink, FileOutput, FileVideo, Folder, FolderInput, FolderOpen, FolderPlus, FolderUp, Inbox, Info, ListVideo, PanelTop, Pencil, Play, Plus, RefreshCw, Scissors, SquareArrowOutUpRight, Star, StarOff, Trash2, Upload, Wallpaper, X } from "lucide-react";
 import { useFileList, useFolderContents, useFolderSearch } from "@/api/hooks";
 import { KagoBadge } from "@/components/kago/badge";
 import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
@@ -19,7 +19,7 @@ import { droppedTree, flatTree, pickedFolderTree } from "@/lib/uploadTree";
 import { cn } from "@/lib/utils";
 import { useClipboardStore } from "@/stores/clipboard";
 import { useRecentStore } from "@/stores/recent";
-import { setWallpaper } from "@/stores/settings";
+import { setFavorite, setWallpaper, useSettingsStore } from "@/stores/settings";
 import { toast } from "@/stores/toast";
 import { folderTitle, useWorkspaceStore } from "@/stores/workspace";
 import type { FileItem, FileWindow, FolderView, FolderWindow, Root } from "@/types/kago";
@@ -86,6 +86,7 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
   const [dropActive, setDropActive] = useState<false | "files" | "items">(false);
   const [dropChoice, setDropChoice] = useState<{ sources: FileRef[]; destination: FileRef; x: number; y: number } | null>(null);
   const clip = useClipboardStore((state) => state.clip);
+  const favorites = useSettingsStore((state) => state.favorites);
   // Every tab has been to places of its own.
   const tabId = win.activeTabId ?? "";
   const [histories, setHistories] = useState<Record<string, { stack: Place[]; index: number }>>({});
@@ -376,6 +377,12 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
     input?.click();
   }
 
+  const favoriteToggle = (path: string) => {
+    const here = { rootSlug: win.rootSlug, path };
+    const favorite = favorites.some((entry) => entry.rootSlug === here.rootSlug && entry.path === path);
+    return <KagoMenuItem icon={favorite ? <StarOff /> : <Star />} onClick={() => void setFavorite(here, !favorite)}>{favorite ? t("Remove from Favorites") : t("Add to Favorites")}</KagoMenuItem>;
+  };
+
   /** Every action for a set of items, or for `folder` when there are none. Shared by right click and the toolbar. */
   function renderMenu(targets: FileItem[], folder = win.logicalPath) {
     const paths = targets.map((item) => item.path);
@@ -391,6 +398,7 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
         {single ? <KagoMenuItem icon={playable ? <Play /> : <FolderOpen />} shortcut="↩" onClick={() => openItem(single)}>{playable ? t("Play") : t("Open")}</KagoMenuItem> : null}
         {single?.kind === "folder" ? <KagoMenuItem icon={<PanelTop />} onClick={() => openItem(single, "tab")}>{t("Open in new tab")}</KagoMenuItem> : null}
         {single?.kind === "folder" ? <KagoMenuItem icon={<ExternalLink />} onClick={() => openItem(single, "window")}>{t("Open in new window")}</KagoMenuItem> : null}
+        {single?.kind === "folder" ? favoriteToggle(single.path) : null}
         {single?.kind === "file" && isVideoType(single.type) ? (
           <KagoMenuItem icon={<SquareArrowOutUpRight />} onClick={() => globalThis.open(videoPageUrl(win.rootSlug, single.path), "_blank", "noopener")}>{t("Play in new tab")}</KagoMenuItem>
         ) : null}
@@ -442,6 +450,7 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
         <KagoMenuSeparator />
         <KagoMenuItem icon={<PanelTop />} shortcut="⌥T" onClick={() => store().openTab(win.id, win)}>{t("New tab")}</KagoMenuItem>
         <KagoMenuItem icon={<ExternalLink />} onClick={() => store().openWindow({ rootSlug: win.rootSlug, logicalPath: win.logicalPath, title: win.title })}>{t("Open this folder in a new window (⌥N)")}</KagoMenuItem>
+        {favoriteToggle(folder)}
         <KagoMenuItem icon={<RefreshCw />} shortcut="⌘R" onClick={() => void actions.refresh()}>{t("Refresh")}</KagoMenuItem>
       </>
     );

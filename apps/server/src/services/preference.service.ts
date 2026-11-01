@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { Db } from "../db/db.js";
 import { row, rows } from "../db/db.js";
+import { AppError } from "../lib/errors.js";
 import { fileTagSchema } from "../lib/file-tags.js";
 import { now } from "../lib/ids.js";
 import type { EventPublisher } from "../ws/events.js";
@@ -59,6 +60,9 @@ export const folderViewSchema = z.object({
 
 export const folderViewQuerySchema = folderViewSchema.pick({ rootSlug: true, path: true });
 
+/** A folder a person keeps at hand, to reach it from any window in one step. */
+export const favoriteSchema = folderViewQuerySchema;
+
 /** A request cannot name the desktop background: it is set by handing over a picture, and only its time is kept here. */
 type Settings = z.infer<typeof settingsSchema> & { wallpaper?: number | null };
 
@@ -75,6 +79,9 @@ type FolderViewRow = {
 
 /** The most folders one person's views are kept for; the ones untouched longest make room. */
 const MAX_FOLDER_VIEWS = 5000;
+
+/** The most folders one person can keep among their favorites. */
+const MAX_FAVORITES = 200;
 
 export class PreferenceService {
   constructor(
@@ -105,7 +112,18 @@ export class PreferenceService {
       sortDirection: view.sort_direction ?? undefined,
       recursive: view.recursive === 1
     }));
-    return { settings: stored ? (JSON.parse(stored.settings_json) as Settings) : {}, folderViews };
+    const favorites = rows<{ root_slug: string; path: string }>(
+      this.db
+        .prepare(
+          `SELECT roots.slug AS root_slug, favorites.path
+          FROM favorites
+          JOIN roots ON roots.id = favorites.root_id
+          WHERE favorites.user_id = ?
+          ORDER BY favorites.created_at, favorites.rowid`
+        )
+        .all(userId)
+    ).map((favorite) => ({ rootSlug: favorite.root_slug, path: favorite.path }));
+    return { settings: stored ? (JSON.parse(stored.settings_json) as Settings) : {}, folderViews, favorites };
   }
 
   /** Notes that the desktop background was set just now, or that there is none any more. */
@@ -165,14 +183,37 @@ export class PreferenceService {
     return this.get(userId);
   }
 
-  /** Carries the views of a folder, and of everything inside it, to where Kago has just renamed or moved it. */
+  /** Puts a folder at the end of a person's favorites. One already there stays where it is. */
+  addFavorite(userId: string, input: z.infer<typeof favoriteSchema>) {
+    const root = this.roots.getBySlug(input.rootSlug);
+    const logicalPath = this.paths.normalizeLogicalPath(input.path);
+    const count = row<{ count: number }>(this.db.prepare("SELECT COUNT(*) AS count FROM favorites WHERE user_id = ?").get(userId))?.count ?? 0;
+    if (count >= MAX_FAVORITES) throw new AppError(400, `At most ${MAX_FAVORITES} folders can be favorites`, "FAVORITE_LIMIT");
+    this.db.prepare("INSERT OR IGNORE INTO favorites (user_id, root_id, path, created_at) VALUES (?, ?, ?, ?)").run(userId, root.id, logicalPath, now());
+    this.events.publish({ type: "settings.updated", userId });
+    return this.get(userId);
+  }
+
+  removeFavorite(userId: string, input: z.infer<typeof favoriteSchema>) {
+    const root = this.roots.getBySlug(input.rootSlug);
+    this.db.prepare("DELETE FROM favorites WHERE user_id = ? AND root_id = ? AND path = ?").run(userId, root.id, this.paths.normalizeLogicalPath(input.path));
+    this.events.publish({ type: "settings.updated", userId });
+    return this.get(userId);
+  }
+
+  /** Carries the views of a folder and the favorites in it, and those of everything inside it, to where Kago has just renamed or moved it. */
   moved(fromRootId: string, fromPath: string, toRootId: string, toPath: string): void {
     const within = "root_id = ? AND (path = ? OR substr(path, 1, length(?) + 1) = ? || '/')";
     const from = [fromRootId, fromPath, fromPath, fromPath];
-    const users = rows<{ user_id: string }>(this.db.prepare(`SELECT DISTINCT user_id FROM folder_views WHERE ${within}`).all(...from));
+    const users = rows<{ user_id: string }>(
+      this.db.prepare(`SELECT user_id FROM folder_views WHERE ${within} UNION SELECT user_id FROM favorites WHERE ${within}`).all(...from, ...from)
+    );
     if (users.length === 0) return;
     // Whatever was set for the place it arrives at belonged to something that is no longer there.
     this.db.prepare(`UPDATE OR REPLACE folder_views SET root_id = ?, path = ? || substr(path, length(?) + 1) WHERE ${within}`).run(toRootId, toPath, fromPath, ...from);
+    // A favorite already there stays; the one that arrived is the same folder twice.
+    this.db.prepare(`UPDATE OR IGNORE favorites SET root_id = ?, path = ? || substr(path, length(?) + 1) WHERE ${within}`).run(toRootId, toPath, fromPath, ...from);
+    this.db.prepare(`DELETE FROM favorites WHERE ${within}`).run(...from);
     for (const user of users) this.events.publish({ type: "settings.updated", userId: user.user_id });
   }
 }

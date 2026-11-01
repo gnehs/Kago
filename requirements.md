@@ -1521,6 +1521,34 @@ CREATE TABLE folder_views (
 
 `folder_views.recursive` 為 1 時，這個資料夾的檢視方式也套用到它底下還沒有自己設定的資料夾。
 
+### favorites
+
+```sql
+CREATE TABLE favorites (
+  user_id TEXT NOT NULL,
+  root_id TEXT NOT NULL,
+  path TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, root_id, path),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (root_id) REFERENCES roots(id) ON DELETE CASCADE
+);
+```
+
+喜好位置是每個人自己留著快速前往的資料夾：
+
+```txt
+每人最多 200 個，依加入的順序排列；同一個資料夾只會有一筆
+GET /api/settings 一併回傳 favorites: [{ rootSlug, path }]
+PUT /api/favorites { rootSlug, path } 加入；DELETE /api/favorites?rootSlug=&path= 移除
+在 Kago 裡改名或搬移資料夾時，喜好位置跟著走（和 folder_views 一樣）；位置被移除時一併刪掉
+資料夾在 Kago 之外被刪掉或改名時保留原本的路徑，點下去看到的是資料夾不存在
+看不到的位置上的喜好位置不顯示
+側邊欄最上方列出喜好位置，點一下前往、可以把東西拖進去；不像資料夾樹那樣展開
+資料夾與側邊欄項目的右鍵選單、空白處的右鍵選單（目前的資料夾）可以加入或移除
+快速開啟（Command Palette）把喜好位置列在位置之後、最近的資料夾之前
+```
+
 ### tasks
 
 ```sql

@@ -69,7 +69,7 @@ test("minimum file-manager demo flow", async () => {
     assert.equal(savedWindow.sidebarOpen, false);
 
     // Settings follow the account, and a request changes only what it names.
-    assert.deepEqual((await admin.get("/api/settings")).json, { settings: {}, folderViews: [] });
+    assert.deepEqual((await admin.get("/api/settings")).json, { settings: {}, folderViews: [], favorites: [] });
     assert.equal((await admin.patch("/api/settings", { motion: "off", defaultView: { viewMode: "grid" } })).statusCode, 200);
     const settings = await admin.patch("/api/settings", { locale: "ja", defaultView: { sortBy: "mtime", sortDirection: "desc" } });
     assert.deepEqual(settings.json.settings, { motion: "off", locale: "ja", defaultView: { viewMode: "grid", sortBy: "mtime", sortDirection: "desc" } });
@@ -93,6 +93,9 @@ test("minimum file-manager demo flow", async () => {
     assert.equal((await folderView("/views-kept", { viewMode: "columns" })).statusCode, 200);
     assert.equal((await folderView("/views", { viewMode: "gallery" })).statusCode, 400);
     assert.equal((await folderView("/../etc", { viewMode: "grid" })).statusCode, 400);
+    const favorite = (pathName) => admin.put("/api/favorites", { rootSlug: "photos", path: pathName });
+    for (const pathName of ["/views", "/views/inner", "/views-kept", "/views"]) assert.equal((await favorite(pathName)).statusCode, 200);
+    assert.equal((await favorite("/../etc")).statusCode, 400);
     assert.equal((await admin.post("/api/fs/rename", { rootSlug: "photos", path: "/views", name: "views-renamed" })).statusCode, 200);
     const moveViews = await admin.post("/api/tasks", { type: "move", sources: [{ rootSlug: "photos", path: "/views-renamed" }], destination: { rootSlug: "photos", path: "/views-kept" } });
     assert.equal((await waitTask(admin, moveViews.json.id)).status, "done");
@@ -102,6 +105,11 @@ test("minimum file-manager demo flow", async () => {
       "/views-kept/views-renamed": { viewMode: "grid", sortBy: "size", sortDirection: "desc", recursive: true },
       "/views-kept/views-renamed/inner": { autoMode: "grid", recursive: false }
     });
+    // Favorites go with the folder too, and keep the order they were added in.
+    const favoritePaths = (list) => list.map(({ path: pathName }) => pathName);
+    assert.deepEqual(favoritePaths((await admin.get("/api/settings")).json.favorites), ["/views-kept/views-renamed", "/views-kept/views-renamed/inner", "/views-kept"]);
+    const unfavorited = await admin.delete(`/api/favorites?rootSlug=photos&path=${encodeURIComponent("/views-kept/views-renamed")}`);
+    assert.deepEqual(favoritePaths(unfavorited.json.favorites), ["/views-kept/views-renamed/inner", "/views-kept"]);
     const afterReset = await admin.delete(`/api/folder-views?rootSlug=photos&path=${encodeURIComponent("/views-kept/views-renamed")}`);
     assert.deepEqual(Object.keys(byPath(afterReset.json.folderViews)).sort(), ["/views-kept", "/views-kept/views-renamed/inner"]);
     await rm(path.join(fixture.dataDir, "photos", "views-kept"), { recursive: true });

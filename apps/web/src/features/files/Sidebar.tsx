@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
-import { ChevronRight, ClipboardPaste, Copy, Download, ExternalLink, FolderOpen, FolderPlus, HardDrive, PanelTop, Pencil, Scissors, Server, Trash2 } from "lucide-react";
+import { ChevronRight, ClipboardPaste, Copy, Download, ExternalLink, FolderOpen, FolderPlus, HardDrive, PanelTop, Pencil, Scissors, Server, Star, StarOff, Trash2 } from "lucide-react";
 import { useFileList } from "@/api/hooks";
 import { locationTone } from "@/components/kago/app-icon";
 import { KagoContextMenu, KagoMenuItem, KagoMenuSeparator } from "@/components/kago/menu";
-import { nfc, parentPath } from "@/lib/paths";
+import { baseName, nfc, parentPath } from "@/lib/paths";
 import { usePointerDrag } from "@/lib/usePointerDrag";
 import { cn } from "@/lib/utils";
-import { folderKey } from "@/stores/settings";
+import { folderKey, setFavorite, useIsFavorite, useSettingsStore } from "@/stores/settings";
 import { folderTitle, useWorkspaceStore } from "@/stores/workspace";
 import { useClipboardStore, type FileRef } from "@/stores/clipboard";
 import type { FileWindow, Root } from "@/types/kago";
@@ -126,6 +126,9 @@ export function Sidebar({
     [window, expanded, onNavigate, readonly, remote, dropTarget, onDragTarget, onDropInto, queryClient, clipCount]
   );
 
+  const allFavorites = useSettingsStore((state) => state.favorites);
+  const favorites = useMemo(() => allFavorites.filter((favorite) => roots.some((root) => root.slug === favorite.rootSlug)), [allFavorites, roots]);
+
   // The locations on other machines stand apart from the server's own, which answer faster and are always there.
   const sections = [
     { label: t("Locations"), roots: roots.filter((root) => !remote.has(root.slug)) },
@@ -136,6 +139,16 @@ export function Sidebar({
     <nav aria-label={t("Folders")} className="relative hidden max-w-[50%] shrink-0 border-r border-line bg-elevated select-none @lg/body:flex" style={{ width }}>
       <div className="absolute inset-y-0 -right-1 z-10 w-2 cursor-ew-resize touch-none" {...resizeHandlers} />
       <div className="flex min-w-0 flex-1 scroll-fade scroll-py-9 flex-col overflow-y-auto p-1.5">
+        {favorites.length > 0 ? (
+          <div className="mb-2 flex flex-col">
+            <span className="px-2 pt-0.5 pb-1 text-xs font-medium text-faint">{t("Favorites")}</span>
+            <div role="list" aria-label={t("Favorites")} className="flex flex-col gap-px">
+              {favorites.map((favorite) => (
+                <Favorite key={folderKey(favorite.rootSlug, favorite.path)} tree={tree} rootSlug={favorite.rootSlug} path={favorite.path} label={favorite.path === "/" ? (roots.find((root) => root.slug === favorite.rootSlug)?.name ?? favorite.rootSlug) : baseName(favorite.path)} />
+              ))}
+            </div>
+          </div>
+        ) : null}
         {sections.map((section, index) =>
           section.roots.length === 0 ? null : (
             <div key={section.label} className={cn("flex flex-col", index > 0 && "mt-2")}>
@@ -153,6 +166,54 @@ export function Sidebar({
   );
 }
 
+/** A folder kept at hand. Unlike the tree it does not open in place: it takes the window there, and takes drops. */
+function Favorite({ tree, rootSlug, path, label }: { tree: Tree; rootSlug: string; path: string; label: string }) {
+  const { window } = tree;
+  const store = useWorkspaceStore.getState;
+  // The tree keys its folders the same way, so a favorite gets its own drop key to light up apart from them.
+  const key = `favorite\n${folderKey(rootSlug, path)}`;
+  const current = window.rootSlug === rootSlug && window.logicalPath === path;
+  const here = { rootSlug, path };
+  const openTab = () => store().openTab(window.id, { rootSlug, logicalPath: path });
+  const RootIcon = tree.remote.has(rootSlug) ? Server : HardDrive;
+  return (
+    <KagoContextMenu
+      menu={
+        <>
+          <KagoMenuItem icon={<FolderOpen />} onClick={() => tree.onNavigate(here)}>{t("Open")}</KagoMenuItem>
+          <KagoMenuItem icon={<PanelTop />} onClick={openTab}>{t("Open in new tab")}</KagoMenuItem>
+          <KagoMenuItem icon={<ExternalLink />} onClick={() => store().openWindow({ rootSlug, logicalPath: path, title: folderTitle(rootSlug, path) })}>{t("Open in new window")}</KagoMenuItem>
+          <KagoMenuSeparator />
+          <KagoMenuItem icon={<StarOff />} onClick={() => void setFavorite(here, false)}>{t("Remove from Favorites")}</KagoMenuItem>
+        </>
+      }
+    >
+      <div
+        role="listitem"
+        aria-current={current ? "location" : undefined}
+        className={cn("flex h-7 items-center gap-1.5 rounded-md pr-2 pl-2 hover:bg-hover", current && "bg-accent-soft font-medium hover:bg-accent-soft", tree.dropTarget === key && "ring-2 ring-accent ring-inset")}
+        onClick={(event) => (event.metaKey || event.ctrlKey ? openTab() : tree.onNavigate(here))}
+        onAuxClick={(event) => event.button === 1 && openTab()}
+        onDragOver={(event) => {
+          event.stopPropagation();
+          if (tree.readonly.has(rootSlug)) return;
+          event.preventDefault();
+          if (tree.dropTarget !== key) tree.setDropTarget(key);
+        }}
+        onDragLeave={(event) => !event.currentTarget.contains(event.relatedTarget as Node | null) && tree.dropTarget === key && tree.setDropTarget(null)}
+        onDrop={(event) => {
+          event.stopPropagation();
+          tree.setDropTarget(null);
+          if (!tree.readonly.has(rootSlug)) tree.onDropInto(event, here);
+        }}
+      >
+        {path !== "/" ? <FileIcon item={FOLDER} /> : <RootIcon className="shrink-0" style={{ color: `var(--kago-app-${locationTone(rootSlug)})` }} />}
+        <span className="min-w-0 flex-1 truncate">{label}</span>
+      </div>
+    </KagoContextMenu>
+  );
+}
+
 function Node({ tree, rootSlug, path, label, depth, locked }: { tree: Tree; rootSlug: string; path: string; label: string; depth: number; /** The folder itself cannot be changed. */ locked?: boolean }) {
   const { window, queryClient } = tree;
   const store = useWorkspaceStore.getState;
@@ -161,6 +222,7 @@ function Node({ tree, rootSlug, path, label, depth, locked }: { tree: Tree; root
   const current = window.rootSlug === rootSlug && window.logicalPath === path;
   const row = useRef<HTMLDivElement>(null);
   const here = { rootSlug, path };
+  const favorite = useIsFavorite(rootSlug, path);
   const openTab = () => store().openTab(window.id, { rootSlug, logicalPath: path });
   const RootIcon = tree.remote.has(rootSlug) ? Server : HardDrive;
   const readonly = locked || tree.readonly.has(rootSlug);
@@ -182,6 +244,7 @@ function Node({ tree, rootSlug, path, label, depth, locked }: { tree: Tree; root
             <KagoMenuSeparator />
             <KagoMenuItem icon={<FolderPlus />} disabled={readonly} onClick={() => void newFolderIn(queryClient, here).then((made) => made && tree.expand(key))}>{t("New folder")}</KagoMenuItem>
             {tree.clipCount > 0 ? <KagoMenuItem icon={<ClipboardPaste />} disabled={readonly} onClick={() => void pasteClipboard(queryClient, here)}>{t("Paste {count} item | Paste {count} items", { count: tree.clipCount })}</KagoMenuItem> : null}
+            <KagoMenuItem icon={favorite ? <StarOff /> : <Star />} onClick={() => void setFavorite(here, !favorite)}>{favorite ? t("Remove from Favorites") : t("Add to Favorites")}</KagoMenuItem>
             {path === "/" ? null : (
               <>
                 <KagoMenuSeparator />

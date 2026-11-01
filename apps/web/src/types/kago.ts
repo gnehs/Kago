@@ -234,7 +234,10 @@ export type AccountSettings = {
   wallpaper?: number | null;
 };
 
-export type AccountPreferences = { settings: AccountSettings; folderViews: FolderViewEntry[] };
+/** A folder a person keeps at hand, in the order they added it. */
+export type FavoriteFolder = { rootSlug: string; path: string };
+
+export type AccountPreferences = { settings: AccountSettings; folderViews: FolderViewEntry[]; favorites: FavoriteFolder[] };
 
 export type WorkspaceState = {
   activeWindowId: string | null;

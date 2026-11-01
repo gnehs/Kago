@@ -34,7 +34,7 @@ import { MediaService, mediaAudioSchema, mediaPrewarmSchema, mediaSessionSchema,
 import { oidcConfigSchema, OidcService } from "./services/oidc.service.js";
 import { PathService } from "./services/path.service.js";
 import { permissionSetSchema, PermissionService } from "./services/permission.service.js";
-import { folderViewQuerySchema, folderViewSchema, PreferenceService, settingsSchema } from "./services/preference.service.js";
+import { favoriteSchema, folderViewQuerySchema, folderViewSchema, PreferenceService, settingsSchema } from "./services/preference.service.js";
 import { remoteRootPatchSchema, remoteRootSchema, rootPatchSchema, RootService } from "./services/root.service.js";
 import { SHARE_VISIT_SECONDS, ShareService, shareSchema, type ShareVisitor } from "./services/share.service.js";
 import { ShelfService } from "./services/shelf.service.js";
@@ -675,6 +675,8 @@ function registerApi(app: FastifyInstance, services: Services) {
   });
   app.put("/api/folder-views", async (request) => services.preferences.setFolderView(requireActor(request).id, folderViewSchema.parse(request.body)));
   app.delete("/api/folder-views", async (request) => services.preferences.resetFolderView(requireActor(request).id, folderViewQuerySchema.parse(request.query)));
+  app.put("/api/favorites", async (request) => services.preferences.addFavorite(requireActor(request).id, favoriteSchema.parse(request.body)));
+  app.delete("/api/favorites", async (request) => services.preferences.removeFavorite(requireActor(request).id, favoriteSchema.parse(request.query)));
 
   // One desktop background per person, kept as a picture of its own so the file it came from can move or go.
   app.get("/api/wallpaper", async (request, reply) => {

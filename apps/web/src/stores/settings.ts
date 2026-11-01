@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { api } from "../api/client";
 import { adoptPrefs, onPrefChange } from "../lib/prefs";
-import type { AccountPreferences, AccountSettings, FolderViewEntry } from "../types/kago";
+import type { AccountPreferences, AccountSettings, FavoriteFolder, FolderViewEntry } from "../types/kago";
 
 type SettingsStore = {
   /** False until the account has answered once. */
@@ -9,6 +9,7 @@ type SettingsStore = {
   settings: AccountSettings;
   /** Every folder something has been set for, by `folderKey`. */
   folderViews: Record<string, FolderViewEntry>;
+  favorites: FavoriteFolder[];
 };
 
 export const folderKey = (rootSlug: string, path: string) => `${rootSlug}\n${path}`;
@@ -17,13 +18,13 @@ export const folderKey = (rootSlug: string, path: string) => `${rootSlug}\n${pat
  * What the account has set: the look of the interface, and how each folder is shown. It is small enough to be
  * held whole, so a folder's view is known the moment it is opened.
  */
-export const useSettingsStore = create<SettingsStore>(() => ({ hydrated: false, settings: {}, folderViews: {} }));
+export const useSettingsStore = create<SettingsStore>(() => ({ hydrated: false, settings: {}, folderViews: {}, favorites: [] }));
 
 /** Changes on their way to the server. Until the last one is answered, what is on screen is ahead of what the server says. */
 let pending = 0;
 
 function adopt(remote: AccountPreferences) {
-  useSettingsStore.setState({ hydrated: true, settings: remote.settings, folderViews: Object.fromEntries(remote.folderViews.map((view) => [folderKey(view.rootSlug, view.path), view])) });
+  useSettingsStore.setState({ hydrated: true, settings: remote.settings, folderViews: Object.fromEntries(remote.folderViews.map((view) => [folderKey(view.rootSlug, view.path), view])), favorites: remote.favorites });
   const unsent = adoptPrefs(remote.settings);
   if (Object.keys(unsent).length > 0) void saveSettings(unsent);
 }
@@ -72,6 +73,20 @@ export function resetFolderView(rootSlug: string, path: string) {
     return { folderViews: rest };
   });
   return send(`/api/folder-views?${new URLSearchParams({ rootSlug, path }).toString()}`, { method: "DELETE" });
+}
+
+const sameFolder = (a: FavoriteFolder, b: FavoriteFolder) => a.rootSlug === b.rootSlug && a.path === b.path;
+
+export const useIsFavorite = (rootSlug: string, path: string) => useSettingsStore((state) => state.favorites.some((favorite) => sameFolder(favorite, { rootSlug, path })));
+
+/** Puts a folder at the end of the favorites, or takes it out of them. */
+export function setFavorite(folder: FavoriteFolder, favorite: boolean) {
+  useSettingsStore.setState(({ favorites }) => ({
+    favorites: favorite ? (favorites.some((entry) => sameFolder(entry, folder)) ? favorites : [...favorites, folder]) : favorites.filter((entry) => !sameFolder(entry, folder))
+  }));
+  return favorite
+    ? send("/api/favorites", { method: "PUT", body: JSON.stringify(folder) })
+    : send(`/api/favorites?${new URLSearchParams(folder).toString()}`, { method: "DELETE" });
 }
 
 /** Where the desktop background set at `version` is read from. */

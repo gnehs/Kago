@@ -1,6 +1,6 @@
 import { Fragment, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Dialog } from "@base-ui/react/dialog";
-import { CircleUserRound, Clock, FileVideo, Fingerprint, Folder, HardDrive, Info, KeyRound, LayoutGrid, RefreshCw, ScrollText, Search, UserRound, UsersRound } from "lucide-react";
+import { CircleUserRound, Clock, Star, FileVideo, Fingerprint, Folder, HardDrive, Info, KeyRound, LayoutGrid, RefreshCw, ScrollText, Search, UserRound, UsersRound } from "lucide-react";
 import { useExternalApps } from "@/api/hooks";
 import { KagoKbd } from "@/components/kago/kbd";
 import { ExternalAppGlyph } from "@/components/kago/external-app-icon";
@@ -9,12 +9,13 @@ import { appIcons } from "@/features/windows/AppWindow";
 import { baseName, displayPath, nfc, normalizeLogicalPath } from "@/lib/paths";
 import { cn } from "@/lib/utils";
 import { useRecentStore, type RecentFolder } from "@/stores/recent";
+import { useSettingsStore } from "@/stores/settings";
 import { useWorkspaceStore, type AppKind, type SettingsSection } from "@/stores/workspace";
-import type { ExternalApp, Root } from "@/types/kago";
+import type { ExternalApp, FavoriteFolder, Root } from "@/types/kago";
 import { t } from "@/lib/i18n";
 
 /** What the list is divided into, in the order it is shown. */
-const groupLabels = { locations: t("Locations"), recent: t("Recent folders"), apps: t("Apps"), kago: "Kago" };
+const groupLabels = { locations: t("Locations"), favorites: t("Favorites"), recent: t("Recent folders"), apps: t("Apps"), kago: "Kago" };
 
 type Target = { key: string; group: keyof typeof groupLabels; label: string; hint: string; icon: ReactNode; open: () => void };
 
@@ -37,7 +38,7 @@ const apps: Array<{ app: AppKind; section?: SettingsSection; label: string; icon
   { app: "settings", section: "about", label: t("About"), icon: <Info /> }
 ];
 
-function suggestions(query: string, roots: Root[], activeRootSlug: string | undefined, recent: RecentFolder[], isAdmin: boolean, externalApps: ExternalApp[]): Target[] {
+function suggestions(query: string, roots: Root[], activeRootSlug: string | undefined, favorites: FavoriteFolder[], recent: RecentFolder[], isAdmin: boolean, externalApps: ExternalApp[]): Target[] {
   const trimmed = query.trim();
   const results = new Map<string, Target>();
   const pushFolder = (rootSlug: string, logicalPath: string, label: string, icon: ReactNode, group: Target["group"] = "locations") => {
@@ -65,7 +66,13 @@ function suggestions(query: string, roots: Root[], activeRootSlug: string | unde
   for (const root of roots) {
     if (!lower || root.name.toLowerCase().includes(lower) || root.slug.includes(lower)) pushPath(root, "/");
   }
-  // Recently visited folders fill in below the roots, filtered by the same query.
+  // Favorites, then recently visited folders, fill in below the roots, filtered by the same query.
+  for (const folder of favorites) {
+    const root = roots.find((entry) => entry.slug === folder.rootSlug);
+    if (!root) continue;
+    const label = folder.path === "/" ? root.name : baseName(folder.path);
+    if (!lower || label.toLowerCase().includes(lower)) pushFolder(folder.rootSlug, folder.path, label, <Star />, "favorites");
+  }
   for (const folder of recent) {
     const label = baseName(folder.path);
     if (!roots.some((root) => root.slug === folder.rootSlug)) continue;
@@ -116,8 +123,9 @@ function Palette({ roots, isAdmin, onClose }: { roots: Root[]; isAdmin: boolean;
   const [index, setIndex] = useState(0);
   const activeRootSlug = useWorkspaceStore((state) => state.windows.find((window) => window.id === state.activeWindowId)?.rootSlug);
   const recent = useRecentStore((state) => state.folders);
+  const favorites = useSettingsStore((state) => state.favorites);
   const externalApps = useExternalApps().data;
-  const items = useMemo(() => suggestions(query, roots, activeRootSlug, recent, isAdmin, externalApps ?? []), [query, roots, activeRootSlug, recent, isAdmin, externalApps]);
+  const items = useMemo(() => suggestions(query, roots, activeRootSlug, favorites, recent, isAdmin, externalApps ?? []), [query, roots, activeRootSlug, favorites, recent, isAdmin, externalApps]);
   const typed = nfc(query.trim()).toLowerCase();
 
   function open(target: Target | undefined) {

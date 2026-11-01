@@ -354,6 +354,16 @@ CREATE TABLE IF NOT EXISTS folder_views (
   FOREIGN KEY (root_id) REFERENCES roots(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS favorites (
+  user_id TEXT NOT NULL,
+  root_id TEXT NOT NULL,
+  path TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, root_id, path),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (root_id) REFERENCES roots(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS archive_passwords (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
