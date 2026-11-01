@@ -10,7 +10,7 @@ import { ExternalAppIcon } from "@/components/kago/external-app-icon";
 import { appHref, openExternalApp, openInNewTab, removeExternalApp } from "@/features/apps/externalApps";
 import { cn, copyText } from "@/lib/utils";
 import { useWorkspaceStore } from "@/stores/workspace";
-import type { ExternalApp, FileWindow, Root } from "@/types/kago";
+import type { ExternalApp, Root } from "@/types/kago";
 import { t } from "@/lib/i18n";
 import { useDragOrder } from "./useDragOrder";
 import { run } from "@/lib/run";
@@ -36,13 +36,6 @@ export function DesktopIcons({ roots, isAdmin }: { roots: Root[]; isAdmin: boole
   // A new window starts in a location on this machine when there is one: it answers at once and is always there.
   const home = roots.find((root) => root.provider === "local") ?? roots[0];
   const openNew = (root: Root) => store().openWindow({ rootSlug: root.slug, logicalPath: "/", title: root.name });
-  /** Brings back the file window last in front, and opens one only when there is none. */
-  const openFiles = (home: Root) => {
-    const front = store().windows.reduce<FileWindow | undefined>((top, window) => (top && top.zIndex > window.zIndex ? top : window), undefined);
-    if (!front) return openNew(home);
-    store().updateWindow(front.id, { minimized: false });
-    store().focusWindow(front.id);
-  };
 
   return (
     <div className="absolute inset-y-4 left-4 flex flex-col flex-wrap content-start gap-1">
@@ -62,7 +55,7 @@ export function DesktopIcons({ roots, isAdmin }: { roots: Root[]; isAdmin: boole
             icon={GLYPHS.files}
             tone="var(--kago-app-1)"
             label={t("Files")}
-            onClick={(event) => (event.metaKey || event.ctrlKey ? openNew(home) : openFiles(home))}
+            onClick={() => openNew(home)}
             onAuxClick={(event) => event.button === 1 && openNew(home)}
           />
         </KagoContextMenu>
