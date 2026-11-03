@@ -648,7 +648,8 @@ export class MediaService {
     this.cancelPrewarm(id);
 
     this.advanceHead(session);
-    const onItsWay = session.proc && index >= session.runStart && index <= session.head + 2;
+    // Below `head` this run has written the segment already, so a missing file there was pruned and has to be encoded again.
+    const onItsWay = session.proc && index >= session.head && index <= session.head + 2;
     if (!onItsWay) await this.start(session, index);
     else await this.resume(session);
     return this.awaitFile(session, file);
@@ -731,7 +732,7 @@ export class MediaService {
       if (!this.sessions.has(session.id)) throw new AppError(404, "Playback session not found", "NOT_FOUND");
       if (fs.existsSync(this.segmentPath(session, index))) return;
       this.advanceHead(session);
-      if (session.proc && index >= session.runStart && index <= session.head + 2) {
+      if (session.proc && index >= session.head && index <= session.head + 2) {
         if (session.paused) {
           session.proc.kill("SIGCONT");
           session.paused = false;
