@@ -1562,6 +1562,32 @@ test("foreground preemption waits for the speculative child to close", async () 
   assert.equal(service.foregroundStarts, 0);
 });
 
+test("seeking back to a segment that was pruned re-encodes it instead of waiting for it", {
+  skip: spawnSync("ffmpeg", ["-version"]).status !== 0 && "ffmpeg is not installed"
+}, async () => {
+  const fixture = await createFixture("kago-smoke-seek-back.");
+  const film = path.join(fixture.dataDir, "film.mkv");
+  const encoded = spawnSync("ffmpeg", ["-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=size=640x360:rate=12", "-t", "1200", "-c:v", "mpeg4", film]);
+  assert.equal(encoded.status, 0, String(encoded.stderr));
+  const media = new MediaService(fixture.appDataDir);
+  try {
+    const { mtimeMs, size } = await stat(film);
+    const { id } = await media.createSession("viewer", film, { mtimeMs, size }, { height: 360, audioIndex: 0, subtitleIndex: null, hdr: false });
+    for (let index = 0; index < 12; index += 1) await media.segment("viewer", id, index);
+    const first = path.join(fixture.appDataDir, "temp", "transcode", id, "0.ts");
+    for (let tries = 0; tries < 50 && (await pathExists(first)); tries += 1) await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.equal(await pathExists(first), false, "the ticker pruned what the player had moved well past");
+
+    const started = Date.now();
+    const again = await media.segment("viewer", id, 0);
+    assert.ok(Date.now() - started < 10_000, `the pruned segment came back in ${Date.now() - started} ms`);
+    assert.equal((await readFile(again))[0], 0x47);
+  } finally {
+    media.stop();
+    await rm(fixture.baseDir, { recursive: true, force: true });
+  }
+});
+
 function testEnv(fixture) {
   return {
     port: 0,
