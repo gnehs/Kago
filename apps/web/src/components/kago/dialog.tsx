@@ -46,7 +46,8 @@ export function KagoDialogHost() {
     setRequest(pending);
     setValue(pending.input?.defaultValue ?? "");
     // The suggested text is selected, ready to be typed over, once the field is there and holds it.
-    const frame = requestAnimationFrame(() => input.current?.select());
+    const selectEnd = pending.input?.selectEnd;
+    const frame = requestAnimationFrame(() => (selectEnd === undefined ? input.current?.select() : input.current?.setSelectionRange(0, selectEnd)));
     return () => cancelAnimationFrame(frame);
   }, [pending]);
 

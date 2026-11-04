@@ -12,8 +12,8 @@ export type DialogRequest = {
   destructive?: boolean;
   /** A second thing the dialog can do instead, which answers with `ALTERNATIVE`. */
   alternative?: { label: string; destructive?: boolean };
-  /** When set the dialog shows a text field prefilled with this value. */
-  input?: { defaultValue: string; placeholder?: string };
+  /** When set the dialog shows a text field prefilled with this value, selected up to `selectEnd` (all of it when unset). */
+  input?: { defaultValue: string; placeholder?: string; selectEnd?: number };
   resolve: (value: string | null) => void;
 };
 
@@ -28,8 +28,8 @@ function open(request: Omit<DialogRequest, "resolve">) {
   });
 }
 
-export function promptText(options: { title: string; description?: string; defaultValue?: string; placeholder?: string; confirmLabel?: string }) {
-  return open({ ...options, input: { defaultValue: options.defaultValue ?? "", placeholder: options.placeholder } });
+export function promptText(options: { title: string; description?: string; defaultValue?: string; placeholder?: string; selectEnd?: number; confirmLabel?: string }) {
+  return open({ ...options, input: { defaultValue: options.defaultValue ?? "", placeholder: options.placeholder, selectEnd: options.selectEnd } });
 }
 
 export async function confirmAction(options: { title: string; subject?: DialogSubject; description?: string; confirmLabel?: string; destructive?: boolean }) {

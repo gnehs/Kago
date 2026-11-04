@@ -161,9 +161,12 @@ export function newFolderIn(queryClient: QueryClient, folder: FileRef) {
 }
 
 /** Asks for another name for an item. `onRenamed` hears where it is now before any listing is asked for again. */
-export function renameFile(queryClient: QueryClient, item: FileRef & { name: string }, onRenamed?: (path: string) => void) {
+export function renameFile(queryClient: QueryClient, item: FileRef & { name: string; kind?: FileItem["kind"] }, onRenamed?: (path: string) => void) {
   return run(async () => {
-    const name = nfc((await promptText({ title: t("Rename"), defaultValue: item.name, confirmLabel: t("Rename") })) ?? "");
+    // A file's name is selected without its extension, so typing over it keeps the type; a dotfile's whole name is its name.
+    const dot = item.name.lastIndexOf(".");
+    const selectEnd = item.kind === "file" && dot > 0 ? dot : undefined;
+    const name = nfc((await promptText({ title: t("Rename"), defaultValue: item.name, selectEnd, confirmLabel: t("Rename") })) ?? "");
     // Confirming the unchanged name still goes through for an NFD file, which rewrites it as NFC.
     if (!name || (name === item.name && !needsNormalizing(item.path))) return;
     const renamed = await api<{ path: string }>("/api/fs/rename", { method: "POST", body: JSON.stringify({ rootSlug: item.rootSlug, path: item.path, name }) });
@@ -343,7 +346,7 @@ export function useFileActions(window: FileWindow) {
         if (files.length > 0) toast(folder ? t("Uploaded {count} file to “{folder}” | Uploaded {count} files to “{folder}”", { count: files.length, folder }) : t("Uploaded {count} file | Uploaded {count} files", { count: files.length }));
         else toast(folder ? t("Created {count} folder in “{folder}” | Created {count} folders in “{folder}”", { count: dirs.length, folder }) : t("Created {count} folder | Created {count} folders", { count: dirs.length }));
       }, t("Upload failed")),
-    rename: (item: FileItem) => renameFile(queryClient, { rootSlug: window.rootSlug, path: item.path, name: item.name }, clearSelection),
+    rename: (item: FileItem) => renameFile(queryClient, { rootSlug: window.rootSlug, path: item.path, name: item.name, kind: item.kind }, clearSelection),
     /** Asks for a pattern and names the items by it. What is beside each of them, in its own folder, has its name taken. */
     renameMany: (items: FileItem[]) =>
       run(async () => {
