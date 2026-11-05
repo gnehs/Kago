@@ -53,7 +53,7 @@ test("minimum file-manager demo flow", async () => {
         focused: true,
         selectedItems: [],
         sidebarOpen: false,
-        tabs: [{ id: "tab_a", rootSlug: "photos", logicalPath: "/2026" }, { id: "tab_b", rootSlug: "photos", logicalPath: "//public" }],
+        tabs: [{ id: "tab_a", rootSlug: "photos", logicalPath: "/2026" }, { id: "tab_b", rootSlug: "photos", logicalPath: "//public", selectedItems: ["//public/a.jpg"] }],
         activeTabId: "tab_a"
       }],
       sidebar: { collapsed: false },
@@ -62,9 +62,10 @@ test("minimum file-manager demo flow", async () => {
     };
     assert.equal((await admin.put("/api/workspace", workspace)).statusCode, 200);
     assert.equal((await admin.get("/api/workspace")).json.windows[0].logicalPath, "/2026");
-    // A window's tabs and its sidebar come back with it, each tab's path tidied like the window's own.
+    // A window's tabs and its sidebar come back with it, each tab's paths tidied like the window's own.
     const savedWindow = (await admin.get("/api/workspace")).json.windows[0];
     assert.deepEqual(savedWindow.tabs.map((tab) => tab.logicalPath), ["/2026", "/public"]);
+    assert.deepEqual(savedWindow.tabs[1].selectedItems, ["/public/a.jpg"]);
     assert.equal(savedWindow.activeTabId, "tab_a");
     assert.equal(savedWindow.sidebarOpen, false);
 

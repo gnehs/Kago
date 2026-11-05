@@ -195,7 +195,13 @@ export type FileWindow = {
 };
 
 /** A folder kept open in a window alongside the one it is showing. */
-export type FileTab = { id: string; rootSlug: string; logicalPath: string };
+export type FileTab = {
+  id: string;
+  rootSlug: string;
+  logicalPath: string;
+  /** What was selected in the tab when another was shown in its place, selected again when it comes back. */
+  selectedItems?: string[];
+};
 
 /** How a folder is shown. It belongs to the folder, not to the window showing it. */
 export type FolderView = {

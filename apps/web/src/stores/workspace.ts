@@ -189,8 +189,17 @@ function withTabs(window: FileWindow): FileWindow {
   return { ...window, tabs: [tab], activeTabId: tab.id };
 }
 
-/** Turns a window to one of its tabs. Nothing stays selected: the selection belonged to the folder it leaves. */
-const showTab = (window: FileWindow, tab: FileTab): FileWindow => ({ ...window, activeTabId: tab.id, rootSlug: tab.rootSlug, logicalPath: tab.logicalPath, title: folderTitle(tab.rootSlug, tab.logicalPath), selectedItems: [], updatedAt: ts() });
+/** Turns a window to one of its tabs. The tab it leaves keeps what was selected in it, and the one it shows gets its own back. */
+const showTab = (window: FileWindow, tab: FileTab): FileWindow => ({
+  ...window,
+  tabs: window.tabs?.map((entry) => (entry.id === window.activeTabId ? { ...entry, selectedItems: window.selectedItems } : entry.id === tab.id ? { ...entry, selectedItems: undefined } : entry)),
+  activeTabId: tab.id,
+  rootSlug: tab.rootSlug,
+  logicalPath: tab.logicalPath,
+  title: folderTitle(tab.rootSlug, tab.logicalPath),
+  selectedItems: tab.selectedItems ?? [],
+  updatedAt: ts()
+});
 
 const closeGuards = new Map<string, () => Promise<boolean>>();
 
@@ -419,7 +428,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         windows: state.windows.map((window) => {
           const tabs = window.tabs?.map((tab) => {
             const path = moved(tab.rootSlug, tab.logicalPath);
-            return path === null ? tab : { ...tab, rootSlug: to.rootSlug, logicalPath: path };
+            if (path === null) return tab;
+            return { ...tab, rootSlug: to.rootSlug, logicalPath: path, selectedItems: tab.selectedItems?.map((item) => moved(tab.rootSlug, item) ?? item) };
           });
           const path = moved(window.rootSlug, window.logicalPath);
           if (path === null) return tabs?.some((tab, index) => tab !== window.tabs![index]) ? { ...window, tabs } : window;
