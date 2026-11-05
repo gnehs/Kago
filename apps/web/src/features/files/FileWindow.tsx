@@ -67,15 +67,22 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
   const actions = useFileActions(win);
   const uploadInput = useRef<HTMLInputElement>(null);
   const folderInput = useRef<HTMLInputElement>(null);
-  const [search, setSearch] = useState("");
-  // The folders below are searched once typing pauses; clearing the field goes back to the folder at once.
+  // Every tab has been to places of its own, and keeps what was typed in its search field.
+  const tabId = frame.activeTabId ?? "";
+  const [searches, setSearches] = useState<Record<string, string>>({});
+  const search = searches[tabId] ?? "";
+  const setSearch = (value: string) => setSearches((all) => ({ ...all, [tabId]: value }));
+  // The folders below are searched once typing pauses; clearing the field, or coming back to a tab, goes there at once.
   const [query, setQuery] = useState("");
   const typed = nfc(search.trim());
+  const queryTab = useRef(tabId);
   useEffect(() => {
-    if (!typed) return setQuery("");
+    const switched = queryTab.current !== tabId;
+    queryTab.current = tabId;
+    if (!typed || switched) return setQuery(typed);
     const timer = setTimeout(() => setQuery(typed), 250);
     return () => clearTimeout(timer);
-  }, [typed]);
+  }, [typed, tabId]);
   const [anchorPath, setAnchorPath] = useState<string | null>(null);
   const [menuItem, setMenuItem] = useState<FileItem | null>(null);
   // The folder a right click on empty space was in: in the column view, that of the column clicked.
@@ -87,8 +94,6 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
   const [dropChoice, setDropChoice] = useState<{ sources: FileRef[]; destination: FileRef; x: number; y: number } | null>(null);
   const clip = useClipboardStore((state) => state.clip);
   const favorites = useSettingsStore((state) => state.favorites);
-  // Every tab has been to places of its own.
-  const tabId = win.activeTabId ?? "";
   const [histories, setHistories] = useState<Record<string, { stack: Place[]; index: number }>>({});
   const history = histories[tabId] ?? { stack: [], index: -1 };
   const place = history.stack[history.index];
@@ -194,10 +199,14 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
     if (fileList.data) useRecentStore.getState().visit({ rootSlug: win.rootSlug, path: win.logicalPath });
   }, [fileList.data, win.rootSlug, win.logicalPath]);
 
+  // Going somewhere else in a tab ends its search; going to another tab finds that tab's as it was left.
+  const searchedPlace = useRef({ tabId, rootSlug: win.rootSlug, path: win.logicalPath });
   useEffect(() => {
-    setSearch("");
+    const before = searchedPlace.current;
+    searchedPlace.current = { tabId, rootSlug: win.rootSlug, path: win.logicalPath };
+    if (before.tabId === tabId && (before.rootSlug !== win.rootSlug || before.path !== win.logicalPath)) setSearches((all) => ({ ...all, [tabId]: "" }));
     setExpanded(new Set());
-  }, [win.logicalPath, win.rootSlug]);
+  }, [win.logicalPath, win.rootSlug, tabId]);
 
   // Coming back to a folder (back, forward, up, or its tab) shows it scrolled to where it was left; going anywhere else starts at the top.
   const scrollTops = useRef(new Map<string, number>());
