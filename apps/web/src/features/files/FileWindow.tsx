@@ -40,6 +40,7 @@ import { t } from "@/lib/i18n";
 // A shared collator sorts a folder of tens of thousands of names far faster than localeCompare does.
 /** The icon of a window showing a folder. */
 const FOLDER = { kind: "folder", type: "", name: "" } as const;
+const NOTHING_OPEN: ReadonlySet<string> = new Set();
 
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 const compare = (a: string, b: string) => collator.compare(a, b);
@@ -104,7 +105,9 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
     setHistories({ ...histories, [tabId]: { stack, index: stack.length - 1 } });
   }
 
-  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
+  // Each tab keeps the folders opened in place in it.
+  const [expandedByTab, setExpandedByTab] = useState<Record<string, ReadonlySet<string>>>({});
+  const expanded = expandedByTab[tabId] ?? NOTHING_OPEN;
   // Folders open in place in the list view only; a search lists what it found, wherever inside the folder that is.
   const searching = Boolean(typed);
   const showsTree = win.viewMode === "list" && !searching;
@@ -199,13 +202,14 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
     if (fileList.data) useRecentStore.getState().visit({ rootSlug: win.rootSlug, path: win.logicalPath });
   }, [fileList.data, win.rootSlug, win.logicalPath]);
 
-  // Going somewhere else in a tab ends its search; going to another tab finds that tab's as it was left.
+  // Going somewhere else in a tab ends its search and closes its folders; going to another tab finds that tab's as they were left.
   const searchedPlace = useRef({ tabId, rootSlug: win.rootSlug, path: win.logicalPath });
   useEffect(() => {
     const before = searchedPlace.current;
     searchedPlace.current = { tabId, rootSlug: win.rootSlug, path: win.logicalPath };
-    if (before.tabId === tabId && (before.rootSlug !== win.rootSlug || before.path !== win.logicalPath)) setSearches((all) => ({ ...all, [tabId]: "" }));
-    setExpanded(new Set());
+    if (before.tabId !== tabId || (before.rootSlug === win.rootSlug && before.path === win.logicalPath)) return;
+    setSearches((all) => ({ ...all, [tabId]: "" }));
+    setExpandedByTab((all) => ({ ...all, [tabId]: NOTHING_OPEN }));
   }, [win.logicalPath, win.rootSlug, tabId]);
 
   // Coming back to a folder (back, forward, up, or its tab) shows it scrolled to where it was left; going anywhere else starts at the top.
@@ -246,18 +250,18 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
       depths,
       expanded,
       setExpanded(path, open) {
-        setExpanded((previous) => {
-          const next = new Set(previous);
+        setExpandedByTab((all) => {
+          const next = new Set(all[tabId] ?? NOTHING_OPEN);
           if (open) next.add(path);
           else next.delete(path);
-          return next;
+          return { ...all, [tabId]: next };
         });
         // What a closing folder hides cannot stay selected.
         const selection = store().windows.find((entry) => entry.id === win.id)?.selectedItems ?? [];
         if (!open && selection.some((selected) => selected.startsWith(`${path}/`))) store().selectItems(win.id, selection.filter((selected) => !selected.startsWith(`${path}/`)));
       }
     };
-  }, [showsTree, depths, expanded, win.id]);
+  }, [showsTree, depths, expanded, win.id, tabId]);
 
   // A window that lost access must not keep showing what it had selected.
   useEffect(() => {
