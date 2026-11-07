@@ -12,8 +12,9 @@ const LIBASS = `${location.origin}/libass`;
  */
 export function useSubtitleRenderer(videoRef: RefObject<HTMLVideoElement | null>, track: SubtitleTrack | null, attachedFonts: string[], aspect: number, onError: () => void) {
   const url = track?.url ?? null;
+  const embedded = track?.embedded ?? false;
   // Attached fonts belong to the video's own subtitles; a file beside it was not written with them in mind.
-  const ownFonts = track?.embedded ? attachedFonts.join("\n") : "";
+  const ownFonts = embedded ? attachedFonts.join("\n") : "";
   const format = track?.format ?? "ass";
   const language = track?.language ?? "";
   // Only a converted SubRip file is laid out for the picture's shape.
@@ -23,12 +24,17 @@ export function useSubtitleRenderer(videoRef: RefObject<HTMLVideoElement | null>
     const video = videoRef.current;
     if (!video || url === null) return;
     let cancelled = false;
+    const stop = new AbortController();
     let renderer: { dispose: () => void } | null = null;
     const fail = () => {
       if (!cancelled) onError();
     };
 
     void (async () => {
+      // The server reads the whole video to take out an embedded track; on a hard drive that would hold up the first frames, so it waits for them.
+      if (embedded && video.readyState < HTMLMediaElement.HAVE_FUTURE_DATA) {
+        await new Promise((resolve) => video.addEventListener("canplay", resolve, { once: true, signal: stop.signal }));
+      }
       const [response, { default: SubtitlesOctopus }] = await Promise.all([fetch(url), import("@jellyfin/libass-wasm")]);
       if (!response.ok) throw new Error(`Subtitle request failed: ${response.status}`);
       const text = decodeSubtitle(await response.arrayBuffer(), language);
@@ -47,8 +53,9 @@ export function useSubtitleRenderer(videoRef: RefObject<HTMLVideoElement | null>
 
     return () => {
       cancelled = true;
+      stop.abort();
       renderer?.dispose();
     };
     // `onError` only reports; a new callback identity must not rebuild the renderer.
-  }, [videoRef, url, ownFonts, format, language, shape]);
+  }, [videoRef, url, embedded, ownFonts, format, language, shape]);
 }
