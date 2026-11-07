@@ -2,9 +2,18 @@ import { createHash } from "node:crypto";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
-import type { Readable } from "node:stream";
+import { Readable } from "node:stream";
 import { AppError } from "../lib/errors.js";
 import { logger } from "../lib/logger.js";
+
+type Span = { start: number; end: number };
+
+/**
+ * rclone serves an object by waiting on each small read before asking for the next, so one request over SMB or SFTP
+ * moves only a few kilobytes per round trip. Several requests for consecutive pieces run at once instead, as an SMB client's read-ahead does.
+ */
+const READ_PIECE = 2 * 1024 * 1024;
+const READS_AHEAD = 8;
 
 export type RcloneItem = { Path: string; Name: string; Size: number; ModTime: string; IsDir: boolean };
 export type RcloneStats = { bytes: number; totalBytes: number; transfers: number; totalTransfers: number; deletes?: number; deletedDirs?: number; errors: number; lastError?: string; transferring?: Array<{ name: string }> };
@@ -55,11 +64,35 @@ export class RcloneClient {
   }
 
   /** The bytes of one object, or of the part of it that `range` names. */
-  async open(fs: string, remote: string, range?: { start: number; end: number }): Promise<Readable> {
+  async open(fs: string, remote: string, range?: Span): Promise<Readable> {
     const url = `/${encodeURIComponent(`[${fs}]`)}/${remote.split("/").map(encodeURIComponent).join("/")}`;
-    const response = await this.request("GET", url, range ? { Range: `bytes=${range.start}-${range.end}` } : {});
-    if (response.statusCode !== 200 && response.statusCode !== 206) throw rcloneError(response.statusCode ?? 500, await readAll(response));
-    return response;
+    const start = range?.start ?? 0;
+    const first = await this.request("GET", url, { Range: `bytes=${start}-${Math.min(range?.end ?? Infinity, start + READ_PIECE - 1)}` });
+    // An empty file has no range to give; only a request without one gets its (empty) body.
+    if (first.statusCode === 416 && !range) {
+      first.resume();
+      const whole = await this.request("GET", url, {});
+      if (whole.statusCode !== 200) throw rcloneError(whole.statusCode ?? 500, await readAll(whole));
+      return whole;
+    }
+    if (first.statusCode === 200) return first;
+    if (first.statusCode !== 206) throw rcloneError(first.statusCode ?? 500, await readAll(first));
+    const answered = /^bytes (\d+)-(\d+)\/(\d+)$/.exec(first.headers["content-range"] ?? "");
+    if (!answered) return first;
+    const end = Math.min(range?.end ?? Infinity, Number(answered[3]) - 1);
+    const spans: Span[] = [];
+    for (let from = Number(answered[2]) + 1; from <= end; from += READ_PIECE) spans.push({ start: from, end: Math.min(end, from + READ_PIECE - 1) });
+    if (spans.length === 0) return first;
+    return new ReadAhead(first, spans, (span, signal) => this.piece(url, span, signal));
+  }
+
+  private async piece(url: string, span: Span, signal: AbortSignal): Promise<Buffer> {
+    const response = await this.request("GET", url, { Range: `bytes=${span.start}-${span.end}` }, undefined, signal);
+    const body = await readAll(response);
+    if (response.statusCode !== 206) throw rcloneError(response.statusCode ?? 500, body);
+    // The file changed or shrank since its first piece was sent: what follows would not belong with it.
+    if (body.length !== span.end - span.start + 1) throw new RcloneError(502, "The remote file changed while it was being read");
+    return body;
   }
 
   /** Writes a stream of unknown length as `name` inside `directory`, replacing what is there. */
@@ -151,6 +184,68 @@ function rcloneError(status: number, body: Buffer): RcloneError {
     // Served objects answer in plain text.
   }
   return new RcloneError(status, message);
+}
+
+/** The first response passed on as it arrives, then the pieces after it in order, keeping `READS_AHEAD` of them on the way. */
+class ReadAhead extends Readable {
+  private readonly stop = new AbortController();
+  private readonly first: AsyncIterator<Buffer>;
+  private firstDone = false;
+  private readonly waiting: Array<Promise<Buffer>> = [];
+  private reading = false;
+
+  constructor(
+    private readonly response: http.IncomingMessage,
+    private readonly spans: Span[],
+    private readonly fetch: (span: Span, signal: AbortSignal) => Promise<Buffer>
+  ) {
+    super();
+    this.first = response[Symbol.asyncIterator]();
+    this.fill();
+  }
+
+  private fill(): void {
+    while (this.waiting.length < READS_AHEAD && this.spans.length > 0) {
+      const piece = this.fetch(this.spans.shift()!, this.stop.signal);
+      // Awaited in turn later; one that fails while ahead must not count as unhandled meanwhile.
+      piece.catch(() => undefined);
+      this.waiting.push(piece);
+    }
+  }
+
+  private async next(): Promise<Buffer | null> {
+    if (!this.firstDone) {
+      const step = await this.first.next();
+      if (!step.done) return step.value;
+      this.firstDone = true;
+    }
+    const piece = this.waiting.shift();
+    if (!piece) return null;
+    this.fill();
+    return piece;
+  }
+
+  override async _read(): Promise<void> {
+    if (this.reading) return;
+    this.reading = true;
+    try {
+      for (;;) {
+        const chunk = await this.next();
+        if (this.destroyed) return;
+        if (!this.push(chunk) || chunk === null) return;
+      }
+    } catch (error) {
+      this.destroy(error as Error);
+    } finally {
+      this.reading = false;
+    }
+  }
+
+  override _destroy(error: Error | null, callback: (error?: Error | null) => void): void {
+    this.stop.abort();
+    this.response.destroy();
+    callback(error);
+  }
 }
 
 async function readAll(stream: Readable): Promise<Buffer> {
