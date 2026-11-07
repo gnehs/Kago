@@ -176,6 +176,8 @@ const PREWARM_QUEUE_TTL_MS = 15_000;
 const PREWARM_TIMEOUT_MS = 30_000;
 /** Keep only a small, recent window after the pointer leaves the timeline. */
 const PREWARM_CACHE_TTL_MS = 60_000;
+/** A player that seeks hangs up and asks again; the gap between the two is not the end of watching. */
+const DIRECT_PLAY_GRACE_MS = 5_000;
 const PREWARM_SEGMENTS = 2;
 const PREWARM_QUEUE_LIMIT = 8;
 /** ffmpeg is suspended once it is this many segments ahead of the player, and resumed when the lead halves. */
@@ -270,6 +272,9 @@ export class MediaService {
   private activePrewarm: PrewarmJob | null = null;
   /** Blocks a new speculative job while a foreground encoder waits for the active child to close. */
   private foregroundStarts = 0;
+  /** Videos and sounds being sent as they are to someone playing them, and when the last of those ended. */
+  private directPlays = 0;
+  private directPlayEnded = 0;
   private readonly probes = new Map<string, Omit<MediaInfo, "transcode" | "audioTranscode" | "encoder" | "hdrOutput" | "tonemap">>();
   private readonly probing = new Map<string, Promise<Omit<MediaInfo, "transcode" | "audioTranscode" | "encoder" | "hdrOutput" | "tonemap">>>();
   // Anyone who may look at a folder may ask about every file in it; each question is a process of its own.
@@ -1176,7 +1181,24 @@ export class MediaService {
     }
     this.pumpPrewarms();
     // Last in line: a storyboard is worked on only while nobody is waiting for a picture or a sound.
-    this.storyboards.pump(this.activePrewarm !== null || this.pendingPrewarms.size > 0 || this.foregroundStarts > 0 || this.hasForegroundEncoder());
+    this.storyboards.pump(this.activePrewarm !== null || this.pendingPrewarms.size > 0 || this.foregroundStarts > 0 || this.hasForegroundEncoder() || this.playingDirectly());
+  }
+
+  /**
+   * Marks a file being sent as it is to someone playing it; call what is returned once it is no longer being sent.
+   * A storyboard reads the whole of a video as fast as the disk goes, and on a hard drive the player would wait behind it.
+   */
+  directPlay(): () => void {
+    this.directPlays += 1;
+    this.storyboards.pump(true);
+    return () => {
+      this.directPlays -= 1;
+      this.directPlayEnded = Date.now();
+    };
+  }
+
+  private playingDirectly(): boolean {
+    return this.directPlays > 0 || Date.now() - this.directPlayEnded < DIRECT_PLAY_GRACE_MS;
   }
 
   /** Picks the first encoder that survives a real test encode, so a GPU that is present but unusable is skipped. */

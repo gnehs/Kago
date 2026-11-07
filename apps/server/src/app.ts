@@ -291,6 +291,8 @@ function sendUserFile(request: FastifyRequest, reply: FastifyReply, source: File
   return sendSource(request, reply, source, passive ? contentType : "application/octet-stream");
 }
 
+const isPlayable = (contentType: string) => /^(video|audio)\//.test(contentType);
+
 function resolveWebDist(env: Env): string {
   const candidates = [
     env.webDistDir,
@@ -876,6 +878,7 @@ function registerApi(app: FastifyInstance, services: Services) {
     const actor = requireActor(request);
     const query = fsQuerySchema.parse(request.query);
     const file = await services.fsService.preview(actor, query.rootSlug, query.path);
+    if (isPlayable(file.contentType)) reply.raw.once("close", services.media.directPlay());
     return sendUserFile(request, reply, file.source, file.contentType, file.name);
   });
   app.put("/api/fs/content", async (request) => services.fsService.writeText(requireActor(request), writeTextSchema.parse(request.body)));
@@ -1270,6 +1273,7 @@ function registerApi(app: FastifyInstance, services: Services) {
     if (!stat.isFile()) throw new AppError(400, "Path is not a file", "NOT_FILE");
     const contentType = lookup(safe.logicalPath) || "application/octet-stream";
     if (!isBrowserViewable(contentType)) throw new AppError(415, "This kind of file cannot be viewed in the browser", "PREVIEW_UNSUPPORTED");
+    if (isPlayable(contentType)) reply.raw.once("close", services.media.directPlay());
     return sendUserFile(request, reply, services.storage.source(safe, stat), contentType, services.storage.name(safe));
   });
 
