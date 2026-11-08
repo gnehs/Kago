@@ -147,6 +147,9 @@ type Stack = { windows: FileWindow[]; appWindows: Array<AppWindow | ExternalWind
 
 const frames = (stack: Stack): WindowFrame[] => [...stack.windows, ...stack.appWindows, ...stack.previewWindows];
 
+/** The window in front among those not put away, which takes the focus when the focused one goes. */
+const frontmost = (stack: Stack) => frames(stack).filter((window) => !window.minimized).sort((a, b) => b.zIndex - a.zIndex)[0];
+
 const topZ = (stack: Stack) => Math.max(fileWindowZBase - 1, ...frames(stack).map((window) => window.zIndex));
 
 /**
@@ -226,6 +229,11 @@ export function minimizeWindows(ids: string[]) {
     ghostWindowOut(id, "minimize");
     store.updateWindow(id, { minimized: true });
   }
+  useWorkspaceStore.setState((state) => {
+    if (!state.activeWindowId || !ids.includes(state.activeWindowId)) return state;
+    const next = frontmost(state);
+    return { ...restack(state, next?.id ?? null), activeWindowId: next?.id ?? null };
+  });
 }
 
 export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
@@ -355,7 +363,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         previewWindows: state.previewWindows.filter((window) => window.id !== id)
       };
       if (state.activeWindowId !== id) return stack;
-      const next = frames(stack).filter((window) => !window.minimized).sort((a, b) => b.zIndex - a.zIndex)[0];
+      const next = frontmost(stack);
       return { ...restack(stack, next?.id ?? null), activeWindowId: next?.id ?? null };
     }),
   focusWindow: (id) =>

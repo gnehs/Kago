@@ -52,6 +52,8 @@ export function TopBar({ user, onOpenPalette }: { user: Actor; onOpenPalette: ()
     }
     const store = useWorkspaceStore.getState();
     for (const window of ordered) store.updateWindow(window.id, { minimized: false });
+    const front = [...ordered].sort((a, b) => b.zIndex - a.zIndex)[0];
+    if (front) store.focusWindow(front.id);
   }
 
   return (
