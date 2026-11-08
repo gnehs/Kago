@@ -50,18 +50,23 @@ export function SyncPage({ roots, user }: { roots: Root[]; user: Actor }) {
   const [editing, setEditing] = useState<SyncJob | true | null>(null);
   const [trialOf, setTrialOf] = useState<string | null>(null);
   const [runsOf, setRunsOf] = useState<string | null>(null);
-  const [starting, setStarting] = useState<string | null>(null);
+  // The jobs asked to run that have not answered yet, each on its own: one answering does not end another's wait.
+  const [starting, setStarting] = useState<ReadonlySet<string>>(new Set());
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["sync-jobs"] });
   const describeEndpoint = (endpoint: SyncEndpoint) => displayPath(roots.find((root) => root.slug === endpoint.rootSlug)?.name ?? endpoint.rootSlug, endpoint.path);
 
   async function start(job: SyncJob) {
-    setStarting(job.id);
+    setStarting((current) => new Set(current).add(job.id));
     await run(async () => {
       await api<FileTask>(`/api/sync-jobs/${job.id}/run`, { method: "POST" });
       toast(t("{name} started", { name: job.name }));
       await Promise.all([refresh(), queryClient.invalidateQueries({ queryKey: ["tasks"] })]);
     }, t("Couldn’t start the sync"));
-    setStarting(null);
+    setStarting((current) => {
+      const next = new Set(current);
+      next.delete(job.id);
+      return next;
+    });
   }
 
   async function remove(job: SyncJob) {
@@ -120,7 +125,7 @@ export function SyncPage({ roots, user }: { roots: Root[]; user: Actor }) {
                   </>
                 }
               >
-                <Button disabled={running || starting === job.id} onClick={() => void start(job)}>{starting === job.id ? <KagoSpinner className="text-inherit" /> : null}{t("Run now")}</Button>
+                <Button disabled={running || starting.has(job.id)} onClick={() => void start(job)}>{starting.has(job.id) ? <KagoSpinner className="text-inherit" /> : null}{t("Run now")}</Button>
                 {/* Running it is what a row is for; the rest is asked for now and then, and waits in the menu, whose button is the same kind of button. */}
                 <KagoDropdownMenu
                   raised
