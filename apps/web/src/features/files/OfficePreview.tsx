@@ -28,6 +28,13 @@ export function OfficePreviewWindow({ window, kind }: { window: PreviewWindow; k
   const { rootSlug, item } = window.preview;
   const tooLarge = item.size > MAX_OFFICE_BYTES;
   const [unreadable, setUnreadable] = useState(false);
+  // The window stays open when the file is opened again as it is now, which is then read afresh.
+  const version = `${item.path}:${item.mtime}`;
+  const [shown, setShown] = useState(version);
+  if (shown !== version) {
+    setShown(version);
+    setUnreadable(false);
+  }
   const onError = useCallback(() => setUnreadable(true), []);
   const file = useQuery({
     queryKey: ["fs", "bytes", rootSlug, item.path, item.mtime],

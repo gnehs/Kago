@@ -14,6 +14,7 @@ import { t } from "@/lib/i18n";
 
 // The 3D engine is only downloaded by someone who opens a splat.
 const SplatView = lazy(() => import("./SplatView"));
+const INITIAL_STATE: SplatViewState = { loaded: false, progress: 0, mode: null, touch: false };
 
 /** How the camera is moved, said once in the status bar instead of in a panel over the scene. */
 const hint = (state: SplatViewState) => {
@@ -26,8 +27,16 @@ const hint = (state: SplatViewState) => {
 export function SplatPreviewWindow({ window }: { window: PreviewWindow }) {
   const { rootSlug, item } = window.preview;
   const view = useRef<SplatViewHandle>(null);
-  const [state, setState] = useState<SplatViewState>({ loaded: false, progress: 0, mode: null, touch: false });
+  const [state, setState] = useState<SplatViewState>(INITIAL_STATE);
   const [error, setError] = useState<SplatError | null>(null);
+  // The window stays open when the file is opened again as it is now; what was told of the last scene does not carry over.
+  const version = `${item.path}:${item.mtime}`;
+  const [shown, setShown] = useState(version);
+  if (shown !== version) {
+    setShown(version);
+    setState(INITIAL_STATE);
+    setError(null);
+  }
   const onState = useCallback((patch: Partial<SplatViewState>) => setState((previous) => ({ ...previous, ...patch })), []);
   const onError = useCallback((next: SplatError) => setError(next), []);
   const download = () => triggerDownload(downloadUrl(rootSlug, item.path));
@@ -55,7 +64,7 @@ export function SplatPreviewWindow({ window }: { window: PreviewWindow }) {
         <div className="relative flex min-h-0 flex-1 flex-col bg-black">
           <Suspense fallback={<KagoLoading />}>
             {/* Keyed by the file as it is now, so one that is replaced on disk is read again. */}
-            <SplatView key={`${item.path}:${item.mtime}`} ref={view} url={previewUrl(rootSlug, item.path)} name={item.name} focused={window.focused} onState={onState} onError={onError} />
+            <SplatView key={version} ref={view} url={previewUrl(rootSlug, item.path)} name={item.name} focused={window.focused} onState={onState} onError={onError} />
           </Suspense>
           {state.loaded ? null : (
             <div className="kago-wait pointer-events-none absolute inset-0 flex items-center justify-center">

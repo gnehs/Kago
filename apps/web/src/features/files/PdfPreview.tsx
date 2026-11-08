@@ -14,13 +14,22 @@ import { t } from "@/lib/i18n";
 
 // pdf.js is only downloaded by someone who opens a PDF.
 const PdfView = lazy(() => import("./PdfView"));
+const INITIAL_STATE: PdfViewState = { page: 0, pages: 0, scale: 1, fitted: true };
 
 /** A PDF drawn by pdf.js rather than by whatever the browser has, so it reads the same on a phone as on a desktop. */
 export function PdfPreviewWindow({ window }: { window: PreviewWindow }) {
   const { rootSlug, item } = window.preview;
   const view = useRef<PdfViewHandle>(null);
-  const [state, setState] = useState<PdfViewState>({ page: 0, pages: 0, scale: 1, fitted: true });
+  const [state, setState] = useState<PdfViewState>(INITIAL_STATE);
   const [unreadable, setUnreadable] = useState(false);
+  // The window stays open when the file is opened again as it is now; what was told of the last read does not carry over.
+  const version = `${item.path}:${item.mtime}`;
+  const [shown, setShown] = useState(version);
+  if (shown !== version) {
+    setShown(version);
+    setState(INITIAL_STATE);
+    setUnreadable(false);
+  }
   const onState = useCallback((patch: Partial<PdfViewState>) => setState((previous) => ({ ...previous, ...patch })), []);
   const onError = useCallback(() => setUnreadable(true), []);
   const download = () => triggerDownload(downloadUrl(rootSlug, item.path));
@@ -42,7 +51,7 @@ export function PdfPreviewWindow({ window }: { window: PreviewWindow }) {
       ) : (
         <Suspense fallback={<KagoLoading />}>
           {/* Keyed by the file as it is now, so one that is replaced on disk is read again. */}
-          <PdfView key={`${item.path}:${item.mtime}`} ref={view} url={previewUrl(rootSlug, item.path)} onState={onState} onError={onError} />
+          <PdfView key={version} ref={view} url={previewUrl(rootSlug, item.path)} onState={onState} onError={onError} />
         </Suspense>
       )}
       {state.pages > 0 && !unreadable ? (
