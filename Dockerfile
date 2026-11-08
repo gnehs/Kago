@@ -24,17 +24,21 @@ COPY apps/web/package.json apps/web/package.json
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
   pnpm install --frozen-lockfile
 
-FROM deps AS build
+# The server's production node_modules, from the manifests alone: a commit that leaves
+# the lockfile alone reuses this stage, and with it the image layer it becomes.
+FROM deps AS prod-deps
 # Set by BuildKit to the architecture the image is for: amd64 or arm64.
 ARG TARGETARCH
-COPY . .
-# The commit the image is built from, for Settings → About: .git is not in the build context, so it is handed in.
-ARG KAGO_COMMIT
-RUN pnpm build
 # Node's name for amd64 is x64; the runtime image below is Debian, so glibc.
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
   pnpm --filter @kago/server deploy --prod --os=linux --libc=glibc \
     --cpu="$([ "$TARGETARCH" = amd64 ] && echo x64 || echo "$TARGETARCH")" /prod
+
+FROM deps AS build
+COPY . .
+# The commit the image is built from, for Settings → About: .git is not in the build context, so it is handed in.
+ARG KAGO_COMMIT
+RUN pnpm build
 
 # rclone is what reaches remote locations (SMB, SFTP, WebDAV, ...); it is one static binary.
 FROM rclone/rclone:${RCLONE_VERSION} AS rclone
@@ -64,11 +68,19 @@ ENV FFPROBE_PATH=/usr/lib/jellyfin-ffmpeg/ffprobe
 # Read by the NVIDIA container runtime: `video` is what exposes NVENC/NVDEC inside the container.
 ENV NVIDIA_VISIBLE_DEVICES=all
 ENV NVIDIA_DRIVER_CAPABILITIES=compute,video,utility
-COPY --from=build --chown=kago:kago /prod ./
-COPY --from=build --chown=kago:kago /app/apps/web/dist ./apps/web/dist
-COPY --from=rclone /usr/local/bin/rclone /usr/local/bin/rclone
-COPY LICENSE THIRD-PARTY-NOTICES ./
-COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/kago-entrypoint
+# What rarely changes comes first and in layers of its own, so an update pulls only the ones that did.
+# --link keeps each layer from depending on the ones before it; it also has no /etc/passwd to
+# look names up in, hence 1000:1000, the kago user.
+COPY --link --from=rclone /usr/local/bin/rclone /usr/local/bin/rclone
+COPY --link --from=prod-deps --chown=1000:1000 /prod ./
+# The CJK fonts, pdf.js and the subtitle renderer are most of the web build and change only with their packages.
+COPY --link --from=build --chown=1000:1000 /app/apps/web/dist/assets/*.ttf ./apps/web/dist/assets/
+COPY --link --from=build --chown=1000:1000 /app/apps/web/dist/pdfjs ./apps/web/dist/pdfjs
+COPY --link --from=build --chown=1000:1000 /app/apps/web/dist/libass ./apps/web/dist/libass
+COPY --link LICENSE THIRD-PARTY-NOTICES ./
+COPY --link --chmod=755 docker/entrypoint.sh /usr/local/bin/kago-entrypoint
+COPY --link --from=build --chown=1000:1000 /app/apps/server/dist ./dist
+COPY --link --from=build --chown=1000:1000 --exclude=assets/*.ttf --exclude=pdfjs --exclude=libass /app/apps/web/dist ./apps/web/dist
 EXPOSE 8080
 # The entrypoint starts as root only to drop to PUID:PGID (default 1000:1000, the kago user).
 ENV PUID=1000
