@@ -45,7 +45,8 @@ export function App() {
 function PublicShareRoute() {
   const { token } = useParams();
   if (!token) return <Navigate to="/" replace />;
-  return <PublicSharePage token={token} />;
+  // Keyed by the link, so another one starts from nothing and the last one's answer is not heard.
+  return <PublicSharePage key={token} token={token} />;
 }
 
 /** Everything behind the sign-in. `children` is a page of its own in place of the desktop. */
