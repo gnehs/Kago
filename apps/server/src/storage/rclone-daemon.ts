@@ -6,6 +6,8 @@ import { AppError, errnoIs } from "../lib/errors.js";
 import { RcloneClient, RcloneError, RcloneJobStopped, rcloneSocketPath } from "./rclone-client.js";
 
 const START_TIMEOUT_MS = 15_000;
+const RESTART_MIN_MS = 1_000;
+const RESTART_MAX_MS = 60_000;
 
 /**
  * rclone answers anyone who can reach its socket, and the socket may sit in the shared temp dir, so its folder
@@ -35,6 +37,8 @@ export class RcloneDaemon {
   private starting: Promise<boolean> | null = null;
   private stopping = false;
   private missing = false;
+  private restartDelay = RESTART_MIN_MS;
+  private restartTimer: NodeJS.Timeout | null = null;
 
   constructor(
     private readonly appDataDir: string,
@@ -63,6 +67,8 @@ export class RcloneDaemon {
 
   stop(): void {
     this.stopping = true;
+    if (this.restartTimer) clearTimeout(this.restartTimer);
+    this.restartTimer = null;
     this.child?.kill();
     this.child = null;
   }
@@ -96,10 +102,22 @@ export class RcloneDaemon {
       });
       child.once("exit", () => resolve());
     });
+    let readyAt = 0;
     void exited.then(() => {
       if (this.child !== child) return;
       this.child = null;
       this.starting = null;
+      // Remote locations are reached only through the daemon, so one that was up and died is brought back, waiting longer each time.
+      if (readyAt && !this.stopping && !this.missing) {
+        if (Date.now() - readyAt > RESTART_MAX_MS) this.restartDelay = RESTART_MIN_MS;
+        logger.warn("rclone exited; starting it again", { inMs: this.restartDelay });
+        this.restartTimer = setTimeout(() => {
+          this.restartTimer = null;
+          void this.ensure();
+        }, this.restartDelay);
+        this.restartTimer.unref();
+        this.restartDelay = Math.min(this.restartDelay * 2, RESTART_MAX_MS);
+      }
     });
 
     const client = new RcloneClient(this.socketPath);
@@ -107,6 +125,7 @@ export class RcloneDaemon {
     while (this.child === child && Date.now() < deadline) {
       if (fs.existsSync(this.socketPath) && (await client.call("rc/noop").then(() => true, () => false))) {
         await this.onReady();
+        readyAt = Date.now();
         return true;
       }
       await Promise.race([exited, new Promise((resolve) => setTimeout(resolve, 100))]);
