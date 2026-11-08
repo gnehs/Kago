@@ -68,6 +68,8 @@ const KEPT_RUNS = 20;
 /** Syncs that are kept: what to bring where, and when. Each run of one is a task like any other. */
 export class SyncService {
   private timer: NodeJS.Timeout | null = null;
+  /** Jobs whose next run is being queued, which counts as running before its task is there to say so. */
+  private readonly queueing = new Set<string>();
 
   constructor(
     private readonly db: Db,
@@ -144,9 +146,18 @@ export class SyncService {
   async run(actor: Actor, jobId: string) {
     const job = this.getForActor(actor, jobId);
     this.assertIdle(job);
-    const task = await this.tasks.createSync(actor, this.spec(this.inputOf(job), job.id));
-    this.began(job, task.id);
-    return task;
+    return this.launch(job, () => this.tasks.createSync(actor, this.spec(this.inputOf(job), job.id)));
+  }
+
+  private async launch(job: SyncJobRow, create: () => Promise<FileTask>): Promise<FileTask> {
+    this.queueing.add(job.id);
+    try {
+      const task = await create();
+      this.began(job, task.id);
+      return task;
+    } finally {
+      this.queueing.delete(job.id);
+    }
   }
 
   /** Runs again the job a failed or stopped task was a run of, while that job is still there. */
@@ -245,12 +256,13 @@ export class SyncService {
     for (const job of due) {
       const input = this.inputOf(job);
       this.db.prepare("UPDATE sync_jobs SET next_run_at = ? WHERE id = ?").run(input.schedule ? nextRun(input.schedule, at) : null, job.id);
-      if (this.running(job)) continue;
+      // Read again: someone may have run it while the jobs before it were being queued.
+      const current = row<SyncJobRow>(this.db.prepare("SELECT * FROM sync_jobs WHERE id = ?").get(job.id));
+      if (!current || this.running(current)) continue;
       const owner = this.owner(job);
       try {
         if (!owner || owner.disabled) throw new AppError(403, "The owner of the job can no longer sign in", "SYNC_OWNER_DISABLED");
-        const task = await this.tasks.createSync(owner, this.spec(input, job.id), true);
-        this.began(job, task.id);
+        await this.launch(job, () => this.tasks.createSync(owner, this.spec(input, job.id), true));
       } catch (error) {
         // A job that may no longer run is passed over until someone changes it or its permissions.
         this.audit.write({ actorType: "system", action: "sync_job_skipped", target: { jobId: job.id, reason: error instanceof Error ? error.message : String(error) }, result: "failure" });
@@ -283,6 +295,7 @@ export class SyncService {
   }
 
   private running(job: SyncJobRow): boolean {
+    if (this.queueing.has(job.id)) return true;
     if (!job.last_task_id) return false;
     const task = row<{ status: string }>(this.db.prepare("SELECT status FROM tasks WHERE id = ?").get(job.last_task_id));
     return Boolean(task && isActiveTaskStatus(task.status));

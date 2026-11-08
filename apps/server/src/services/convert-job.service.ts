@@ -64,6 +64,8 @@ const WATCH_INTERVAL_MS = 30_000;
 export class ConvertJobService {
   private timer: NodeJS.Timeout | null = null;
   private looking = false;
+  /** Jobs whose next run is being queued, which counts as running before its task is there to say so. */
+  private readonly queueing = new Set<string>();
   /** What each waiting file of a job measured at the last look, by job. */
   private readonly seen = new Map<string, Map<string, number>>();
   /** Why each job was last passed over, so that it is said once. */
@@ -177,7 +179,8 @@ export class ConvertJobService {
           const input = this.inputOf(job);
           let seen = this.seen.get(job.id);
           if (!seen) this.seen.set(job.id, (seen = new Map()));
-          if ((await this.tasks.convert.ready({ id: job.id, ...input }, seen)) > 0) await this.begin(owner, job, false, true);
+          // Read again after the look: someone may have run it meanwhile.
+          if ((await this.tasks.convert.ready({ id: job.id, ...input }, seen)) > 0 && !this.running(this.get(job.id))) await this.begin(owner, this.get(job.id), false, true);
         } catch (error) {
           // A folder that is gone, or may no longer be read, is passed over until someone changes the job. Said once, not at every look.
           const reason = error instanceof Error ? error.message : String(error);
@@ -194,7 +197,13 @@ export class ConvertJobService {
 
   private async begin(actor: Actor, job: ConvertJobRow, retryFailed: boolean, scheduled: boolean) {
     const input = this.inputOf(job);
-    const task = await this.tasks.createConvert(actor, { sources: [input.input], destination: input.destination, spec: input.spec }, { id: job.id, input: input.input, options: input.options, retryFailed }, scheduled);
+    this.queueing.add(job.id);
+    let task: FileTask;
+    try {
+      task = await this.tasks.createConvert(actor, { sources: [input.input], destination: input.destination, spec: input.spec }, { id: job.id, input: input.input, options: input.options, retryFailed }, scheduled);
+    } finally {
+      this.queueing.delete(job.id);
+    }
     // The task of the run before stays only for as long as the job points at it, so how it ended is written down now.
     if (job.last_task_id) {
       const last = row<ConvertRun>(this.db.prepare(`${RUNS} WHERE r.task_id = ?`).get(job.last_task_id));
@@ -233,6 +242,7 @@ export class ConvertJobService {
   }
 
   private running(job: ConvertJobRow): boolean {
+    if (this.queueing.has(job.id)) return true;
     const task = this.lastTask(job);
     return Boolean(task && isActiveTaskStatus(task.status));
   }

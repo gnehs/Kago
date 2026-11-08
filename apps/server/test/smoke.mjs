@@ -878,6 +878,11 @@ test("download archives stay out of the data dir and running tasks can be cancel
     const runs = (await admin.get(`/api/sync-jobs/${job.json.id}/runs`)).json;
     assert.deepEqual(runs.slice(0, 2).map((run) => run.task_id), [retried.json.id, failedRun.id]);
     assert.equal(runs[1].status, "failed");
+
+    // Two asks to run a job at once start it once.
+    const both = await Promise.all([admin.post(`/api/sync-jobs/${job.json.id}/run`), admin.post(`/api/sync-jobs/${job.json.id}/run`)]);
+    assert.deepEqual(both.map((response) => response.statusCode).sort(), [200, 409]);
+    await waitTask(admin, both.find((response) => response.statusCode === 200).json.id);
   } finally {
     await app.close();
     await rm(fixture.baseDir, { recursive: true, force: true });
