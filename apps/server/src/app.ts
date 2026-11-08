@@ -1135,7 +1135,8 @@ function registerApi(app: FastifyInstance, services: Services) {
   });
   app.post("/api/tasks/:id/retry", async (request) => {
     const actor = requireActor(request);
-    return services.tasks.retry(actor, z.object({ id: z.string() }).parse(request.params).id);
+    const task = services.tasks.retryable(actor, z.object({ id: z.string() }).parse(request.params).id);
+    return (await services.sync.retryRun(actor, task)) ?? (await services.convertJobs.retryRun(actor, task)) ?? services.tasks.retry(actor, task.id);
   });
   app.post("/api/tasks/:id/pause", async (request) => {
     const actor = requireActor(request);

@@ -41,8 +41,8 @@ function statusGlyph(job: ConvertJob) {
   const status = job.last_status;
   if (status === "running") return <RefreshCw className="animate-spin" />;
   if (status === "queued") return <Clock />;
-  if (status === "pausing" || status === "paused") return <Pause />;
-  if (status === "cancelled") return <Ban />;
+  if (status === "paused") return <Pause />;
+  if (status === "cancelling" || status === "cancelled") return <Ban />;
   if (status === "failed" || status === "interrupted") return <X />;
   if (status === "done") return <Check />;
   return job.watch ? <Eye /> : <FileVideo />;
@@ -126,7 +126,7 @@ export function AutoConvertPage({ roots, user }: { roots: Root[]; user: Actor })
         <RowList>
           {jobs.data.map((job) => {
             const last = job.last_status ? taskStatus({ status: job.last_status } as FileTask) : null;
-            const running = job.last_status === "queued" || job.last_status === "running";
+            const running = job.last_status !== null && isActiveTask({ status: job.last_status } as FileTask);
             const structuring = busy[job.id] === "structure";
             return (
               <Row

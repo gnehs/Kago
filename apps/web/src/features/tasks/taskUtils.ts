@@ -20,7 +20,7 @@ const typeLabels: Record<string, string> = {
 const statusMeta: Record<string, { label: string; tone: "neutral" | "accent" | "success" | "warning" | "danger" }> = {
   queued: { label: t("Queued"), tone: "neutral" },
   running: { label: t("Running"), tone: "accent" },
-  pausing: { label: t("Pausing"), tone: "warning" },
+  cancelling: { label: t("Cancelling"), tone: "neutral" },
   paused: { label: t("Paused"), tone: "warning" },
   done: { label: t("Done"), tone: "success" },
   failed: { label: t("Failed"), tone: "danger" },
@@ -30,7 +30,7 @@ const statusMeta: Record<string, { label: string; tone: "neutral" | "accent" | "
 
 export const taskTypeLabel = (task: FileTask) => typeLabels[task.type] ?? task.type;
 export const taskStatus = (task: FileTask) => statusMeta[task.status] ?? { label: task.status, tone: "neutral" as const };
-export const isActiveTask = (task: FileTask) => ["queued", "running", "pausing", "paused"].includes(task.status);
+export const isActiveTask = (task: FileTask) => ["queued", "running", "cancelling", "paused"].includes(task.status);
 /** Moving to the Trash, or deleting, looks instant to the user, so it only shows up among the live tasks when it goes wrong. */
 export const isQuietTask = (task: FileTask) => (task.type === "delete_to_trash" || task.type === "delete") && (isActiveTask(task) || task.status === "done");
 export const canCancelTask = (task: FileTask) => ["queued", "paused", "running"].includes(task.status);

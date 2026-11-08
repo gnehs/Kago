@@ -38,8 +38,8 @@ function statusGlyph(status: string | null) {
   if (status === "done") return <Check />;
   if (status === "running") return <RefreshCw className="animate-spin" />;
   if (status === "queued") return <Clock />;
-  if (status === "pausing" || status === "paused") return <Pause />;
-  if (status === "cancelled") return <Ban />;
+  if (status === "paused") return <Pause />;
+  if (status === "cancelling" || status === "cancelled") return <Ban />;
   if (status === "failed" || status === "interrupted") return <X />;
   return <RefreshCw />;
 }
@@ -95,7 +95,7 @@ export function SyncPage({ roots, user }: { roots: Root[]; user: Actor }) {
         <RowList>
           {jobs.data.map((job) => {
             const last = job.last_status ? taskStatus({ status: job.last_status } as FileTask) : null;
-            const running = job.last_status === "queued" || job.last_status === "running";
+            const running = job.last_status !== null && isActiveTask({ status: job.last_status } as FileTask);
             return (
               <Row
                 key={job.id}

@@ -173,7 +173,7 @@ export class ConvertService {
 
   /** Where Kago's own running tasks are still writing, or for a move still taking away. */
   private busyPlaces(): string[] {
-    const tasks = this.db.prepare(`SELECT type, sources_json, destination FROM tasks WHERE status = 'running' AND type IN (${writerTypes.map(() => "?").join(", ")})`).all(...writerTypes) as Array<Pick<FileTask, "type" | "sources_json" | "destination">>;
+    const tasks = this.db.prepare(`SELECT type, sources_json, destination FROM tasks WHERE status IN ('running', 'cancelling') AND type IN (${writerTypes.map(() => "?").join(", ")})`).all(...writerTypes) as Array<Pick<FileTask, "type" | "sources_json" | "destination">>;
     const places: string[] = [];
     for (const task of tasks) {
       const destination = JSON.parse(task.destination ?? "{}") as Partial<FileRef> & { sync?: { destination?: Partial<FileRef> } };

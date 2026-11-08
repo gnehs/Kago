@@ -43,6 +43,8 @@ export function openDb(env: Env, options: { interruptRunningTasks?: boolean } = 
     db.prepare(
       "UPDATE tasks SET status = 'interrupted', updated_at = ?, finished_at = ? WHERE status = 'running'"
     ).run(now(), now());
+    // The worker that was to let go of these is gone, so they have stopped.
+    db.prepare("UPDATE tasks SET status = 'cancelled', updated_at = ?, finished_at = ? WHERE status = 'cancelling'").run(now(), now());
   }
 
   return db;

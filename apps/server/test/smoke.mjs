@@ -827,7 +827,11 @@ test("download archives stay out of the data dir and running tasks can be cancel
     assert.ok(running, "copy never reported progress");
     const cancelled = await admin.post(`/api/tasks/${bigCopy.json.id}/cancel`);
     assert.equal(cancelled.statusCode, 200);
-    assert.equal(cancelled.json.status, "cancelled");
+    // The worker still holds the task until it lets go, so it has not finished yet.
+    assert.equal(cancelled.json.status, "cancelling");
+    assert.equal(cancelled.json.finished_at, null);
+    assert.equal((await admin.post(`/api/tasks/${bigCopy.json.id}/cancel`)).json.id, bigCopy.json.id);
+    assert.equal((await waitTask(admin, bigCopy.json.id)).status, "cancelled");
     const partial = path.join(fixture.dataDir, "photos", "private", "file.txt");
     for (let attempt = 0; attempt < 100 && (await pathExists(partial)); attempt += 1) await new Promise((resolve) => setTimeout(resolve, 50));
     assert.equal(await pathExists(partial), false);
@@ -862,6 +866,18 @@ test("download archives stay out of the data dir and running tasks can be cancel
     assert.equal((await admin.get("/api/tasks")).json.length, 1);
     assert.deepEqual((await admin.delete("/api/tasks")).json, { cleared: 1 });
     assert.equal((await admin.get(`/api/tasks/${firstRun.id}`)).statusCode, 404);
+
+    // Retrying a run of a job is a new run of that job, which the job then counts as its last.
+    const store = new DatabaseSync(path.join(fixture.appDataDir, "app.db"));
+    const failedRun = await waitTask(admin, (await admin.post(`/api/sync-jobs/${job.json.id}/run`)).json.id);
+    store.prepare("UPDATE tasks SET status = 'failed' WHERE id = ?").run(failedRun.id);
+    store.close();
+    const retried = await admin.post(`/api/tasks/${failedRun.id}/retry`);
+    assert.equal(retried.statusCode, 200);
+    await waitTask(admin, retried.json.id);
+    const runs = (await admin.get(`/api/sync-jobs/${job.json.id}/runs`)).json;
+    assert.deepEqual(runs.slice(0, 2).map((run) => run.task_id), [retried.json.id, failedRun.id]);
+    assert.equal(runs[1].status, "failed");
   } finally {
     await app.close();
     await rm(fixture.baseDir, { recursive: true, force: true });

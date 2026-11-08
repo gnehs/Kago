@@ -3,6 +3,7 @@ import type { Dictionary } from "../lib/i18n";
 /** Japanese. */
 export const ja: Dictionary = {
   "Cancel": "キャンセル",
+  "Cancelling": "キャンセル中",
   "OK": "OK",
   "Loading": "読み込み中",
   "Dismiss notification": "通知を閉じる",
@@ -634,7 +635,6 @@ export const ja: Dictionary = {
   "Thumbnails": "サムネイル作成",
   "Queued": "待機中",
   "Running": "実行中",
-  "Pausing": "一時停止処理中",
   "Paused": "一時停止",
   "Done": "完了",
   "Cancelled": "キャンセル",

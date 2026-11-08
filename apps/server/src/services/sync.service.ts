@@ -8,7 +8,7 @@ import type { AuditService } from "./audit.service.js";
 import type { AuthService } from "./auth.service.js";
 import type { SyncChange, SyncStats, SyncSummary } from "./sync-report.js";
 import { syncEndpointSchema, syncOptionsSchema, type SyncEndpoint, type TaskService } from "./task.service.js";
-import type { Actor } from "./types.js";
+import { isActiveTaskStatus, type Actor, type FileTask } from "./types.js";
 
 const timeOfDay = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 
@@ -149,6 +149,16 @@ export class SyncService {
     return task;
   }
 
+  /** Runs again the job a failed or stopped task was a run of, while that job is still there. */
+  async retryRun(actor: Actor, task: FileTask): Promise<FileTask | null> {
+    if (task.type !== "sync") return null;
+    const jobId = (JSON.parse(task.destination ?? "{}") as { sync?: { jobId?: string } }).sync?.jobId;
+    if (!jobId || !row(this.db.prepare("SELECT id FROM sync_jobs WHERE id = ?").get(jobId))) return null;
+    const again = await this.run(actor, jobId);
+    this.audit.write({ actorType: "user", actorId: actor.id, action: "task_retry", target: { taskId: task.id, retryTaskId: again.id }, result: "success" });
+    return again;
+  }
+
   /** What the job's last run would have changed, when that was a trial run. */
   trial(actor: Actor, jobId: string) {
     const job = this.getForActor(actor, jobId);
@@ -275,7 +285,7 @@ export class SyncService {
   private running(job: SyncJobRow): boolean {
     if (!job.last_task_id) return false;
     const task = row<{ status: string }>(this.db.prepare("SELECT status FROM tasks WHERE id = ?").get(job.last_task_id));
-    return Boolean(task && ["queued", "running", "paused", "pausing"].includes(task.status));
+    return Boolean(task && isActiveTaskStatus(task.status));
   }
 
   private assertIdle(job: SyncJobRow): void {

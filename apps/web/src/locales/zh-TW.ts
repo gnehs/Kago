@@ -3,6 +3,7 @@ import type { Dictionary } from "../lib/i18n";
 /** Traditional Chinese, in the wording used in Taiwan. */
 export const zhTW: Dictionary = {
   "Cancel": "取消",
+  "Cancelling": "取消中",
   "OK": "確定",
   "Loading": "載入中",
   "Dismiss notification": "關閉通知",
@@ -634,7 +635,6 @@ export const zhTW: Dictionary = {
   "Thumbnails": "產生縮圖",
   "Queued": "等待中",
   "Running": "執行中",
-  "Pausing": "暫停中",
   "Paused": "已暫停",
   "Done": "完成",
   "Cancelled": "已取消",

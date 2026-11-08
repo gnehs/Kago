@@ -42,7 +42,7 @@ export function TaskRow({ task }: { task: FileTask }) {
     });
   }
 
-  const counting = task.status === "running" || task.status === "pausing";
+  const counting = task.status === "running" || task.status === "cancelling";
   const detail = task.error_message ? taskErrorLabel(task.error_message) : taskProgressLabel(task);
   const speed = taskSpeedLabel(task);
   const [percent, tenth] = formatPercent(taskProgressValue(task), taskProgressMax(task)).split(".");

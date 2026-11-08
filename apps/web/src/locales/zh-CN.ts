@@ -3,6 +3,7 @@ import type { Dictionary } from "../lib/i18n";
 /** Simplified Chinese, in the wording used on the mainland rather than a character-by-character conversion. */
 export const zhCN: Dictionary = {
   "Cancel": "取消",
+  "Cancelling": "取消中",
   "OK": "确定",
   "Loading": "加载中",
   "Dismiss notification": "关闭通知",
@@ -634,7 +635,6 @@ export const zhCN: Dictionary = {
   "Thumbnails": "生成缩略图",
   "Queued": "等待中",
   "Running": "执行中",
-  "Pausing": "暂停中",
   "Paused": "已暂停",
   "Done": "完成",
   "Cancelled": "已取消",

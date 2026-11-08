@@ -31,7 +31,7 @@ import type { PreferenceService } from "./preference.service.js";
 import type { StorageService } from "./storage.service.js";
 import { SyncReport } from "./sync-report.js";
 import { taskChanges } from "./task-changes.js";
-import type { Actor, FileTask, Root } from "./types.js";
+import { finishedTaskStatuses, sqlStatuses, type Actor, type FileTask, type Root } from "./types.js";
 
 const maxExtractEntries = 10_000;
 const maxExtractBytes = 1024 * 1024 * 1024 * 2;
@@ -45,7 +45,7 @@ const wholeFileBytes = 1024 * 1024 * 4;
 /** How many files rclone carries at a time. */
 const transferConcurrency = 8;
 const downloadMaxAgeMs = 24 * 60 * 60 * 1000;
-const finishedStatuses = "'done', 'failed', 'cancelled', 'interrupted'";
+const finishedStatuses = sqlStatuses(finishedTaskStatuses);
 /** A replacement begun before this was loaded belongs to a run that stopped; see `recoverReplaced`. */
 const LOADED_AT = Date.now();
 const finishedTaskMaxAgeSeconds = 7 * 24 * 60 * 60;
@@ -426,13 +426,17 @@ export class TaskService {
   cancel(actor: Actor, taskId: string): FileTask {
     const task = this.get(taskId);
     this.requireTaskAccess(actor, task);
-    if (task.status === "cancelled") return task;
+    if (task.status === "cancelled" || task.status === "cancelling") return task;
     if (!["queued", "paused", "running"].includes(task.status)) {
       throw new AppError(409, "Only queued, paused, or running tasks can be cancelled", "TASK_CANCEL_NOT_ALLOWED");
     }
-    // A running task belongs to the worker; it sees this status change at its next checkpoint and stops.
+    // A running task belongs to the worker, which sees this at its next checkpoint and lets go; only then has it stopped.
     this.db
-      .prepare("UPDATE tasks SET status = 'cancelled', updated_at = ?, finished_at = ? WHERE id = ? AND status IN ('queued', 'paused', 'running')")
+      .prepare(
+        `UPDATE tasks SET status = CASE status WHEN 'running' THEN 'cancelling' ELSE 'cancelled' END, updated_at = ?,
+          finished_at = CASE status WHEN 'running' THEN NULL ELSE ? END
+        WHERE id = ? AND status IN ('queued', 'paused', 'running')`
+      )
       .run(now(), now(), taskId);
     this.audit.write({ actorType: "user", actorId: actor.id, action: "task_cancel", target: { taskId }, result: "success" });
     const cancelled = this.get(taskId);
@@ -474,12 +478,19 @@ export class TaskService {
     return resumed;
   }
 
-  async retry(actor: Actor, taskId: string): Promise<FileTask> {
+  /** The task, when the actor may run it again. */
+  retryable(actor: Actor, taskId: string): FileTask {
     const task = this.get(taskId);
     this.requireTaskAccess(actor, task);
     if (!["failed", "cancelled", "interrupted"].includes(task.status)) {
       throw new AppError(409, "Only failed, cancelled, or interrupted tasks can be retried", "TASK_RETRY_NOT_ALLOWED");
     }
+    return task;
+  }
+
+  /** Queues the task again as it was. A run of a saved job is run again through its job instead, which keeps its runs. */
+  async retry(actor: Actor, taskId: string): Promise<FileTask> {
+    const task = this.retryable(actor, taskId);
 
     if (task.type === "sync") {
       const spec = syncSpecOf(task);
@@ -510,6 +521,7 @@ export class TaskService {
 
   failRunning(taskId: string, errorMessage = "Worker failed before executing task"): void {
     const task = this.get(taskId);
+    if (task.status === "cancelling") return this.settleCancelling(taskId);
     if (task.status !== "running") return;
     this.finish(taskId, "failed", errorMessage);
     this.audit.write({
@@ -592,9 +604,19 @@ export class TaskService {
       });
       this.events.publish({ type: "task.failed", userId: task.created_by, taskId: task.id, error: message });
     } finally {
+      this.settleCancelling(task.id);
       this.cancelChecks.delete(task.id);
       this.paces.delete(task.id);
     }
+  }
+
+  /** A task asked to stop while it ran has stopped once its worker lets go of it. */
+  private settleCancelling(taskId: string): void {
+    const ts = now();
+    const result = this.db.prepare("UPDATE tasks SET status = 'cancelled', updated_at = ?, finished_at = ? WHERE id = ? AND status = 'cancelling'").run(ts, ts, taskId);
+    if (Number(result.changes) === 0) return;
+    const task = this.get(taskId);
+    this.events.publish({ type: "task.progress", userId: task.created_by, taskId, patch: { status: task.status, finished_at: task.finished_at } });
   }
 
   /** What is in a folder, by its names in NFC: the way `assertNameAvailable` compares them. */
@@ -1875,7 +1897,7 @@ export class TaskService {
   private async updateTotals(taskId: string, totalFiles: number, totalBytes: number): Promise<void> {
     this.flushProgress(taskId, true);
     this.db
-      .prepare("UPDATE tasks SET total_files = ?, total_bytes = ?, updated_at = ? WHERE id = ?")
+      .prepare("UPDATE tasks SET total_files = ?, total_bytes = ?, updated_at = ? WHERE id = ? AND status IN ('running', 'cancelling')")
       .run(Math.max(totalFiles, 1), Math.max(totalBytes, 0), now(), taskId);
     const task = this.get(taskId);
     this.events.publish({
@@ -1886,7 +1908,7 @@ export class TaskService {
     });
   }
 
-  /** Returns false when the task was cancelled in the meantime, in which case its row is left alone. */
+  /** Returns false when the task was asked to stop in the meantime, in which case its row is left alone. */
   private finish(taskId: string, status: "done" | "failed", error?: string): boolean {
     this.flushProgress(taskId, true);
     const result = this.db
@@ -1922,7 +1944,7 @@ export class TaskService {
             processed_files = processed_files + ?,
             processed_bytes = processed_bytes + ?,
             updated_at = ?
-        WHERE id = ?`
+        WHERE id = ? AND status IN ('running', 'cancelling')`
       )
       .run(buffer.currentPath ?? null, buffer.processedFiles, buffer.processedBytes, now(), taskId);
 

@@ -45,10 +45,26 @@ export type FileRef = {
   path: string;
 };
 
+/**
+ * Where a task is in its life. `cancelling` is a running task asked to stop: the worker still holds it,
+ * and it turns `cancelled` once the worker has let go.
+ */
+export type TaskStatus = "queued" | "paused" | "running" | "cancelling" | "done" | "failed" | "cancelled" | "interrupted";
+
+/** Tasks that are waiting, or that a worker may still be writing for. */
+export const activeTaskStatuses = ["queued", "paused", "running", "cancelling"] as const satisfies readonly TaskStatus[];
+/** Tasks nothing works on any more. */
+export const finishedTaskStatuses = ["done", "failed", "cancelled", "interrupted"] as const satisfies readonly TaskStatus[];
+
+export const isActiveTaskStatus = (status: string) => (activeTaskStatuses as readonly string[]).includes(status);
+
+/** The statuses as a list for SQL's `IN (...)`. */
+export const sqlStatuses = (statuses: readonly TaskStatus[]) => statuses.map((status) => `'${status}'`).join(", ");
+
 export type FileTask = {
   id: string;
   type: string;
-  status: string;
+  status: TaskStatus;
   created_by: string;
   sources_json: string;
   destination: string | null;

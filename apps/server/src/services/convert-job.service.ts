@@ -9,7 +9,7 @@ import type { AuditService } from "./audit.service.js";
 import type { AuthService } from "./auth.service.js";
 import { convertJobOptionsSchema } from "./convert.service.js";
 import type { TaskService } from "./task.service.js";
-import type { Actor, FileRef } from "./types.js";
+import { isActiveTaskStatus, type Actor, type FileRef, type FileTask } from "./types.js";
 
 const folderSchema = z.object({ rootSlug: z.string().min(1), path: z.string().min(1) });
 
@@ -122,6 +122,16 @@ export class ConvertJobService {
     return this.begin(actor, job, true, false);
   }
 
+  /** Runs again the job a failed or stopped task was a run of, while that job is still there. */
+  async retryRun(actor: Actor, task: FileTask): Promise<FileTask | null> {
+    if (task.type !== "convert") return null;
+    const jobId = (JSON.parse(task.destination ?? "{}") as { job?: { id?: string } }).job?.id;
+    if (!jobId || !row(this.db.prepare("SELECT id FROM convert_jobs WHERE id = ?").get(jobId))) return null;
+    const again = await this.run(actor, jobId);
+    this.audit.write({ actorType: "user", actorId: actor.id, action: "task_retry", target: { taskId: task.id, retryTaskId: again.id }, result: "success" });
+    return again;
+  }
+
   /** The job's last runs, newest first. */
   runs(actor: Actor, jobId: string): ConvertRun[] {
     const job = this.getForActor(actor, jobId);
@@ -224,7 +234,7 @@ export class ConvertJobService {
 
   private running(job: ConvertJobRow): boolean {
     const task = this.lastTask(job);
-    return Boolean(task && ["queued", "running", "paused", "pausing"].includes(task.status));
+    return Boolean(task && isActiveTaskStatus(task.status));
   }
 
   private get(jobId: string): ConvertJobRow {
