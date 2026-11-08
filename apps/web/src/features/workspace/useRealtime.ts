@@ -84,7 +84,7 @@ export function useRealtime(userId: string, onRemoteWorkspaceChange: () => void)
       const tasks = await api<FileTask[]>("/api/tasks");
       for (const taskId of waiting) {
         const task = tasks.find((item) => item.id === taskId);
-        if (task && !["done", "failed", "cancelled"].includes(task.status)) continue;
+        if (task && !["done", "failed", "cancelled", "interrupted"].includes(task.status)) continue;
         // The listings read again on reconnecting already have whatever a failed one did.
         settleLeaving(taskId, task?.status === "done");
         if (task?.status === "done") dropLeft(queryClient, leavingRefs(taskId));
