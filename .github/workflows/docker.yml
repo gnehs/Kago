@@ -17,7 +17,41 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # Reads the pnpm version from "packageManager" in package.json.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+
+      # The same ffmpeg the image ships, so the media tests see the encoders the server will have.
+      - name: Install jellyfin-ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends curl gnupg
+          curl -fsSL https://repo.jellyfin.org/jellyfin_team.gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/jellyfin.gpg
+          echo "deb [signed-by=/usr/share/keyrings/jellyfin.gpg arch=$(dpkg --print-architecture)] https://repo.jellyfin.org/ubuntu $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/jellyfin.list
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends jellyfin-ffmpeg8
+          sudo ln -s /usr/lib/jellyfin-ffmpeg/ffmpeg /usr/local/bin/ffmpeg
+          sudo ln -s /usr/lib/jellyfin-ffmpeg/ffprobe /usr/local/bin/ffprobe
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm typecheck
+
+      - run: pnpm i18n
+
+      - run: pnpm test
+
   build:
+    needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: read
