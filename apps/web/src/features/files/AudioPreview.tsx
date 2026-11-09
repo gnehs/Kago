@@ -161,13 +161,13 @@ export function AudioPreviewWindow({ window }: { window: PreviewWindow }) {
   const byCue = album.length > 0;
   const listed = useMemo(() => (byCue ? album : isPlayable(item) ? folderTracks(files, item) : []), [byCue, album, files, item]);
   // What each file says about itself: its tags name the song better than its file name does.
-  const taggedPaths = useMemo(() => [...new Set(listed.map((entry) => entry.file.path))].slice(0, MAX_TAGGED_FILES), [listed]);
-  const infos = useMediaInfos(rootSlug, taggedPaths);
+  const taggedFiles = useMemo(() => [...new Map(listed.map((entry) => [entry.file.path, entry.file])).values()].slice(0, MAX_TAGGED_FILES), [listed]);
+  const infos = useMediaInfos(rootSlug, taggedFiles);
   const tracks = useMemo(() => {
     const known = new Map<string, MediaInfo["tags"]>();
-    taggedPaths.forEach((path, at) => {
+    taggedFiles.forEach((file, at) => {
       const tags = infos[at]?.tags;
-      if (tags) known.set(path, tags);
+      if (tags) known.set(file.path, tags);
     });
     if (known.size === 0) return listed;
     return listed.map((entry) => {
@@ -176,7 +176,7 @@ export function AudioPreviewWindow({ window }: { window: PreviewWindow }) {
       // A cue sheet describes its own tracks; the file it cuts them from is tagged as an album, if at all.
       return byCue ? { ...entry, performer: entry.performer || tags.albumArtist || tags.artist } : { ...entry, title: tags.title || entry.title, performer: tags.artist || tags.albumArtist };
     });
-  }, [listed, taggedPaths, infos, byCue]);
+  }, [listed, taggedFiles, infos, byCue]);
   const resolving = isCueSheet(item) && (folder.isPending || sheetText.isPending);
 
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -220,7 +220,7 @@ export function AudioPreviewWindow({ window }: { window: PreviewWindow }) {
   const start = track?.start ?? 0;
   // What the browser cannot decode, the server re-encodes as it plays. Such a stream cannot be wound: seeking opens another.
   const streamed = file !== undefined && (!isAudioType(file.type) || refused[file.path] === true);
-  const info = useMediaInfo(rootSlug, filePath ?? "", filePath !== undefined);
+  const info = useMediaInfo(rootSlug, file ?? { path: "", mtime: undefined }, file !== undefined);
   const streamReady = info.data !== undefined;
   const streamable = info.data?.audioTranscode === true;
   const streamLength = info.data?.duration ?? 0;

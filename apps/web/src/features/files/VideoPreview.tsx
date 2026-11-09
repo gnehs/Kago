@@ -48,6 +48,7 @@ export function VideoPreviewWindow({ window }: { window: PreviewWindow }) {
       <VideoPreview
         rootSlug={rootSlug}
         path={item.path}
+        mtime={item.mtime}
         aspect={window.aspect}
         onAspect={(aspect) => useWorkspaceStore.getState().setPreviewAspect(window.id, aspect)}
         onNavigate={(target) => useWorkspaceStore.getState().setPreviewItem(window.id, target)}
@@ -60,19 +61,22 @@ export function VideoPreviewWindow({ window }: { window: PreviewWindow }) {
 export function VideoPreview({
   rootSlug,
   path,
+  mtime,
   aspect,
   onAspect,
   onNavigate
 }: {
   rootSlug: string;
   path: string;
+  /** Unknown to a page opened by its address alone. */
+  mtime: number | undefined;
   aspect?: number;
   onAspect?: (aspect: number) => void;
   /** Puts another video of the same folder in this frame. Without it there is no stepping between videos. */
   onNavigate?: (item: FileItem) => void;
 }) {
-  const info = useMediaInfo(rootSlug, path);
-  const board = readyStoryboard(useStoryboard(rootSlug, path, Boolean(info.data?.video)).data);
+  const info = useMediaInfo(rootSlug, { path, mtime });
+  const board = readyStoryboard(useStoryboard(rootSlug, { path, mtime }, Boolean(info.data?.video)).data);
   const sheets = useMemo(() => (board ? storyboardSheets(board, rootSlug, path) : []), [board, rootSlug, path]);
   // Fetched ahead of the pointer, so the first picture asked for is already there.
   useEffect(() => {
@@ -82,7 +86,7 @@ export function VideoPreview({
   const videos = useMemo(() => (folder.data?.items ?? []).filter((item) => item.kind === "file" && isVideoType(item.type)).sort((a, b) => collator.compare(a.name, b.name)), [folder.data]);
   const position = videos.findIndex((item) => item.path === path);
   const neighbour = (item: FileItem | undefined) => (item && onNavigate ? { label: item.name, go: () => onNavigate(item) } : null);
-  const mediaKey = `${rootSlug}\0${path}`;
+  const mediaKey = `${rootSlug}\0${path}\0${mtime}`;
   const latestMedia = useRef(mediaKey);
   latestMedia.current = mediaKey;
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -109,7 +113,7 @@ export function VideoPreview({
     showPlaylist(false);
     playlistButton.current?.focus({ preventScroll: true });
   };
-  const subtitleList = useSubtitles(rootSlug, path).data;
+  const subtitleList = useSubtitles(rootSlug, { path, mtime }).data;
   const subtitles = subtitleList?.tracks ?? [];
   // A subtitle's id, or `off`; null until a choice is made in this window.
   const [subtitlePick, setSubtitlePick] = useState<string | null>(null);

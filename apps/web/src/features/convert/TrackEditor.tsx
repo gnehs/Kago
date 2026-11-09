@@ -108,7 +108,7 @@ export function TrackEditorHost() {
 
 function TrackEditor({ request, onClose }: { request: EditorRequest; onClose: () => void }) {
   const queryClient = useQueryClient();
-  const info = useMediaInfo(request.rootSlug, request.item.path);
+  const info = useMediaInfo(request.rootSlug, request.item);
   const [tracks, setTracks] = useState<Track[] | null>(null);
   const base = stem(nfc(request.item.name));
   const [name, setName] = useState(() => (extensionOf(request.item.name) === "mkv" ? `${base}.remux.mkv` : `${base}.mkv`));

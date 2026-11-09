@@ -302,17 +302,23 @@ export function useFolderSize(rootSlug: string, path: string, enabled = true) {
   });
 }
 
-export function useSqliteOverview(rootSlug: string, path: string) {
+/**
+ * A file as it is now. What is read from a file is asked under its mtime as well as its path, so one replaced on disk
+ * under the same name is read again rather than answered from what was read of the old one.
+ */
+export type FileVersion = { path: string; mtime: number | undefined };
+
+export function useSqliteOverview(rootSlug: string, { path, mtime }: FileVersion) {
   return useQuery({
-    queryKey: ["fs", "sqlite", rootSlug, path],
+    queryKey: ["fs", "sqlite", rootSlug, path, mtime],
     queryFn: () => api<{ tables: SqliteTable[] }>(`/api/fs/sqlite?${new URLSearchParams({ rootSlug, path }).toString()}`),
     retry: false
   });
 }
 
-export function useSqliteRows(rootSlug: string, path: string, table: string | undefined, offset: number, limit: number) {
+export function useSqliteRows(rootSlug: string, { path, mtime }: FileVersion, table: string | undefined, offset: number, limit: number) {
   return useQuery({
-    queryKey: ["fs", "sqlite", rootSlug, path, table, offset, limit],
+    queryKey: ["fs", "sqlite", rootSlug, path, mtime, table, offset, limit],
     queryFn: () => api<SqlitePage>(`/api/fs/sqlite/rows?${new URLSearchParams({ rootSlug, path, table: table!, offset: String(offset), limit: String(limit) }).toString()}`),
     enabled: table !== undefined,
     retry: false,
@@ -331,9 +337,9 @@ export function useImageMetadata(rootSlug: string, path: string, enabled = true)
   });
 }
 
-export function useMediaInfo(rootSlug: string, path: string, enabled = true) {
+export function useMediaInfo(rootSlug: string, { path, mtime }: FileVersion, enabled = true) {
   return useQuery({
-    queryKey: ["media", "info", rootSlug, path],
+    queryKey: ["media", "info", rootSlug, path, mtime],
     queryFn: () => api<MediaInfo>(`/api/media/info?${new URLSearchParams({ rootSlug, path }).toString()}`),
     enabled,
     retry: false,
@@ -342,9 +348,9 @@ export function useMediaInfo(rootSlug: string, path: string, enabled = true) {
 }
 
 /** The pictures for a video's timeline. Asking is what has them made, so it is asked again until they are. */
-export function useStoryboard(rootSlug: string, path: string, enabled = true) {
+export function useStoryboard(rootSlug: string, { path, mtime }: FileVersion, enabled = true) {
   return useQuery({
-    queryKey: ["media", "storyboard", rootSlug, path],
+    queryKey: ["media", "storyboard", rootSlug, path, mtime],
     queryFn: () => api<Storyboard>(`/api/media/storyboard?${new URLSearchParams({ rootSlug, path }).toString()}`),
     enabled,
     retry: false,
@@ -361,12 +367,12 @@ const mediaInfos = (results: UseQueryResult<MediaInfo>[]) => ({ data: results.ma
  * What is known about each of several files, in the order asked. They are read a few at a time, in order,
  * so opening one song of a large folder does not set the server probing all of it at once.
  */
-export function useMediaInfos(rootSlug: string, paths: string[]) {
+export function useMediaInfos(rootSlug: string, files: FileVersion[]) {
   const [reach, setReach] = useState(INFO_WINDOW);
   const { data, settled } = useQueries({
     // Same keys as `useMediaInfo`, so a file asked about either way is asked about once.
-    queries: paths.map((path, index) => ({
-      queryKey: ["media", "info", rootSlug, path],
+    queries: files.map(({ path, mtime }, index) => ({
+      queryKey: ["media", "info", rootSlug, path, mtime],
       queryFn: () => api<MediaInfo>(`/api/media/info?${new URLSearchParams({ rootSlug, path }).toString()}`),
       enabled: index < reach,
       retry: false,
@@ -375,14 +381,14 @@ export function useMediaInfos(rootSlug: string, paths: string[]) {
     combine: mediaInfos
   });
   useEffect(() => {
-    if (settled + INFO_WINDOW > reach && reach < paths.length) setReach(settled + INFO_WINDOW);
-  }, [settled, reach, paths.length]);
+    if (settled + INFO_WINDOW > reach && reach < files.length) setReach(settled + INFO_WINDOW);
+  }, [settled, reach, files.length]);
   return data;
 }
 
-export function useSubtitles(rootSlug: string, path: string) {
+export function useSubtitles(rootSlug: string, { path, mtime }: FileVersion) {
   return useQuery({
-    queryKey: ["media", "subtitles", rootSlug, path],
+    queryKey: ["media", "subtitles", rootSlug, path, mtime],
     queryFn: () => api<SubtitleList>(`/api/media/subtitles?${new URLSearchParams({ rootSlug, path }).toString()}`),
     retry: false,
     staleTime: 60_000

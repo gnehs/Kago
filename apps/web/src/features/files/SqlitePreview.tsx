@@ -1,7 +1,7 @@
 import { ChevronLeft, ChevronRight, Database, Download, Eye, KeyRound, Table2 } from "lucide-react";
 import { useState } from "react";
 import { downloadUrl } from "@/api/client";
-import { useSqliteOverview, useSqliteRows } from "@/api/hooks";
+import { useSqliteOverview, useSqliteRows, type FileVersion } from "@/api/hooks";
 import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { Button } from "@/components/ui/button";
@@ -29,9 +29,16 @@ function rangeLabel(page: { offset: number; rows: unknown[]; total: number | nul
 /** A SQLite database, read on the server: its tables on the left, the rows of one of them on the right. */
 export function SqlitePreviewWindow({ window }: { window: PreviewWindow }) {
   const { rootSlug, item } = window.preview;
-  const overview = useSqliteOverview(rootSlug, item.path);
+  const overview = useSqliteOverview(rootSlug, item);
   const tables = overview.data?.tables ?? [];
   const [selected, setSelected] = useState<{ table: string; offset: number } | null>(null);
+  // The window stays open when the file is opened again as it is now; the table and page picked in the last one do not carry over.
+  const version = `${item.path}:${item.mtime}`;
+  const [shown, setShown] = useState(version);
+  if (shown !== version) {
+    setShown(version);
+    setSelected(null);
+  }
   const table = tables.find((entry) => entry.name === selected?.table) ?? tables[0];
   const offset = table && table.name === selected?.table ? selected.offset : 0;
   const download = () => triggerDownload(downloadUrl(rootSlug, item.path));
@@ -73,15 +80,15 @@ export function SqlitePreviewWindow({ window }: { window: PreviewWindow }) {
               ))}
             </div>
           </nav>
-          <SqliteRows key={table.name} rootSlug={rootSlug} path={item.path} table={table} offset={offset} onOffset={(next) => setSelected({ table: table.name, offset: next })} />
+          <SqliteRows key={`${version}:${table.name}`} rootSlug={rootSlug} file={item} table={table} offset={offset} onOffset={(next) => setSelected({ table: table.name, offset: next })} />
         </div>
       )}
     </KagoWindow>
   );
 }
 
-function SqliteRows({ rootSlug, path, table, offset, onOffset }: { rootSlug: string; path: string; table: SqliteTable; offset: number; onOffset: (offset: number) => void }) {
-  const query = useSqliteRows(rootSlug, path, table.name, offset, PAGE_SIZE);
+function SqliteRows({ rootSlug, file, table, offset, onOffset }: { rootSlug: string; file: FileVersion; table: SqliteTable; offset: number; onOffset: (offset: number) => void }) {
+  const query = useSqliteRows(rootSlug, file, table.name, offset, PAGE_SIZE);
   const page = query.data;
   // The schema names the columns before the first page arrives, and says more about them than a result set does.
   const columns = page?.columns ?? table.columns.map((column) => column.name);

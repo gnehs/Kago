@@ -23,7 +23,7 @@ export function VideoPage() {
   if (!rootSlug || !path) return <Navigate to="/" replace />;
   return (
     <div className="flex h-full flex-col bg-black">
-      <VideoPreview rootSlug={rootSlug} path={path} onNavigate={(item) => setParams({ rootSlug, path: item.path })} />
+      <VideoPreview rootSlug={rootSlug} path={path} mtime={undefined} onNavigate={(item) => setParams({ rootSlug, path: item.path })} />
     </div>
   );
 }

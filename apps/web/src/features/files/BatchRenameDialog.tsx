@@ -52,12 +52,12 @@ const infoResults = (results: InfoResult[]) => ({ data: results.map((result) => 
  * at a time, like the songs of an album, so a large selection does not set the server probing all of it at once.
  */
 function useRenameInfo(rootSlug: string, items: FileItem[], sources: PartSource[]) {
-  const wanted = useMemo(() => sources.flatMap((source) => items.filter((item) => readsFrom(source, item)).map((item) => ({ source, path: item.path }))), [items, sources]);
+  const wanted = useMemo(() => sources.flatMap((source) => items.filter((item) => readsFrom(source, item)).map((item) => ({ source, path: item.path, mtime: item.mtime }))), [items, sources]);
   const [reach, setReach] = useState(INFO_WINDOW);
   const { data, settled } = useQueries({
     // The same keys the inspector and the players ask under, so a file already read is not read again.
-    queries: wanted.map(({ source, path }, index) => ({
-      queryKey: source === "photo" ? ["fs", "exif", rootSlug, path] : ["media", "info", rootSlug, path],
+    queries: wanted.map(({ source, path, mtime }, index) => ({
+      queryKey: source === "photo" ? ["fs", "exif", rootSlug, path] : ["media", "info", rootSlug, path, mtime],
       queryFn: () => api<ImageMetadata | MediaInfo>(`${source === "photo" ? "/api/fs/exif" : "/api/media/info"}?${new URLSearchParams({ rootSlug, path }).toString()}`),
       enabled: index < reach,
       retry: false,

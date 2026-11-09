@@ -34,7 +34,7 @@ export function Inspector({ window: activeWindow, selection }: { window: FileWin
   // A picture without shooting data, or a server that cannot read it, simply has no such section.
   const photo = useImageMetadata(rootSlug, path, Boolean(meta.data && isPicture(meta.data))).data;
   // Likewise a video the server cannot probe.
-  const video = useMediaInfo(rootSlug, path, Boolean(meta.data && meta.data.kind === "file" && isVideoType(meta.data.type))).data;
+  const video = useMediaInfo(rootSlug, { path, mtime: meta.data?.mtime }, Boolean(meta.data && meta.data.kind === "file" && isVideoType(meta.data.type))).data;
   const folderSize = useFolderSize(rootSlug, path, meta.data?.kind === "folder");
   const root = roots.data?.find((root) => root.slug === rootSlug);
   const rootId = root?.id;
