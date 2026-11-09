@@ -12,6 +12,7 @@
     "test:video": "node --test scripts/test-direct-playback.mjs scripts/test-video-capabilities.mjs scripts/test-playback-recovery.mjs scripts/test-seek-prewarm.mjs",
     "test:compatibility": "node --test scripts/test-server-compatibility-groups.mjs",
     "test:security": "node --test scripts/test-vite-security.mjs",
+    "test:store": "node --test scripts/test-workspace-store.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

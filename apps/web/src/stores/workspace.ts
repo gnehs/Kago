@@ -68,6 +68,8 @@ type WorkspaceStore = WorkspaceState & {
   selectItems: (id: string, items: string[]) => void;
   /** Takes every window and tab showing a folder, or one inside it, along to where that folder is now. */
   followFolder: (from: FileRef, to: FileRef) => void;
+  /** Lets go of items that are no longer where they were, and of what is inside them, in every window's selection and every tab's. */
+  deselect: (refs: FileRef[]) => void;
   snapshot: () => WorkspaceState;
 };
 
@@ -444,6 +446,24 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
           // What it had selected is inside the folder too, and stays selected where it now is.
           const selectedItems = window.selectedItems.map((item) => moved(window.rootSlug, item) ?? item);
           return { ...window, tabs, rootSlug: to.rootSlug, logicalPath: path, title: folderTitle(to.rootSlug, path), selectedItems, updatedAt: ts() };
+        })
+      };
+    }),
+  deselect: (refs) =>
+    set((state) => {
+      const kept = (rootSlug: string, selected: string[]) => {
+        const rest = selected.filter((path) => !refs.some((ref) => ref.rootSlug === rootSlug && isWithin(path, ref.path)));
+        return rest.length < selected.length ? rest : selected;
+      };
+      return {
+        windows: state.windows.map((window) => {
+          const tabs = window.tabs?.map((tab) => {
+            const selectedItems = tab.selectedItems && kept(tab.rootSlug, tab.selectedItems);
+            return selectedItems === tab.selectedItems ? tab : { ...tab, selectedItems };
+          });
+          const selectedItems = kept(window.rootSlug, window.selectedItems);
+          const tabsChanged = tabs?.some((tab, index) => tab !== window.tabs![index]) ?? false;
+          return selectedItems === window.selectedItems && !tabsChanged ? window : { ...window, tabs, selectedItems };
         })
       };
     }),

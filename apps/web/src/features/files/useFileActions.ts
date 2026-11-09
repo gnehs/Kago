@@ -89,7 +89,7 @@ export function placeable(sources: FileRef[], destination: FileRef) {
 
 /**
  * Items that have left where they were, for the Trash or another folder. They are no longer there to paste or act on,
- * so the clipboard and every window's selection let go of them and of what is inside them.
+ * so the clipboard and every window's and tab's selection let go of them and of what is inside them.
  */
 function letGo(refs: FileRef[]) {
   const gone = (item: FileRef) => refs.some((ref) => ref.rootSlug === item.rootSlug && isWithin(item.path, ref.path));
@@ -98,11 +98,7 @@ function letGo(refs: FileRef[]) {
     const items = clip.items.filter((item) => !gone(item));
     return { clip: items.length > 0 ? { ...clip, items } : null };
   });
-  const store = useWorkspaceStore.getState();
-  for (const window of store.windows) {
-    const kept = window.selectedItems.filter((path) => !gone({ rootSlug: window.rootSlug, path }));
-    if (kept.length < window.selectedItems.length) store.selectItems(window.id, kept);
-  }
+  useWorkspaceStore.getState().deselect(refs);
 }
 
 /** Copies or moves the sources into a folder, asking first about each name the folder already has. Resolves to the task, once there is one. */
