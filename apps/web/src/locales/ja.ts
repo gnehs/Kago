@@ -171,6 +171,7 @@ export const ja: Dictionary = {
   "No profile picture is set": "プロフィール画像は設定されていません",
   "Only a picture can be a profile picture": "プロフィール画像にできるのは画像だけです",
   "The picture could not be converted": "この画像を変換できませんでした",
+  "The file changed while it was converted": "変換中にファイルが変更されました",
   "Large": "大",
   "Medium": "中",
   "Small": "小",

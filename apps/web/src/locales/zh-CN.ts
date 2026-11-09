@@ -171,6 +171,7 @@ export const zhCN: Dictionary = {
   "No profile picture is set": "尚未设置头像",
   "Only a picture can be a profile picture": "只有图片可以设为头像",
   "The picture could not be converted": "无法转换这张图片",
+  "The file changed while it was converted": "转码时文件被改动了",
   "Large": "大",
   "Medium": "中",
   "Small": "小",

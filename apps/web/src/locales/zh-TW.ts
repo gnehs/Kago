@@ -171,6 +171,7 @@ export const zhTW: Dictionary = {
   "No profile picture is set": "尚未設定頭貼",
   "Only a picture can be a profile picture": "只有圖片可以設為頭貼",
   "The picture could not be converted": "無法轉換這張圖片",
+  "The file changed while it was converted": "轉檔時檔案被更動了",
   "Large": "大",
   "Medium": "中",
   "Small": "小",
