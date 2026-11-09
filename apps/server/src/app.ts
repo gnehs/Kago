@@ -82,7 +82,7 @@ export async function buildApp(env: Env) {
   const tasks = new TaskService(db, paths, permissions, audit, events, env.appDataDir, fsService, storage, preferences);
   const shelves = new ShelfService(db, paths, permissions, events, audit, storage);
   const shares = new ShareService(db, paths, permissions, audit, events, storage);
-  const sync = new SyncService(db, tasks, auth, audit);
+  const sync = new SyncService(db, tasks, auth, audit, remotes);
   const convertJobs = new ConvertJobService(db, tasks, auth, audit);
   const groups = new GroupService(db);
   const oidc = new OidcService(db, secrets, auth, audit, events);

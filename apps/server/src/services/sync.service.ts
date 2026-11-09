@@ -4,6 +4,7 @@ import { row, rows } from "../db/db.js";
 import { AppError } from "../lib/errors.js";
 import { id, now } from "../lib/ids.js";
 import { logger } from "../lib/logger.js";
+import type { RemoteManager } from "../storage/remote-manager.js";
 import type { AuditService } from "./audit.service.js";
 import type { AuthService } from "./auth.service.js";
 import type { SyncChange, SyncStats, SyncSummary } from "./sync-report.js";
@@ -75,7 +76,8 @@ export class SyncService {
     private readonly db: Db,
     private readonly tasks: TaskService,
     private readonly auth: AuthService,
-    private readonly audit: AuditService
+    private readonly audit: AuditService,
+    private readonly remotes: RemoteManager
   ) {}
 
   list(actor: Actor) {
@@ -152,6 +154,7 @@ export class SyncService {
   private async launch(job: SyncJobRow, create: () => Promise<FileTask>): Promise<FileTask> {
     this.queueing.add(job.id);
     try {
+      await this.requireRclone();
       const task = await create();
       this.began(job, task.id);
       return task;
@@ -160,9 +163,19 @@ export class SyncService {
     }
   }
 
+  /**
+   * rclone carries every sync, even between two folders of this server, and its daemon is otherwise started only
+   * for a remote location. The worker that runs the task cannot start it, so it is started before the task is queued.
+   */
+  private async requireRclone(): Promise<void> {
+    if (!(await this.remotes.available())) throw new AppError(503, "rclone is not installed on this server", "REMOTE_UNAVAILABLE");
+  }
+
   /** Runs again the job a failed or stopped task was a run of, while that job is still there. */
   async retryRun(actor: Actor, task: FileTask): Promise<FileTask | null> {
     if (task.type !== "sync") return null;
+    // A run whose job is gone is queued again as it was, which needs rclone all the same.
+    await this.requireRclone();
     const jobId = (JSON.parse(task.destination ?? "{}") as { sync?: { jobId?: string } }).sync?.jobId;
     if (!jobId || !row(this.db.prepare("SELECT id FROM sync_jobs WHERE id = ?").get(jobId))) return null;
     const again = await this.run(actor, jobId);
