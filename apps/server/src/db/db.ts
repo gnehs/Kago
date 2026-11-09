@@ -23,7 +23,7 @@ export function openDb(env: Env, options: { interruptRunningTasks?: boolean } = 
   addMissingColumns(db, "external_apps", { embed: "INTEGER NOT NULL DEFAULT 0", auth_user: "TEXT", auth_secret: "TEXT" });
   addMissingColumns(db, "sessions", { identity_id: "TEXT", oidc_refresh: "TEXT", oidc_checked_at: "INTEGER" });
   addMissingColumns(db, "group_members", { source: "TEXT" });
-  addMissingColumns(db, "tasks", { cleared: "INTEGER NOT NULL DEFAULT 0" });
+  addMissingColumns(db, "tasks", { cleared: "INTEGER NOT NULL DEFAULT 0", pace_fps: "REAL", pace_height: "INTEGER" });
   migratePermissionLevels(db);
   migratePermissionLocations(db);
   // There was once a guest role, which was allowed exactly what a standard user is.

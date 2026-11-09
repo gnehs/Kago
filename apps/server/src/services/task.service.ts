@@ -132,8 +132,6 @@ class TaskCancelledError extends Error {}
 
 export class TaskService {
   private readonly progressBuffers = new Map<string, ProgressBuffer>();
-  /** How fast a running conversion is making its video. Kept only here: it is of no use once the task stops. */
-  private readonly paces = new Map<string, { fps: number; height: number | null }>();
   private readonly cancelChecks = new Map<string, number>();
   private secretBox: SecretBox | null = null;
   readonly archivePasswords: ArchivePasswordService;
@@ -298,7 +296,7 @@ export class TaskService {
       totals: (files, bytes) => this.updateTotals(taskId, files, bytes),
       bytes: (bytes) => this.countBytes(taskId, bytes),
       files: (files) => this.countFiles(taskId, files),
-      pace: (fps, height) => this.paces.set(taskId, { fps, height }),
+      pace: (fps, height) => this.setPace(taskId, fps, height),
       stopped: () => this.isCancelled(taskId)
     };
   }
@@ -332,15 +330,15 @@ export class TaskService {
       );
   }
 
-  list(actor: Actor): Array<FileTask & { pace?: { fps: number; height: number | null } }> {
+  list(actor: Actor): Array<FileTask & { pace?: Pace }> {
+    type TaskRow = FileTask & { pace_fps: number | null; pace_height: number | null };
     const tasks =
       actor.role === "ADMIN"
-        ? rows<FileTask>(this.db.prepare("SELECT * FROM tasks WHERE cleared = 0 ORDER BY created_at DESC LIMIT 200").all())
-        : rows<FileTask>(this.db.prepare("SELECT * FROM tasks WHERE cleared = 0 AND created_by = ? ORDER BY created_at DESC LIMIT 200").all(actor.id));
-    return tasks.map((task) => {
-      const pace = task.status === "running" ? this.paces.get(task.id) : undefined;
-      return pace ? { ...task, pace } : task;
-    });
+        ? rows<TaskRow>(this.db.prepare("SELECT * FROM tasks WHERE cleared = 0 ORDER BY created_at DESC LIMIT 200").all())
+        : rows<TaskRow>(this.db.prepare("SELECT * FROM tasks WHERE cleared = 0 AND created_by = ? ORDER BY created_at DESC LIMIT 200").all(actor.id));
+    return tasks.map(({ pace_fps, pace_height, ...task }) =>
+      task.status === "running" && pace_fps !== null ? { ...task, pace: { fps: pace_fps, height: pace_height } } : task
+    );
   }
 
   /** Forgets the finished tasks the actor can see. */
@@ -606,7 +604,7 @@ export class TaskService {
     } finally {
       this.settleCancelling(task.id);
       this.cancelChecks.delete(task.id);
-      this.paces.delete(task.id);
+      this.db.prepare("UPDATE tasks SET pace_fps = NULL, pace_height = NULL WHERE id = ? AND pace_fps IS NOT NULL").run(task.id);
     }
   }
 
@@ -1894,6 +1892,11 @@ export class TaskService {
     this.flushProgress(taskId);
   }
 
+  private setPace(taskId: string, fps: number, height: number | null): void {
+    this.progressBuffer(taskId).pace = { fps, height };
+    this.flushProgress(taskId);
+  }
+
   private async updateTotals(taskId: string, totalFiles: number, totalBytes: number): Promise<void> {
     this.flushProgress(taskId, true);
     this.db
@@ -1935,7 +1938,7 @@ export class TaskService {
       ts - buffer.lastFlushAt >= progressFlushIntervalMs ||
       buffer.processedBytes >= progressFlushBytes;
     if (!shouldFlush) return;
-    if (!buffer.currentPath && buffer.processedFiles === 0 && buffer.processedBytes === 0) return;
+    if (!buffer.currentPath && buffer.processedFiles === 0 && buffer.processedBytes === 0 && !buffer.pace) return;
 
     this.db
       .prepare(
@@ -1943,10 +1946,12 @@ export class TaskService {
         SET current_path = COALESCE(?, current_path),
             processed_files = processed_files + ?,
             processed_bytes = processed_bytes + ?,
+            pace_fps = COALESCE(?, pace_fps),
+            pace_height = CASE WHEN ? IS NULL THEN pace_height ELSE ? END,
             updated_at = ?
         WHERE id = ? AND status IN ('running', 'cancelling')`
       )
-      .run(buffer.currentPath ?? null, buffer.processedFiles, buffer.processedBytes, now(), taskId);
+      .run(buffer.currentPath ?? null, buffer.processedFiles, buffer.processedBytes, buffer.pace?.fps ?? null, buffer.pace?.fps ?? null, buffer.pace?.height ?? null, now(), taskId);
 
     const task = this.get(taskId);
     const patch: Record<string, unknown> = {
@@ -1959,6 +1964,7 @@ export class TaskService {
     buffer.currentPath = undefined;
     buffer.processedFiles = 0;
     buffer.processedBytes = 0;
+    buffer.pace = undefined;
     buffer.lastFlushAt = ts;
     if (force) this.progressBuffers.delete(taskId);
   }
@@ -2059,10 +2065,14 @@ type PathStats = {
   files: number;
 };
 
+/** How many frames a second a conversion is making its video at, and how tall that comes out. */
+type Pace = { fps: number; height: number | null };
+
 type ProgressBuffer = {
   processedFiles: number;
   processedBytes: number;
   currentPath?: string;
+  pace?: Pace;
   lastFlushAt: number;
 };
 

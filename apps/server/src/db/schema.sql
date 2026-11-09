@@ -124,6 +124,9 @@ CREATE TABLE IF NOT EXISTS tasks (
   finished_at INTEGER,
   -- Cleared from the task list, and kept only because a sync job still reads its last run from it.
   cleared INTEGER NOT NULL DEFAULT 0,
+  -- How fast a running conversion is making its video; emptied once it stops.
+  pace_fps REAL,
+  pace_height INTEGER,
   FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
 );
 
