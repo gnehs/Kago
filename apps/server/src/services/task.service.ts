@@ -19,7 +19,7 @@ import { zipStream, type ZipEntry, type ZipOptions } from "../lib/zip-stream.js"
 import { RcloneJobStopped, refusedForPermission, type RcloneItem, type RcloneStats } from "../storage/rclone-client.js";
 import { runRclone } from "../storage/rclone-daemon.js";
 import { REPLACE_PARTIAL, TRASH_FOLDER } from "../lib/system-files.js";
-import { isRemote, joinFs, transferProgress } from "../storage/remote-storage.js";
+import { isRemote, joinFs, transferProgress, type RemoteEntry, type RemoteStorage } from "../storage/remote-storage.js";
 import type { EventPublisher } from "../ws/events.js";
 import { ArchivePasswordService } from "./archive-password.service.js";
 import type { AuditService } from "./audit.service.js";
@@ -619,10 +619,15 @@ export class TaskService {
 
   /** What is in a folder, by its names in NFC: the way `assertNameAvailable` compares them. */
   private async entries(folder: SafePath): Promise<Map<string, FolderEntry>> {
-    if (!isRemote(folder.root)) await recoverReplaced(folder.absolutePath);
-    const found = isRemote(folder.root)
-      ? await this.storage.remote.list(folder.root, folder.logicalPath)
-      : (await fsp.readdir(folder.absolutePath, { withFileTypes: true })).map((entry) => ({ name: entry.name, directory: entry.isDirectory() }));
+    let found: FolderEntry[];
+    if (isRemote(folder.root)) {
+      const listed = await this.storage.remote.list(folder.root, folder.logicalPath);
+      // Each listing is a round trip, so the folder is listed again only when a replacement had to be put right.
+      found = (await recoverRemoteReplaced(this.storage.remote, folder, listed)) ? await this.storage.remote.list(folder.root, folder.logicalPath) : listed;
+    } else {
+      await recoverReplaced(folder.absolutePath);
+      found = (await fsp.readdir(folder.absolutePath, { withFileTypes: true })).map((entry) => ({ name: entry.name, directory: entry.isDirectory() }));
+    }
     return new Map(found.map((entry) => [nfc(entry.name), { name: entry.name, directory: entry.directory }]));
   }
 
@@ -864,7 +869,7 @@ export class TaskService {
       // rclone leaves alone a file that looks like the one arriving, which where no times are kept is any of the same size.
       const replacing = { IgnoreTimes: true };
       const list = path.join(this.appDataDir, "temp", `transfer-${id("list")}`);
-      /** The name a replacement is copied to, beside what it replaces, until it is in its place. */
+      /** The folder beside what it replaces that a replacement waits in until it is in its place, as on disk; see `replacePath`. */
       let staged: string | null = null;
       try {
         if (batch.length > 1) {
@@ -910,20 +915,23 @@ export class TaskService {
           };
           // A file takes a file's place as it arrives, rclone letting go of the old one only once the new one is whole.
           // Anything else that is in the way has to go before its replacement can have its name, so that replacement
-          // is copied whole to a name of its own beside it first, and swapped in after. A moved source goes last: what
-          // is left of it is moved onto the copy, which carries only what changed meanwhile.
+          // is copied whole into a folder of its own beside it first, and swapped in after. A moved source goes last:
+          // what is left of it is moved onto the copy, which carries only what changed meanwhile.
           if (occupant && (directory || occupant.directory || occupant.name !== name)) {
             staged = `${REPLACE_PARTIAL}${Date.now()}-${id("temp")}`;
-            await carry({ fs: to.fs, remote: to.remote ? `${to.remote}/${staged}` : staged }, false);
-            await this.removeTarget(dest, occupant.name, occupant.directory);
-            await this.placeStaged(dest, staged, name, directory);
+            await carry({ fs: to.fs, remote: path.posix.join(to.remote, staged, "new") }, false);
+            await this.swapStaged(dest, staged, occupant, name, directory);
             staged = null;
             if (move) await carry(landsAt, true, true);
           } else await carry(landsAt, move);
         }
       } catch (error) {
-        // A replacement that did not get into place takes its copy with it; the source is still whole.
-        if (staged) await this.removeTarget(dest, staged, directory).catch(() => undefined);
+        // A replacement that did not get into place takes its copy with it; the source is still whole. What was set
+        // aside and could not go back stays in the folder it waits in, for the next run to put back.
+        if (staged) {
+          await this.removeTarget(dest, path.posix.join(staged, "new"), directory).catch(() => undefined);
+          for (const left of [path.posix.join(to.remote, staged, "old"), path.posix.join(to.remote, staged)]) await this.storage.remote.clearMoved(to.fs, left);
+        }
         // A run that stops half way has moved some of its files for good, and those are told like any other.
         if (move && batch.length > 1) {
           const left = await (isRemote(source.root) ? this.storage.remote.list(source.root, folder).then((entries) => entries.map((entry) => entry.name)) : fsp.readdir(from.fs)).catch(() => null);
@@ -971,10 +979,13 @@ export class TaskService {
     return { fs: path.dirname(safe.absolutePath), remote: path.basename(safe.absolutePath) };
   }
 
-  /** Gives what was copied to `staged` in a folder the name `name` of the same folder, which nothing has. */
-  private async placeStaged(folder: SafePath, staged: string, name: string, directory: boolean): Promise<void> {
-    if (isRemote(folder.root)) await this.storage.remote.move(folder.root, path.posix.join(folder.logicalPath, staged), path.posix.join(folder.logicalPath, name), directory);
-    else await renameFree(path.join(folder.absolutePath, staged), path.join(folder.absolutePath, name));
+  /** Puts the replacement copied into the folder `staging` as `new` in the place of `occupant`, as `replacePath` does on disk. */
+  private async swapStaged(folder: SafePath, staging: string, occupant: FolderEntry, name: string, directory: boolean): Promise<void> {
+    if (isRemote(folder.root)) return swapInRemote(this.storage.remote, folder, staging, occupant, name, directory);
+    const at = (...names: string[]) => path.join(folder.absolutePath, ...names);
+    await fsp.mkdir(at(staging, "old"), { recursive: true });
+    await swapIn(at(staging, "new"), at(occupant.name), at(staging, "old", occupant.name), at(name));
+    await fsp.rm(at(staging), { recursive: true, force: true });
   }
 
   private async removeTarget(folder: SafePath, name: string, directory: boolean): Promise<void> {
@@ -2428,6 +2439,70 @@ async function recoverReplaced(folder: string): Promise<void> {
       logger.warn("could not recover an interrupted replacement", { path: staging, error: error instanceof Error ? error.message : String(error) });
     }
   }
+}
+
+/**
+ * `swapIn` on a remote location, in the folder `staging` beside the target that the replacement was copied into as
+ * `new`: what is in the way is set aside in it under `old`, the replacement moved into place, and the folder removed.
+ */
+async function swapInRemote(remote: RemoteStorage, folder: SafePath, staging: string, occupant: FolderEntry, name: string, directory: boolean): Promise<void> {
+  const at = (...names: string[]) => path.posix.join(folder.logicalPath, ...names);
+  const aside = at(staging, "old", occupant.name);
+  const setAside = await remote.move(folder.root, at(occupant.name), aside, occupant.directory).then(
+    () => true,
+    (error: unknown) => {
+      if (error instanceof AppError && error.code === "PATH_NOT_FOUND") return false;
+      throw error;
+    }
+  );
+  try {
+    await remote.move(folder.root, at(staging, "new"), at(name), directory);
+  } catch (error) {
+    if (setAside) await remote.move(folder.root, aside, at(occupant.name), occupant.directory);
+    throw error;
+  }
+  await remote.remove(folder.root, at(staging), true);
+}
+
+/**
+ * `recoverReplaced` on a remote location, by the same rules, given what the folder holds. An older Kago copied a
+ * replacement to the staging name itself and removed what it replaced before moving it in, so whatever such a name
+ * holds besides `old` and `new` is that copy, which may be all that is left of either, and is given a name that is
+ * seen. Says whether anything was put right.
+ */
+async function recoverRemoteReplaced(remote: RemoteStorage, folder: SafePath, found: RemoteEntry[]): Promise<boolean> {
+  const at = (...names: string[]) => path.posix.join(folder.logicalPath, ...names);
+  const names = found.map((entry) => entry.name);
+  let changed = false;
+  for (const entry of found) {
+    if (!entry.name.startsWith(REPLACE_PARTIAL)) continue;
+    const started = /^(\d+)-/.exec(entry.name.slice(REPLACE_PARTIAL.length));
+    try {
+      if (started && Number(started[1]) >= LOADED_AT) continue;
+      const held = started && entry.directory ? await remote.list(folder.root, at(entry.name)) : null;
+      if (!held || held.some((item) => item.name !== "old" && item.name !== "new")) {
+        const taken = (candidate: string) => names.some((other) => sameName(other, candidate));
+        const visible = taken("Recovered") ? freeName(taken, "Recovered", entry.directory) : "Recovered";
+        await remote.move(folder.root, at(entry.name), at(visible), entry.directory);
+        names.push(visible);
+        changed = true;
+        continue;
+      }
+      if (held.some((item) => item.name === "old")) {
+        for (const kept of await remote.list(folder.root, at(entry.name, "old"))) {
+          if (!names.some((other) => sameName(other, kept.name))) {
+            await remote.move(folder.root, at(entry.name, "old", kept.name), at(kept.name), kept.directory);
+            names.push(kept.name);
+          }
+        }
+      }
+      await remote.remove(folder.root, at(entry.name), true);
+      changed = true;
+    } catch (error) {
+      logger.warn("could not recover an interrupted replacement", { path: at(entry.name), error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  return changed;
 }
 
 /**

@@ -14,6 +14,7 @@ import test from "node:test";
 import AdmZip from "adm-zip";
 import { buildApp } from "../dist/app.js";
 import { nextRun } from "../dist/services/sync.service.js";
+import { RcloneClient, rcloneSocketPath } from "../dist/storage/rclone-client.js";
 
 const remote = process.env.KAGO_TEST_REMOTE ? JSON.parse(process.env.KAGO_TEST_REMOTE) : null;
 const port = Number(process.env.KAGO_TEST_PORT ?? 18999);
@@ -279,6 +280,39 @@ test("a remote location behaves like a local one", { skip: remote ? false : "KAG
       assert.deepEqual(await tree("/coming"), { "a.txt": "new a" });
       for (const name of ["clash", "coming"]) assert.equal((await task({ type: "delete", sources: [{ rootSlug: slug, path: `/${name}` }] })).status, "done");
       for (const name of ["clash", "held"]) await rm(path.join(dataDir, "local", name), { recursive: true });
+    }
+
+    // A replacement cut short is put right by the next task in its folder. What was set aside goes back unless something
+    // has its name, a copy an older Kago staged under such a name itself is given a name that is seen, and one this
+    // run of the server may still be making is left alone.
+    {
+      const rclone = new RcloneClient(rcloneSocketPath(appDataDir));
+      const fs = `kago_${rootId}:${here.base}`;
+      const from = path.join(dir, "leftover");
+      await mkdir(from, { recursive: true });
+      const put = async (remotePath, text) => {
+        await writeFile(path.join(from, "file"), text);
+        await rclone.call("operations/copyfile", { srcFs: from, srcRemote: "file", dstFs: fs, dstRemote: `cut/${remotePath}` });
+      };
+      const before = Date.now() - 60 * 60 * 1000;
+      const making = `.kago-replace-${Date.now() + 60 * 60 * 1000}-temp_making`;
+      await put(`.kago-replace-${before}-temp_aside/old/doc.txt`, "doc as it was");
+      await put(`.kago-replace-${before}-temp_aside/new`, "doc arriving");
+      await put(`.kago-replace-${before}-temp_placed/old/kept.txt`, "kept as it was");
+      await put("kept.txt", "kept replaced");
+      await put(`.kago-replace-${before}-temp_older/one.txt`, "the only copy");
+      await put(`${making}/old/later.txt`, "being replaced");
+      const listed = async () => (await api.get(`/api/fs/list?${q("/cut")}`)).json.items.map((item) => item.name).sort();
+      assert.deepEqual(await listed(), ["kept.txt"]);
+      await writeFile(path.join(dataDir, "local", "note.txt"), "next");
+      assert.equal((await task({ type: "copy", sources: [{ rootSlug: "local", path: "/note.txt" }], destination: { rootSlug: slug, path: "/cut" } })).status, "done");
+      assert.deepEqual(await listed(), ["Recovered", "doc.txt", "kept.txt", "note.txt"]);
+      assert.equal((await api.get(`/api/fs/preview?${q("/cut/doc.txt")}`)).text, "doc as it was");
+      assert.equal((await api.get(`/api/fs/preview?${q("/cut/kept.txt")}`)).text, "kept replaced");
+      assert.equal((await api.get(`/api/fs/preview?${q("/cut/Recovered/one.txt")}`)).text, "the only copy");
+      assert.deepEqual((await rclone.list(fs, "cut")).map((item) => item.Name).sort(), ["Recovered", "doc.txt", "kept.txt", making, "note.txt"].sort());
+      assert.equal((await task({ type: "delete", sources: [{ rootSlug: slug, path: "/cut" }] })).status, "done");
+      await rm(path.join(dataDir, "local", "note.txt"));
     }
 
     // Many files picked at once travel together, whatever their names, and nothing beside them does.
