@@ -13,6 +13,9 @@ import { buildApp } from "../dist/app.js";
 import { loadEnv } from "../dist/config/env.js";
 import { MediaService } from "../dist/services/media.service.js";
 
+// Every sync runs through rclone, which a development machine may not have.
+const rcloneInstalled = spawnSync("rclone", ["version"]).status === 0;
+
 test("minimum file-manager demo flow", async () => {
   const fixture = await createFixture("kago-smoke-demo.");
   const app = await buildApp(testEnv(fixture));
@@ -856,6 +859,13 @@ test("download archives stay out of the data dir and running tasks can be cancel
     // A sync job goes on telling how its last run ended after that run is cleared from the list.
     const job = await admin.post("/api/sync-jobs", { name: "Backup", source: { kind: "location", rootSlug: "photos", path: "/public" }, destination: { kind: "location", rootSlug: "photos", path: "/2026" } });
     const lastStatus = async () => (await admin.get("/api/sync-jobs")).json[0].last_status;
+    if (!rcloneInstalled) {
+      // Rather than queue a run that would fail, Kago says up front that it cannot sync here.
+      const refused = await admin.post(`/api/sync-jobs/${job.json.id}/run`);
+      assert.equal(refused.statusCode, 503);
+      assert.equal(refused.json.code, "REMOTE_UNAVAILABLE");
+      return;
+    }
     const firstRun = await waitTask(admin, (await admin.post(`/api/sync-jobs/${job.json.id}/run`)).json.id);
     assert.deepEqual((await admin.delete("/api/tasks")).json, { cleared: 1 });
     assert.deepEqual((await admin.get("/api/tasks")).json, []);

@@ -42,6 +42,13 @@ jobs:
           sudo ln -s /usr/lib/jellyfin-ffmpeg/ffmpeg /usr/local/bin/ffmpeg
           sudo ln -s /usr/lib/jellyfin-ffmpeg/ffprobe /usr/local/bin/ffprobe
 
+      # Every sync runs through rclone, local ones too; the same release the image copies in.
+      - name: Install rclone
+        run: |
+          curl -fsSLO https://downloads.rclone.org/v1.75.1/rclone-v1.75.1-linux-amd64.deb
+          sudo apt-get install -y ./rclone-v1.75.1-linux-amd64.deb
+          rm rclone-v1.75.1-linux-amd64.deb
+
       - run: pnpm install --frozen-lockfile
 
       - run: pnpm typecheck
