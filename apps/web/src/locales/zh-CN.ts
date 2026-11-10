@@ -379,6 +379,7 @@ export const zhCN: Dictionary = {
   "W A S D to move, drag to look around": "W A S D 移动，拖动以环顾四周",
   "Orbit (1)": "环绕（1）",
   "Fly (2)": "飞行（2）",
+  "Movement speed": "移动速度",
   "Frame scene (F)": "显示整个场景（F）",
   "Reset camera (R)": "重置镜头（R）",
   "Page {page} of {pages}": "第 {page} / {pages} 页",

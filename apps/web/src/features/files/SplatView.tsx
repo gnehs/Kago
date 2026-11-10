@@ -1,6 +1,7 @@
 import { createViewer, type ViewerHandle } from "@playcanvas/supersplat-viewer/viewer";
 import { defaultSettings } from "@playcanvas/supersplat-viewer/settings";
 import "@playcanvas/supersplat-viewer/viewer.css";
+import { Vec3, type Entity } from "playcanvas";
 import { useEffect, useImperativeHandle, useRef, type Ref } from "react";
 
 export type SplatError = "not-splat" | "unreadable";
@@ -10,7 +11,7 @@ export type SplatViewHandle = { setMode: (mode: SplatMode) => void; frame: () =>
 /** `mode` is null while the camera is on neither: before the scene is drawn, or while the viewer's own turntable plays. */
 export type SplatViewState = { loaded: boolean; progress: number; mode: SplatMode | null; touch: boolean };
 
-type Props = { ref: Ref<SplatViewHandle>; url: string; name: string; focused: boolean; onState: (patch: Partial<SplatViewState>) => void; onError: (error: SplatError) => void };
+type Props = { ref: Ref<SplatViewHandle>; url: string; name: string; focused: boolean; /** A multiple of the viewer's own pace of 4 m/s. */ speed: number; onState: (patch: Partial<SplatViewState>) => void; onError: (error: SplatError) => void };
 
 /** A PLY file may just as well be a mesh or a point cloud; a splat's header names what only a splat has. */
 async function isSplatPly(url: string, signal: AbortSignal) {
@@ -52,12 +53,34 @@ async function splatAsPly(url: string, signal: AbortSignal) {
   return new Response(bytes, { headers: { "Content-Length": String(bytes.length) } });
 }
 
+const BASE_SPEED = 4;
+const MEDIAN_SAMPLES = 65536;
+
+/**
+ * Where to stand at the start: amid the splats the scene is mostly made of. A few stray splats far off stretch the
+ * bounding box the viewer frames by, which leaves the camera a long way out; they barely move the median.
+ */
+function medianCamera(splat: Entity) {
+  const centers = splat.gsplat?.resource?.centers;
+  const count = centers ? Math.floor(centers.length / 3) : 0;
+  if (!centers || count === 0) return null;
+  const step = Math.max(1, Math.floor(count / MEDIAN_SAMPLES));
+  const median = [0, 1, 2].map((axis) => {
+    const values = new Float32Array(Math.ceil(count / step));
+    for (let index = 0, sample = 0; index < count; index += step) values[sample++] = centers[index * 3 + axis]!;
+    return values.sort()[values.length >> 1]!;
+  });
+  const position = splat.getWorldTransform().transformPoint(new Vec3(median[0], median[1], median[2]));
+  // Looking level along the scene; the viewer's own field of view.
+  return { position: [position.x, position.y, position.z] as [number, number, number], target: [position.x, position.y, position.z - 1] as [number, number, number], fov: 85 };
+}
+
 /** A Gaussian splat scene drawn by SuperSplat's viewer, without its interface: the window around it has the controls. */
-export default function SplatView({ ref, url, name, focused, onState, onError }: Props) {
+export default function SplatView({ ref, url, name, focused, speed, onState, onError }: Props) {
   const container = useRef<HTMLDivElement>(null);
   const viewer = useRef<ViewerHandle | null>(null);
-  const latest = useRef({ focused, onState, onError });
-  latest.current = { focused, onState, onError };
+  const latest = useRef({ focused, speed, onState, onError });
+  latest.current = { focused, speed, onState, onError };
 
   // The camera can only be told where to go once there is a scene to look at.
   const ready = () => (viewer.current?.state.loaded ? viewer.current : null);
@@ -79,6 +102,7 @@ export default function SplatView({ ref, url, name, focused, onState, onError }:
       if (lower.endsWith(".ply") && !(await isSplatPly(url, abort.signal))) return fail("not-splat");
       const contents = legacy ? await splatAsPly(url, abort.signal) : undefined;
       if (abort.signal.aborted) return;
+      let inside = false;
       const handle = await createViewer({
         container: container.current!,
         // A bare file says nothing of where to stand: with no camera given, the viewer frames the whole scene.
@@ -86,12 +110,18 @@ export default function SplatView({ ref, url, name, focused, onState, onError }:
         contentUrl: url,
         contentFilename: legacy ? `${name}.ply` : name,
         contents: contents && Promise.resolve(contents),
+        initialCamera: (splat) => {
+          const pose = medianCamera(splat);
+          inside = pose !== null;
+          return pose;
+        },
         ui: false,
         noanim: true
       });
       if (abort.signal.aborted) return handle.destroy();
       viewer.current = handle;
       handle.state.inputEnabled = latest.current.focused;
+      handle.setMoveSpeed(BASE_SPEED * latest.current.speed);
       handle.app.assets.on("error", () => fail("unreadable"));
       const report = () => {
         const { loaded, progress, cameraMode, inputMode } = handle.state;
@@ -99,8 +129,9 @@ export default function SplatView({ ref, url, name, focused, onState, onError }:
       };
       for (const key of ["progress", "cameraMode", "inputMode"]) handle.events.on(`${key}:changed`, report);
       handle.events.once("loaded:changed", () => {
-        // The viewer would open on a turntable of its own making; a preview waits to be turned by hand.
-        handle.state.cameraMode = "orbit";
+        // Standing amid the scene, it is flown through; a touch screen has no keys to fly with, so it looks around from there.
+        // Framed from outside instead, the viewer would open on a turntable of its own making; a preview waits to be turned by hand.
+        handle.state.cameraMode = inside && handle.state.inputMode !== "touch" ? "fly" : "orbit";
         report();
       });
       report();
@@ -117,6 +148,10 @@ export default function SplatView({ ref, url, name, focused, onState, onError }:
   useEffect(() => {
     if (viewer.current) viewer.current.state.inputEnabled = focused;
   }, [focused]);
+
+  useEffect(() => {
+    viewer.current?.setMoveSpeed(BASE_SPEED * speed);
+  }, [speed]);
 
   return <div ref={container} className="min-h-0 flex-1 bg-black" />;
 }

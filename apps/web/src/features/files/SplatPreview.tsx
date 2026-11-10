@@ -9,6 +9,8 @@ import { triggerDownload } from "@/lib/paths";
 import type { PreviewWindow } from "@/stores/workspace";
 import { FileIcon } from "@/components/kago/file-icon";
 import { KagoStatusBar } from "@/components/kago/status-bar";
+import { KagoDropdownMenu, KagoMenuCheckItem } from "@/components/kago/menu";
+import { getSplatSpeed, setSplatSpeed, SPLAT_SPEEDS, type SplatSpeed } from "@/lib/prefs";
 import type { SplatError, SplatViewHandle, SplatViewState } from "./SplatView";
 import { t } from "@/lib/i18n";
 
@@ -29,6 +31,11 @@ export function SplatPreviewWindow({ window }: { window: PreviewWindow }) {
   const view = useRef<SplatViewHandle>(null);
   const [state, setState] = useState<SplatViewState>(INITIAL_STATE);
   const [error, setError] = useState<SplatError | null>(null);
+  const [speed, setSpeed] = useState(getSplatSpeed);
+  const pickSpeed = (next: SplatSpeed) => {
+    setSplatSpeed(next);
+    setSpeed(next);
+  };
   // The window stays open when the file is opened again as it is now; what was told of the last scene does not carry over.
   const version = `${item.path}:${item.mtime}`;
   const [shown, setShown] = useState(version);
@@ -64,7 +71,7 @@ export function SplatPreviewWindow({ window }: { window: PreviewWindow }) {
         <div className="relative flex min-h-0 flex-1 flex-col bg-black">
           <Suspense fallback={<KagoLoading />}>
             {/* Keyed by the file as it is now, so one that is replaced on disk is read again. */}
-            <SplatView key={version} ref={view} url={previewUrl(rootSlug, item.path)} name={item.name} focused={window.focused} onState={onState} onError={onError} />
+            <SplatView key={version} ref={view} url={previewUrl(rootSlug, item.path)} name={item.name} focused={window.focused} speed={speed} onState={onState} onError={onError} />
           </Suspense>
           {state.loaded ? null : (
             <div className="kago-wait pointer-events-none absolute inset-0 flex items-center justify-center">
@@ -85,6 +92,20 @@ export function SplatPreviewWindow({ window }: { window: PreviewWindow }) {
               <Move3d />
             </KagoIconButton>
           )}
+          {state.mode === "fly" ? (
+            <KagoDropdownMenu
+              label={t("Movement speed")}
+              side="top"
+              className="h-6! w-auto! px-1.5 text-xs font-medium tabular-nums"
+              menu={SPLAT_SPEEDS.map((option) => (
+                <KagoMenuCheckItem key={option} checked={speed === option} onClick={() => pickSpeed(option)}>
+                  {option}×
+                </KagoMenuCheckItem>
+              ))}
+            >
+              {speed}×
+            </KagoDropdownMenu>
+          ) : null}
           <KagoIconButton label={t("Frame scene (F)")} className="size-6" disabled={!state.loaded} onClick={() => view.current?.frame()}>
             <Scan />
           </KagoIconButton>

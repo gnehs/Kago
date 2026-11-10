@@ -1,0 +1,99 @@
+diff --git a/dist/viewer.d.ts b/dist/viewer.d.ts
+index 71b12868fc5b7324003dadc6213a057df233e210..e4e6b6bf6332062bc479f6c80b941caaeef76c6b 100644
+--- a/dist/viewer.d.ts
++++ b/dist/viewer.d.ts
+@@ -1,4 +1,4 @@
+-import { AppBase, EventHandler } from 'playcanvas';
++import { AppBase, Entity, EventHandler } from 'playcanvas';
+ 
+ /**
+  * Asset urls an embedder supplies. Shared by the two ways of instantiating the viewer — as
+@@ -88,6 +88,11 @@ type ViewerFlags = {
+ type CreateViewerOptions = ViewerAssets & ViewerFlags & {
+     /** The element the viewer builds its subtree in. The host sizes it; the viewer fills it. */
+     container: HTMLElement;
++    /**
++     * Called once the splats load, before the camera is placed. A pose it returns replaces
++     * the settings' first camera.
++     */
++    initialCamera?: (splat: Entity) => CameraPose | null | undefined;
+     /**
+      * Experience settings: an object in any version the viewer reads, a promise of that
+      * object, or a url to fetch them from, resolved against the document. The poster is
+@@ -261,6 +266,12 @@ type ViewerHandle = {
+      * axes. Independent of `gamingControls`, `inputMode` and the keyboard/gamepad input gate.
+      */
+     setMoveInput(x: number, z: number): void;
++    /**
++     * Set the fly/walk movement speed in m/s before the shift/ctrl multipliers, for the
++     * keyboard, gamepad and `setMoveInput`. Defaults to 4. Throws after destruction or for a
++     * speed that is not a positive finite number.
++     */
++    setMoveSpeed(speed: number): void;
+     /**
+      * Request fullscreen for this viewer's root. Call from a user gesture; rejects on browser
+      * refusal or destruction. Available before scene loading finishes. Without native support,
+diff --git a/dist/viewer.js b/dist/viewer.js
+index 9f55c144c1c4bc3ec7d11087391b8b95855218eb..5bdc2978476efb86d17988f0aeb97e2558873d9a 100644
+--- a/dist/viewer.js
++++ b/dist/viewer.js
+@@ -14773,6 +14773,7 @@ const setBackBufferSrgb = (device, enabled) => {
+ };
+ class Viewer {
+     global;
++    moveSpeed = 4;
+     cameraFrame;
+     inputController;
+     cameraManager;
+@@ -15081,6 +15082,12 @@ class Viewer {
+             // for development pages (the bench measures pick noise), as splatRenderer:ready
+             events.fire('picker:ready', this.picker);
+             this.inputController = new InputController(global, this.picker);
++            this.applyMoveSpeed();
++            // the host may place the opening camera from the loaded splats themselves
++            const initialCamera = config.initialCamera?.(results[0]);
++            if (initialCamera) {
++                global.settings.cameras = [{ initial: initialCamera }];
++            }
+             this.cameraManager = new CameraManager(global, sceneBound);
+             applyCamera(this.cameraManager.camera);
+             if (config.ui) {
+@@ -15245,6 +15252,20 @@ class Viewer {
+         state.selectedAnnotation = index;
+         app.renderNextFrame = true;
+     }
++    setMoveSpeed(speed) {
++        this.requireAlive('setMoveSpeed');
++        if (!Number.isFinite(speed) || speed <= 0) {
++            throw new Error('setMoveSpeed: speed must be a positive finite number');
++        }
++        this.moveSpeed = speed;
++        this.applyMoveSpeed();
++    }
++    applyMoveSpeed() {
++        const input = this.inputController;
++        if (input) {
++            input.moveSpeed = input._keyboardMouse.moveSpeed = input._gamepad.moveSpeed = this.moveSpeed;
++        }
++    }
+     setMoveInput(x, z) {
+         this.requireLoaded('setMoveInput');
+         if (!Number.isFinite(x) || !Number.isFinite(z)) {
+@@ -15738,7 +15759,8 @@ const resolveConfig = (options) => ({
+     heatmap: options.heatmap ?? false,
+     debug: options.debug ?? false,
+     lang: options.lang,
+-    exposeGlobals: options.exposeGlobals ?? false
++    exposeGlobals: options.exposeGlobals ?? false,
++    initialCamera: options.initialCamera
+ });
+ const createViewer = async (options) => {
+     const { container } = options;
+@@ -15881,6 +15903,7 @@ const createViewer = async (options) => {
+         toggleWalk: () => viewer.toggleWalk(),
+         selectAnnotation: (index) => viewer.selectAnnotation(index),
+         setMoveInput: (x, z) => viewer.setMoveInput(x, z),
++        setMoveSpeed: (speed) => viewer.setMoveSpeed(speed),
+         requestFullscreen: () => viewer.requestFullscreen(),
+         exitFullscreen: () => viewer.exitFullscreen(),
+         startXR: (mode) => viewer.startXR(mode),

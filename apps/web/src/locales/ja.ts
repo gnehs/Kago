@@ -379,6 +379,7 @@ export const ja: Dictionary = {
   "W A S D to move, drag to look around": "W A S D で移動、ドラッグで見回す",
   "Orbit (1)": "オービット（1）",
   "Fly (2)": "フライ（2）",
+  "Movement speed": "移動速度",
   "Frame scene (F)": "シーン全体を表示（F）",
   "Reset camera (R)": "カメラをリセット（R）",
   "Page {page} of {pages}": "{page} / {pages} ページ",

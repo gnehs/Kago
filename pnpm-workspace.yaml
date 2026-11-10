@@ -8,3 +8,5 @@ minimumReleaseAgeExclude:
   - "@expo-google-fonts/noto-sans-kr@0.4.4"
   - "@expo-google-fonts/noto-sans-sc@0.4.4"
   - "@expo-google-fonts/noto-sans-tc@0.4.4"
+patchedDependencies:
+  '@playcanvas/supersplat-viewer@1.37.0': patches/@playcanvas__supersplat-viewer@1.37.0.patch

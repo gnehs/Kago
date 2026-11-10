@@ -295,3 +295,26 @@ export function setTheme(theme: ThemePref) {
 }
 
 media?.addEventListener("change", applyPrefs);
+
+const splatSpeedKey = "kago.splatSpeed";
+
+/** How fast a splat scene is flown through, as a multiple of the viewer's own pace. */
+export const SPLAT_SPEEDS = [0.25, 0.5, 1, 2, 4, 8] as const;
+export type SplatSpeed = (typeof SPLAT_SPEEDS)[number];
+
+export function getSplatSpeed(): SplatSpeed {
+  try {
+    const speed = Number(localStorage.getItem(splatSpeedKey));
+    return SPLAT_SPEEDS.find((allowed) => allowed === speed) ?? 1;
+  } catch {
+    return 1;
+  }
+}
+
+export function setSplatSpeed(speed: SplatSpeed) {
+  try {
+    localStorage.setItem(splatSpeedKey, String(speed));
+  } catch {
+    // Private browsing: the choice just lasts for this window.
+  }
+}

@@ -187,6 +187,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  '@playcanvas/supersplat-viewer@1.37.0': 984a0d97550b5298e7dafed3bba332468f4ba2cbff8e562ff1d7d8febe27a84f
+
 importers:
 
   .:
@@ -293,7 +296,7 @@ importers:
         version: 1.2.5
       '@playcanvas/supersplat-viewer':
         specifier: ^1.37.0
-        version: 1.37.0(playcanvas@2.23.0)
+        version: 1.37.0(patch_hash=984a0d97550b5298e7dafed3bba332468f4ba2cbff8e562ff1d7d8febe27a84f)(playcanvas@2.23.0)
       '@tanstack/react-query':
         specifier: ^5.80.7
         version: 5.101.0(react@19.2.7)
@@ -3566,7 +3569,7 @@ snapshots:
 
   '@pinojs/redact@0.4.0': {}
 
-  '@playcanvas/supersplat-viewer@1.37.0(playcanvas@2.23.0)':
+  '@playcanvas/supersplat-viewer@1.37.0(patch_hash=984a0d97550b5298e7dafed3bba332468f4ba2cbff8e562ff1d7d8febe27a84f)(playcanvas@2.23.0)':
     optionalDependencies:
       playcanvas: 2.23.0
 

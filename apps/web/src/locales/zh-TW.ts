@@ -379,6 +379,7 @@ export const zhTW: Dictionary = {
   "W A S D to move, drag to look around": "W A S D 移動，拖曳以環顧四周",
   "Orbit (1)": "環繞（1）",
   "Fly (2)": "飛行（2）",
+  "Movement speed": "移動速度",
   "Frame scene (F)": "顯示整個場景（F）",
   "Reset camera (R)": "重設鏡頭（R）",
   "Page {page} of {pages}": "第 {page} / {pages} 頁",

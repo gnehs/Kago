@@ -19,6 +19,7 @@ RUN SHELL="$(which bash)" ENV="$HOME/.bashrc" npx --yes get-pnpm "$PNPM_VERSION"
 
 FROM base AS deps
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
+COPY patches patches
 COPY apps/server/package.json apps/server/package.json
 COPY apps/web/package.json apps/web/package.json
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
