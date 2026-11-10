@@ -28,7 +28,7 @@
     "@expo-google-fonts/noto-sans-tc": "^0.4.4",
     "@jellyfin/libass-wasm": "^4.2.4",
     "@lezer/highlight": "^1.2.5",
-    "@playcanvas/supersplat-viewer": "^1.37.0",
+    "@playcanvas/supersplat-viewer": "^1.42.1",
     "@tanstack/react-query": "^5.80.7",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

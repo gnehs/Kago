@@ -188,7 +188,7 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
-  '@playcanvas/supersplat-viewer@1.37.0': 984a0d97550b5298e7dafed3bba332468f4ba2cbff8e562ff1d7d8febe27a84f
+  '@playcanvas/supersplat-viewer@1.42.1': 048ff89ce2cfdb8f044d46d3d41453b1ff9cd03be61a2c0f62cf0e573f565e7a
 
 importers:
 
@@ -295,8 +295,8 @@ importers:
         specifier: ^1.2.5
         version: 1.2.5
       '@playcanvas/supersplat-viewer':
-        specifier: ^1.37.0
-        version: 1.37.0(patch_hash=984a0d97550b5298e7dafed3bba332468f4ba2cbff8e562ff1d7d8febe27a84f)(playcanvas@2.23.0)
+        specifier: ^1.42.1
+        version: 1.42.1(patch_hash=048ff89ce2cfdb8f044d46d3d41453b1ff9cd03be61a2c0f62cf0e573f565e7a)(playcanvas@2.23.0)
       '@tanstack/react-query':
         specifier: ^5.80.7
         version: 5.101.0(react@19.2.7)
@@ -1287,11 +1287,11 @@ packages:
   '@pinojs/redact@0.4.0':
     resolution: {integrity: sha512-k2ENnmBugE/rzQfEcdWHcCY+/FM3VLzH9cYEsbdsoqrvzAKRhUZeRNhAZvB8OitQJ1TBed3yqWtdjzS6wJKBwg==}
 
-  '@playcanvas/supersplat-viewer@1.37.0':
-    resolution: {integrity: sha512-8dy9mn9lFFL04PhWbwlHchzE/ky55FwuIVcz65Mf1+BN2UFMNGtGDV/BYPirI92ijJofUCUZS8eDT5OVGy/a1g==}
+  '@playcanvas/supersplat-viewer@1.42.1':
+    resolution: {integrity: sha512-CeJZao+or43Hb8qc4DQjZz/c4X+3ly6xtX58BJJtiTxcCha5wgc2Pg1aeAx1UyzNoZKU1DCr4rOxVbY/13n6Xg==}
     engines: {node: '>=20.0.0'}
     peerDependencies:
-      playcanvas: ^2.22.1
+      playcanvas: ^2.23.0
     peerDependenciesMeta:
       playcanvas:
         optional: true
@@ -3569,7 +3569,7 @@ snapshots:
 
   '@pinojs/redact@0.4.0': {}
 
-  '@playcanvas/supersplat-viewer@1.37.0(patch_hash=984a0d97550b5298e7dafed3bba332468f4ba2cbff8e562ff1d7d8febe27a84f)(playcanvas@2.23.0)':
+  '@playcanvas/supersplat-viewer@1.42.1(patch_hash=048ff89ce2cfdb8f044d46d3d41453b1ff9cd03be61a2c0f62cf0e573f565e7a)(playcanvas@2.23.0)':
     optionalDependencies:
       playcanvas: 2.23.0
 

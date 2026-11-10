@@ -61,7 +61,9 @@ const MEDIAN_SAMPLES = 65536;
  * bounding box the viewer frames by, which leaves the camera a long way out; they barely move the median.
  */
 function medianCamera(splat: Entity) {
-  const centers = splat.gsplat?.resource?.centers;
+  const resource = splat.gsplat?.resource;
+  // The engine keeps no centres of its own under WebGPU, which sorts on the GPU; the loaded data still has them.
+  const centers = resource?.centers ?? resource?.gsplatData.getCenters();
   const count = centers ? Math.floor(centers.length / 3) : 0;
   if (!centers || count === 0) return null;
   const step = Math.max(1, Math.floor(count / MEDIAN_SAMPLES));
