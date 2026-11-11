@@ -5,7 +5,14 @@ import path from "node:path";
 
 const root = path.resolve(import.meta.dirname, "..");
 // Kago's plugins are shipped in the image as their builds, with what they bundle.
-const APPS = ["apps/server", "apps/web", ...fs.readdirSync(path.join(root, "plugins")).map((name) => `plugins/${name}`)];
+const APPS = [
+  "apps/server",
+  "apps/web",
+  ...fs
+    .readdirSync(path.join(root, "plugins"))
+    .map((name) => `plugins/${name}`)
+    .filter((folder) => fs.existsSync(path.join(root, folder, "package.json")))
+];
 const LICENSE_FILE = /^(licen[sc]e|copying|copyright|notice)/i;
 const RULE = "-".repeat(80);
 

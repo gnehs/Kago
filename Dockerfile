@@ -17,13 +17,21 @@ ARG PNPM_VERSION=12.9.1
 # `pnpm setup` (run by get-pnpm) needs to know which shell to configure.
 RUN SHELL="$(which bash)" ENV="$HOME/.bashrc" npx --yes get-pnpm "$PNPM_VERSION"
 
+# Every workspace package's package.json in its own folder, and nothing else of them. COPY with a glob would put them
+# all in one folder, so the folders are copied whole and emptied of the rest. Only what is left reaches deps, so a
+# change to a package's source leaves the install below cached.
+FROM base AS manifests
+COPY packages packages
+COPY plugins plugins
+RUN find packages plugins -mindepth 2 -maxdepth 2 ! -name package.json -exec rm -rf {} +
+
 FROM base AS deps
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY patches patches
 COPY apps/server/package.json apps/server/package.json
 COPY apps/web/package.json apps/web/package.json
-COPY packages/plugin-sdk/package.json packages/plugin-sdk/package.json
-COPY plugins/splat-viewer/package.json plugins/splat-viewer/package.json
+COPY --from=manifests /app/packages packages
+COPY --from=manifests /app/plugins plugins
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
   pnpm install --frozen-lockfile
 
