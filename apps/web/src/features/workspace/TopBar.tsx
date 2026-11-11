@@ -170,9 +170,8 @@ function TaskStatus() {
       onOpenChange={setOpen}
       className={cn(
         // The width eases between the button and the pill; where a browser cannot ease to a width that fits, it snaps.
-        "h-7 w-7 [interpolate-size:allow-keywords] transition-[width,background-color] duration-300 ease-out",
-        // Tinted with the accent, so it reads as something under way, apart from the buttons beside it.
-        upload && "w-auto gap-1.5 rounded-full bg-accent-soft pr-2.5 pl-1.5 text-ink hover:bg-[color-mix(in_srgb,var(--kago-accent-soft),var(--kago-accent)_12%)] hover:text-ink",
+        "h-7 w-7 [interpolate-size:allow-keywords] transition-[width] duration-300 ease-out",
+        upload && "kago-island w-auto gap-1.5 rounded-full pr-2.5 pl-1.5 text-ink hover:text-ink",
         !upload && activeCount > 0 && "text-accent hover:text-accent"
       )}
       // It hangs a little below the bar rather than from its edge, and keeps off the side of the screen.

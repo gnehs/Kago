@@ -85,6 +85,8 @@
   --kago-primary-from: #4f9bf8;
   --kago-primary-to: #1557dc;
   --kago-primary-ring: #1a52c4;
+  --kago-island: linear-gradient(#f4f8ff, #d5e2fc);
+  --kago-island-shadow: 0 0 0 0.5px rgb(47 111 237 / 0.5), 0 1px 2.5px rgb(15 42 110 / 0.16), inset 0 0.5px 0 #ffffff;
   --kago-primary-glow: rgb(47 111 237 / 0.45);
   --kago-destructive-from: #f0685b;
   --kago-destructive-to: #c5221a;
@@ -174,6 +176,8 @@
   --kago-primary-from: #5a9bfb;
   --kago-primary-to: #2059d8;
   --kago-primary-ring: #0f2f7a;
+  --kago-island: linear-gradient(#324a7d, #213259);
+  --kago-island-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.75), 0 1px 2.5px rgb(0 0 0 / 0.4), inset 0 0 0 1px rgb(91 141 250 / 0.3), inset 0 0.5px 0 rgb(255 255 255 / 0.22);
   --kago-primary-glow: rgb(60 120 245 / 0.4);
   --kago-destructive-from: #f0685b;
   --kago-destructive-to: #c5221a;
@@ -455,6 +459,23 @@
     box-shadow:
       0 0 0 0.5px var(--kago-primary-ring),
       inset 0 1px 3px color-mix(in srgb, var(--kago-primary-shade) 50%, transparent);
+  }
+
+  /* Something under way, kept in the bar: a pill of the accent's pale glass, edged in it, that the flat control's press does not flatten. */
+  .kago-island,
+  .kago-island.kago-flat:not(:disabled):hover,
+  .kago-island.kago-flat[data-popup-open] {
+    background: var(--kago-island);
+    box-shadow: var(--kago-island-shadow);
+  }
+
+  .kago-island:hover {
+    filter: brightness(1.04);
+  }
+
+  .kago-island[data-popup-open],
+  .kago-island:active {
+    filter: brightness(0.95);
   }
 
   /* The same glass in red, when the one action is one that can't be taken back. */
