@@ -21,7 +21,7 @@ const HELLO_TIMEOUT = 10_000;
  * cannot; a page that never says hello, or fails to load, is broken, and only loading it again can change that.
  */
 type Phase = { kind: "loading" } | { kind: "ready" } | { kind: "failed"; reason: FailReason; message?: string } | { kind: "broken" };
-type PhaseEvent = { kind: "hello" } | { kind: "fail"; reason: FailReason; message?: string } | { kind: "broken" };
+type PhaseEvent = { kind: "hello" } | { kind: "fail"; reason: FailReason; message?: string } | { kind: "broken" } | { kind: "navigated" };
 
 function advance(phase: Phase, event: PhaseEvent): Phase {
   if (phase.kind === "failed" || phase.kind === "broken") return phase;
@@ -33,6 +33,9 @@ function advance(phase: Phase, event: PhaseEvent): Phase {
     case "broken":
       // A plugin that has started is past its loading; only one that never did is broken.
       return phase.kind === "loading" ? { kind: "broken" } : phase;
+    case "navigated":
+      // The frame holds another page than the one Kago gave it, which is no longer the plugin it was told of.
+      return { kind: "broken" };
   }
 }
 
@@ -43,8 +46,21 @@ function currentTheme(): Theme {
   return { mode: document.documentElement.dataset.theme === "dark" ? "dark" : "light", tokens };
 }
 
-/** Where a plugin keeps what it stores, in Kago's own storage: a sandboxed frame has none. */
-const storageKey = (pluginId: string, key: string) => `kago.plugin.${pluginId}.${key}`;
+/** How many reads a frame may have Kago making at once, and waiting behind those. Past both, a read fails at once. */
+const READS_AT_ONCE = 3;
+const READS_WAITING = 32;
+/** A frame that asks more often than this is heard once: a click brings its window forward, a download starts once. */
+const ACTIVATE_INTERVAL = 100;
+const DOWNLOAD_INTERVAL = 2000;
+
+/**
+ * Where a plugin keeps what it stores, in Kago's own storage: a sandboxed frame has none. A plugin's id is an npm
+ * name, which never has a colon, so no plugin's keys run into another's.
+ */
+const storagePrefix = (pluginId: string) => `kago.plugin:${pluginId}:`;
+const storageKey = (pluginId: string, key: string) => `${storagePrefix(pluginId)}${key}`;
+/** The most a plugin keeps, counted in characters across all its keys and values. */
+const STORAGE_LIMIT = 256 * 1024;
 
 /** What a plugin stored before it was one, kept under the name the interface gave it then. */
 const LEGACY_STORAGE: Record<string, string> = { [storageKey("@kago/plugin-splat-viewer", "speed")]: "kago.splatSpeed" };
@@ -67,8 +83,17 @@ function readStorage(pluginId: string, key: string) {
 }
 
 function writeStorage(pluginId: string, key: string, value: string) {
+  const name = storageKey(pluginId, key);
   try {
-    localStorage.setItem(storageKey(pluginId, key), value);
+    const prefix = storagePrefix(pluginId);
+    let used = 0;
+    for (let index = 0; index < localStorage.length; index++) {
+      const other = localStorage.key(index);
+      if (other !== null && other !== name && other.startsWith(prefix)) used += other.length + (localStorage.getItem(other)?.length ?? 0);
+    }
+    // Over its share, a plugin's choice lasts as long as the frame, as it would with storage full.
+    if (used + name.length + value.length > STORAGE_LIMIT) return;
+    localStorage.setItem(name, value);
   } catch {
     // Private browsing, or storage full: the choice lasts as long as the frame.
   }
@@ -97,8 +122,9 @@ export function PluginPreviewWindow({ window, previewer }: { window: PreviewWind
         </KagoIconButton>
       }
     >
-      {/* Keyed by the file as it is now, so one that is replaced on disk is read again. */}
-      <PluginFrame key={`${item.path}:${item.mtime}:${attempt}`} window={window} previewer={previewer} onDownload={download} onRetry={retry} />
+      {/* Keyed by the file as it is now, so one that is replaced on disk is read again, and by the page, so a frame only
+          ever loads the one it was given: one that loads another page is taken to have left (see PluginFrame). */}
+      <PluginFrame key={`${item.path}:${item.mtime}:${previewer.src}:${attempt}`} window={window} previewer={previewer} onDownload={download} onRetry={retry} />
     </KagoWindow>
   );
 }
@@ -112,8 +138,15 @@ function PluginFrame({ window, previewer, onDownload, onRetry }: { window: Previ
   const ready = phase.kind === "ready";
 
   useEffect(() => {
-    const post = (message: HostMessage, transfer: Transferable[] = []) => frame.current?.contentWindow?.postMessage(message, "*", transfer);
+    const element = frame.current;
+    if (!element) return;
+    const post = (message: HostMessage, transfer: Transferable[] = []) => element.contentWindow?.postMessage(message, "*", transfer);
     const reads = new AbortController();
+    let reading = 0;
+    const waiting: { id: number; start: number; end: number }[] = [];
+    let said = false;
+    let lastActivate = -Infinity;
+    let lastDownload = -Infinity;
 
     async function read(id: number, start: number, end: number) {
       const { rootSlug, item } = latest.current.window.preview;
@@ -125,10 +158,24 @@ function PluginFrame({ window, previewer, onDownload, onRetry }: { window: Previ
         if (response.status !== 206 && !(response.status === 200 && start === 0)) throw new Error(`HTTP ${response.status}`);
         const whole = await response.arrayBuffer();
         const bytes = response.status === 200 ? whole.slice(0, stop) : whole;
-        post({ kind: "read:ok", id, bytes }, [bytes]);
+        if (!reads.signal.aborted) post({ kind: "read:ok", id, bytes }, [bytes]);
       } catch {
         if (!reads.signal.aborted) post({ kind: "read:error", id });
       }
+    }
+
+    // A frame cannot have Kago fetch without end: a few reads at a time, a line of them behind, and no more.
+    function queueRead(request: { id: number; start: number; end: number }) {
+      if (reading >= READS_AT_ONCE) {
+        if (waiting.length >= READS_WAITING) return post({ kind: "read:error", id: request.id });
+        return void waiting.push(request);
+      }
+      reading++;
+      void read(request.id, request.start, request.end).finally(() => {
+        reading--;
+        const next = waiting.shift();
+        if (next && !reads.signal.aborted) queueRead(next);
+      });
     }
 
     function handle(message: PluginMessage) {
@@ -136,21 +183,31 @@ function PluginFrame({ window, previewer, onDownload, onRetry }: { window: Previ
       const { item } = window.preview;
       switch (message.kind) {
         case "hello":
+          // A page says hello once. Another is a second page in the frame, heard before it has finished loading.
+          if (said) return leave();
+          said = true;
           post({ kind: "init", api: API_VERSION, file: { name: item.name, size: item.size, type: item.type, mtime: item.mtime }, locale, theme: currentTheme(), focused: window.focused });
           return dispatch({ kind: "hello" });
         case "read":
-          return void read(message.id, message.start, message.end);
+          return queueRead(message);
         case "fail":
           return dispatch(message);
         case "download":
+          if (performance.now() - lastDownload < DOWNLOAD_INTERVAL) return;
+          lastDownload = performance.now();
           return latest.current.onDownload();
         case "storage:get":
           return post({ kind: "storage:value", id: message.id, value: readStorage(previewer.pluginId, message.key) });
         case "storage:set":
           return writeStorage(previewer.pluginId, message.key, message.value);
         case "activate":
+          if (performance.now() - lastActivate < ACTIVATE_INTERVAL) return;
+          lastActivate = performance.now();
           return useWorkspaceStore.getState().focusWindow(window.id);
         case "key":
+          // Only a key pressed in the frame while it has the focus, in the window in front: a frame in a window behind
+          // has no keys to pass on, and would otherwise be pressing them in whatever window is in front.
+          if (!window.focused || document.activeElement !== element) return;
           // Heard by the interface's shortcuts as if pressed on the page: ⌘K still opens Quick open.
           document.dispatchEvent(new KeyboardEvent("keydown", { key: message.key, code: message.code, metaKey: message.meta, ctrlKey: message.ctrl, shiftKey: message.shift, altKey: message.alt, bubbles: true, cancelable: true }));
           return;
@@ -159,21 +216,36 @@ function PluginFrame({ window, previewer, onDownload, onRetry }: { window: Previ
 
     const onMessage = (event: MessageEvent) => {
       // Only this window's own frame is listened to, and only in the words the protocol has.
-      if (!frame.current || event.source !== frame.current.contentWindow) return;
+      if (event.source !== element.contentWindow) return;
       const message = parsePluginMessage(event.data);
       if (message) handle(message);
     };
-    globalThis.addEventListener("message", onMessage);
     const silence = setTimeout(() => dispatch({ kind: "broken" }), HELLO_TIMEOUT);
     // The theme can change while the file is open, in Settings or with the system's.
     const themes = new MutationObserver(() => post({ kind: "theme", theme: currentTheme() }));
-    themes.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
-    return () => {
+    const stop = () => {
       globalThis.removeEventListener("message", onMessage);
+      element.removeEventListener("load", onLoad);
       clearTimeout(silence);
       themes.disconnect();
       reads.abort();
+      waiting.length = 0;
     };
+    // The frame is given its page once, and a new frame is made for any other (see the key on PluginFrame). So a
+    // second load is the plugin sending its frame somewhere itself. The window is still the same, so it would be
+    // heard as before; it is not, and Kago says the viewer stopped.
+    let loads = 0;
+    function onLoad() {
+      if (++loads > 1) leave();
+    }
+    function leave() {
+      stop();
+      dispatch({ kind: "navigated" });
+    }
+    globalThis.addEventListener("message", onMessage);
+    element.addEventListener("load", onLoad);
+    themes.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    return stop;
   }, []);
 
   // Keys go to the window in front; with the frame focused, they reach the plugin rather than the page around it.
