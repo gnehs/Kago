@@ -2,7 +2,6 @@ import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
-import { availableParallelism, loadavg } from "node:os";
 import path from "node:path";
 import type { Readable } from "node:stream";
 import { promisify } from "node:util";
@@ -10,6 +9,7 @@ import { z } from "zod";
 import { AppError } from "../lib/errors.js";
 import { guardedInput, guardedProbe, inputProtocols } from "../lib/ffmpeg-input.js";
 import { id as createId } from "../lib/ids.js";
+import { idleCores } from "../lib/idle-cores.js";
 import { logger } from "../lib/logger.js";
 import { sharpAvailable, writeAvif } from "../lib/sharp.js";
 import { Storyboards, type StoryboardState } from "../lib/storyboard.js";
@@ -961,13 +961,6 @@ export class MediaService {
     return false;
   }
 
-  private hasSpareCapacity(): boolean {
-    // Windows reports a zero load average because it does not implement loadavg; that is not evidence of spare CPU.
-    if (process.platform === "win32") return false;
-    const cores = availableParallelism();
-    return cores > 1 && (loadavg()[0] ?? Number.POSITIVE_INFINITY) < cores - 1;
-  }
-
   private pumpPrewarms(): void {
     const now = Date.now();
     for (const request of this.pendingPrewarms.values()) {
@@ -984,7 +977,7 @@ export class MediaService {
         continue;
       }
     }
-    if (this.activePrewarm || this.foregroundStarts > 0 || this.hasForegroundEncoder() || !this.hasSpareCapacity()) return;
+    if (this.activePrewarm || this.foregroundStarts > 0 || this.hasForegroundEncoder() || idleCores() <= 1) return;
     for (const request of this.pendingPrewarms.values()) {
       const session = this.sessions.get(request.sessionId);
       if (!session) {

@@ -2,11 +2,11 @@ import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
-import { availableParallelism, loadavg } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { AppError } from "./errors.js";
 import { guardedInput, guardedProbe } from "./ffmpeg-input.js";
+import { idleCores } from "./idle-cores.js";
 import { pruneKeptFiles, useKeptFile } from "./kept-files.js";
 import { logger } from "./logger.js";
 
@@ -39,9 +39,6 @@ const QUEUE_LIMIT = 20;
 /** How long ffmpeg may work on one video, not counting the time it is held back. */
 const MAX_RUN_MS = 20 * 60_000;
 const FAILURES_KEPT = 500;
-
-/** Processor cores nothing is asking for. Windows has no load average, which is not evidence of any. */
-const idleCores = () => (process.platform === "win32" ? 0 : availableParallelism() - (loadavg()[0] ?? Number.POSITIVE_INFINITY));
 
 /**
  * Makes storyboards one at a time, and only while the server has nothing better to do: ffmpeg is held back
