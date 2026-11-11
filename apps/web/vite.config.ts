@@ -149,8 +149,9 @@ export default defineConfig({
     proxy: {
       "/api": "http://localhost:8080",
       "^/s/": "http://localhost:8080",
-      // Plugins are served by the server, which is what sets the policy they run under.
-      "/_kago": "http://localhost:8080",
+      // Plugins are served by the server, which is what sets the policy they run under. Only their folder: the rest
+      // of /_kago/ is the interface's own pages, such as Settings.
+      "/_kago/plugin/": "http://localhost:8080",
       "/ws": {
         target: "ws://localhost:8080",
         ws: true
