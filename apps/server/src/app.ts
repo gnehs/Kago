@@ -29,6 +29,7 @@ import { FsService, avatarSchema, fileTagsSchema, fsQuerySchema, maxUploadFiles,
 import { ImageService } from "./services/image.service.js";
 import { appUrl, externalAppOrderSchema, externalAppSchema, ExternalAppService } from "./services/external-app.service.js";
 import { createGroupSchema, GroupService } from "./services/group.service.js";
+import { framingHost, PLUGIN_PREFIX, pluginPolicy, PluginService } from "./services/plugin.service.js";
 import { IconLibraryService } from "./services/icon-library.service.js";
 import { MediaService, mediaAudioSchema, mediaPrewarmSchema, mediaSessionSchema, mediaStreamSchema } from "./services/media.service.js";
 import { oidcConfigSchema, OidcService } from "./services/oidc.service.js";
@@ -90,6 +91,7 @@ export async function buildApp(env: Env) {
   const compatibility = new CompatibilityService();
   const iconLibrary = new IconLibraryService(env.appDataDir);
   const apps = new ExternalAppService(db, env.appDataDir, iconLibrary, events, audit, secrets);
+  const plugins = new PluginService([resolveBundledPlugins(), path.join(env.appDataDir, "plugins")]);
   const workers = new WorkerManager(tasks, env, events);
   // Conversions wait in a line of their own, so a long one holds up no copy or move.
   const mediaWorkers = new WorkerManager(tasks, env, events, "media");
@@ -144,6 +146,14 @@ export async function buildApp(env: Env) {
     reply.header("Content-Security-Policy", pagePolicy(request.headers.host));
   });
 
+  // A plugin's frame has an origin of its own, which the browser names "null". It has no business with the API, and
+  // its policy already lets it reach nothing; should that ever fail, what it asks for is still refused here.
+  app.addHook("onRequest", async (request) => {
+    if (request.headers.origin === "null" && (request.routeOptions.url ?? request.url).startsWith("/api/")) {
+      throw new AppError(403, "Requests from a sandboxed frame are not accepted", "SANDBOXED_ORIGIN");
+    }
+  });
+
   await auth.ensureInitialAdminFromEnv();
   roots.syncFromDataDir();
   // Said once in the log as well, where whoever set the container up looks first.
@@ -155,7 +165,7 @@ export async function buildApp(env: Env) {
     }
   }
   await remotes.start();
-  registerApi(app, { auth, audit, roots, paths, permissions, fsService, workspace, preferences, tasks, shelves, shares, groups, oidc, media, compatibility, images, apps, iconLibrary, frameProbe: new FrameProbe(), events, db, storage, remotes, sync, convertJobs, env });
+  registerApi(app, { auth, audit, roots, paths, permissions, fsService, workspace, preferences, tasks, shelves, shares, groups, oidc, media, compatibility, images, apps, iconLibrary, frameProbe: new FrameProbe(), events, db, storage, remotes, sync, convertJobs, plugins, env });
 
   app.get("/ws", {
     websocket: true,
@@ -293,6 +303,12 @@ function sendUserFile(request: FastifyRequest, reply: FastifyReply, source: File
 
 const isPlayable = (contentType: string) => /^(video|audio)\//.test(contentType);
 
+/** Kago's own plugins: beside the server in an image, at the top of the repository in a checkout. */
+function resolveBundledPlugins(): string {
+  const candidates = [path.resolve(import.meta.dirname, "../plugins"), path.resolve(import.meta.dirname, "../../../plugins")];
+  return candidates.find((candidate) => fs.existsSync(candidate)) ?? candidates[0]!;
+}
+
 function resolveWebDist(env: Env): string {
   const candidates = [
     env.webDistDir,
@@ -334,6 +350,7 @@ type Services = {
   remotes: RemoteManager;
   sync: SyncService;
   convertJobs: ConvertJobService;
+  plugins: PluginService;
   env: Env;
 };
 
@@ -772,6 +789,28 @@ function registerApi(app: FastifyInstance, services: Services) {
     reply.header("Cache-Control", "no-store");
     reply.header("Content-Security-Policy", FRAME_POLICY);
     return framePage(target);
+  });
+  // The previewers plugins add, for files none of the interface's own viewers open.
+  app.get("/api/plugins", async (request) => {
+    requireActor(request);
+    return { previewers: services.plugins.previewers() };
+  });
+  // A plugin's own files. Its page runs sandboxed, in a frame of the interface's, under a policy that lets it load
+  // these files and nothing else; it reaches the file it shows only through messages to the interface.
+  app.get(`${PLUGIN_PREFIX}:token/*`, async (request, reply) => {
+    const params = z.object({ token: z.string().max(64), "*": z.string().max(400) }).parse(request.params);
+    const found = await services.plugins.file(params.token, params["*"]);
+    if (!found) throw new AppError(404, "Not found", "NOT_FOUND");
+    const origin = z.object({ _o: z.string().max(300).optional() }).parse(request.query)._o;
+    reply.header("Content-Security-Policy", pluginPolicy(params.token, [request.headers.host, framingHost(origin)]));
+    reply.header("X-Content-Type-Options", "nosniff");
+    reply.header("Referrer-Policy", "no-referrer");
+    reply.header("Cross-Origin-Resource-Policy", "same-origin");
+    // The page is a sandboxed document, so the module scripts and stylesheets it loads are asked for from "null".
+    reply.header("Access-Control-Allow-Origin", "null");
+    // The token changes whenever the plugin or the server does, so what it names never changes.
+    reply.header("Cache-Control", "private, max-age=31536000, immutable");
+    return sendFile(request, reply, found.file, found, lookup(found.file) || "application/octet-stream");
   });
   // The icon libraries, asked by this server so that no browser has to: which icons answer to a name, and what one looks like.
   app.get("/api/app-icons", async (request) => {
