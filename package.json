@@ -5,7 +5,7 @@
   "license": "AGPL-3.0-only",
   "packageManager": "pnpm@12.9.1",
   "scripts": {
-    "dev": "pnpm --parallel --filter @kago/server --filter @kago/web dev",
+    "dev": "pnpm --filter \"./plugins/*\" build && pnpm --parallel --filter @kago/server --filter @kago/web dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "lint": "pnpm -r lint",
