@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Columns3, KeyRound, LayoutGrid, List, Monitor, Moon, PanelLeft, PanelRight, Sparkles, Sun, ZapOff } from "lucide-react";
+import { Columns3, KeyRound, LayoutGrid, List, Sparkles, ZapOff } from "lucide-react";
 import { api } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/input";
@@ -9,6 +9,7 @@ import { firstDirection, sortColumns } from "@/features/files/FileList";
 import { BASE_VIEW } from "@/features/files/folderView";
 import { TagList } from "@/features/tags/TagEditor";
 import { Card, Page, Row, RowList, SettingRow } from "@/components/kago/page";
+import { KagoPreviewPicker } from "@/components/kago/preview-picker";
 import { KagoSegmented } from "@/components/kago/segmented";
 import { formatUnixDate } from "@/lib/format";
 import { localeNames, setLocale, t } from "@/lib/i18n";
@@ -16,16 +17,17 @@ import { getLocalePref, getMotion, getTheme, getWindowControls, setMotion, setTh
 import { run } from "@/lib/run";
 import { saveSettings, setWallpaper, useSettingsStore, wallpaperUrl } from "@/stores/settings";
 import type { FolderView } from "@/types/kago";
+import { DesktopPreview } from "./DesktopPreview";
 
-const themes: Array<{ value: ThemePref; label: string; icon: React.ReactNode }> = [
-  { value: "system", label: t("Match system"), icon: <Monitor /> },
-  { value: "light", label: t("Light"), icon: <Sun /> },
-  { value: "dark", label: t("Dark"), icon: <Moon /> }
+const themes: Array<{ value: ThemePref; label: string }> = [
+  { value: "system", label: t("Match system") },
+  { value: "light", label: t("Light") },
+  { value: "dark", label: t("Dark") }
 ];
 
-const sides: Array<{ value: WindowControlsPref; label: string; icon: React.ReactNode }> = [
-  { value: "left", label: t("Left"), icon: <PanelLeft /> },
-  { value: "right", label: t("Right"), icon: <PanelRight /> }
+const sides: Array<{ value: WindowControlsPref; label: string }> = [
+  { value: "left", label: t("Left") },
+  { value: "right", label: t("Right") }
 ];
 
 const motions: Array<{ value: MotionPref; label: string; icon: React.ReactNode }> = [
@@ -48,8 +50,11 @@ const switches: Array<{ value: "on" | "off"; label: string; icon: React.ReactNod
 export function SettingsPage() {
   // Kept with the account, so a change made in another browser shows here as it arrives.
   const settings = useSettingsStore((state) => state.settings);
-  const theme = getTheme();
-  const side = getWindowControls();
+  // Held here too, so the pictures follow a press at once whatever else re-renders the page.
+  const [theme, chooseTheme] = useState(getTheme);
+  const [side, chooseSide] = useState(getWindowControls);
+  // The window controls are shown in the theme Kago is in now, not split in two as the theme's own choice is.
+  const shownTheme = document.documentElement.dataset.theme === "dark" ? "dark" : "light";
   const motion = getMotion();
   const defaultView = { ...BASE_VIEW, ...settings.defaultView };
 
@@ -63,20 +68,26 @@ export function SettingsPage() {
               {Object.entries(localeNames).map(([value, name]) => <option key={value} value={value} lang={value}>{name}</option>)}
             </Select>
           </SettingRow>
-          <SettingRow label={t("Theme")}>
-            <KagoSegmented
+          <SettingRow label={t("Theme")} stacked>
+            <KagoPreviewPicker
               label={t("Theme")}
-              options={themes}
+              options={themes.map((item) => ({ ...item, preview: <DesktopPreview theme={item.value} side={side} /> }))}
               value={theme}
-              onChange={setTheme}
+              onChange={(value) => {
+                chooseTheme(value);
+                setTheme(value);
+              }}
             />
           </SettingRow>
-          <SettingRow label={t("Window controls")} description={t("Which end of the title bar holds close, minimize and maximize.")}>
-            <KagoSegmented
+          <SettingRow label={t("Window controls")} description={t("Which end of the title bar holds close, minimize and maximize.")} stacked>
+            <KagoPreviewPicker
               label={t("Window controls position")}
-              options={sides}
+              options={sides.map((item) => ({ ...item, preview: <DesktopPreview theme={shownTheme} side={item.value} accentControls /> }))}
               value={side}
-              onChange={setWindowControls}
+              onChange={(value) => {
+                chooseSide(value);
+                setWindowControls(value);
+              }}
             />
           </SettingRow>
           <SettingRow label={t("Desktop background")} description={t("Right-click a picture in any folder and choose “Set as desktop background”. Kago keeps its own copy.")}>

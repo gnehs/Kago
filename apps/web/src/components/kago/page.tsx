@@ -58,10 +58,10 @@ export function Section({ title, description, action, children }: { title: strin
   );
 }
 
-/** One setting inside a card: what it is on the left, its control on the right. */
-export function SettingRow({ label, description, children }: { label: string; description?: string; children: ReactNode }) {
+/** One setting inside a card: what it is on the left, its control on the right. A `stacked` one has its control underneath, across the card. */
+export function SettingRow({ label, description, stacked, children }: { label: string; description?: string; stacked?: boolean; children: ReactNode }) {
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+    <div className={stacked ? "flex flex-col gap-3" : "flex flex-wrap items-center gap-x-4 gap-y-2"}>
       <div className="min-w-40 flex-1">
         <div className="font-medium">{label}</div>
         {description ? <div className="text-xs text-muted">{description}</div> : null}
