@@ -13,6 +13,7 @@
     "test:security": "tsc -p tsconfig.json && cp src/db/schema.sql dist/db/schema.sql && node --import tsx --test test/*-security.mjs",
     "test:remote": "tsc -p tsconfig.json && cp src/db/schema.sql dist/db/schema.sql && node --test test/remote.mjs",
     "test:compatibility": "node --import tsx --test test/compatibility.mjs",
+    "test:splat": "node --import tsx --test test/splat.mjs",
     "start": "node dist/main.js",
     "recover": "node dist/recover.js"
   },
