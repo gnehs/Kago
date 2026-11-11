@@ -60,6 +60,6 @@ type Box = { left: number; top: number; width: number; height: number };
 export function animateWindowBox(element: HTMLElement, from: Box, to: Box, toMaximized: boolean) {
   if (!motionAllowed()) return;
   const frame = (box: Box, radius: string): Keyframe => ({ left: `${box.left}px`, top: `${box.top}px`, width: `${box.width}px`, height: `${box.height}px`, right: "auto", bottom: "auto", borderRadius: radius });
-  const round = "var(--kago-radius-lg)";
+  const round = "var(--kago-radius-window)";
   element.animate([frame(from, toMaximized ? round : "0px"), frame(to, toMaximized ? "0px" : round)], { duration: 200, easing: EASE_OUT });
 }

@@ -115,6 +115,8 @@
   --kago-radius-sm: 5px;
   --kago-radius-md: 7px;
   --kago-radius-lg: 12px;
+  /* A window's corner follows its controls, 8px in from the edge with corners of their own, rather than the radius of a menu or card. */
+  --kago-radius-window: 16px;
   --kago-row-h: 32px;
   --kago-control-h: 30px;
   --kago-font-size: 13px;
@@ -228,6 +230,7 @@
   --radius-sm: var(--kago-radius-sm);
   --radius-md: var(--kago-radius-md);
   --radius-lg: var(--kago-radius-lg);
+  --radius-window: var(--kago-radius-window);
   --shadow-window: var(--kago-shadow-window);
   --shadow-window-active: var(--kago-shadow-window-active);
   --shadow-popup: var(--kago-shadow-popup);
