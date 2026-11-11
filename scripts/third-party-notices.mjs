@@ -4,7 +4,8 @@ import fs from "node:fs";
 import path from "node:path";
 
 const root = path.resolve(import.meta.dirname, "..");
-const APPS = ["apps/server", "apps/web"];
+// Kago's plugins are shipped in the image as their builds, with what they bundle.
+const APPS = ["apps/server", "apps/web", ...fs.readdirSync(path.join(root, "plugins")).map((name) => `plugins/${name}`)];
 const LICENSE_FILE = /^(licen[sc]e|copying|copyright|notice)/i;
 const RULE = "-".repeat(80);
 
@@ -85,6 +86,7 @@ function locate(from, name) {
 }
 
 const packages = new Map();
+const own = new Set();
 
 // Optional dependencies are left out: they are platform-specific native builds, and which of them is installed depends
 // on the machine this runs on. The one kind the server does load, sharp's, is named in the header instead.
@@ -93,7 +95,13 @@ function collect(from, names) {
     const dir = locate(from, name);
     const pkg = JSON.parse(fs.readFileSync(path.join(dir, "package.json"), "utf8"));
     const id = `${pkg.name}@${pkg.version}`;
-    if (packages.has(id)) continue;
+    if (packages.has(id) || own.has(id)) continue;
+    // A package of this repository, such as the plugin SDK, is Kago's own; what it depends on is not.
+    if (!dir.split(path.sep).includes("node_modules")) {
+      own.add(id);
+      collect(dir, Object.keys(pkg.dependencies ?? {}));
+      continue;
+    }
     // Some packages keep the notices of what they bundle next to the build rather than at the top, as libass-wasm does.
     const text = [...new Set([dir, path.join(dir, path.dirname(pkg.main ?? "."))])]
       .flatMap((folder) =>

@@ -22,6 +22,8 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY patches patches
 COPY apps/server/package.json apps/server/package.json
 COPY apps/web/package.json apps/web/package.json
+COPY packages/plugin-sdk/package.json packages/plugin-sdk/package.json
+COPY plugins/splat-viewer/package.json plugins/splat-viewer/package.json
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
   pnpm install --frozen-lockfile
 
@@ -40,6 +42,8 @@ COPY . .
 # The commit the image is built from, for Settings → About: .git is not in the build context, so it is handed in.
 ARG KAGO_COMMIT
 RUN pnpm build
+# A plugin is shipped as what it built and the manifest that describes it; its dependencies are bundled into the build.
+RUN for plugin in plugins/*/; do mkdir -p "/bundled/$plugin" && cp -R "$plugin/package.json" "$plugin/dist" "/bundled/$plugin"; done
 
 # rclone is what reaches remote locations (SMB, SFTP, WebDAV, ...); it is one static binary.
 FROM rclone/rclone:${RCLONE_VERSION} AS rclone
@@ -81,6 +85,7 @@ COPY --link --from=build --chown=1000:1000 /app/apps/web/dist/libass ./apps/web/
 COPY --link LICENSE THIRD-PARTY-NOTICES ./
 COPY --link --chmod=755 docker/entrypoint.sh /usr/local/bin/kago-entrypoint
 COPY --link --from=build --chown=1000:1000 /app/apps/server/dist ./dist
+COPY --link --from=build --chown=1000:1000 /bundled/plugins ./plugins
 COPY --link --from=build --chown=1000:1000 --exclude=assets/*.ttf --exclude=pdfjs --exclude=libass /app/apps/web/dist ./apps/web/dist
 EXPOSE 8080
 # The entrypoint starts as root only to drop to PUID:PGID (default 1000:1000, the kago user).

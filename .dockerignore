@@ -6,6 +6,9 @@
 node_modules
 apps/*/node_modules
 apps/*/dist
+packages/*/node_modules
+plugins/*/node_modules
+plugins/*/dist
 dist
 data
 app-data
