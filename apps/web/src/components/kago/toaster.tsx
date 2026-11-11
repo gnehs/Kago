@@ -1,8 +1,7 @@
 import { CircleAlert, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { formatDuration, formatPercent, formatSize, formatWholeSize } from "@/lib/format";
+import { formatPercent } from "@/lib/format";
 import { useToastStore } from "@/stores/toast";
-import { useUploadStore, type Upload } from "@/stores/uploads";
 import { t } from "@/lib/i18n";
 
 /** The shape of a notification that counts: a card with a bar in it, where one that only says something is a pill. */
@@ -10,10 +9,8 @@ const card = "flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-1.5 py-2 pr-1.5 pl
 
 export function KagoToaster() {
   const { toasts, dismiss, hold, release } = useToastStore();
-  const uploads = useUploadStore((state) => state.uploads);
   return (
     <div className="pointer-events-none fixed bottom-5 left-1/2 z-[1000] flex w-max max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-col items-center gap-2" role="status" aria-live="polite">
-      {uploads.map((upload) => <UploadCard key={upload.id} upload={upload} />)}
       {toasts.map((toast) => (
         // One element whichever shape it has, so a count that turns into its outcome changes where it is and does not arrive again.
         <div
@@ -41,9 +38,9 @@ export function KagoToaster() {
   );
 }
 
-function Close({ label, hint, onClick }: { label: string; hint?: string; onClick: () => void }) {
+function Close({ label, onClick }: { label: string; onClick: () => void }) {
   return (
-    <button className="shrink-0 rounded-sm p-1 text-muted outline-none kago-flat focus-visible:ring-2 focus-visible:ring-accent/50" aria-label={label} title={hint} onClick={onClick}>
+    <button className="shrink-0 rounded-sm p-1 text-muted outline-none kago-flat focus-visible:ring-2 focus-visible:ring-accent/50" aria-label={label} onClick={onClick}>
       <X className="size-3.5" />
     </button>
   );
@@ -67,22 +64,5 @@ function Count({ title, speed, value, max, details, close }: { title: string; sp
         <span className="shrink-0">{formatPercent(value, max)}%</span>
       </div>
     </>
-  );
-}
-
-/** Stays up for as long as the upload runs; the request has no server task to follow instead. */
-function UploadCard({ upload }: { upload: Upload }) {
-  const sent = upload.total > 0 && upload.loaded >= upload.total;
-  const details = sent
-    ? t("Processing…")
-    : [
-        `${formatWholeSize(upload.loaded)} / ${formatWholeSize(upload.total)}`,
-        upload.speed > 0 ? `${formatSize(upload.speed)}/s` : null,
-        upload.speed > 0 ? t("{duration} left", { duration: formatDuration((upload.total - upload.loaded) / upload.speed) }) : null
-      ].filter(Boolean).join(" · ");
-  return (
-    <div className={cn("kago-toast pointer-events-auto kago-glass rounded-lg", card)} aria-live="off">
-      <Count title={t("Uploading {name}", { name: upload.label })} value={upload.loaded} max={upload.total} details={details} close={<Close label={t("Cancel upload")} hint={t("Cancel upload")} onClick={upload.cancel} />} />
-    </div>
   );
 }

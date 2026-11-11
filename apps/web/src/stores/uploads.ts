@@ -5,6 +5,8 @@ import { t } from "@/lib/i18n";
 export type Upload = {
   id: number;
   label: string;
+  /** How many files the request carries. */
+  files: number;
   loaded: number;
   total: number;
   /** Bytes per second over the last few seconds; 0 until there is enough data. */
@@ -21,6 +23,28 @@ const updateIntervalMs = 250;
 let nextId = 1;
 
 export const useUploadStore = create<{ uploads: Upload[] }>(() => ({ uploads: [] }));
+
+/** Closing or reloading the tab drops every upload under way, so the browser asks first while there are any. */
+const holdPage = (event: BeforeUnloadEvent) => event.preventDefault();
+useUploadStore.subscribe((state, previous) => {
+  if (state.uploads.length > 0 && previous.uploads.length === 0) window.addEventListener("beforeunload", holdPage);
+  else if (state.uploads.length === 0 && previous.uploads.length > 0) window.removeEventListener("beforeunload", holdPage);
+});
+
+/** All the uploads under way taken as one: how much of it has gone, and how fast the rest is going. */
+export function uploadsTotal(uploads: Upload[]) {
+  let loaded = 0;
+  let total = 0;
+  let speed = 0;
+  let files = 0;
+  for (const upload of uploads) {
+    files += upload.files;
+    loaded += upload.loaded;
+    total += upload.total;
+    speed += upload.speed;
+  }
+  return { files, loaded, total, speed, sent: total > 0 && loaded >= total, remaining: speed > 0 ? (total - loaded) / speed : null };
+}
 
 const patch = (id: number, changes: Partial<Upload>) =>
   useUploadStore.setState((state) => ({ uploads: state.uploads.map((upload) => (upload.id === id ? { ...upload, ...changes } : upload)) }));
@@ -72,8 +96,13 @@ export function uploadForm<T>(path: string, form: FormData, label: string): Prom
     xhr.onabort = () => fail(new ApiError(t("Upload cancelled"), UPLOAD_CANCELLED, 0));
 
     let total = 0;
-    for (const value of form.values()) if (value instanceof File) total += value.size;
-    useUploadStore.setState((state) => ({ uploads: [...state.uploads, { id, label, loaded: 0, total, speed: 0, cancel: () => xhr.abort() }] }));
+    let files = 0;
+    for (const value of form.values()) {
+      if (!(value instanceof File)) continue;
+      total += value.size;
+      files += 1;
+    }
+    useUploadStore.setState((state) => ({ uploads: [...state.uploads, { id, label, files, loaded: 0, total, speed: 0, cancel: () => xhr.abort() }] }));
 
     xhr.open("POST", path);
     xhr.withCredentials = true;

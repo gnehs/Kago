@@ -12,13 +12,16 @@ import { Button } from "@/components/ui/button";
 import { BrandMark } from "@/components/kago/brand-mark";
 import { markSignedOut } from "@/features/auth/sso";
 import { TaskRow } from "@/features/tasks/TaskRow";
+import { UploadRow } from "@/features/tasks/UploadRow";
 import { isActiveTask, isFinishedTask, isQuietTask, tasksProgress } from "@/features/tasks/taskUtils";
 import { useClearFinishedTasks } from "@/features/tasks/useClearFinishedTasks";
+import { formatDuration, formatSize } from "@/lib/format";
 import { displayPath } from "@/lib/paths";
 import { cn } from "@/lib/utils";
 import { ExternalAppGlyph } from "@/components/kago/external-app-icon";
 import { FileIcon } from "@/components/kago/file-icon";
 import { appIcons } from "@/features/windows/AppWindow";
+import { uploadsTotal, useUploadStore } from "@/stores/uploads";
 import { minimizeWindows, useWorkspaceStore, type WindowFrame } from "@/stores/workspace";
 import type { Actor } from "@/types/kago";
 import { t } from "@/lib/i18n";
@@ -138,9 +141,14 @@ function UserMenu({ user }: { user: Actor }) {
   );
 }
 
-/** Live task indicator; the popover lists the latest tasks without leaving the desktop. */
+/**
+ * Live task indicator; the popover lists the latest tasks without leaving the desktop.
+ * While this tab uploads it grows into a pill, as an island does, with how long is left and how fast it goes:
+ * an upload stops when the tab closes, so it is kept in sight rather than in a card over the windows.
+ */
 function TaskStatus() {
   const tasks = useTasks();
+  const uploads = useUploadStore((state) => state.uploads);
   const clear = useClearFinishedTasks();
   const [open, setOpen] = useState(false);
   const all = (tasks.data ?? []).filter((task) => !isQuietTask(task));
@@ -148,15 +156,25 @@ function TaskStatus() {
   const activeCount = active.length;
   // Active tasks first, then the most recent finished ones.
   const visible = [...active, ...all.filter((task) => !isActiveTask(task))].slice(0, 5);
+  const upload = uploads.length > 0 ? uploadsTotal(uploads) : null;
 
-  const label = activeCount > 0 ? t("{count} task in progress | {count} tasks in progress", { count: activeCount }) : t("Tasks");
+  const tasksLabel = activeCount > 0 ? t("{count} task in progress | {count} tasks in progress", { count: activeCount }) : t("Tasks");
+  const label = upload
+    ? [t("Uploading {name}", { name: uploads.length === 1 ? uploads[0]!.label : t("{count} file | {count} files", { count: upload.files }) }), upload.remaining !== null && !upload.sent ? t("{duration} left", { duration: formatDuration(upload.remaining) }) : null].filter(Boolean).join(" · ")
+    : tasksLabel;
 
   return (
     <KagoPopover
       label={label}
       open={open}
       onOpenChange={setOpen}
-      className={cn("size-7", activeCount > 0 && "text-accent hover:text-accent")}
+      className={cn(
+        // The width eases between the button and the pill; where a browser cannot ease to a width that fits, it snaps.
+        "h-7 w-7 [interpolate-size:allow-keywords] transition-[width,background-color] duration-300 ease-out",
+        // Black whatever the theme, as the island is: it reads as something under way, apart from the buttons beside it.
+        upload && "w-auto gap-1.5 rounded-full bg-neutral-950 pr-2.5 pl-1.5 text-white hover:bg-neutral-800 hover:text-white",
+        !upload && activeCount > 0 && "text-accent hover:text-accent"
+      )}
       // It hangs a little below the bar rather than from its edge, and keeps off the side of the screen.
       sideOffset={10}
       // Nothing is ruled across the glass: a line drawn on it is lighter than what shows through and reads as a scratch. Each task lies on a slab of its own, and space sets the rest apart.
@@ -165,12 +183,13 @@ function TaskStatus() {
         <>
           <header className="flex h-6 shrink-0 items-center gap-2 px-1.5">
             <h2 className="m-0 min-w-0 flex-1 truncate font-semibold">{t("Tasks")}</h2>
-            {activeCount > 0 ? <span className="shrink-0 text-xs text-muted">{label}</span> : null}
+            {activeCount > 0 ? <span className="shrink-0 text-xs text-muted">{tasksLabel}</span> : null}
           </header>
-          {visible.length === 0 ? (
+          {visible.length === 0 && uploads.length === 0 ? (
             <KagoEmptyState className="px-4 pt-2 pb-4" icon={<ListChecks />} title={t("No tasks right now")} />
           ) : (
             <div className="flex max-h-96 scroll-fade flex-col gap-1.5 overflow-y-auto">
+              {uploads.map((item) => <UploadRow key={`upload:${item.id}`} upload={item} />)}
               {visible.map((task) => <TaskRow key={task.id} task={task} />)}
             </div>
           )}
@@ -194,8 +213,20 @@ function TaskStatus() {
         </>
       }
     >
-      {/* A ring that fills as the tasks go, not one that turns for as long as there are any. */}
-      {activeCount > 0 ? <KagoProgressRing value={tasksProgress(active)} /> : <ListChecks />}
+      {upload ? (
+        <>
+          <KagoProgressRing className="shrink-0 text-accent" value={upload.total > 0 ? upload.loaded / upload.total : 0} />
+          <span className="text-xs whitespace-nowrap tabular-nums">
+            {upload.sent ? t("Processing…") : upload.remaining !== null ? formatDuration(upload.remaining) : t("Uploading…")}
+          </span>
+          {!upload.sent && upload.speed > 0 ? <span className="hidden text-xs whitespace-nowrap text-neutral-400 tabular-nums sm:inline">{formatSize(upload.speed)}/s</span> : null}
+        </>
+      ) : activeCount > 0 ? (
+        // A ring that fills as the tasks go, not one that turns for as long as there are any.
+        <KagoProgressRing value={tasksProgress(active)} />
+      ) : (
+        <ListChecks />
+      )}
     </KagoPopover>
   );
 }
