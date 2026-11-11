@@ -60,7 +60,7 @@ export function TopBar({ user, onOpenPalette }: { user: Actor; onOpenPalette: ()
   }
 
   return (
-    <header className="kago-chrome z-[1] flex h-10 shrink-0 items-center gap-1 border-b border-line-strong px-2">
+    <header className="kago-topbar z-[1] flex h-10 shrink-0 items-center gap-1 border-b border-line-strong px-2">
       <KagoTooltip label={anyVisible ? t("Show desktop") : t("Restore all windows")}>
         <button className="flex h-7 shrink-0 items-center gap-2 rounded-md pr-2.5 pl-1.5 font-semibold outline-none kago-flat focus-visible:ring-2 focus-visible:ring-accent/50" onClick={toggleDesktop}>
           <BrandMark className="size-5" />

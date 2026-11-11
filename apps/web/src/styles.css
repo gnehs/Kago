@@ -63,6 +63,8 @@
   --kago-grain-opacity: 0.5;
   --kago-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.2' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.035 0'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E");
   --kago-chrome: var(--kago-grain), linear-gradient(#f7f8fa, #e7e9ed);
+  --kago-topbar: var(--kago-grain), linear-gradient(#dde0e5, #d2d6dc);
+  --kago-topbar-shadow: inset 0 1px 0 rgb(255 255 255 / 0.6), 0 1px 3px rgb(15 23 42 / 0.12);
   --kago-toolbar: var(--kago-grain), linear-gradient(#e7e9ed, #dddfe4);
   --kago-chrome-edge: inset 0 1px 0 rgb(255 255 255 / 0.9);
   --kago-badge-edge: inset 0 0.5px 0 rgb(255 255 255 / 0.75);
@@ -155,6 +157,8 @@
   --kago-grain-opacity: 0.35;
   --kago-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.2' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.03 0'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E");
   --kago-chrome: var(--kago-grain), linear-gradient(#3a3e44, #2e3136);
+  --kago-topbar: var(--kago-grain), linear-gradient(#202327, #1a1c20);
+  --kago-topbar-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06), 0 1px 3px rgb(0 0 0 / 0.5);
   --kago-toolbar: var(--kago-grain), linear-gradient(#2e3136, #26292d);
   --kago-chrome-edge: inset 0 1px 0 rgb(255 255 255 / 0.12);
   --kago-badge-edge: inset 0 0.5px 0 rgb(255 255 255 / 0.1);
@@ -367,10 +371,19 @@
     pointer-events: none;
   }
 
-  /* Title bars and the top bar. */
+  /* Title bars. */
   .kago-chrome {
     background: var(--kago-chrome);
     box-shadow: var(--kago-chrome-edge);
+  }
+
+  /*
+   * The top bar belongs to the desktop, not to a window: it sits a shade deeper than any title bar and casts a
+   * shadow onto what is below, so that a maximized window's title bar does not run into it.
+   */
+  .kago-topbar {
+    background: var(--kago-topbar);
+    box-shadow: var(--kago-topbar-shadow);
   }
 
   /*
