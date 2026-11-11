@@ -1,5 +1,7 @@
 packages:
   - "apps/*"
+  - "packages/*"
+  - "plugins/*"
 allowBuilds:
   esbuild: true
 # Published 2026-10-06, inside pnpm's default 24h minimumReleaseAge. Safe to remove after 2026-10-07.

@@ -6,7 +6,7 @@ import { withSpeeds } from "../lib/taskSpeed";
 import { parentPath } from "../lib/paths";
 import type { FileRef } from "../stores/clipboard";
 import { isLeaving, useLeavingStore } from "../stores/leaving";
-import type { Actor, AuditLog, ConvertJob, ConvertRun, ConvertRunFile, ConvertSupport, ExternalApp, FileItem, FileList, FileMeta, FileTask, FolderSize, FrameVerdict, Group, ImageMetadata, LibraryIcon, MediaInfo, PermissionRule, Root, ShareLink, Shelf, SqlitePage, Storyboard, SsoConfig, SsoIdentity, SsoInfo, SqliteTable, StorageInfo, SubtitleList, SyncJob, SyncRun, SyncTrial, TrashItem, UserAccount, WorkspaceState } from "../types/kago";
+import type { Actor, AuditLog, ConvertJob, ConvertRun, ConvertRunFile, ConvertSupport, ExternalApp, FileItem, FileList, FileMeta, FileTask, FolderSize, FrameVerdict, Group, ImageMetadata, LibraryIcon, MediaInfo, PermissionRule, PluginPreviewer, Root, ShareLink, Shelf, SqlitePage, Storyboard, SsoConfig, SsoIdentity, SsoInfo, SqliteTable, StorageInfo, SubtitleList, SyncJob, SyncRun, SyncTrial, TrashItem, UserAccount, WorkspaceState } from "../types/kago";
 
 export function useSetupStatus() {
   return useQuery({ queryKey: ["auth", "setup"], queryFn: () => api<{ needsSetup: boolean; oidc: SsoInfo | null }>("/api/auth/setup") });
@@ -468,4 +468,17 @@ export function useTrash(enabled = true) {
 
 export function useAudit(enabled = true) {
   return useQuery({ queryKey: ["audit"], queryFn: () => api<AuditLog[]>("/api/audit"), enabled, refetchInterval: enabled ? 6000 : false });
+}
+
+/**
+ * The plugins' previewers, by the extension each opens. They change only when the server restarts, which also renames
+ * the address each is served from; a frame that fails to load asks again.
+ */
+export function usePluginPreviewers() {
+  return useQuery({
+    queryKey: ["plugins"],
+    queryFn: () => api<{ previewers: PluginPreviewer[] }>("/api/plugins"),
+    select: (data) => new Map(data.previewers.flatMap((previewer) => previewer.extensions.map((extension) => [extension, previewer] as const))),
+    staleTime: Infinity
+  });
 }

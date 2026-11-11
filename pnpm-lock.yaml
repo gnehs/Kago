@@ -291,12 +291,12 @@ importers:
       '@jellyfin/libass-wasm':
         specifier: ^4.2.4
         version: 4.2.4
+      '@kago/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../packages/plugin-sdk
       '@lezer/highlight':
         specifier: ^1.2.5
         version: 1.2.5
-      '@playcanvas/supersplat-viewer':
-        specifier: ^1.42.1
-        version: 1.42.1(patch_hash=048ff89ce2cfdb8f044d46d3d41453b1ff9cd03be61a2c0f62cf0e573f565e7a)(playcanvas@2.23.0)
       '@tanstack/react-query':
         specifier: ^5.80.7
         version: 5.101.0(react@19.2.7)
@@ -324,9 +324,6 @@ importers:
       pdfjs-dist:
         specifier: ^6.4.299
         version: 6.4.299
-      playcanvas:
-        specifier: ^2.23.0
-        version: 2.23.0
       pptx-preview:
         specifier: ^1.0.7
         version: 1.0.7
@@ -370,6 +367,31 @@ importers:
       tailwindcss:
         specifier: ^4.3.2
         version: 4.3.2
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+      vite:
+        specifier: ^6.4.4
+        version: 6.4.4(@types/node@22.19.20)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)
+
+  packages/plugin-sdk:
+    devDependencies:
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+
+  plugins/splat-viewer:
+    dependencies:
+      '@kago/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../packages/plugin-sdk
+      '@playcanvas/supersplat-viewer':
+        specifier: ^1.42.1
+        version: 1.42.1(patch_hash=048ff89ce2cfdb8f044d46d3d41453b1ff9cd03be61a2c0f62cf0e573f565e7a)(playcanvas@2.23.0)
+      playcanvas:
+        specifier: ^2.23.0
+        version: 2.23.0
+    devDependencies:
       typescript:
         specifier: ^5.8.3
         version: 5.9.3

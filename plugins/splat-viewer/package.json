@@ -1,0 +1,26 @@
+{
+  "name": "@kago/plugin-splat-viewer",
+  "version": "1.0.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "kago": {
+    "api": 1,
+    "title": "Gaussian splat viewer",
+    "previewers": [{ "id": "splat", "extensions": ["ply", "sog", "splat"], "entry": "index.html" }]
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && vite build",
+    "typecheck": "tsc -p tsconfig.json",
+    "lint": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@kago/plugin-sdk": "workspace:*",
+    "@playcanvas/supersplat-viewer": "^1.42.1",
+    "playcanvas": "^2.23.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "vite": "^6.4.4"
+  }
+}

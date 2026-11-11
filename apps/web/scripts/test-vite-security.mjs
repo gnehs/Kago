@@ -100,8 +100,8 @@ try {
   }
   assert.deepEqual(
     viteServer.config.server.fs.allow,
-    [webRoot, viteClientDir],
-    "Vite must allow the web package root and its internal client runtime only"
+    [webRoot, path.join(repoRoot, "packages/plugin-sdk/src"), viteClientDir],
+    "Vite must allow the web package root, the plugin SDK's source and its internal client runtime only"
   );
   await viteServer.listen();
 

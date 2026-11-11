@@ -140,14 +140,17 @@ export default defineConfig({
     fs: {
       strict: true,
       // Setting allow disables Vite's workspace-root auto-detection. Dependencies remain
-      // available through imports from this app, while sibling workspace files stay private.
-      allow: [webRoot],
+      // available through imports from this app, while sibling workspace files stay private,
+      // except the plugin SDK, whose protocol the interface speaks.
+      allow: [webRoot, path.resolve(repoRoot, "packages/plugin-sdk/src")],
       // Keep Vite's built-in sensitive-file protections and also block server-owned data.
       deny: [".env", ".env.*", "*.{crt,pem}", "**/.git/**", ...privateServerPathPatterns]
     },
     proxy: {
       "/api": "http://localhost:8080",
       "^/s/": "http://localhost:8080",
+      // Plugins are served by the server, which is what sets the policy they run under.
+      "/_kago": "http://localhost:8080",
       "/ws": {
         target: "ws://localhost:8080",
         ws: true

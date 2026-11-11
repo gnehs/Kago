@@ -1,0 +1,176 @@
+/*
+ * What makes a plugin's page look like the rest of Kago without a stylesheet of its own. Every rule is wrapped in
+ * :where(), so it weighs nothing against the plugin's own, and every colour is a token Kago hands the frame, so the
+ * page follows the theme as it changes.
+ */
+
+:where(html, body) {
+  height: 100%;
+  margin: 0;
+}
+
+:where(body) {
+  background: var(--kago-surface);
+  color: var(--kago-text);
+  font-family: var(--font-sans, system-ui, sans-serif);
+  font-size: var(--kago-font-size, 13px);
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+:where(button) {
+  cursor: default;
+  font: inherit;
+  color: inherit;
+}
+
+/* A glyph from Lucide's set, at the size and weight Kago draws them; an empty one holds a glyph's place. */
+:where(.kago-glyph) {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+:where(svg.kago-glyph) {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* The strip along the foot of a window, the way Kago draws its own. */
+:where(.kago-status-bar) {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  box-sizing: border-box;
+  padding: 0 12px;
+  border-top: 1px solid var(--kago-border);
+  background: var(--kago-surface-elevated);
+  color: var(--kago-text-muted);
+  user-select: none;
+}
+
+/* A control with no body of its own, as on Kago's bars: the surface gives a little under the pointer. */
+:where(.kago-button) {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--kago-radius-md, 7px);
+  background: none;
+  color: var(--kago-text-muted);
+  font-weight: 500;
+  white-space: nowrap;
+  outline: none;
+  transition: color 150ms, background-color 150ms;
+}
+
+:where(.kago-button:not(:disabled):hover, .kago-button[aria-expanded="true"]) {
+  color: var(--kago-text);
+  background: var(--kago-hover);
+  box-shadow: var(--kago-sunk-shadow);
+}
+
+:where(.kago-button:not(:disabled):active, .kago-button[aria-pressed="true"]) {
+  color: var(--kago-text);
+  background: var(--kago-sunk);
+  box-shadow: var(--kago-sunk-shadow);
+}
+
+:where(.kago-button:focus-visible) {
+  outline: 2px solid color-mix(in srgb, var(--kago-accent) 60%, transparent);
+  outline-offset: 2px;
+}
+
+/* Dimmed with a solid colour: a translucent glyph would darken where its strokes cross. */
+:where(.kago-button:disabled) {
+  color: var(--kago-text-faint);
+}
+
+/* A menu hung from a button, on the same glass as Kago's. */
+:where(.kago-menu) {
+  position: fixed;
+  z-index: 10;
+  box-sizing: border-box;
+  min-width: 176px;
+  margin: 0;
+  padding: 4px;
+  border: 0;
+  border-radius: var(--kago-radius-lg, 12px);
+  background: var(--kago-glass);
+  box-shadow: var(--kago-shadow-popup), var(--kago-glass-edge);
+  backdrop-filter: blur(24px) saturate(1.8);
+  -webkit-backdrop-filter: blur(24px) saturate(1.8);
+  color: var(--kago-text);
+  user-select: none;
+}
+
+:where(.kago-menu-item) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: calc(var(--kago-radius-md, 7px) + 1px);
+  background: none;
+  text-align: left;
+  outline: none;
+}
+
+:where(.kago-menu-item:hover, .kago-menu-item:focus) {
+  color: #ffffff;
+  background: var(--kago-selection);
+  box-shadow: 0 0 0 0.5px var(--kago-primary-ring), 0 1px 2.5px rgb(8 30 90 / 0.3), inset 0 1px 0 rgb(255 255 255 / 0.18);
+}
+
+/* The name of an icon-only button, shown over it once the pointer rests there. */
+:where([data-tip]) {
+  position: relative;
+}
+
+:where([data-tip]:hover:not([aria-expanded="true"])::after) {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  padding: 4px 8px;
+  border-radius: var(--kago-radius-md, 7px);
+  background: color-mix(in srgb, var(--kago-text) 90%, transparent);
+  color: var(--kago-surface);
+  font-size: 12px;
+  font-weight: 400;
+  white-space: nowrap;
+  pointer-events: none;
+  animation: kago-tip 0ms 500ms both;
+}
+
+@keyframes kago-tip {
+  from {
+    visibility: hidden;
+  }
+}
+
+:where(.kago-spinner) {
+  width: 20px;
+  height: 20px;
+  animation: kago-spin 1s linear infinite;
+}
+
+@keyframes kago-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
