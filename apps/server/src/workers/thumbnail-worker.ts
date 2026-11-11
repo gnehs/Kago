@@ -2,13 +2,17 @@ import fs from "node:fs";
 import { parentPort } from "node:worker_threads";
 import zlib from "node:zlib";
 import AdmZip from "adm-zip";
+import { readSplats } from "../lib/splat-decode.js";
+import { renderSplats } from "../lib/splat-render.js";
 
 /** What the worker is asked for: a picture of `source`, written to `target` for ffmpeg to shrink. */
-export type ThumbnailJob = { id: number; kind: "pdf" | "embedded"; source: string; target: string; edge: number };
+export type ThumbnailJob = { id: number; kind: "pdf" | "embedded" | "splat"; source: string; target: string; edge: number };
 export type ThumbnailJobResult = { id: number; ok: boolean };
 
-/** Both kinds are read whole into memory; larger files keep their icon. */
+/** PDFs and documents are read whole into memory; larger files keep their icon. Splat files are read only in part. */
 const MAX_BYTES = 128 * 1024 * 1024;
+/** About this many splats are drawn, out of however many a file holds: drawing more takes longer than it shows. */
+const SPLAT_BUDGET = 2_000_000;
 
 /**
  * The preview picture a program saved inside its own file: Office Open XML and OpenDocument keep one of the first page,
@@ -55,10 +59,26 @@ function extractEmbedded(job: ThumbnailJob): boolean {
   return false;
 }
 
+/**
+ * A splat scene as the preview opens on it. sharp is used here directly, not in the picture process: it unpacks a
+ * SOG's pictures one at a time, each holding one thread of the pool file reads go through for a fraction of a
+ * second, and only while the machine is otherwise idle.
+ */
+async function drawSplats(job: ThumbnailJob): Promise<boolean> {
+  const cloud = await readSplats(job.source, SPLAT_BUDGET);
+  if (!cloud) return false;
+  const pixels = renderSplats(cloud, job.edge);
+  if (!pixels.some((value, index) => index % 4 === 3 && value > 0)) return false;
+  const { default: sharp } = await import("sharp");
+  await sharp(pixels, { raw: { width: job.edge, height: job.edge, channels: 4 } }).png({ compressionLevel: 1 }).toFile(job.target);
+  return true;
+}
+
 parentPort!.on("message", async (job: ThumbnailJob) => {
   let ok = false;
   try {
-    if (fs.statSync(job.source).size <= MAX_BYTES) ok = job.kind === "pdf" ? await drawPdf(job) : extractEmbedded(job);
+    if (job.kind === "splat") ok = await drawSplats(job);
+    else if (fs.statSync(job.source).size <= MAX_BYTES) ok = job.kind === "pdf" ? await drawPdf(job) : extractEmbedded(job);
   } catch {
     // A file that cannot be read as what its name says has no thumbnail.
   }

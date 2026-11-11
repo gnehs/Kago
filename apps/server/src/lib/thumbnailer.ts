@@ -5,6 +5,7 @@ import { promisify } from "node:util";
 import { Worker } from "node:worker_threads";
 import type { ThumbnailJob, ThumbnailJobResult } from "../workers/thumbnail-worker.js";
 import { guardedInput, guardedProbe, PICTURE_FORMATS } from "./ffmpeg-input.js";
+import { idleCores } from "./idle-cores.js";
 import { pruneKeptFiles, useKeptFile } from "./kept-files.js";
 import { logger } from "./logger.js";
 import { sharpAvailable, writeAvif } from "./sharp.js";
@@ -20,6 +21,10 @@ const MAX_JOBS = 3;
 const MAX_REMEMBERED_FAILURES = 2000;
 /** What ffmpeg hands over is held whole in memory: a desktop background's worth of pixels, hardly packed, fits. */
 const MAX_FRAME_BYTES = 256 * 1024 * 1024;
+/** Splat scenes asked for while the machine is busy wait in line; past this many, the longest waiting are let go. */
+const MAX_WAITING_SPLATS = 200;
+/** How often the line of splat scenes looks for an idle moment. */
+const SPLAT_PUMP_MS = 5_000;
 
 /**
  * A square cut out of a picture, in parts of the picture so it does not matter how large the copy being cut is:
@@ -66,9 +71,9 @@ async function sharpReads(file: string): Promise<boolean> {
 
 /**
  * How a file becomes a picture: images and videos are read by ffmpeg directly; the first page of a PDF is drawn first,
- * and a document's own preview picture is taken out of it, both off the main thread.
+ * a document's own preview picture is taken out of it, and a splat scene is drawn, all off the main thread.
  */
-export type ThumbnailSource = "image" | "video" | "pdf" | "embedded";
+export type ThumbnailSource = "image" | "video" | "pdf" | "embedded" | "splat";
 
 /**
  * Draws AVIF thumbnails, keeping each one on disk under the key it was asked for. sharp writes them all, and reads
@@ -85,12 +90,19 @@ export class Thumbnailer {
   private worker: Worker | null = null;
   private readonly jobs = new Map<number, (ok: boolean) => void>();
   private nextJob = 0;
+  /**
+   * Drawing a splat scene keeps a core busy for seconds, so only one is drawn at a time and only while the machine is
+   * idle. One asked for otherwise waits here, the one asked for last going first, and is drawn for whoever asks next.
+   */
+  private drawingSplat = false;
+  private readonly waitingSplats = new Map<string, { source: string; edge: number }>();
+  private splatPump: NodeJS.Timeout | null = null;
 
   constructor(private readonly dir: string) {}
 
   /**
-   * The path of the thumbnail for `key`, drawing it first when it is not there yet. Null when the file cannot be drawn.
-   * One of another `edge` is another picture, and is kept under a key of its own.
+   * The path of the thumbnail for `key`, drawing it first when it is not there yet. Null when the file cannot be drawn,
+   * or for a splat scene, when it is not drawn yet. One of another `edge` is another picture, and is kept under a key of its own.
    */
   async render(source: string, key: string, kind: ThumbnailSource, edge = MAX_EDGE): Promise<string | null> {
     const target = path.join(this.dir, `${key}.avif`);
@@ -98,7 +110,15 @@ export class Thumbnailer {
     if (this.failed.has(key)) return null;
     let job = this.pending.get(key);
     if (!job) {
-      job = this.draw(source, target, kind, edge).finally(() => this.pending.delete(key));
+      if (kind === "splat" && (this.drawingSplat || idleCores() <= 1)) {
+        this.waitForIdle(key, source, edge);
+        return null;
+      }
+      if (kind === "splat") this.drawingSplat = true;
+      job = this.draw(source, target, kind, edge).finally(() => {
+        this.pending.delete(key);
+        if (kind === "splat") this.drawingSplat = false;
+      });
       this.pending.set(key, job);
     }
     const result = await job;
@@ -107,6 +127,30 @@ export class Thumbnailer {
       this.failed.add(key);
     }
     return result;
+  }
+
+  private waitForIdle(key: string, source: string, edge: number): void {
+    this.waitingSplats.delete(key);
+    this.waitingSplats.set(key, { source, edge });
+    if (this.waitingSplats.size > MAX_WAITING_SPLATS) this.waitingSplats.delete(this.waitingSplats.keys().next().value!);
+    if (!this.splatPump) {
+      this.splatPump = setInterval(() => this.pumpSplats(), SPLAT_PUMP_MS);
+      // Waiting scenes are simply asked for again after a restart; they must not keep the server from shutting down.
+      this.splatPump.unref();
+    }
+  }
+
+  private pumpSplats(): void {
+    const next = [...this.waitingSplats].at(-1);
+    if (!next) {
+      clearInterval(this.splatPump!);
+      this.splatPump = null;
+      return;
+    }
+    if (this.drawingSplat || idleCores() <= 1) return;
+    const [key, { source, edge }] = next;
+    this.waitingSplats.delete(key);
+    void this.render(source, key, "splat", edge).catch(() => undefined);
   }
 
   private async draw(source: string, target: string, kind: ThumbnailSource, edge: number): Promise<string | null> {
@@ -121,7 +165,7 @@ export class Thumbnailer {
     try {
       await fsp.mkdir(this.dir, { recursive: true });
       let picture = source;
-      if (kind === "pdf" || kind === "embedded") {
+      if (kind === "pdf" || kind === "embedded" || kind === "splat") {
         if (!(await this.prepare({ kind, source, target: prepared, edge }))) return null;
         picture = prepared;
       }

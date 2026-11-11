@@ -94,6 +94,8 @@ const TEXT_EXCERPT_BYTES = 2048;
 const BROWSER_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml", "image/avif", "image/bmp", "image/apng", "image/x-icon", "image/vnd.microsoft.icon"]);
 /** Documents that may carry a preview picture of their first page inside the file. */
 const EMBEDDED_PREVIEW_EXTENSIONS = new Set(["docx", "docm", "xlsx", "xlsm", "pptx", "pptm", "ppsx", "odt", "ods", "odp", "pages", "numbers", "key"]);
+/** Gaussian splat scenes, drawn the way the preview opens on them. A PLY may as well be a mesh, which is found out on reading it. */
+const SPLAT_EXTENSIONS = new Set(["ply", "splat", "sog"]);
 const MAX_ORIGINAL_THUMBNAIL_BYTES = 8 * 1024 * 1024;
 /** The longer side of a medium thumbnail: sharp across a window, and a fraction of what a camera's picture weighs. */
 const MEDIUM_THUMBNAIL_EDGE = 2048;
@@ -917,7 +919,9 @@ export class FsService {
           ? "pdf"
           : EMBEDDED_PREVIEW_EXTENSIONS.has(extension)
             ? "embedded"
-            : null;
+            : SPLAT_EXTENSIONS.has(extension)
+              ? "splat"
+              : null;
     if (medium && source !== "image") return null;
 
     if (source) {
