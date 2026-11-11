@@ -1,4 +1,4 @@
-import { hasTextName, isConvertedImage, isMusicFile, isSqliteFile, isVideoType } from "@/lib/format";
+import { hasTextName, isConvertedImage, isMusicFile, isSplatFile, isSqliteFile, isVideoType } from "@/lib/format";
 import type { FileItem } from "@/types/kago";
 
 /** The families of files Kago draws differently. Each has a mark, and most a colour, of its own. */
@@ -75,14 +75,15 @@ const PREVIEWED_DOCUMENTS = words("docx docm xlsx xlsm pptx pptm ppsx odt ods od
 
 /**
  * What the contents of a file can be shown as on its icon, if anything:
- * a picture, a frame of a video, the first page of a document, or its opening lines of text.
+ * a picture, a frame of a video, the first page of a document, a 3D scene as its preview opens on it, or its opening lines of text.
  */
-export function thumbnailKind(item: Pick<FileItem, "kind" | "type" | "name" | "size">): "picture" | "video" | "page" | "text" | null {
+export function thumbnailKind(item: Pick<FileItem, "kind" | "type" | "name" | "size">): "picture" | "video" | "page" | "scene" | "text" | null {
   if (item.kind !== "file" || item.size === 0) return null;
   const kind = fileKind(item);
   if (kind === "image") return "picture";
   if (kind === "video") return "video";
   if (kind === "pdf") return "page";
+  if (isSplatFile(item)) return "scene";
   if (hasTextName(item.name) || item.type.startsWith("text/")) return "text";
   return PREVIEWED_DOCUMENTS.has(extensionOf(item.name)) ? "page" : null;
 }

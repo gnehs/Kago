@@ -8,7 +8,7 @@ import { extensionOf, fileKind, KIND_TONES, thumbnailKind } from "@/lib/fileKind
 
 /**
  * A file at the size of a tile, showing what is in it where that can be drawn small:
- * pictures, videos and the first page of documents as a thumbnail, text as its opening lines on the sheet.
+ * pictures, videos, the first page of documents and 3D scenes as a thumbnail, text as its opening lines on the sheet.
  * Everything else is its icon, as is anything whose thumbnail has not arrived or cannot be made.
  */
 export function FileThumbnail({ rootSlug, item, size }: { rootSlug: string; item: Pick<FileItem, "kind" | "type" | "name" | "size" | "path" | "mtime">; size: number }) {
@@ -34,7 +34,7 @@ export function FileThumbnail({ rootSlug, item, size }: { rootSlug: string; item
       <svg viewBox="0 0 10 10" aria-hidden className="m-0.5 size-2.5">
         <path d="M2.6 1.4 8.6 5 2.6 8.6Z" fill="currentColor" />
       </svg>
-    ) : shows === "page" ? (
+    ) : shows === "page" || shows === "scene" ? (
       <span className="px-1 text-[9px] leading-4 font-bold tracking-wide uppercase">{extensionOf(item.name)}</span>
     ) : null;
   return <Picture key={source} source={source} size={size} fallback={tile} badge={badge} tone={KIND_TONES[fileKind(item)]} />;
