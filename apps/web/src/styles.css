@@ -115,8 +115,7 @@
   --kago-radius-sm: 5px;
   --kago-radius-md: 7px;
   --kago-radius-lg: 12px;
-  /* A window's corner follows its controls, 8px in from the edge with corners of their own, rather than the radius of a menu or card. */
-  --kago-radius-window: 16px;
+  --kago-radius-window: 12px;
   --kago-row-h: 32px;
   --kago-control-h: 30px;
   --kago-font-size: 13px;
@@ -328,17 +327,21 @@
 /*
  * Where the browser can draw them, the corners of small things (buttons, fields, rows, menu items, badges) ease
  * into their sides (a squircle) instead of being a quarter circle. The same radius reads as a tighter corner in
- * that shape, so the two small radii grow to keep their apparent size. Large surfaces (windows, cards, menus,
- * dialogs) keep round corners. Named by class rather than set on everything, so that documents shown inside a
- * window keep the corners they were drawn with.
+ * that shape, so the radii grow to keep their apparent size. Windows take the shape too, since a quarter circle at
+ * their size meets the sides with a visible kink; other large surfaces (cards, menus, dialogs) keep round corners.
+ * Named by class rather than set on everything, so that documents shown inside a window keep the corners they were
+ * drawn with.
  */
 @supports (corner-shape: squircle) {
   :root {
     --kago-radius-sm: 7px;
     --kago-radius-md: 10px;
+    --kago-radius-window: 18px;
   }
 
   @layer base {
+    .kago-window,
+    .kago-window::after,
     .rounded-sm,
     .rounded-md,
     .kago-checkbox,
