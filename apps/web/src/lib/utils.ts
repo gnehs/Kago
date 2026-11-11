@@ -37,3 +37,11 @@ export async function copyText(text: string): Promise<void> {
     textarea.remove();
   }
 }
+
+/**
+ * An Enter that confirms an IME candidate (Zhuyin, Kana…) must not act. Safari clears
+ * `isComposing` before that keydown reaches script, so keyCode 229 covers it there.
+ */
+export function isConfirmEnter(event: { key: string; keyCode: number; nativeEvent: KeyboardEvent }): boolean {
+  return event.key === "Enter" && !event.nativeEvent.isComposing && event.keyCode !== 229;
+}

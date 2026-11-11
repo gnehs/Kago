@@ -4,7 +4,7 @@ import { KagoDropdownMenu, KagoMenuItem } from "@/components/kago/menu";
 import { controlClass } from "@/components/ui/input";
 import { EDIT_ADDRESS_EVENT } from "@/features/workspace/useShortcuts";
 import { nfc, normalizeLogicalPath } from "@/lib/paths";
-import { cn } from "@/lib/utils";
+import { cn, isConfirmEnter } from "@/lib/utils";
 import { toast } from "@/stores/toast";
 import type { FileWindow } from "@/types/kago";
 import { FileIcon } from "@/components/kago/file-icon";
@@ -43,7 +43,7 @@ export function Breadcrumb({ window, rootName, onNavigate }: { window: FileWindo
         onFocus={(event) => event.target.select()}
         onBlur={() => setDraft(null)}
         onKeyDown={(event) => {
-          if (event.key === "Enter") commit(event.currentTarget.value);
+          if (isConfirmEnter(event)) commit(event.currentTarget.value);
           if (event.key === "Escape") {
             event.stopPropagation();
             setDraft(null);

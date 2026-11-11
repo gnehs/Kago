@@ -7,7 +7,7 @@ import { ExternalAppGlyph } from "@/components/kago/external-app-icon";
 import { appHost, openExternalApp } from "@/features/apps/externalApps";
 import { appIcons } from "@/features/windows/AppWindow";
 import { baseName, displayPath, nfc, normalizeLogicalPath } from "@/lib/paths";
-import { cn } from "@/lib/utils";
+import { cn, isConfirmEnter } from "@/lib/utils";
 import { useRecentStore, type RecentFolder } from "@/stores/recent";
 import { useSettingsStore } from "@/stores/settings";
 import { useWorkspaceStore, type AppKind, type SettingsSection } from "@/stores/workspace";
@@ -181,7 +181,7 @@ function Palette({ roots, isAdmin, onClose }: { roots: Root[]; isAdmin: boolean;
               event.preventDefault();
               choose(() => (event.key === "Home" ? 0 : count - 1));
             }
-            if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+            if (isConfirmEnter(event)) {
               event.preventDefault();
               open(items[index]);
             }
