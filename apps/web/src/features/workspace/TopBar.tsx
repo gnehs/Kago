@@ -171,8 +171,8 @@ function TaskStatus() {
       className={cn(
         // The width eases between the button and the pill; where a browser cannot ease to a width that fits, it snaps.
         "h-7 w-7 [interpolate-size:allow-keywords] transition-[width,background-color] duration-300 ease-out",
-        // Black whatever the theme, as the island is: it reads as something under way, apart from the buttons beside it.
-        upload && "w-auto gap-1.5 rounded-full bg-neutral-950 pr-2.5 pl-1.5 text-white hover:bg-neutral-800 hover:text-white",
+        // Tinted with the accent, so it reads as something under way, apart from the buttons beside it.
+        upload && "w-auto gap-1.5 rounded-full bg-accent-soft pr-2.5 pl-1.5 text-ink hover:bg-[color-mix(in_srgb,var(--kago-accent-soft),var(--kago-accent)_12%)] hover:text-ink",
         !upload && activeCount > 0 && "text-accent hover:text-accent"
       )}
       // It hangs a little below the bar rather than from its edge, and keeps off the side of the screen.
@@ -219,7 +219,7 @@ function TaskStatus() {
           <span className="text-xs whitespace-nowrap tabular-nums">
             {upload.sent ? t("Processing…") : upload.remaining !== null ? formatDuration(upload.remaining) : t("Uploading…")}
           </span>
-          {!upload.sent && upload.speed > 0 ? <span className="hidden text-xs whitespace-nowrap text-neutral-400 tabular-nums sm:inline">{formatSize(upload.speed)}/s</span> : null}
+          {!upload.sent && upload.speed > 0 ? <span className="hidden text-xs whitespace-nowrap text-muted tabular-nums sm:inline">{formatSize(upload.speed)}/s</span> : null}
         </>
       ) : activeCount > 0 ? (
         // A ring that fills as the tasks go, not one that turns for as long as there are any.
