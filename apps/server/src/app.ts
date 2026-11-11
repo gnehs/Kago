@@ -802,14 +802,18 @@ function registerApi(app: FastifyInstance, services: Services) {
     const found = await services.plugins.file(params.token, params["*"]);
     if (!found) throw new AppError(404, "Not found", "NOT_FOUND");
     const origin = z.object({ _o: z.string().max(300).optional() }).parse(request.query)._o;
-    reply.header("Content-Security-Policy", pluginPolicy(params.token, [request.headers.host, framingHost(origin)]));
+    const framedBy = framingHost(origin, request.headers["sec-fetch-site"], request.headers["sec-fetch-dest"]);
+    reply.header("Content-Security-Policy", pluginPolicy(params.token, [request.headers.host, framedBy]));
     reply.header("X-Content-Type-Options", "nosniff");
     reply.header("Referrer-Policy", "no-referrer");
-    reply.header("Cross-Origin-Resource-Policy", "same-origin");
+    // Names looked up ahead of time are a way out that the policy does not cover.
+    reply.header("X-DNS-Prefetch-Control", "off");
     // The page is a sandboxed document, so the module scripts and stylesheets it loads are asked for from "null".
     reply.header("Access-Control-Allow-Origin", "null");
-    // The token changes whenever the plugin or the server does, so what it names never changes.
-    reply.header("Cache-Control", "private, max-age=31536000, immutable");
+    // The token changes whenever the plugin or the server does, but its files are read as they are on disk, and a
+    // plugin rebuilt meanwhile names new ones from its page. So the page is asked for each time; what it names is
+    // named by its content, as a build names it, and never changes.
+    reply.header("Cache-Control", found.file.endsWith(".html") ? "private, no-cache" : "private, max-age=31536000, immutable");
     return sendFile(request, reply, found.file, found, lookup(found.file) || "application/octet-stream");
   });
   // The icon libraries, asked by this server so that no browser has to: which icons answer to a name, and what one looks like.

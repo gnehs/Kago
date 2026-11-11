@@ -119,16 +119,26 @@ export class PluginService {
 }
 
 function listFolders(root: string): string[] {
+  let entries: fs.Dirent[];
   try {
-    return fs
-      .readdirSync(root, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name)
-      .sort();
+    entries = fs.readdirSync(root, { withFileTypes: true });
   } catch {
     // No such folder: nothing is installed there.
     return [];
   }
+  const folders: string[] = [];
+  for (const entry of entries) {
+    // Followed if it is a link, so a plugin linked in from where it is developed loads like one copied in.
+    let isFolder = false;
+    try {
+      isFolder = fs.statSync(path.join(root, entry.name)).isDirectory();
+    } catch {
+      // A link to nothing.
+    }
+    if (isFolder) folders.push(entry.name);
+    else logger.info(`plugin in ${path.join(root, entry.name)} skipped: not a folder`);
+  }
+  return folders.sort();
 }
 
 /** The plugin in `folder`, or why it is not one. */
@@ -150,12 +160,21 @@ function loadPlugin(folder: string): Omit<PluginManifest, "token"> | string {
   return { id: parsed.data.name as PluginId, version: parsed.data.version, title: parsed.data.kago.title, root, previewers: parsed.data.kago.previewers };
 }
 
-/** A host as a CSP source may name it: a name or address and maybe a port, nothing else. */
-const HOST = /^[\w.\-:[\]]+$/;
+/**
+ * A host as a CSP source may name it: a name or an IPv4 address, and maybe a port. An IPv6 address cannot be written
+ * in a source at all; a browser ignores one that tries, so it is left out rather than written in to do nothing. A
+ * plugin opened at an IPv6 address loads only if the address the page reports is a name.
+ */
+const HOST = /^[\w.-]+(?::\d{1,5})?$/;
 
-/** The host of the page that framed the plugin, as it says in the frame's URL, if that is a plain http(s) origin. */
-export function framingHost(origin: unknown): string | null {
-  if (typeof origin !== "string") return null;
+/**
+ * The host of the page that framed the plugin, as it says in the frame's URL, if that is a plain http(s) origin.
+ * It is believed only of a frame that Kago's own page loaded: the browser says so in `Sec-Fetch-*`, which a page
+ * cannot set. A plugin that sends its own frame to its page again with an origin of its choosing is not Kago's page
+ * loading it, and would otherwise widen its own policy to let it send the file anywhere.
+ */
+export function framingHost(origin: unknown, fetchSite: unknown, fetchDest: unknown): string | null {
+  if (typeof origin !== "string" || fetchSite !== "same-origin" || fetchDest !== "iframe") return null;
   try {
     const url = new URL(origin);
     if ((url.protocol !== "http:" && url.protocol !== "https:") || url.username || url.password || url.origin !== origin) return null;
@@ -182,8 +201,10 @@ export function pluginPolicy(token: string, hosts: (string | null | undefined)[]
     `worker-src ${own("blob:")}`,
     `style-src ${own("'unsafe-inline'")}`,
     `img-src ${own("data:", "blob:")}`,
+    `media-src ${own("blob:", "data:")}`,
     `font-src ${own("data:")}`,
-    "connect-src blob: data:",
+    // Its own folder, so it can fetch what it ships, such as a decoder's .wasm. That is nothing Kago does not already serve it.
+    `connect-src ${own("blob:", "data:")}`,
     "base-uri 'none'",
     "form-action 'none'",
     "frame-ancestors 'self'"

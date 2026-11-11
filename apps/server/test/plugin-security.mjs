@@ -46,11 +46,15 @@ test("only a plugin of this API version with its files built is loaded, and each
     await addPlugin(first, "escaping", { ...manifest("escaping-plugin"), kago: { ...manifest("x").kago, previewers: [{ id: "view", extensions: ["abc"], entry: "../package.json" }] } });
     await addPlugin(second, "duplicate", manifest("@kago/plugin-good"));
     await addPlugin(second, "later", { ...manifest("later-plugin"), kago: { ...manifest("x").kago, previewers: [{ id: "other", extensions: ["ply", "obj"], entry: "index.html" }] } });
+    // A plugin linked in from elsewhere loads like one copied in; a stray file beside the plugins is passed over.
+    const linked = await addPlugin(fixture.baseDir, "elsewhere", { ...manifest("linked-plugin"), kago: { ...manifest("x").kago, previewers: [{ id: "linked", extensions: ["lnk"], entry: "index.html" }] } });
+    await symlink(linked, path.join(second, "linked"));
+    await writeFile(path.join(second, ".DS_Store"), "");
 
     const plugins = new PluginService([first, second, path.join(fixture.baseDir, "missing")]);
-    assert.deepEqual(plugins.plugins().map((plugin) => plugin.id).sort(), ["@kago/plugin-good", "later-plugin"]);
+    assert.deepEqual(plugins.plugins().map((plugin) => plugin.id).sort(), ["@kago/plugin-good", "later-plugin", "linked-plugin"]);
     const previewers = plugins.previewers();
-    assert.deepEqual(previewers.map((previewer) => [previewer.pluginId, previewer.extensions]), [["@kago/plugin-good", ["xyz", "ply"]], ["later-plugin", ["obj"]]]);
+    assert.deepEqual(previewers.map((previewer) => [previewer.pluginId, previewer.extensions]), [["@kago/plugin-good", ["xyz", "ply"]], ["later-plugin", ["obj"]], ["linked-plugin", ["lnk"]]]);
     assert.match(previewers[0].src, /^\/_kago\/plugin\/[0-9a-f]{32}\/index\.html$/);
     // The same plugin is named differently by another server, or by this one after a restart.
     assert.notEqual(new PluginService([first]).previewers()[0].src, previewers[0].src);
@@ -60,10 +64,14 @@ test("only a plugin of this API version with its files built is loaded, and each
 });
 
 test("a plugin's policy names its own folder in full and nothing wider", () => {
-  const policy = pluginPolicy("abc", ["kago.example.test:8443", "kago.example.test:8443", "evil host", null]);
+  const policy = pluginPolicy("abc", ["kago.example.test:8443", "kago.example.test:8443", "evil host", "[::1]:8080", null]);
   assert.match(policy, /^sandbox allow-scripts; default-src 'none'/);
   assert.match(policy, /script-src http:\/\/kago\.example\.test:8443\/_kago\/plugin\/abc\/ https:\/\/kago\.example\.test:8443\/_kago\/plugin\/abc\/ 'wasm-unsafe-eval' blob:/);
-  assert.match(policy, /connect-src blob: data:;/);
+  // Its own folder, to fetch what it ships, and nowhere else.
+  assert.match(policy, /connect-src http:\/\/kago\.example\.test:8443\/_kago\/plugin\/abc\/ https:\/\/kago\.example\.test:8443\/_kago\/plugin\/abc\/ blob: data:;/);
+  assert.match(policy, /media-src http:\/\/kago\.example\.test:8443\/_kago\/plugin\/abc\/ https:\/\/kago\.example\.test:8443\/_kago\/plugin\/abc\/ blob: data:;/);
+  // An IPv6 address cannot be a CSP source, so it is not written in as one.
+  assert.doesNotMatch(policy, /::1|\[/);
   assert.match(policy, /frame-ancestors 'self'/);
   assert.doesNotMatch(policy, /\*|evil|'self' |'unsafe-eval'/);
 });
@@ -90,7 +98,9 @@ test("plugin files are served sandboxed from inside their folder only, and the A
     assert.equal(listed.some((previewer) => previewer.pluginId === "future-plugin"), false);
     const folder = mine.src.replace(/index\.html$/, "");
 
-    const page = await app.inject({ method: "GET", url: `${mine.src}?_o=${encodeURIComponent("https://kago.example.test")}`, headers: { host: "127.0.0.1:8080" } });
+    const framed = { host: "127.0.0.1:8080", "sec-fetch-site": "same-origin", "sec-fetch-dest": "iframe" };
+    const withOrigin = (origin) => `${mine.src}?_o=${encodeURIComponent(origin)}`;
+    const page = await app.inject({ method: "GET", url: withOrigin("https://kago.example.test"), headers: framed });
     assert.equal(page.statusCode, 200);
     assert.match(page.headers["content-type"], /^text\/html/);
     const policy = page.headers["content-security-policy"];
@@ -99,14 +109,29 @@ test("plugin files are served sandboxed from inside their folder only, and the A
     assert.doesNotMatch(policy, /\*/);
     assert.equal(page.headers["x-content-type-options"], "nosniff");
     assert.equal(page.headers["referrer-policy"], "no-referrer");
-    assert.equal(page.headers["cross-origin-resource-policy"], "same-origin");
+    assert.equal(page.headers["x-dns-prefetch-control"], "off");
+    assert.equal(page.headers["cross-origin-resource-policy"], undefined);
+    // The page is asked for again each time, so a plugin rebuilt while the server runs names its new files.
+    assert.equal(page.headers["cache-control"], "private, no-cache");
     // An origin that is not a plain web origin is left out, not written into the policy.
-    for (const origin of ["javascript:alert(1)", "https://user:pw@kago.example.test", "https://kago.example.test/path", "https://a.test; script-src *"]) {
-      const odd = await app.inject({ method: "GET", url: `${mine.src}?_o=${encodeURIComponent(origin)}`, headers: { host: "127.0.0.1:8080" } });
+    for (const origin of ["javascript:alert(1)", "https://user:pw@kago.example.test", "https://kago.example.test/path", "https://a.test; script-src *", "http://[::1]:8080"]) {
+      const odd = await app.inject({ method: "GET", url: withOrigin(origin), headers: framed });
       assert.equal(odd.statusCode, 200);
-      assert.doesNotMatch(odd.headers["content-security-policy"], /kago\.example\.test|a\.test|\*/, origin);
+      assert.doesNotMatch(odd.headers["content-security-policy"], /kago\.example\.test|a\.test|::1|\*/, origin);
     }
-    assert.equal((await get(`${folder}assets/main.js`)).statusCode, 200);
+    // The origin is believed only of the frame Kago's page loads. A plugin that sends its frame to its own page with
+    // an origin of its choosing does so from its sandbox, which the browser reports as cross-site; nor is anything
+    // but a frame's document Kago's page loading it.
+    for (const headers of [{ host: "127.0.0.1:8080" }, { ...framed, "sec-fetch-site": "cross-site" }, { ...framed, "sec-fetch-dest": "document" }, { ...framed, "sec-fetch-site": "same-site" }]) {
+      const widened = await app.inject({ method: "GET", url: withOrigin("https://evil.example"), headers });
+      assert.equal(widened.statusCode, 200);
+      const widenedPolicy = widened.headers["content-security-policy"];
+      assert.doesNotMatch(widenedPolicy, /evil/, JSON.stringify(headers));
+      assert.ok(widenedPolicy.includes(`script-src http://127.0.0.1:8080${folder} https://127.0.0.1:8080${folder} 'wasm-unsafe-eval'`), widenedPolicy);
+    }
+    const script = await get(`${folder}assets/main.js`);
+    assert.equal(script.statusCode, 200);
+    assert.equal(script.headers["cache-control"], "private, max-age=31536000, immutable");
 
     // Nothing outside the folder, however the path is written, and nothing under a token no plugin has.
     for (const url of [`${folder}../../../package.json`, `${folder}%2e%2e/package.json`, `${folder}..%2fpackage.json`, `${folder}assets/..%2f..%2fpackage.json`, `${folder}leak.txt`, `${folder}%2fetc%2fpasswd`, `${folder}assets`, `${folder}`]) {
