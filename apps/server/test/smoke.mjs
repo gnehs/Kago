@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createCipheriv, createHmac, pbkdf2Sync } from "node:crypto";
 import { EventEmitter } from "node:events";
+import http from "node:http";
 import { access, chmod, mkdtemp, mkdir, readdir, readFile, rm, stat, symlink, truncate, utimes, writeFile } from "node:fs/promises";
 import { availableParallelism, loadavg, tmpdir } from "node:os";
 import { DatabaseSync } from "node:sqlite";
@@ -1203,6 +1204,29 @@ test("what the disk refuses is told apart from an unexpected error", { skip: pro
   } finally {
     await app.close();
     for (const folder of [path.join(fixture.dataDir, "photos"), locked, sealed]) await chmod(folder, 0o755);
+    await rm(fixture.baseDir, { recursive: true, force: true });
+  }
+});
+
+test("a request refused partway through its body ends the connection, so a browser hears why without sending the rest", async () => {
+  const fixture = await createFixture("kago-smoke-refused-body.");
+  const app = await buildApp(testEnv(fixture));
+  try {
+    await app.listen({ host: "127.0.0.1", port: 0 });
+    const { port } = app.server.address();
+    const boundary = "kago-refused";
+    const response = await new Promise((resolve, reject) => {
+      const request = http.request({ host: "127.0.0.1", port, method: "POST", path: "/api/fs/upload", headers: { "x-kago-csrf": "1", "content-type": `multipart/form-data; boundary=${boundary}`, "content-length": String(50 * 1024 ** 3) } }, resolve);
+      request.on("error", () => {});
+      request.on("response", () => request.destroy());
+      request.write(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="big.bin"\r\n\r\n`);
+      request.write(Buffer.alloc(1024 * 1024));
+      setTimeout(() => reject(new Error("no answer while the body was still coming")), 5000).unref();
+    });
+    assert.equal(response.statusCode, 401);
+    assert.equal(response.headers.connection, "close");
+  } finally {
+    await app.close();
     await rm(fixture.baseDir, { recursive: true, force: true });
   }
 });
