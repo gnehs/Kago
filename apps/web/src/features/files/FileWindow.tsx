@@ -432,7 +432,7 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
           </KagoMenuItem>
         ) : null}
         {single && isPicture(single) ? (
-          <KagoMenuItem icon={<CircleUserRound />} onClick={() => chooseAvatar(win.rootSlug, single)}>{t("Set as profile picture…")}</KagoMenuItem>
+          <KagoMenuItem icon={<CircleUserRound />} onClick={() => chooseAvatar(win.rootSlug, single, win.id)}>{t("Set as profile picture…")}</KagoMenuItem>
         ) : null}
         <KagoMenuSeparator />
         <KagoMenuItem icon={<Copy />} shortcut="⌘C" onClick={() => actions.copy(paths)}>{t("Copy")}</KagoMenuItem>
@@ -443,7 +443,7 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
         <KagoMenuItem icon={<Archive />} disabled={readonly} onClick={() => void actions.compress(paths)}>{count > 1 ? t("Compress {count} item | Compress {count} items", { count }) : t("Compress")}</KagoMenuItem>
         {targets.every(isArchive) ? <KagoMenuItem icon={<ArchiveRestore />} disabled={readonly} onClick={() => void actions.extract(paths)}>{t("Extract here")}</KagoMenuItem> : null}
         {convertible ? <KagoMenuItem icon={<FileOutput />} disabled={readonly} onClick={() => void actions.convert(targets, convertible)}>{count > 1 ? t("Convert {count} item… | Convert {count} items…", { count }) : t("Convert…")}</KagoMenuItem> : null}
-        {single && convertible === "video" ? <KagoMenuItem icon={<ListVideo />} disabled={readonly} onClick={() => openTrackEditor({ rootSlug: win.rootSlug, item: single, siblings: allItems.filter((item) => parentPath(item.path) === parentPath(single.path)) })}>{t("Edit tracks…")}</KagoMenuItem> : null}
+        {single && convertible === "video" ? <KagoMenuItem icon={<ListVideo />} disabled={readonly} onClick={() => openTrackEditor({ window: win.id, rootSlug: win.rootSlug, item: single, siblings: allItems.filter((item) => parentPath(item.path) === parentPath(single.path)) })}>{t("Edit tracks…")}</KagoMenuItem> : null}
         {single?.kind === "folder" ? <KagoMenuItem icon={<FileVideo />} disabled={readonly || single.readonly} onClick={() => autoConvertInto({ rootSlug: win.rootSlug, path: single.path })}>{t("Auto-convert into this folder…")}</KagoMenuItem> : null}
         <KagoMenuSeparator />
         <KagoMenuItem icon={<Trash2 />} destructive disabled={readonly || targets.some((item) => item.readonly)} onClick={() => void actions.trash(paths)}>{t("Move to Trash")}</KagoMenuItem>

@@ -14,13 +14,15 @@ import type { FileTask } from "@/types/kago";
 
 type ExtractRequest = { sources: FileRef[]; destination: FileRef };
 type PasswordChoice = { password: string; remember: boolean };
-type PasswordPrompt = { name: string; wrong: boolean; resolve: (choice: PasswordChoice | null) => void };
+type PasswordPrompt = { window: string | null; name: string; wrong: boolean; resolve: (choice: PasswordChoice | null) => void };
 
 /** What the server says when none of the passwords it has opens an archive. */
 const passwordErrors = ["Archive password required", "Wrong archive password"];
 
 /** Extractions started in this tab; one that turns out to need a password asks for it here. */
 export const pendingExtracts = new Map<string, ExtractRequest>();
+/** The window each of them was started from, where its password is asked for. */
+const extractWindows = new Map<string, string | null>();
 
 const usePromptStore = create<{ prompt: PasswordPrompt | null }>(() => ({ prompt: null }));
 
@@ -29,7 +31,7 @@ function settle(choice: PasswordChoice | null) {
   usePromptStore.setState({ prompt: null });
 }
 
-function promptArchivePassword(options: { name: string; wrong: boolean }) {
+function promptArchivePassword(options: { window: string | null; name: string; wrong: boolean }) {
   return new Promise<PasswordChoice | null>((resolve) => {
     usePromptStore.getState().prompt?.resolve(null);
     usePromptStore.setState({ prompt: { ...options, resolve } });
@@ -48,27 +50,30 @@ export function lockedExtract(task: FileTask): ExtractRequest | null {
   }
 }
 
-export async function startExtract(queryClient: QueryClient, request: ExtractRequest, options?: PasswordChoice) {
+export async function startExtract(queryClient: QueryClient, request: ExtractRequest, options?: PasswordChoice, scope: string | null = null) {
   const task = await api<FileTask>("/api/tasks", { method: "POST", body: JSON.stringify({ type: "extract", ...request, options }) });
   pendingExtracts.set(task.id, request);
+  extractWindows.set(task.id, scope);
   followTask(task);
   await queryClient.invalidateQueries({ queryKey: ["tasks"] });
   return task;
 }
 
 /** Asks for the password of an archive the saved ones did not open, and extracts it again with the answer. */
-export async function extractWithPassword(queryClient: QueryClient, request: ExtractRequest, error: string) {
+export async function extractWithPassword(queryClient: QueryClient, request: ExtractRequest, error: string, scope: string | null = null) {
   const first = request.sources[0]?.path ?? "";
-  const choice = await promptArchivePassword({ name: first.slice(first.lastIndexOf("/") + 1), wrong: error === "Wrong archive password" });
-  if (choice) await run(() => startExtract(queryClient, request, choice));
+  const choice = await promptArchivePassword({ window: scope, name: first.slice(first.lastIndexOf("/") + 1), wrong: error === "Wrong archive password" });
+  if (choice) await run(() => startExtract(queryClient, request, choice, scope));
 }
 
 /** Takes over a failed extraction of this tab's if a password is all it lacks; says whether it did. */
 export function askForArchivePassword(queryClient: QueryClient, taskId: string, error: string | undefined): boolean {
   const request = pendingExtracts.get(taskId);
+  const scope = extractWindows.get(taskId) ?? null;
   pendingExtracts.delete(taskId);
+  extractWindows.delete(taskId);
   if (!request || !error || !passwordErrors.includes(error)) return false;
-  void extractWithPassword(queryClient, request, error);
+  void extractWithPassword(queryClient, request, error, scope);
   return true;
 }
 
@@ -89,7 +94,7 @@ export function ArchivePasswordDialogHost() {
   if (!prompt) return null;
 
   return (
-    <KagoDialog open={Boolean(pending)} onClose={() => settle(null)} title={prompt.wrong ? t("That password didn’t open the archive") : t("This archive needs a password")}>
+    <KagoDialog scope={prompt.window} open={Boolean(pending)} onClose={() => settle(null)} title={prompt.wrong ? t("That password didn’t open the archive") : t("This archive needs a password")}>
       <form
         className="flex flex-col gap-3 p-4 pt-2"
         onSubmit={(event) => {

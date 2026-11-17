@@ -13,13 +13,13 @@ import { toast } from "@/stores/toast";
 import type { FileItem } from "@/types/kago";
 import { setAvatar, type AvatarCrop } from "./avatar";
 
-type AvatarRequest = { rootSlug: string; item: FileItem; /** Tells one asking from the next, when both are for the same file. */ asked: number };
+type AvatarRequest = { window: string | null; rootSlug: string; item: FileItem; /** Tells one asking from the next, when both are for the same file. */ asked: number };
 
 const useAvatarDialogStore = create<{ request: AvatarRequest | null }>(() => ({ request: null }));
 
 /** Asks which part of a picture is to be the profile picture, and makes it that. */
-export function chooseAvatar(rootSlug: string, item: FileItem) {
-  useAvatarDialogStore.setState({ request: { rootSlug, item, asked: Date.now() } });
+export function chooseAvatar(rootSlug: string, item: FileItem, scope: string | null = null) {
+  useAvatarDialogStore.setState({ request: { window: scope, rootSlug, item, asked: Date.now() } });
 }
 
 const close = () => useAvatarDialogStore.setState({ request: null });
@@ -35,7 +35,7 @@ export function AvatarDialogHost() {
 
   if (!request) return null;
   return (
-    <KagoDialog open={Boolean(pending)} onClose={close} title={t("Set as profile picture")} className="w-[min(352px,calc(100vw-32px))]">
+    <KagoDialog scope={request.window} open={Boolean(pending)} onClose={close} title={t("Set as profile picture")} className="w-[min(352px,calc(100%-32px))]">
       <AvatarCropper key={request.asked} request={request} />
     </KagoDialog>
   );

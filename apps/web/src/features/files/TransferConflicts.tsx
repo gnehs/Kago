@@ -25,7 +25,7 @@ type Details = { kind: "file" | "folder"; size: number; mtime: number };
 type Arrival = "copy" | "move" | "upload";
 export type Conflict = Details & { rootSlug: string; path: string; name: string; /** The one the destination has. */ existing: Details; /** It is where it would be put already. */ same: boolean };
 type Answer = { action: ConflictAction; /** The same goes for every conflict still to come. */ all: boolean };
-type ConflictRequest = { type: Arrival; conflict: Conflict; folder: string; remaining: number; resolve: (answer: Answer | null) => void };
+type ConflictRequest = { window: string | null; type: Arrival; conflict: Conflict; folder: string; remaining: number; resolve: (answer: Answer | null) => void };
 
 const useConflictStore = create<{ request: ConflictRequest | null }>(() => ({ request: null }));
 
@@ -56,13 +56,13 @@ function fitted(type: Arrival, action: ConflictAction, conflict: Conflict): Conf
  * Finds which of the sources the destination already has by name, and asks what to do with each.
  * Resolves to the choices made, to send along with the task, or to nothing when the whole thing was called off.
  */
-export async function resolveConflicts(type: "copy" | "move", sources: FileRef[], destination: FileRef): Promise<ConflictChoices | null> {
+export async function resolveConflicts(type: "copy" | "move", sources: FileRef[], destination: FileRef, scope: string | null = null): Promise<ConflictChoices | null> {
   const { conflicts } = await api<{ conflicts: Conflict[] }>("/api/tasks/conflicts", { method: "POST", body: JSON.stringify({ sources, destination }) });
-  return askConflicts(type, conflicts, destination);
+  return askConflicts(type, conflicts, destination, scope);
 }
 
 /** Asks what to do with each of the conflicts found; see `resolveConflicts`. */
-export async function askConflicts(type: Arrival, conflicts: Conflict[], destination: FileRef): Promise<ConflictChoices | null> {
+export async function askConflicts(type: Arrival, conflicts: Conflict[], destination: FileRef, scope: string | null = null): Promise<ConflictChoices | null> {
   const choices: ConflictChoices = {};
   const asked = conflicts.filter((conflict) => !conflict.same);
   // Put where it already is, a copy can only be a second one beside it, and a move has nothing to do.
@@ -70,7 +70,7 @@ export async function askConflicts(type: Arrival, conflicts: Conflict[], destina
   let forAll: ConflictAction | null = null;
   for (const [index, conflict] of asked.entries()) {
     if (!forAll) {
-      const answer = await ask({ type, conflict, folder: folderTitle(destination.rootSlug, destination.path), remaining: asked.length - index - 1 });
+      const answer = await ask({ window: scope, type, conflict, folder: folderTitle(destination.rootSlug, destination.path), remaining: asked.length - index - 1 });
       if (!answer) return null;
       if (answer.all) forAll = answer.action;
       choices[conflict.name] = answer.action;
@@ -130,7 +130,7 @@ export function TransferConflictDialogHost() {
   }[choice];
 
   return (
-    <KagoDialog question open={Boolean(pending)} onClose={() => settle(null)} title={t("“{folder}” already has an item with this name", { folder })}>
+    <KagoDialog question scope={request.window} open={Boolean(pending)} onClose={() => settle(null)} title={t("“{folder}” already has an item with this name", { folder })}>
       <form
         className="flex min-h-0 flex-col"
         onSubmit={(event) => {

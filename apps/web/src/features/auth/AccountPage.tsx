@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useWindowScope } from "@/components/kago/window-scope";
 import { useQueryClient } from "@tanstack/react-query";
 import { Fingerprint } from "lucide-react";
 import { api, ApiError } from "@/api/client";
@@ -30,6 +31,7 @@ const issuerName = (issuer: string) => {
 
 /** The account of the person signed in: who they are to everyone else, and the ways into it. */
 export function AccountPage({ user }: { user: Actor }) {
+  const scope = useWindowScope();
   const queryClient = useQueryClient();
   const account = useIdentities();
   // An account made through single sign-on has no password until one is set here; there is no current one to ask for.
@@ -44,7 +46,7 @@ export function AccountPage({ user }: { user: Actor }) {
   const canSubmit = (Boolean(currentPassword) || !hasPassword) && newPassword.length >= 8 && confirmPassword === newPassword;
 
   async function unlink(identity: SsoIdentity) {
-    if (!(await confirmAction({ title: t("Unlink this identity?"), subject: { icon: <KagoStatusIcon large><Fingerprint /></KagoStatusIcon>, name: issuerName(identity.issuer), detail: identity.email ?? identity.displayName ?? identity.subject }, description: t("Other devices signed in through it are signed out. Signing in through it again links it back if its email address is this account’s."), confirmLabel: t("Unlink"), destructive: true }))) return;
+    if (!(await confirmAction({ window: scope, title: t("Unlink this identity?"), subject: { icon: <KagoStatusIcon large><Fingerprint /></KagoStatusIcon>, name: issuerName(identity.issuer), detail: identity.email ?? identity.displayName ?? identity.subject }, description: t("Other devices signed in through it are signed out. Signing in through it again links it back if its email address is this account’s."), confirmLabel: t("Unlink"), destructive: true }))) return;
     await run(async () => {
       await api(`/api/auth/identities/${identity.id}`, { method: "DELETE" });
       await queryClient.invalidateQueries({ queryKey: ["auth", "identities"] });

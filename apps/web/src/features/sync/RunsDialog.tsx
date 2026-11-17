@@ -41,7 +41,7 @@ export function RunsDialog({ job, onClose }: { job: SyncJob | null; onClose: () 
   if (job && job !== shown) setShown(job);
   const runs = useSyncRuns(shown, job !== null);
   return (
-    <KagoDialog open={job !== null} onClose={onClose} title={t("Runs of {name}", { name: shown?.name ?? "" })} className="w-[min(560px,calc(100vw-32px))]">
+    <KagoDialog open={job !== null} onClose={onClose} title={t("Runs of {name}", { name: shown?.name ?? "" })} className="w-[min(560px,calc(100%-32px))]">
       <div className="flex min-h-0 flex-col gap-4 overflow-y-auto p-4 pt-3">
         {runs.isLoading ? <KagoLoading /> : null}
         {runs.isError ? <p className="m-0 text-danger">{t("Couldn’t load the runs")}</p> : null}

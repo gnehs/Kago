@@ -17,32 +17,38 @@ export type DialogRequest = {
   resolve: (value: string | null) => void;
 };
 
+/** The window a dialog opened from code belongs to; null, or left out, for one that belongs to no window. */
+type Scoped = { window?: string | null };
+
 export const ALTERNATIVE = "\0alternative";
 
-export const useDialogStore = create<{ request: DialogRequest | null }>(() => ({ request: null }));
+/** The question each window is waiting on, by window id; the page's is under "". A window asks one thing at a time. */
+export const useDialogStore = create<{ requests: Record<string, DialogRequest> }>(() => ({ requests: {} }));
 
-function open(request: Omit<DialogRequest, "resolve">) {
+function open({ window, ...request }: Omit<DialogRequest, "resolve"> & Scoped) {
+  const scope = window ?? "";
   return new Promise<string | null>((resolve) => {
-    useDialogStore.getState().request?.resolve(null);
-    useDialogStore.setState({ request: { ...request, resolve } });
+    useDialogStore.getState().requests[scope]?.resolve(null);
+    useDialogStore.setState(({ requests }) => ({ requests: { ...requests, [scope]: { ...request, resolve } } }));
   });
 }
 
-export function promptText(options: { title: string; description?: string; defaultValue?: string; placeholder?: string; selectEnd?: number; confirmLabel?: string }) {
+export function promptText(options: Scoped & { title: string; description?: string; defaultValue?: string; placeholder?: string; selectEnd?: number; confirmLabel?: string }) {
   return open({ ...options, input: { defaultValue: options.defaultValue ?? "", placeholder: options.placeholder, selectEnd: options.selectEnd } });
 }
 
-export async function confirmAction(options: { title: string; subject?: DialogSubject; description?: string; confirmLabel?: string; destructive?: boolean }) {
+export async function confirmAction(options: Scoped & { title: string; subject?: DialogSubject; description?: string; confirmLabel?: string; destructive?: boolean }) {
   return (await open(options)) !== null;
 }
 
 /** Asks which of two things to do: resolves to the one picked, or to nothing when neither was. */
-export async function chooseAction(options: { title: string; subject?: DialogSubject; description?: string; confirmLabel: string; alternative: { label: string; destructive?: boolean } }) {
+export async function chooseAction(options: Scoped & { title: string; subject?: DialogSubject; description?: string; confirmLabel: string; alternative: { label: string; destructive?: boolean } }) {
   const answer = await open(options);
   return answer === null ? null : answer === ALTERNATIVE ? "alternative" : "confirm";
 }
 
-export function settleDialog(value: string | null) {
-  useDialogStore.getState().request?.resolve(value);
-  useDialogStore.setState({ request: null });
+export function settleDialog(scope: string, value: string | null) {
+  const { [scope]: request, ...rest } = useDialogStore.getState().requests;
+  request?.resolve(value);
+  useDialogStore.setState({ requests: rest });
 }

@@ -1,4 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
+import { useWindowScope } from "@/components/kago/window-scope";
 import { LayoutGrid, Plus } from "lucide-react";
 import { useExternalApps } from "@/api/hooks";
 import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
@@ -11,9 +12,10 @@ import { removeExternalApp } from "./externalApps";
 
 /** The shortcuts on one's desktop to other services: one's own, and the ones an administrator put on everyone's. */
 export function AppsPage() {
+  const scope = useWindowScope();
   const queryClient = useQueryClient();
   const apps = useExternalApps();
-  const addButton = <Button variant="default" onClick={() => editExternalApp("new")}><Plus />{t("Add app")}</Button>;
+  const addButton = <Button variant="default" onClick={() => editExternalApp("new", scope)}><Plus />{t("Add app")}</Button>;
 
   return (
     <Page
@@ -34,8 +36,8 @@ export function AppsPage() {
             <Row key={app.id} icon={<ExternalAppIcon name={app.name} icon={app.icon} leaves={!app.embed} className="size-8" />} title={app.name} subtitle={app.shared ? `${app.url} · ${t("Show on everyone’s desktop")}` : app.url}>
               {app.editable ? (
                 <>
-                  <Button onClick={() => editExternalApp(app)}>{t("Edit")}</Button>
-                  <Button variant="destructive" onClick={() => void removeExternalApp(queryClient, app)}>{t("Remove")}</Button>
+                  <Button onClick={() => editExternalApp(app, scope)}>{t("Edit")}</Button>
+                  <Button variant="destructive" onClick={() => void removeExternalApp(queryClient, app, scope)}>{t("Remove")}</Button>
                 </>
               ) : null}
             </Row>

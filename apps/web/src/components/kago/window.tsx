@@ -1,6 +1,7 @@
 import { Maximize2, Minimize2, Minus, X, type LucideIcon } from "lucide-react";
 import { useLayoutEffect, useRef, type ReactNode } from "react";
 import { KagoTooltip } from "@/components/kago/tooltip";
+import { useWindowHeld, WindowScope } from "@/components/kago/window-scope";
 import { animateWindowBox, animateWindowIn } from "@/lib/motion";
 import { useCompact } from "@/lib/useCompact";
 import { isInteractiveTarget, usePointerDrag } from "@/lib/usePointerDrag";
@@ -34,6 +35,7 @@ export function KagoWindow({
   );
 
   const element = useRef<HTMLElement>(null);
+  const held = useWindowHeld(window.id);
   /** What the window looked like the last time it was drawn, to know what it is coming from. */
   const last = useRef<{ minimized: boolean; filled: boolean; box: { left: number; top: number; width: number; height: number } | null } | null>(null);
 
@@ -88,7 +90,10 @@ export function KagoWindow({
         {/* Balances the window controls so the title stays centred. */}
         <div className="kago-window-extra items-center gap-1.5">{titleExtra}</div>
       </header>
-      {children}
+      {/* While a dialog of its own is open, the window answers only to it; its title bar still moves, minimizes and closes it. */}
+      <div className="contents" inert={held}>
+        <WindowScope value={window.id}>{children}</WindowScope>
+      </div>
       {filled ? null : (
         <>
           {/* The top handles stay thin and small so the title bar under them still drags and its buttons still press. */}

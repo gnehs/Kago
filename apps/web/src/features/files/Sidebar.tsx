@@ -242,8 +242,8 @@ function Node({ tree, rootSlug, path, label, depth, locked }: { tree: Tree; root
             <KagoMenuItem icon={<PanelTop />} onClick={openTab}>{t("Open in new tab")}</KagoMenuItem>
             <KagoMenuItem icon={<ExternalLink />} onClick={() => store().openWindow({ rootSlug, logicalPath: path, title: folderTitle(rootSlug, path) })}>{t("Open in new window")}</KagoMenuItem>
             <KagoMenuSeparator />
-            <KagoMenuItem icon={<FolderPlus />} disabled={readonly} onClick={() => void newFolderIn(queryClient, here).then((made) => made && tree.expand(key))}>{t("New folder")}</KagoMenuItem>
-            {tree.clipCount > 0 ? <KagoMenuItem icon={<ClipboardPaste />} disabled={readonly} onClick={() => void pasteClipboard(queryClient, here)}>{t("Paste {count} item | Paste {count} items", { count: tree.clipCount })}</KagoMenuItem> : null}
+            <KagoMenuItem icon={<FolderPlus />} disabled={readonly} onClick={() => void newFolderIn(queryClient, here, window.id).then((made) => made && tree.expand(key))}>{t("New folder")}</KagoMenuItem>
+            {tree.clipCount > 0 ? <KagoMenuItem icon={<ClipboardPaste />} disabled={readonly} onClick={() => void pasteClipboard(queryClient, here, window.id)}>{t("Paste {count} item | Paste {count} items", { count: tree.clipCount })}</KagoMenuItem> : null}
             <KagoMenuItem icon={favorite ? <StarOff /> : <Star />} onClick={() => void setFavorite(here, !favorite)}>{favorite ? t("Remove from Favorites") : t("Add to Favorites")}</KagoMenuItem>
             {path === "/" ? null : (
               <>
@@ -251,11 +251,11 @@ function Node({ tree, rootSlug, path, label, depth, locked }: { tree: Tree; root
                 <KagoMenuItem icon={<Copy />} onClick={() => setClipboard("copy", [here])}>{t("Copy")}</KagoMenuItem>
                 <KagoMenuItem icon={<Scissors />} disabled={readonly} onClick={() => setClipboard("cut", [here])}>{t("Cut")}</KagoMenuItem>
                 {/* Every window showing the folder, or one inside it, follows it to its new name; renameFile sees to that. */}
-                <KagoMenuItem icon={<Pencil />} disabled={readonly} onClick={() => void renameFile(queryClient, { ...here, name: label })}>{t("Rename")}</KagoMenuItem>
+                <KagoMenuItem icon={<Pencil />} disabled={readonly} onClick={() => void renameFile(queryClient, { ...here, name: label }, undefined, window.id)}>{t("Rename")}</KagoMenuItem>
                 <KagoMenuItem icon={<Download />} onClick={() => void downloadFiles(queryClient, rootSlug, [{ path, kind: "folder" }])}>{t("Download")}</KagoMenuItem>
                 <KagoMenuSeparator />
                 {/* A window left inside a folder that is gone steps out to the one that held it. */}
-                <KagoMenuItem icon={<Trash2 />} destructive disabled={readonly} onClick={() => void trashFiles(queryClient, [here]).then((task) => task && inside !== null && tree.onNavigate({ rootSlug, path: parentPath(path) }))}>{t("Move to Trash")}</KagoMenuItem>
+                <KagoMenuItem icon={<Trash2 />} destructive disabled={readonly} onClick={() => void trashFiles(queryClient, [here], window.id).then((task) => task && inside !== null && tree.onNavigate({ rootSlug, path: parentPath(path) }))}>{t("Move to Trash")}</KagoMenuItem>
               </>
             )}
           </>

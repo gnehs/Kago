@@ -102,11 +102,11 @@ function letGo(refs: FileRef[]) {
 }
 
 /** Copies or moves the sources into a folder, asking first about each name the folder already has. Resolves to the task, once there is one. */
-export function transferFiles(queryClient: QueryClient, type: "copy" | "move", sources: FileRef[], destination: FileRef) {
+export function transferFiles(queryClient: QueryClient, type: "copy" | "move", sources: FileRef[], destination: FileRef, scope: string | null = null) {
   return run(async () => {
     const placed = placeable(outermost(sources), destination);
     if (placed.length === 0) return;
-    const conflicts = await resolveConflicts(type, placed, destination);
+    const conflicts = await resolveConflicts(type, placed, destination, scope);
     if (!conflicts) return;
     const carried = placed.filter((source) => conflicts[baseName(source.path)] !== "skip");
     if (carried.length === 0) return;
@@ -132,23 +132,23 @@ export function setClipboard(mode: "copy" | "cut", picked: FileRef[]) {
   toast(mode === "copy" ? t("Copied {count} item | Copied {count} items", { count: items.length }) : t("Cut {count} item | Cut {count} items", { count: items.length }));
 }
 
-export async function pasteClipboard(queryClient: QueryClient, destination: FileRef) {
+export async function pasteClipboard(queryClient: QueryClient, destination: FileRef, scope: string | null = null) {
   const clip = useClipboardStore.getState().clip;
   if (!clip) return;
   if (clip.mode === "copy") {
-    await transferFiles(queryClient, "copy", clip.items, destination);
+    await transferFiles(queryClient, "copy", clip.items, destination, scope);
     return;
   }
   // Cut items that already live here have nowhere to go.
   const sources = clip.items.filter((item) => !isInFolder(item, destination));
   // They stay on the clipboard until they are on their way, so a paste called off or refused can be made again.
-  if (sources.length > 0 && (await transferFiles(queryClient, "move", sources, destination))) useClipboardStore.setState({ clip: null });
+  if (sources.length > 0 && (await transferFiles(queryClient, "move", sources, destination, scope))) useClipboardStore.setState({ clip: null });
 }
 
 /** Asks for a name and makes a folder of it inside `folder`. Resolves to whether one was made. */
-export function newFolderIn(queryClient: QueryClient, folder: FileRef) {
+export function newFolderIn(queryClient: QueryClient, folder: FileRef, scope: string | null = null) {
   return run(async () => {
-    const name = nfc((await promptText({ title: t("New folder"), defaultValue: t("untitled folder"), confirmLabel: t("Create") })) ?? "");
+    const name = nfc((await promptText({ window: scope, title: t("New folder"), defaultValue: t("untitled folder"), confirmLabel: t("Create") })) ?? "");
     if (!name) return false;
     await api("/api/fs/mkdir", { method: "POST", body: JSON.stringify({ rootSlug: folder.rootSlug, path: folder.path, name }) });
     await queryClient.invalidateQueries({ queryKey: ["fs", "list", folder.rootSlug, folder.path] });
@@ -157,12 +157,12 @@ export function newFolderIn(queryClient: QueryClient, folder: FileRef) {
 }
 
 /** Asks for another name for an item. `onRenamed` hears where it is now before any listing is asked for again. */
-export function renameFile(queryClient: QueryClient, item: FileRef & { name: string; kind?: FileItem["kind"] }, onRenamed?: (path: string) => void) {
+export function renameFile(queryClient: QueryClient, item: FileRef & { name: string; kind?: FileItem["kind"] }, onRenamed?: (path: string) => void, scope: string | null = null) {
   return run(async () => {
     // A file's name is selected without its extension, so typing over it keeps the type; a dotfile's whole name is its name.
     const dot = item.name.lastIndexOf(".");
     const selectEnd = item.kind === "file" && dot > 0 ? dot : undefined;
-    const name = nfc((await promptText({ title: t("Rename"), defaultValue: item.name, selectEnd, confirmLabel: t("Rename") })) ?? "");
+    const name = nfc((await promptText({ window: scope, title: t("Rename"), defaultValue: item.name, selectEnd, confirmLabel: t("Rename") })) ?? "");
     // Confirming the unchanged name still goes through for an NFD file, which rewrites it as NFC.
     if (!name || (name === item.name && !needsNormalizing(item.path))) return;
     const renamed = await api<{ path: string }>("/api/fs/rename", { method: "POST", body: JSON.stringify({ rootSlug: item.rootSlug, path: item.path, name }) });
@@ -178,7 +178,7 @@ export function renameFile(queryClient: QueryClient, item: FileRef & { name: str
 const SLOW_TRASH_BYTES = 1024 ** 3;
 
 /** Resolves to the task moving them, or to nothing when it could not be started. */
-export function trashFiles(queryClient: QueryClient, picked: FileRef[]) {
+export function trashFiles(queryClient: QueryClient, picked: FileRef[], scope: string | null = null) {
   const sources = outermost(picked);
   return run(async () => {
     // The Trash of a location is on its own disk, and getting there is a rename. Only what has to be copied to it takes time.
@@ -186,6 +186,7 @@ export function trashFiles(queryClient: QueryClient, picked: FileRef[]) {
     let type = "delete_to_trash";
     if (copyBytes >= SLOW_TRASH_BYTES) {
       const choice = await chooseAction({
+        window: scope,
         title: t("Moving this to the Trash will take a while"),
         description: t("The Trash is on another disk, so {size} has to be copied there first. Deleting right away is instant, but can’t be undone.", { size: formatSize(copyBytes) }),
         confirmLabel: t("Move to Trash"),
@@ -231,7 +232,7 @@ async function folderItems(queryClient: QueryClient, rootSlug: string, path: str
 }
 
 /** Asks about each file and folder of an upload whose name the destination already has, the way a copy asks. */
-async function askUploadConflicts(queryClient: QueryClient, tree: UploadTree, destination: FileRef): Promise<ConflictChoices | null> {
+async function askUploadConflicts(queryClient: QueryClient, tree: UploadTree, destination: FileRef, scope: string | null): Promise<ConflictChoices | null> {
   const there = new Map((await folderItems(queryClient, destination.rootSlug, destination.path)).map((item) => [nfc(item.name), item]));
   const arriving = [
     ...tree.dirs.filter((dir) => !dir.includes("/")).map((dir) => ({ name: nfc(dir), kind: "folder" as const, size: 0, mtime: 0 })),
@@ -243,7 +244,7 @@ async function askUploadConflicts(queryClient: QueryClient, tree: UploadTree, de
     const details = { kind: existing.kind, size: existing.kind === "folder" ? 0 : existing.size, mtime: existing.mtime };
     return [{ ...entry, rootSlug: destination.rootSlug, path: joinLogicalPath(destination.path, entry.name), existing: details, same: false }];
   });
-  return conflicts.length === 0 ? {} : askConflicts("upload", conflicts, destination);
+  return conflicts.length === 0 ? {} : askConflicts("upload", conflicts, destination, scope);
 }
 
 /** Every file operation a window can start. Long-running ones only enqueue a server task. */
@@ -258,7 +259,7 @@ export function useFileActions(window: FileWindow) {
 
   return {
     refresh,
-    newFolder: (path = window.logicalPath) => newFolderIn(queryClient, here(path)),
+    newFolder: (path = window.logicalPath) => newFolderIn(queryClient, here(path), window.id),
     /** Asks for a name, makes a folder of it beside the items, and moves them into it. */
     newFolderWith: (paths: string[]) =>
       run(async () => {
@@ -270,12 +271,12 @@ export function useFileActions(window: FileWindow) {
         const parent = commonFolder(sources);
         const count = sources.length;
         const title = count > 1 ? t("New folder with {count} item | New folder with {count} items", { count }) : t("New folder with selection");
-        const name = nfc((await promptText({ title, defaultValue: t("untitled folder"), confirmLabel: t("Create") })) ?? "");
+        const name = nfc((await promptText({ window: window.id, title, defaultValue: t("untitled folder"), confirmLabel: t("Create") })) ?? "");
         if (!name) return;
         const folder = await api<{ path: string }>("/api/fs/mkdir", { method: "POST", body: JSON.stringify({ rootSlug: window.rootSlug, path: parent, name }) });
         await refreshRoot();
         useWorkspaceStore.getState().selectItems(window.id, [folder.path]);
-        await transferFiles(queryClient, "move", refs(sources), here(folder.path));
+        await transferFiles(queryClient, "move", refs(sources), here(folder.path), window.id);
       }, t("Couldn’t create the folder")),
     /**
      * Creates the tree's folders, then uploads its files folder by folder in batches the server accepts. Whatever the
@@ -285,7 +286,7 @@ export function useFileActions(window: FileWindow) {
       run(async () => {
         const tree = await source;
         if (tree.files.length === 0 && tree.dirs.length === 0) return;
-        const choices = await askUploadConflicts(queryClient, tree, { rootSlug, path });
+        const choices = await askUploadConflicts(queryClient, tree, { rootSlug, path }, window.id);
         if (!choices) return;
         const topOf = (dir: string) => dir.split("/")[0]!;
         const choiceOf = (dir: string) => choices[nfc(topOf(dir))];
@@ -346,14 +347,14 @@ export function useFileActions(window: FileWindow) {
         if (files.length > 0) toast(folder ? t("Uploaded {count} file to “{folder}” | Uploaded {count} files to “{folder}”", { count: files.length, folder }) : t("Uploaded {count} file | Uploaded {count} files", { count: files.length }));
         else toast(folder ? t("Created {count} folder in “{folder}” | Created {count} folders in “{folder}”", { count: dirs.length, folder }) : t("Created {count} folder | Created {count} folders", { count: dirs.length }));
       }, t("Upload failed")),
-    rename: (item: FileItem) => renameFile(queryClient, { rootSlug: window.rootSlug, path: item.path, name: item.name, kind: item.kind }, clearSelection),
+    rename: (item: FileItem) => renameFile(queryClient, { rootSlug: window.rootSlug, path: item.path, name: item.name, kind: item.kind }, clearSelection, window.id),
     /** Asks for a pattern and names the items by it. What is beside each of them, in its own folder, has its name taken. */
     renameMany: (items: FileItem[]) =>
       run(async () => {
         if (items.length > MAX_BATCH_RENAME) throw new Error(t("At most {max} items can be renamed at once", { max: MAX_BATCH_RENAME }));
         const folders = [...new Set(items.map((item) => parentPath(item.path)))];
         const existing = (await Promise.all(folders.map((folder) => folderItems(queryClient, window.rootSlug, folder)))).flat().map((item) => item.path);
-        const names = await promptBatchRename({ rootSlug: window.rootSlug, items, existing });
+        const names = await promptBatchRename({ window: window.id, rootSlug: window.rootSlug, items, existing });
         if (!names) return;
         const renamed = await api<{ items: Array<{ from: string; path: string }> }>("/api/fs/rename-many", { method: "POST", body: JSON.stringify({ rootSlug: window.rootSlug, items: names }) });
         // They stay selected under their new names; the rest of the selection is where it was.
@@ -364,7 +365,7 @@ export function useFileActions(window: FileWindow) {
         toast(t("Renamed {count} item | Renamed {count} items", { count: names.length }));
       }, t("Couldn’t rename")),
     trash: async (paths: string[]) => {
-      if (await trashFiles(queryClient, refs(paths))) clearSelection();
+      if (await trashFiles(queryClient, refs(paths), window.id)) clearSelection();
     },
     /** The archive goes in the folder the items are in, which with folders open in place may be below the window's own. */
     compress: (paths: string[]) =>
@@ -372,20 +373,20 @@ export function useFileActions(window: FileWindow) {
         const sources = outermost(refs(paths));
         if (sources.length === 0) return;
         const folder = commonFolder(sources.map((source) => source.path));
-        const choice = await promptCompress({ title: t("Compress to zip"), defaultName: `${baseName(folder) || window.title || "archive"}.zip` });
+        const choice = await promptCompress({ window: window.id, title: t("Compress to zip"), defaultName: `${baseName(folder) || window.title || "archive"}.zip` });
         if (!choice) return;
         followTask(await createTask(queryClient, { type: "compress", sources, destination: here(joinLogicalPath(folder, ensureZipName(choice.name))), options: choice.options }));
       }),
     /** Asks what to make of some media files of one kind and converts them into the folder they are in. */
     convert: (items: FileItem[], kind: MediaKind) =>
       run(async () => {
-        const spec = await promptConvert({ kind, names: items.map((item) => nfc(item.name)) });
+        const spec = await promptConvert({ window: window.id, kind, names: items.map((item) => nfc(item.name)) });
         if (!spec) return;
         const task = await api<FileTask>("/api/convert", { method: "POST", body: JSON.stringify({ sources: refs(items.map((item) => item.path)), destination: here(commonFolder(items.map((item) => item.path))), spec }) });
         await queryClient.invalidateQueries({ queryKey: ["tasks"] });
         followTask(task);
       }, t("Couldn’t start the conversion")),
-    extract: (paths: string[]) => run(() => startExtract(queryClient, { sources: refs(paths), destination: here(commonFolder(paths)) })),
+    extract: (paths: string[]) => run(() => startExtract(queryClient, { sources: refs(paths), destination: here(commonFolder(paths)) }, undefined, window.id)),
     download: (items: FileItem[]) => downloadFiles(queryClient, window.rootSlug, items),
     addToShelf: (paths: string[]) =>
       run(async () => {
@@ -396,10 +397,10 @@ export function useFileActions(window: FileWindow) {
         await queryClient.invalidateQueries({ queryKey: ["shelves"] });
         toast(t("Added to Shelf ({count})", { count: paths.length }));
       }, t("Couldn’t add to Shelf")),
-    transfer: (type: "copy" | "move", sources: FileRef[], destination: FileRef = here()) => transferFiles(queryClient, type, sources, destination),
+    transfer: (type: "copy" | "move", sources: FileRef[], destination: FileRef = here()) => transferFiles(queryClient, type, sources, destination, window.id),
     copy: (paths: string[]) => setClipboard("copy", refs(paths)),
     cut: (paths: string[]) => setClipboard("cut", refs(paths)),
-    paste: (path = window.logicalPath) => pasteClipboard(queryClient, here(path))
+    paste: (path = window.logicalPath) => pasteClipboard(queryClient, here(path), window.id)
   };
 }
 

@@ -19,7 +19,7 @@ import type { FileItem, FileTask, MediaInfo } from "@/types/kago";
 import { t } from "@/lib/i18n";
 
 type Kind = "video" | "audio" | "subtitle";
-type EditorRequest = { rootSlug: string; item: FileItem; /** What else is in the folder, to add tracks from. */ siblings: FileItem[] };
+type EditorRequest = { /** The window it was opened from. */ window: string | null; rootSlug: string; item: FileItem; /** What else is in the folder, to add tracks from. */ siblings: FileItem[] };
 
 type Track = {
   key: string;
@@ -100,7 +100,7 @@ export function TrackEditorHost() {
   if (!request) return null;
   const close = () => useEditorStore.setState({ request: null });
   return (
-    <KagoDialog open={Boolean(pending)} onClose={close} title={t("Tracks of “{name}”", { name: nfc(request.item.name) })} className="w-[min(680px,calc(100vw-32px))]">
+    <KagoDialog scope={request.window} open={Boolean(pending)} onClose={close} title={t("Tracks of “{name}”", { name: nfc(request.item.name) })} className="w-[min(680px,calc(100%-32px))]">
       <TrackEditor key={`${request.rootSlug}:${request.item.path}`} request={request} onClose={close} />
     </KagoDialog>
   );

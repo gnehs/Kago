@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useWindowScope } from "@/components/kago/window-scope";
 import { useQueryClient } from "@tanstack/react-query";
 import { Ban, Check, Clock, Ellipsis, Eye, FileVideo, FolderTree, History, Pause, Pencil, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import { create } from "zustand";
@@ -49,6 +50,7 @@ function statusGlyph(job: ConvertJob) {
 }
 
 export function AutoConvertPage({ roots, user }: { roots: Root[]; user: Actor }) {
+  const scope = useWindowScope();
   const queryClient = useQueryClient();
   const jobs = useConvertJobs();
   const support = useConvertSupport();
@@ -92,7 +94,7 @@ export function AutoConvertPage({ roots, user }: { roots: Root[]; user: Actor })
     }, t("Couldn’t copy the folder structure")));
 
   async function remove(job: ConvertJob) {
-    if (!(await confirmAction({ title: t("Delete this auto-convert?"), subject: { icon: <KagoStatusIcon large><FileVideo /></KagoStatusIcon>, name: job.name, detail: `${describeFolder(job.input)} → ${describeFolder(job.destination)}` }, description: t("Files it has already converted stay where they are."), confirmLabel: t("Delete"), destructive: true }))) return;
+    if (!(await confirmAction({ window: scope, title: t("Delete this auto-convert?"), subject: { icon: <KagoStatusIcon large><FileVideo /></KagoStatusIcon>, name: job.name, detail: `${describeFolder(job.input)} → ${describeFolder(job.destination)}` }, description: t("Files it has already converted stay where they are."), confirmLabel: t("Delete"), destructive: true }))) return;
     await run(async () => {
       await api(`/api/convert-jobs/${job.id}`, { method: "DELETE" });
       await refresh();

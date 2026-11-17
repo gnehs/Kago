@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useWindowScope } from "@/components/kago/window-scope";
 import { useQueryClient } from "@tanstack/react-query";
 import { Ban, Check, Clock, Ellipsis, FileDiff, History, Pause, Pencil, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import { api } from "@/api/client";
@@ -45,6 +46,7 @@ function statusGlyph(status: string | null) {
 }
 
 export function SyncPage({ roots, user }: { roots: Root[]; user: Actor }) {
+  const scope = useWindowScope();
   const queryClient = useQueryClient();
   const jobs = useSyncJobs();
   const [editing, setEditing] = useState<SyncJob | true | null>(null);
@@ -70,7 +72,7 @@ export function SyncPage({ roots, user }: { roots: Root[]; user: Actor }) {
   }
 
   async function remove(job: SyncJob) {
-    if (!(await confirmAction({ title: t("Delete this sync?"), subject: { icon: <KagoStatusIcon large><RefreshCw /></KagoStatusIcon>, name: job.name, detail: `${describeEndpoint(job.source)} → ${describeEndpoint(job.destination)}` }, description: t("Files it has already synced stay where they are."), confirmLabel: t("Delete"), destructive: true }))) return;
+    if (!(await confirmAction({ window: scope, title: t("Delete this sync?"), subject: { icon: <KagoStatusIcon large><RefreshCw /></KagoStatusIcon>, name: job.name, detail: `${describeEndpoint(job.source)} → ${describeEndpoint(job.destination)}` }, description: t("Files it has already synced stay where they are."), confirmLabel: t("Delete"), destructive: true }))) return;
     await run(async () => {
       await api(`/api/sync-jobs/${job.id}`, { method: "DELETE" });
       await refresh();

@@ -19,10 +19,10 @@ import { ExternalAppIcon } from "@/components/kago/external-app-icon";
 import { blockedAsMixedContent } from "./externalApps";
 
 /** The shortcut whose form is open: one that is there, or one about to be added. */
-const useEditorStore = create<{ editing: ExternalApp | "new" | null }>(() => ({ editing: null }));
+const useEditorStore = create<{ editing: ExternalApp | "new" | null; window: string | null }>(() => ({ editing: null, window: null }));
 
 /** Opens the form for a shortcut, or for a new one. It is one dialog, wherever it was asked for from. */
-export const editExternalApp = (app: ExternalApp | "new") => useEditorStore.setState({ editing: app });
+export const editExternalApp = (app: ExternalApp | "new", scope: string | null = null) => useEditorStore.setState({ editing: app, window: scope });
 const close = () => useEditorStore.setState({ editing: null });
 
 /** The libraries by their own names, which are not translated. */
@@ -46,12 +46,13 @@ const base64Of = (file: File) =>
 
 export function ExternalAppDialogHost({ isAdmin }: { isAdmin: boolean }) {
   const editing = useEditorStore((state) => state.editing);
+  const scope = useEditorStore((state) => state.window);
   // The last shortcut stays on show while its dialog fades out.
   const [shown, setShown] = useState(editing);
   if (editing && editing !== shown) setShown(editing);
   if (!shown) return null;
   return (
-    <KagoDialog open={editing !== null} onClose={close} title={shown === "new" ? t("Add app") : t("Edit {name}", { name: shown.name })} className="w-[min(460px,calc(100vw-32px))]">
+    <KagoDialog scope={scope} open={editing !== null} onClose={close} title={shown === "new" ? t("Add app") : t("Edit {name}", { name: shown.name })} className="w-[min(460px,calc(100%-32px))]">
       <AppForm key={shown === "new" ? "new" : shown.id} app={shown === "new" ? null : shown} isAdmin={isAdmin} />
     </KagoDialog>
   );

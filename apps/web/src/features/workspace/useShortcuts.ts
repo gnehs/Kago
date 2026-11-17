@@ -82,7 +82,7 @@ export function useShortcuts({ enabled, onOpenPalette }: { enabled: boolean; onO
       } else if (mod && key === "v") {
         if (!useClipboardStore.getState().clip || !view || view.readonly) return;
         event.preventDefault();
-        void pasteClipboard(queryClient, { rootSlug: active.rootSlug, path: view.folder });
+        void pasteClipboard(queryClient, { rootSlug: active.rootSlug, path: view.folder }, active.id);
       } else if (event.key === "Backspace" && active.logicalPath !== "/") {
         event.preventDefault();
         store.updateWindow(active.id, { logicalPath: parentPath(active.logicalPath), selectedItems: [] });

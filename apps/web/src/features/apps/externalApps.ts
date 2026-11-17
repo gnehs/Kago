@@ -43,8 +43,9 @@ export function openExternalApp(app: ExternalApp) {
   else openInNewTab(app);
 }
 
-export async function removeExternalApp(queryClient: QueryClient, app: ExternalApp) {
+export async function removeExternalApp(queryClient: QueryClient, app: ExternalApp, scope: string | null = null) {
   const confirmed = await confirmAction({
+    window: scope,
     title: t("Remove this shortcut?"),
     subject: { icon: createElement(ExternalAppIcon, { name: app.name, icon: app.icon, leaves: !app.embed }), name: app.name, detail: app.url },
     description: app.shared ? t("The shortcut is removed from everyone’s desktop. The service itself is not touched.") : t("Only the shortcut is removed. The service itself is not touched."),

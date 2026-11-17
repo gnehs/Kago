@@ -10,12 +10,12 @@ export type CompressLevel = "store" | "fast" | "normal" | "best";
 export type CompressEncryption = "aes256" | "zipcrypto";
 export type CompressChoice = { name: string; options: { level: CompressLevel; password?: string; encryption?: CompressEncryption } };
 
-type CompressRequest = { title: string; defaultName: string; resolve: (choice: CompressChoice | null) => void };
+type CompressRequest = { window?: string | null; title: string; defaultName: string; resolve: (choice: CompressChoice | null) => void };
 
 const useCompressStore = create<{ request: CompressRequest | null }>(() => ({ request: null }));
 
 /** Asks what to call the archive, how hard to squeeze it and whether to lock it. */
-export function promptCompress(options: { title: string; defaultName: string }) {
+export function promptCompress(options: { window?: string | null; title: string; defaultName: string }) {
   return new Promise<CompressChoice | null>((resolve) => {
     useCompressStore.getState().request?.resolve(null);
     useCompressStore.setState({ request: { ...options, resolve } });
@@ -53,7 +53,7 @@ export function CompressDialogHost() {
   const canSubmit = name.trim().length > 0 && !mismatch;
 
   return (
-    <KagoDialog open={Boolean(pending)} onClose={() => settle(null)} title={request.title}>
+    <KagoDialog scope={request.window ?? null} open={Boolean(pending)} onClose={() => settle(null)} title={request.title}>
       <form
         className="flex flex-col gap-3 p-4 pt-2"
         onSubmit={(event) => {

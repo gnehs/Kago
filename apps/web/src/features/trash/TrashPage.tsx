@@ -1,4 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
+import { useWindowScope } from "@/components/kago/window-scope";
 import { Trash2 } from "lucide-react";
 import { api } from "@/api/client";
 import { useRoots, useTrash } from "@/api/hooks";
@@ -16,6 +17,7 @@ import { t } from "@/lib/i18n";
 import type { FileTask } from "@/types/kago";
 
 export function TrashPage() {
+  const scope = useWindowScope();
   const queryClient = useQueryClient();
   const trash = useTrash();
   const roots = useRoots();
@@ -30,7 +32,7 @@ export function TrashPage() {
   }
 
   async function empty() {
-    const confirmed = await confirmAction({
+    const confirmed = await confirmAction({ window: scope, 
       title: t("Empty the Trash?"),
       subject: { icon: <KagoStatusIcon large tone="danger"><Trash2 /></KagoStatusIcon>, name: t("Trash"), detail: t("{count} item | {count} items", { count: trash.data?.length ?? 0 }) },
       description: t("Everything in it will be deleted for good. This can’t be undone."),

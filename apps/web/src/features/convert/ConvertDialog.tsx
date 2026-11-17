@@ -8,12 +8,12 @@ import { ConvertFields, specIsValid } from "./ConvertFields";
 import { specFor, supportedFormats, targetFormats, type MediaKind } from "./convertSpec";
 import { t } from "@/lib/i18n";
 
-type ConvertRequest = { kind: MediaKind; names: string[]; resolve: (spec: ConvertSpec | null) => void };
+type ConvertRequest = { window?: string | null; kind: MediaKind; names: string[]; resolve: (spec: ConvertSpec | null) => void };
 
 const useConvertStore = create<{ request: ConvertRequest | null }>(() => ({ request: null }));
 
 /** Asks what to make of some files of one kind. Resolves to nothing when the dialog is closed. */
-export function promptConvert(options: { kind: MediaKind; names: string[] }) {
+export function promptConvert(options: { window?: string | null; kind: MediaKind; names: string[] }) {
   return new Promise<ConvertSpec | null>((resolve) => {
     useConvertStore.getState().request?.resolve(null);
     useConvertStore.setState({ request: { ...options, resolve } });
@@ -57,7 +57,7 @@ export function ConvertDialogHost() {
   const canSubmit = Boolean(support.data) && !unavailable && offered.includes(spec.format) && specIsValid(spec);
 
   return (
-    <KagoDialog open={Boolean(pending)} onClose={() => settle(null)} title={count > 1 ? t("Convert {count} item | Convert {count} items", { count }) : t("Convert “{name}”", { name: request.names[0] ?? "" })}>
+    <KagoDialog scope={request.window ?? null} open={Boolean(pending)} onClose={() => settle(null)} title={count > 1 ? t("Convert {count} item | Convert {count} items", { count }) : t("Convert “{name}”", { name: request.names[0] ?? "" })}>
       <form
         className="flex min-h-0 flex-col gap-3 overflow-y-auto p-4 pt-2"
         onSubmit={(event) => {

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useWindowScope } from "@/components/kago/window-scope";
 import { useQueryClient } from "@tanstack/react-query";
 import { Plus, Share2, X } from "lucide-react";
 import { api } from "@/api/client";
@@ -27,6 +28,7 @@ function describe(share: ShareLink) {
 }
 
 export function SharesPage({ roots }: { roots: Root[] }) {
+  const scope = useWindowScope();
   const queryClient = useQueryClient();
   const shares = useShares();
   const [creating, setCreating] = useState(false);
@@ -41,7 +43,7 @@ export function SharesPage({ roots }: { roots: Root[] }) {
   }
 
   async function remove(share: ShareLink) {
-    if (!(await confirmAction({ title: t("Delete this share link?"), subject: { icon: <KagoStatusIcon large tone={share.disabled ? "neutral" : "success"}><Share2 /></KagoStatusIcon>, name: baseName(share.path) || rootName(share.root_id), detail: displayPath(rootName(share.root_id), share.path) }, description: t("Links you’ve already sent stop working right away."), confirmLabel: t("Delete"), destructive: true }))) return;
+    if (!(await confirmAction({ window: scope, title: t("Delete this share link?"), subject: { icon: <KagoStatusIcon large tone={share.disabled ? "neutral" : "success"}><Share2 /></KagoStatusIcon>, name: baseName(share.path) || rootName(share.root_id), detail: displayPath(rootName(share.root_id), share.path) }, description: t("Links you’ve already sent stop working right away."), confirmLabel: t("Delete"), destructive: true }))) return;
     await run(async () => {
       await api(`/api/shares/${share.id}`, { method: "DELETE" });
       await refresh();

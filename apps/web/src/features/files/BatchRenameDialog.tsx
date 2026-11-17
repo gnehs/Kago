@@ -20,7 +20,7 @@ export const MAX_BATCH_RENAME = 1000;
 
 export type BatchRenameChoice = Array<{ path: string; name: string }>;
 
-type BatchRenameRequest = { id: number; rootSlug: string; items: FileItem[]; /** Every path listed beside them, whose names are taken. */ existing: string[]; resolve: (choice: BatchRenameChoice | null) => void };
+type BatchRenameRequest = { id: number; /** The window it was asked from. */ window: string | null; rootSlug: string; items: FileItem[]; /** Every path listed beside them, whose names are taken. */ existing: string[]; resolve: (choice: BatchRenameChoice | null) => void };
 
 // The pattern stays as it was left, for the next lot of files.
 const useBatchRenameStore = create<{ request: BatchRenameRequest | null; parts: RenamePart[] }>(() => ({ request: null, parts: [makePart("original")] }));
@@ -228,7 +228,7 @@ export function BatchRenameDialogHost() {
 
   if (!request) return null;
   return (
-    <KagoDialog open={Boolean(pending)} onClose={() => settle(null)} title={t("Rename {count} item | Rename {count} items", { count: request.items.length })} className="h-[min(620px,calc(100vh-48px))] w-[min(860px,calc(100vw-32px))]">
+    <KagoDialog scope={request.window} open={Boolean(pending)} onClose={() => settle(null)} title={t("Rename {count} item | Rename {count} items", { count: request.items.length })} className="h-[min(620px,calc(100%-68px))] w-[min(860px,calc(100%-32px))]">
       <BatchRenameForm key={request.id} request={request} />
     </KagoDialog>
   );

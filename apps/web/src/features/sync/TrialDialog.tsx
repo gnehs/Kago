@@ -217,7 +217,7 @@ export function TrialDialog({ job, onClose }: { job: SyncJob | null; onClose: ()
   if (job && job !== shown) setShown(job);
   const trial = useSyncTrial(shown, job !== null);
   return (
-    <KagoDialog open={job !== null} onClose={onClose} title={t("What {name} would change", { name: shown?.name ?? "" })} className="w-[min(720px,calc(100vw-32px))]">
+    <KagoDialog open={job !== null} onClose={onClose} title={t("What {name} would change", { name: shown?.name ?? "" })} className="w-[min(720px,calc(100%-32px))]">
       <div className="flex min-h-0 flex-col gap-4 overflow-y-auto p-4 pt-3">
         {trial.isLoading ? <KagoLoading /> : null}
         {trial.isError ? <p className="m-0 text-danger">{t("Couldn’t load the trial run")}</p> : null}

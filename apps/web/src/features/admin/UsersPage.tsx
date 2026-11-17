@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useWindowScope } from "@/components/kago/window-scope";
 import { useQueryClient } from "@tanstack/react-query";
 import { Plus, X } from "lucide-react";
 import { api } from "@/api/client";
@@ -20,6 +21,7 @@ type Role = UserAccount["role"];
 export const roleLabels: Record<Role, string> = { ADMIN: t("Administrator"), USER: t("Standard user") };
 
 export function UsersPage({ currentUserId }: { currentUserId: string }) {
+  const scope = useWindowScope();
   const queryClient = useQueryClient();
   const users = useUsers();
   const [email, setEmail] = useState("");
@@ -52,7 +54,7 @@ export function UsersPage({ currentUserId }: { currentUserId: string }) {
   }
 
   async function resetPassword(user: UserAccount) {
-    const password = await promptText({ title: t("Reset {name}’s password", { name: user.display_name }), description: t("At least 8 characters. This user is signed out everywhere and has to sign in again with the new password."), placeholder: t("New password"), confirmLabel: t("Reset password") });
+    const password = await promptText({ window: scope, title: t("Reset {name}’s password", { name: user.display_name }), description: t("At least 8 characters. This user is signed out everywhere and has to sign in again with the new password."), placeholder: t("New password"), confirmLabel: t("Reset password") });
     if (password === null) return;
     if (password.length < 8) {
       toast(t("The password needs at least 8 characters"), "error");
@@ -65,7 +67,7 @@ export function UsersPage({ currentUserId }: { currentUserId: string }) {
   }
 
   async function unlinkSso(user: UserAccount) {
-    if (!(await confirmAction({ title: t("Unlink from single sign-on?"), subject: { icon: <KagoAvatar name={user.display_name || user.email} picture={avatarUrl(user.id, user.avatar_at)} className="size-12 text-base" />, name: user.display_name || user.email, detail: user.display_name ? user.email : undefined }, description: user.has_password ? t("They can still sign in with their password. Signing in through the provider again links it back if its email address is this account’s.") : t("This account has no password: nobody can sign in to it until you reset its password."), confirmLabel: t("Unlink"), destructive: true }))) return;
+    if (!(await confirmAction({ window: scope, title: t("Unlink from single sign-on?"), subject: { icon: <KagoAvatar name={user.display_name || user.email} picture={avatarUrl(user.id, user.avatar_at)} className="size-12 text-base" />, name: user.display_name || user.email, detail: user.display_name ? user.email : undefined }, description: user.has_password ? t("They can still sign in with their password. Signing in through the provider again links it back if its email address is this account’s.") : t("This account has no password: nobody can sign in to it until you reset its password."), confirmLabel: t("Unlink"), destructive: true }))) return;
     await run(async () => {
       for (const identity of user.identities) await api(`/api/users/${user.id}/identities/${identity.id}`, { method: "DELETE" });
       await refresh();

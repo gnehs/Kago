@@ -76,7 +76,7 @@ export function ArchivePreviewWindow({ window }: { window: PreviewWindow }) {
   const files = listing.data?.entries.filter((entry) => !entry.folder) ?? [];
   const queryClient = useQueryClient();
   const download = () => triggerDownload(downloadUrl(rootSlug, item.path));
-  const extract = () => void run(() => startExtract(queryClient, { sources: [{ rootSlug, path: item.path }], destination: { rootSlug, path: parentPath(item.path) } }));
+  const extract = () => void run(() => startExtract(queryClient, { sources: [{ rootSlug, path: item.path }], destination: { rootSlug, path: parentPath(item.path) } }, undefined, window.id));
   const crumbs = here ? here.split("/") : [];
   const up = () => setFolder(crumbs.slice(0, -1).join("/"));
 

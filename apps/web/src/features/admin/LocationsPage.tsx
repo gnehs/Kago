@@ -1,15 +1,16 @@
 import { useState } from "react";
+import { useWindowScope } from "@/components/kago/window-scope";
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowDownUp, Globe, HardDrive, Lock, Network, Plus, Server, SquareTerminal, TriangleAlert, X } from "lucide-react";
+import { ArrowDownUp, Globe, HardDrive, Lock, Network, Plus, Server, SquareTerminal, TriangleAlert } from "lucide-react";
 import { api } from "@/api/client";
 import { useStorage } from "@/api/hooks";
 import { KagoChoice } from "@/components/kago/choice";
 import { KagoEmptyState } from "@/components/kago/empty-state";
-import { KagoIconButton } from "@/components/kago/icon-button";
 import { Button } from "@/components/ui/button";
 import { Checkbox, Field, FieldGroup, Input, Select } from "@/components/ui/input";
 import { KagoPasswordInput } from "@/components/kago/password-input";
-import { Card, Page, Row, RowList, Section } from "@/components/kago/page";
+import { Page, Row, RowList, Section } from "@/components/kago/page";
+import { KagoDialog } from "@/components/kago/dialog";
 import { KagoStatusIcon } from "@/components/kago/status-icon";
 import { run } from "@/lib/run";
 import { confirmAction } from "@/stores/dialogs";
@@ -37,6 +38,7 @@ const fieldLabels: Record<string, string> = {
 const label = (text: string) => fieldLabels[text] ?? text;
 
 export function LocationsPage({ roots }: { roots: Root[] }) {
+  const scope = useWindowScope();
   const queryClient = useQueryClient();
   const storage = useStorage();
   // `true` is a new location; a root is one being edited.
@@ -54,7 +56,7 @@ export function LocationsPage({ roots }: { roots: Root[] }) {
   }
 
   async function remove(root: Root) {
-    if (!(await confirmAction({ title: t("Remove this location?"), subject: { icon: <KagoStatusIcon large>{root.readonly ? <Lock /> : <Server />}</KagoStatusIcon>, name: root.name, detail: [providerLabel(root.provider), remoteAddress(storage.data?.roots.find((item) => item.id === root.id))].filter(Boolean).join(" · ") }, description: t("Its files stay where they are. Share links, permission rules and tags that point into it are removed."), confirmLabel: t("Remove"), destructive: true }))) return;
+    if (!(await confirmAction({ window: scope, title: t("Remove this location?"), subject: { icon: <KagoStatusIcon large>{root.readonly ? <Lock /> : <Server />}</KagoStatusIcon>, name: root.name, detail: [providerLabel(root.provider), remoteAddress(storage.data?.roots.find((item) => item.id === root.id))].filter(Boolean).join(" · ") }, description: t("Its files stay where they are. Share links, permission rules and tags that point into it are removed."), confirmLabel: t("Remove"), destructive: true }))) return;
     await run(async () => {
       await api(`/api/roots/${root.id}`, { method: "DELETE" });
       setEditing(null);
@@ -72,7 +74,10 @@ export function LocationsPage({ roots }: { roots: Root[] }) {
 
   const local = roots.filter((root) => root.provider === "local");
   const remote = roots.filter((root) => root.provider !== "local");
-  const addButton = canAdd && !editing ? <Button variant="default" onClick={() => setEditing(true)}><Plus />{t("Add remote location")}</Button> : null;
+  // The connection stays on show while its dialog fades out.
+  const [shown, setShown] = useState(editing);
+  if (editing && editing !== shown) setShown(editing);
+  const addButton = canAdd ? <Button variant="default" onClick={() => setEditing(true)}><Plus />{t("Add remote location")}</Button> : null;
   /** What stands in the way of using a location, said before its address: the disk refusing Kago, or the location being read-only. */
   const hindrance = (root: Root, refused: "read" | "write" | null = null) =>
     refused === "read" ? <span className="text-danger">{t("No permission to read")} · </span> : refused === "write" ? <span className="text-warning">{t("No permission to write")} · </span> : root.readonly ? `${t("Read-only")} · ` : null;
@@ -113,14 +118,6 @@ export function LocationsPage({ roots }: { roots: Root[] }) {
       {/* A remote location is a connection Kago keeps: it is added, edited and removed here. */}
       <Section title={t("Remote locations")} description={t("Folders on other machines, reached over the network.")} action={remote.length > 0 ? addButton : null}>
         {storage.data && !storage.data.available ? <p className="m-0 text-muted">{t("Remote locations need rclone, which this server does not have.")}</p> : null}
-        {editing ? (
-          <Card
-            title={editing === true ? t("Add remote location") : t("Connection of {name}", { name: editing.name })}
-            action={<KagoIconButton label={t("Close")} onClick={() => setEditing(null)}><X /></KagoIconButton>}
-          >
-            <RemoteForm key={editing === true ? "new" : editing.id} providers={providers} root={editing === true ? null : editing} onSaved={async () => { setEditing(null); await refresh(); }} />
-          </Card>
-        ) : null}
         {remote.length > 0 ? (
           <RowList>
             {remote.map((root) => {
@@ -134,12 +131,17 @@ export function LocationsPage({ roots }: { roots: Root[] }) {
               );
             })}
           </RowList>
-        ) : canAdd && !editing ? (
+        ) : canAdd ? (
           <KagoEmptyState className="kago-card rounded-lg border border-line" icon={<Server />} title={t("No remote locations yet")} description={t("Add a folder on another machine and it opens like any other location.")}>
             {addButton}
           </KagoEmptyState>
         ) : null}
       </Section>
+      {shown ? (
+        <KagoDialog open={editing !== null} onClose={() => setEditing(null)} title={shown === true ? t("Add remote location") : t("Connection of {name}", { name: shown.name })} className="w-[min(520px,calc(100%-32px))]">
+          <RemoteForm key={shown === true ? "new" : shown.id} providers={providers} root={shown === true ? null : shown} onCancel={() => setEditing(null)} onSaved={async () => { setEditing(null); await refresh(); }} />
+        </KagoDialog>
+      ) : null}
     </Page>
   );
 }
@@ -154,7 +156,7 @@ function remoteAddress(root?: RemoteRoot) {
 /** What stands for each kind of remote on its card; a kind the interface has not heard of is a server like any other. */
 const providerIcons: Record<string, React.ReactNode> = { smb: <Network />, sftp: <SquareTerminal />, webdav: <Globe />, ftp: <ArrowDownUp /> };
 
-function RemoteForm({ providers, root, onSaved }: { providers: RemoteProvider[]; root: RemoteRoot | null; onSaved: () => Promise<void> }) {
+function RemoteForm({ providers, root, onCancel, onSaved }: { providers: RemoteProvider[]; root: RemoteRoot | null; onCancel: () => void; onSaved: () => Promise<void> }) {
   const [type, setType] = useState(root?.remote.type ?? providers[0]?.type ?? "");
   const [name, setName] = useState(root?.name ?? "");
   const [base, setBase] = useState(root?.remote.base ?? "");
@@ -195,7 +197,7 @@ function RemoteForm({ providers, root, onSaved }: { providers: RemoteProvider[];
   }
 
   return (
-    <form className="grid grid-cols-2 gap-3" onSubmit={submit}>
+    <form className="grid min-h-0 grid-cols-2 gap-3 overflow-y-auto p-4 pt-3" onSubmit={submit}>
       {/* What kind of remote a location is stays what it was made as; everything else about it can be changed. */}
       {root ? null : (
         <FieldGroup label={t("Kind")} className="col-span-2">
@@ -234,8 +236,9 @@ function RemoteForm({ providers, root, onSaved }: { providers: RemoteProvider[];
       <Field label={label(provider.path.label)} hint={provider.path.hint ? label(provider.path.hint) : undefined} className="col-span-2"><Input value={base} placeholder={provider.path.placeholder} onChange={(event) => setBase(event.target.value)} /></Field>
       {type === "sftp" && params.key_file ? <SshKeyNote className="col-span-2" /> : null}
       {root ? null : <Checkbox className="col-span-2" label={t("Read-only")} checked={readonly} onChange={(event) => setReadonly(event.target.checked)} />}
-      <div className="col-span-2 flex justify-end gap-2">
-        <Button disabled={missing || busy} onClick={() => void test()}>{t("Test connection")}</Button>
+      <div className="col-span-2 flex justify-end gap-2 pt-1">
+        <Button className="mr-auto" disabled={missing || busy} onClick={() => void test()}>{t("Test connection")}</Button>
+        <Button onClick={onCancel}>{t("Cancel")}</Button>
         <Button type="submit" variant="default" disabled={!canSubmit}>{root ? t("Save") : t("Add location")}</Button>
       </div>
     </form>

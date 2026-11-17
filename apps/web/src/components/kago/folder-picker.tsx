@@ -50,7 +50,7 @@ export function FolderField({ label, hint, roots, value, onChange, writable, cla
         <span className="min-w-0 flex-1 truncate text-left [direction:rtl]"><bdi>{displayPath(root?.name ?? value.rootSlug, value.path)}</bdi></span>
         <span className="shrink-0 text-xs text-muted">{t("Choose…")}</span>
       </button>
-      <KagoDialog open={open} onClose={() => setOpen(false)} title={label} className="w-[min(480px,calc(100vw-32px))]">
+      <KagoDialog open={open} onClose={() => setOpen(false)} title={label} className="w-[min(480px,calc(100%-32px))]">
         {open ? <Picker roots={roots} initial={value} writable={writable} onCancel={() => setOpen(false)} onChoose={(folder) => { onChange(folder); setOpen(false); }} /> : null}
       </KagoDialog>
     </FieldGroup>
