@@ -1,4 +1,5 @@
-import { Archive, ChevronLeft, Download, Lock } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { Archive, ArchiveRestore, ChevronLeft, Download, Lock } from "lucide-react";
 import { useMemo, useState } from "react";
 import { downloadUrl } from "@/api/client";
 import { useArchiveEntries } from "@/api/hooks";
@@ -10,10 +11,12 @@ import { KagoWindow } from "@/components/kago/window";
 import { Button } from "@/components/ui/button";
 import { errorMessage, formatDate, formatSize } from "@/lib/format";
 import { locale, t } from "@/lib/i18n";
-import { triggerDownload } from "@/lib/paths";
+import { parentPath, triggerDownload } from "@/lib/paths";
+import { run } from "@/lib/run";
 import { cn } from "@/lib/utils";
 import type { PreviewWindow } from "@/stores/workspace";
 import type { ArchiveEntry } from "@/types/kago";
+import { startExtract } from "./ArchivePassword";
 
 /** A file or folder as one folder of the archive shows it. */
 type ArchiveNode = { name: string; path: string; folder: boolean; size: number; mtime: number | null; locked: boolean };
@@ -71,7 +74,9 @@ export function ArchivePreviewWindow({ window }: { window: PreviewWindow }) {
   const here = tree.has(folder) ? folder : "";
   const children = tree.get(here) ?? [];
   const files = listing.data?.entries.filter((entry) => !entry.folder) ?? [];
+  const queryClient = useQueryClient();
   const download = () => triggerDownload(downloadUrl(rootSlug, item.path));
+  const extract = () => void run(() => startExtract(queryClient, { sources: [{ rootSlug, path: item.path }], destination: { rootSlug, path: parentPath(item.path) } }));
   const crumbs = here ? here.split("/") : [];
   const up = () => setFolder(crumbs.slice(0, -1).join("/"));
 
@@ -80,9 +85,16 @@ export function ArchivePreviewWindow({ window }: { window: PreviewWindow }) {
       window={window}
       icon={<FileIcon item={item} />}
       titleExtra={
-        <KagoIconButton label={t("Download")} className="size-6" onClick={download}>
-          <Download />
-        </KagoIconButton>
+        <>
+          {item.readonly ? null : (
+            <KagoIconButton label={t("Extract here")} className="size-6" disabled={!listing.data} onClick={extract}>
+              <ArchiveRestore />
+            </KagoIconButton>
+          )}
+          <KagoIconButton label={t("Download")} className="size-6" onClick={download}>
+            <Download />
+          </KagoIconButton>
+        </>
       }
     >
       {listing.isPending ? (
