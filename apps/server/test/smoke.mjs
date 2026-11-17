@@ -12,6 +12,7 @@ import AdmZip from "adm-zip";
 import { buildApp } from "../dist/app.js";
 import { loadEnv } from "../dist/config/env.js";
 import { MediaService } from "../dist/services/media.service.js";
+import { publicError } from "../dist/lib/errors.js";
 
 // Every sync runs through rclone, which a development machine may not have.
 const rcloneInstalled = spawnSync("rclone", ["version"]).status === 0;
@@ -1204,6 +1205,13 @@ test("what the disk refuses is told apart from an unexpected error", { skip: pro
     for (const folder of [path.join(fixture.dataDir, "photos"), locked, sealed]) await chmod(folder, 0o755);
     await rm(fixture.baseDir, { recursive: true, force: true });
   }
+});
+
+test("a disk that is full, or cannot hold a file that large, says so", () => {
+  const refusal = (code) => publicError(Object.assign(new Error(code), { code, syscall: "write" }));
+  assert.deepEqual(refusal("ENOSPC"), { statusCode: 507, body: { error: "There is not enough free space on the server’s disk for this", code: "FS_NO_SPACE" } });
+  assert.deepEqual(refusal("EDQUOT"), refusal("ENOSPC"));
+  assert.deepEqual(refusal("EFBIG"), { statusCode: 413, body: { error: "The file is larger than the server’s disk can hold in one file", code: "FS_FILE_TOO_LARGE" } });
 });
 
 test("videos are probed and transcoded to HLS on demand", {
