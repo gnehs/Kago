@@ -6,7 +6,7 @@ import { withSpeeds } from "../lib/taskSpeed";
 import { parentPath } from "../lib/paths";
 import type { FileRef } from "../stores/clipboard";
 import { isLeaving, useLeavingStore } from "../stores/leaving";
-import type { Actor, AuditLog, ConvertJob, ConvertRun, ConvertRunFile, ConvertSupport, ExternalApp, FileItem, FileList, FileMeta, FileTask, FolderSize, FrameVerdict, Group, ImageMetadata, LibraryIcon, MediaInfo, PermissionRule, PluginPreviewer, Root, ShareLink, Shelf, SqlitePage, Storyboard, SsoConfig, SsoIdentity, SsoInfo, SqliteTable, StorageInfo, SubtitleList, SyncJob, SyncRun, SyncTrial, TrashItem, UserAccount, WorkspaceState } from "../types/kago";
+import type { Actor, ArchiveListing, AuditLog, ConvertJob, ConvertRun, ConvertRunFile, ConvertSupport, ExternalApp, FileItem, FileList, FileMeta, FileTask, FolderSize, FrameVerdict, Group, ImageMetadata, LibraryIcon, MediaInfo, PermissionRule, PluginPreviewer, Root, ShareLink, Shelf, SqlitePage, Storyboard, SsoConfig, SsoIdentity, SsoInfo, SqliteTable, StorageInfo, SubtitleList, SyncJob, SyncRun, SyncTrial, TrashItem, UserAccount, WorkspaceState } from "../types/kago";
 
 export function useSetupStatus() {
   return useQuery({ queryKey: ["auth", "setup"], queryFn: () => api<{ needsSetup: boolean; oidc: SsoInfo | null }>("/api/auth/setup") });
@@ -312,6 +312,14 @@ export function useSqliteOverview(rootSlug: string, { path, mtime }: FileVersion
   return useQuery({
     queryKey: ["fs", "sqlite", rootSlug, path, mtime],
     queryFn: () => api<{ tables: SqliteTable[] }>(`/api/fs/sqlite?${new URLSearchParams({ rootSlug, path }).toString()}`),
+    retry: false
+  });
+}
+
+export function useArchiveEntries(rootSlug: string, { path, mtime }: FileVersion) {
+  return useQuery({
+    queryKey: ["fs", "archive", rootSlug, path, mtime],
+    queryFn: () => api<ArchiveListing>(`/api/fs/archive?${new URLSearchParams({ rootSlug, path }).toString()}`),
     retry: false
   });
 }

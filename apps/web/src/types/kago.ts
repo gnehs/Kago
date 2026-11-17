@@ -280,6 +280,11 @@ export type SqliteCell = string | number | null | { blob: number };
 /** `total` is null for a database too large to count. */
 export type SqlitePage = { columns: string[]; rows: SqliteCell[][]; offset: number; hasMore: boolean; total: number | null };
 
+/** One entry of a zip, by its path inside it; `mtime` is null when the archive gives no date. */
+export type ArchiveEntry = { path: string; folder: boolean; size: number; packed: number; mtime: number | null; locked: boolean };
+/** `truncated` says entries past the server's limit were left out. */
+export type ArchiveListing = { entries: ArchiveEntry[]; truncated: boolean };
+
 /** Shooting data read from a picture; every field is there only when the file has it. */
 export type ImageMetadata = {
   camera?: string;
