@@ -111,6 +111,8 @@ export async function buildApp(env: Env) {
     }
     const safe = publicError(error);
     auditRequestFailure(request, safe.body.code, safe.statusCode);
+    // A browser still sending the body reads no answer until the connection ends, and an idle one is kept for a minute.
+    if (!request.raw.complete) void reply.header("connection", "close");
     void reply.status(safe.statusCode).send(safe.body);
   });
 
