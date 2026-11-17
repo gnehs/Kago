@@ -931,6 +931,10 @@ function registerApi(app: FastifyInstance, services: Services) {
     const query = fsQuerySchema.parse(request.query);
     return services.fsService.sqliteOverview(requireActor(request), query.rootSlug, query.path);
   });
+  app.get("/api/fs/archive", async (request) => {
+    const query = fsQuerySchema.parse(request.query);
+    return services.fsService.archiveEntries(requireActor(request), query.rootSlug, query.path);
+  });
   app.get("/api/fs/sqlite/rows", async (request) => services.fsService.sqliteRows(requireActor(request), sqliteRowsSchema.parse(request.query)));
   app.get("/api/fs/image", async (request, reply) => {
     const query = fsQuerySchema.parse(request.query);

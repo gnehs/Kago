@@ -11,7 +11,7 @@ import { client, waitTask } from "./helpers.mjs";
 test("extract rejects a small stored archive with a forged huge size without writing it", async () => {
   const fixture = await createFixture("kago-zip-bomb.");
   const archivePath = path.join(fixture.dataDir, "photos", "public", "forged.zip");
-  await writeFile(archivePath, forgedStoredZip());
+  await writeFile(archivePath, storedZip("payload.bin", "x", 1_774_000_000));
   const app = await buildApp(testEnv(fixture));
   const admin = client(app);
 
@@ -77,10 +77,56 @@ test("background ZIPs leave symlinks out and stop serving an artifact once its l
   }
 });
 
-function forgedStoredZip() {
-  const name = Buffer.from("payload.bin");
-  const data = Buffer.from("x");
-  const declaredSize = 1_774_000_000;
+test("an archive lists its entries without being extracted, and a file that is not one says so", async () => {
+  const fixture = await createFixture("kago-zip-list.");
+  const publicDir = path.join(fixture.dataDir, "photos", "public");
+  const archive = new AdmZip();
+  archive.addFile("docs/", Buffer.alloc(0));
+  archive.addFile("docs/readme.txt", Buffer.from("hello archive"));
+  archive.addFile("deep/nested/note.md", Buffer.from("# note"));
+  archive.addFile("top.bin", Buffer.alloc(2048, 7));
+  await writeFile(path.join(publicDir, "bundle.zip"), archive.toBuffer());
+  await writeFile(path.join(publicDir, "fake.zip"), "not a zip at all");
+  const app = await buildApp(testEnv(fixture));
+  const admin = client(app);
+
+  try {
+    await app.ready();
+    assert.equal((await admin.post("/api/auth/setup", { email: "admin@example.test", password: "fake-admin-password-123", displayName: "Test Admin" })).statusCode, 200);
+    const listed = await admin.get("/api/fs/archive?rootSlug=photos&path=/public/bundle.zip");
+    assert.equal(listed.statusCode, 200);
+    assert.equal(listed.json.truncated, false);
+    const byPath = new Map(listed.json.entries.map((entry) => [entry.path, entry]));
+    assert.deepEqual([...byPath.keys()].sort(), ["deep/nested/note.md", "docs", "docs/readme.txt", "top.bin"]);
+    assert.equal(byPath.get("docs").folder, true);
+    assert.equal(byPath.get("docs/readme.txt").size, "hello archive".length);
+    assert.equal(byPath.get("top.bin").size, 2048);
+    assert.ok(byPath.get("top.bin").packed < 2048);
+    assert.equal(byPath.get("top.bin").locked, false);
+    assert.equal(typeof byPath.get("top.bin").mtime, "number");
+    assert.deepEqual((await readdir(publicDir)).sort(), ["bundle.zip", "fake.zip"]);
+
+    await writeFile(path.join(publicDir, "mac.zip"), storedZip("相片/指南.md", "# guide"));
+    const mac = await admin.get("/api/fs/archive?rootSlug=photos&path=/public/mac.zip");
+    assert.deepEqual(mac.json.entries.map((entry) => entry.path), ["相片/指南.md"]);
+    const extracted = await admin.post("/api/tasks", { type: "extract", sources: [{ rootSlug: "photos", path: "/public/mac.zip" }], destination: { rootSlug: "photos", path: "/public" } });
+    assert.equal((await waitTask(admin, extracted.json.id)).status, "done");
+    assert.deepEqual(await readdir(path.join(publicDir, "相片")), ["指南.md"]);
+
+    const fake = await admin.get("/api/fs/archive?rootSlug=photos&path=/public/fake.zip");
+    assert.equal(fake.statusCode, 400);
+    assert.equal(fake.json.code, "INVALID_ZIP");
+    assert.equal((await client(app).get("/api/fs/archive?rootSlug=photos&path=/public/bundle.zip")).statusCode, 401);
+  } finally {
+    await app.close();
+    await rm(fixture.baseDir, { recursive: true, force: true });
+  }
+});
+
+/** One stored entry, with no flag saying its name is UTF-8, as macOS's zip writes it. */
+function storedZip(fileName, content, declaredSize = content.length) {
+  const name = Buffer.from(fileName);
+  const data = Buffer.from(content);
   const checksum = crc32(data);
   const local = Buffer.alloc(30 + name.length + data.length);
   local.writeUInt32LE(0x04034b50, 0);

@@ -13,6 +13,7 @@ import { MAX_SQLITE_PAGE, sqliteOverview, sqliteRows } from "../lib/sqlite-previ
 import { isPictureFormat, parseSubtitleName } from "../lib/subtitles.js";
 import { isSystemFile, UPLOAD_PARTIAL } from "../lib/system-files.js";
 import { Thumbnailer, type Crop, type ThumbnailSource } from "../lib/thumbnailer.js";
+import { listZipEntries } from "../lib/zip-archive.js";
 import type { ZipEntry } from "../lib/zip-stream.js";
 import type { AuditService } from "./audit.service.js";
 import { renditionKind, type ImageService } from "./image.service.js";
@@ -123,6 +124,9 @@ export const sqliteRowsSchema = fsQuerySchema.extend({
 });
 
 export const maxUploadFiles = 20;
+
+/** An archive with more entries than this is listed only up to it; the preview says the rest were left out. */
+const MAX_ARCHIVE_ENTRIES = 20_000;
 
 /** How many files of a folder being measured are asked about at once. */
 const SIZE_STAT_BATCH = 64;
@@ -578,6 +582,17 @@ export class FsService {
   async sqliteRows(actor: Actor, input: z.infer<typeof sqliteRowsSchema>) {
     const file = await this.localFile(actor, input.rootSlug, input.path);
     return sqliteRows(file.localPath, file.stat.size, input.table, input.offset, input.limit);
+  }
+
+  async archiveEntries(actor: Actor, rootSlug: string, logicalPath: string) {
+    const file = await this.localFile(actor, rootSlug, logicalPath);
+    try {
+      return await listZipEntries(file.localPath, MAX_ARCHIVE_ENTRIES);
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      // yauzl refuses what it cannot read as a zip, and names of entries that climb out of the archive, the same way.
+      throw new AppError(400, "Not a readable zip archive", "INVALID_ZIP");
+    }
   }
 
   /** The subtitle files lying next to a video that are named after it. */

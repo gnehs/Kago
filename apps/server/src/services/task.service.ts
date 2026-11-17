@@ -12,7 +12,7 @@ import { AppError, errnoIs, fileSystemRefusal } from "../lib/errors.js";
 import { isSafeLogicalSegment, nfc, safeRelativeZipPath, sameName } from "../lib/filename.js";
 import { id, now } from "../lib/ids.js";
 import { logger } from "../lib/logger.js";
-import { isZipDirectory, isZipSymlink, openZipArchive } from "../lib/zip-archive.js";
+import { isZipDirectory, isZipSymlink, openZipArchive, zipEntryName } from "../lib/zip-archive.js";
 import { openEncryptedZipEntry, readZipCipherHead, zipCipherOf, zipPasswordFits, ZipPasswordError, type ZipCipher } from "../lib/zip-crypto.js";
 import { SecretBox } from "../lib/secret-box.js";
 import { zipStream, type ZipEntry, type ZipOptions } from "../lib/zip-stream.js";
@@ -1639,7 +1639,7 @@ export class TaskService {
 
   private safeZipEntrySegments(entry: yauzl.Entry): string[] {
     // Archives made on macOS carry NFD names; extracted files are new, so they are written in NFC.
-    const name = nfc(entry.fileName.replaceAll("\\", "/"));
+    const name = nfc(zipEntryName(entry).replaceAll("\\", "/"));
     if (!name || name.includes("\0") || name.startsWith("/") || /^[A-Za-z]:\//.test(name)) {
       throw new AppError(400, "Unsafe zip entry", "UNSAFE_ZIP_ENTRY");
     }
