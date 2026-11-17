@@ -8,7 +8,7 @@ export type Toast = {
   leaving?: boolean;
   /** What it is about. The next one said about the same thing takes its place rather than a place of its own. */
   key?: string;
-  /** It reports on work that is still going, and stays up until it is replaced or dismissed. */
+  /** It stays up until it is replaced or dismissed: it reports on work still going, or on an outcome no one may be there to see. */
   ongoing?: boolean;
   /** How far along that work is, with the figures in words, and how fast it is going if that is known. */
   progress?: { value: number; max: number; detail: string; speed?: string };

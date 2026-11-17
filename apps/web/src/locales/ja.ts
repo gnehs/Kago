@@ -1080,6 +1080,8 @@ export const ja: Dictionary = {
   "The write failed; the original file was kept in a recovery copy on the remote location": "書き込みに失敗しました。元のファイルはリモートの場所に復旧用コピーとして残っています",
   "Kago’s system account has no permission for this on the server’s disk. An administrator needs to check PUID / PGID and who owns the folder.": "Kago を実行しているシステムアカウントには、サーバーのディスク上でこの操作を行う権限がありません。管理者が PUID / PGID とフォルダの所有者を確認する必要があります。",
   "This folder is mounted read-only on the server": "このフォルダはサーバー上で読み取り専用としてマウントされています",
+  "There is not enough free space on the server’s disk for this": "サーバーのディスクに十分な空き容量がありません",
+  "The file is larger than the server’s disk can hold in one file": "このファイルはサーバーのディスクが 1 つのファイルとして保存できるサイズを超えています",
   "The remote location refused this: the account Kago signs in with has no permission there": "リモートの場所に拒否されました：Kago がログインに使うアカウントにはそこでの権限がありません",
   "The transfer was refused for lack of permission at one end. An administrator needs to check the account Kago runs as, or the one a remote location signs in with.": "どちらか一方で権限が不足しているため、転送は拒否されました。管理者が Kago を実行しているシステムアカウント、またはリモートの場所へのログインに使うアカウントを確認する必要があります。",
   "No permission to read": "読み取り権限がありません",

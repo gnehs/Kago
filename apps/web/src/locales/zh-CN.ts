@@ -1080,6 +1080,8 @@ export const zhCN: Dictionary = {
   "The write failed; the original file was kept in a recovery copy on the remote location": "写入失败；原来的文件已保留为远程位置上的恢复副本",
   "Kago’s system account has no permission for this on the server’s disk. An administrator needs to check PUID / PGID and who owns the folder.": "运行 Kago 的系统账号在服务器的磁盘上没有这个权限。请管理员检查 PUID / PGID 与文件夹的所有者。",
   "This folder is mounted read-only on the server": "这个文件夹在服务器上是以只读方式挂载的",
+  "There is not enough free space on the server’s disk for this": "服务器的磁盘没有足够的空间",
+  "The file is larger than the server’s disk can hold in one file": "这个文件超过服务器磁盘单个文件能存的大小",
   "The remote location refused this: the account Kago signs in with has no permission there": "远程位置拒绝了这个操作：Kago 登录用的账号在那里没有权限",
   "The transfer was refused for lack of permission at one end. An administrator needs to check the account Kago runs as, or the one a remote location signs in with.": "传输因为其中一端权限不足而被拒绝。请管理员检查运行 Kago 的系统账号，或远程位置登录用的账号。",
   "No permission to read": "没有读取权限",

@@ -20,11 +20,16 @@ const multipartLimitErrors: Record<string, { error: string; code: string }> = {
 };
 
 // What the server's own disk refuses is not a fault of Kago's and not for the person to retry: it is for whoever runs the server to put right.
-const noPermission = { error: "Kago’s system account has no permission for this on the server’s disk. An administrator needs to check PUID / PGID and who owns the folder.", code: "FS_PERMISSION_DENIED" };
-const fileSystemRefusals: Record<string, { error: string; code: string }> = {
+const noPermission = { statusCode: 500, error: "Kago’s system account has no permission for this on the server’s disk. An administrator needs to check PUID / PGID and who owns the folder.", code: "FS_PERMISSION_DENIED" };
+// A pool such as Unraid's cache fills up partway through a large file, and a FAT disk takes nothing past 4 GB.
+const noSpace = { statusCode: 507, error: "There is not enough free space on the server’s disk for this", code: "FS_NO_SPACE" };
+const fileSystemRefusals: Record<string, { statusCode: number; error: string; code: string }> = {
   EACCES: noPermission,
   EPERM: noPermission,
-  EROFS: { error: "This folder is mounted read-only on the server", code: "FS_READ_ONLY" }
+  EROFS: { statusCode: 500, error: "This folder is mounted read-only on the server", code: "FS_READ_ONLY" },
+  ENOSPC: noSpace,
+  EDQUOT: noSpace,
+  EFBIG: { statusCode: 413, error: "The file is larger than the server’s disk can hold in one file", code: "FS_FILE_TOO_LARGE" }
 };
 
 /** The account the server runs as, which is the one the disk's own permissions are checked against. */
@@ -32,14 +37,14 @@ export function systemAccount(): { uid: number; gid: number } | null {
   return process.getuid && process.getgid ? { uid: process.getuid(), gid: process.getgid() } : null;
 }
 
-/** A refusal of the disk's own (ownership, mode bits, a read-only mount) in words that say so; the path and the account go to the log. */
+/** A refusal of the disk's own (ownership, mode bits, a read-only mount, no room left) in words that say so; the path and the account go to the log. */
 export function fileSystemRefusal(error: unknown): AppError | null {
   if (!(error instanceof Error) || !("code" in error)) return null;
   const refusal = fileSystemRefusals[String(error.code)];
   if (!refusal) return null;
   const { syscall, path } = error as NodeJS.ErrnoException;
   logger.warn(`the file system refused ${syscall ?? "an operation"}${path ? ` on ${path}` : ""}`, { code: error.code, ...systemAccount() });
-  return new AppError(500, refusal.error, refusal.code);
+  return new AppError(refusal.statusCode, refusal.error, refusal.code);
 }
 
 export function publicError(error: unknown): { statusCode: number; body: { error: string; code: string } } {

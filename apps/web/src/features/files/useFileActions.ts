@@ -1,7 +1,7 @@
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { api, ApiError, apiLines, downloadUrl, serverMessage } from "@/api/client";
 import { dropLeft } from "@/api/hooks";
-import { formatSize } from "@/lib/format";
+import { errorMessage, formatSize } from "@/lib/format";
 import { baseName, ensureZipName, isInside, isWithin, joinLogicalPath, needsNormalizing, nfc, parentPath, triggerDownload } from "@/lib/paths";
 import { run } from "@/lib/run";
 import { randomId } from "@/lib/utils";
@@ -332,8 +332,12 @@ export function useFileActions(window: FileWindow) {
         } catch (error) {
           // Whatever made it across before the failure is already on disk.
           await refreshRoot(rootSlug);
-          if (!isUploadCancelled(error)) throw error;
-          toast(t("Upload cancelled"));
+          if (isUploadCancelled(error)) {
+            toast(t("Upload cancelled"));
+            return;
+          }
+          // A large upload runs long enough for no one to be watching when it fails, so what went wrong waits to be read.
+          toast(errorMessage(error, t("Upload failed")), "error", { ongoing: true });
           return;
         }
         await refreshRoot(rootSlug);
