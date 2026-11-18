@@ -20,6 +20,9 @@ export function safeRelativeZipPath(value: string): string[] | null {
 
 export const sameName = (a: string, b: string) => a === b || nfc(a) === nfc(b);
 
+/** Whether a volume that ignores case could take the two for one name. */
+export const sameNameIgnoringCase = (a: string, b: string) => nfc(a).toLowerCase() === nfc(b).toLowerCase();
+
 /**
  * Rejects a new name when the folder already holds an entry that reads the same once normalised
  * (e.g. an NFD "が.txt" next to a new NFC "が.txt"), which a normalisation-sensitive filesystem would happily store twice.

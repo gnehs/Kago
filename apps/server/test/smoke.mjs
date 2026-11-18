@@ -1104,6 +1104,16 @@ test("filenames are written in NFC while existing names keep their on-disk form"
     // Renaming onto another entry is still refused.
     assert.equal((await admin.post("/api/fs/rename", { rootSlug: "photos", path: "/public/が.txt", name: nfd("café.txt") })).statusCode, 409);
 
+    // Changing only the case of a name is a rename of the entry itself, on a case-insensitive volume too.
+    await writeFile(path.join(publicDir, "readme.txt"), "case");
+    const recased = await admin.post("/api/fs/rename", { rootSlug: "photos", path: "/public/readme.txt", name: "README.txt" });
+    assert.equal(recased.statusCode, 200, recased.body);
+    assert.equal(recased.json.path, "/public/README.txt");
+    assert.deepEqual((await names()).filter((name) => name.toLowerCase() === "readme.txt"), ["README.txt"]);
+    const recasedMany = await admin.post("/api/fs/rename-many", { rootSlug: "photos", items: [{ path: "/public/README.txt", name: "Readme.txt" }] });
+    assert.equal(recasedMany.statusCode, 200, recasedMany.body);
+    assert.deepEqual((await names()).filter((name) => name.toLowerCase() === "readme.txt"), ["Readme.txt"]);
+
     // Several are renamed in one go, and may hand their names around: a and b swap while c takes a new one.
     const batchDir = path.join(fixture.dataDir, "photos", "batch");
     await mkdir(batchDir);

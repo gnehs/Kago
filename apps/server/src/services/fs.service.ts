@@ -7,7 +7,7 @@ import { pipeline } from "node:stream/promises";
 import { lookup } from "mime-types";
 import { z } from "zod";
 import { AppError } from "../lib/errors.js";
-import { assertNameAvailable, isSafeLogicalSegment, keptName, nfc, safeRelativeZipPath, sameName } from "../lib/filename.js";
+import { assertNameAvailable, isSafeLogicalSegment, keptName, nfc, safeRelativeZipPath, sameName, sameNameIgnoringCase } from "../lib/filename.js";
 import { fileTagSchema, readFileTags, writeFileTags, type FileTag } from "../lib/file-tags.js";
 import { MAX_SQLITE_PAGE, sqliteOverview, sqliteRows } from "../lib/sqlite-preview.js";
 import { isPictureFormat, parseSubtitleName } from "../lib/subtitles.js";
@@ -698,7 +698,9 @@ export class FsService {
       const parent = await this.paths.resolveExisting(rootSlug, path.posix.dirname(source.logicalPath));
       // Unlike on disk, a remote is not asked to tell a name from its own other spelling: a rename to the name it has is refused.
       await this.storage.assertNameAvailable(parent, this.storage.name(target), target.logicalPath === source.logicalPath ? undefined : this.storage.name(source));
-      if (target.logicalPath !== source.logicalPath && (await this.storage.remote.stat(target.root, target.logicalPath))) throw new AppError(409, "Target already exists", "TARGET_EXISTS");
+      // A remote that ignores case finds the source itself under its new case; the listing above has already ruled out any other entry.
+      const recased = sameNameIgnoringCase(target.logicalPath, source.logicalPath);
+      if (target.logicalPath !== source.logicalPath && !recased && (await this.storage.remote.stat(target.root, target.logicalPath))) throw new AppError(409, "Target already exists", "TARGET_EXISTS");
       const directory = (await this.storage.stat(source)).isDirectory();
       if (target.logicalPath !== source.logicalPath) await this.storage.remote.move(source.root, source.logicalPath, target.logicalPath, directory);
       return renamed();
@@ -737,7 +739,16 @@ export class FsService {
       return stat && `${stat.dev}:${stat.ino}`;
     };
     /** What is at a move's target now, as the `id` it would have as a source; null when the name is free. */
-    const occupant = async (target: SafePath) => (remote ? ((await this.storage.remote.stat(target.root, target.logicalPath)) ? target.logicalPath : null) : identity(target.absolutePath));
+    const occupant = async (move: Move) => {
+      const { target } = move;
+      if (!remote) return identity(target.absolutePath);
+      if (!(await this.storage.remote.stat(target.root, target.logicalPath))) return null;
+      // A remote that ignores case answers for the entry itself under its new case: only a listing tells the spellings apart.
+      if (!sameNameIgnoringCase(target.logicalPath, move.at)) return target.logicalPath;
+      const folder = path.posix.dirname(target.logicalPath);
+      const there = (await this.storage.remote.list(target.root, folder)).find((entry) => entry.name === path.posix.basename(target.logicalPath));
+      return there ? target.logicalPath : null;
+    };
     for (const move of moves) {
       if (remote) {
         if (this.storage.remote.isFixed(move.source.root, move.source.logicalPath)) throw sharesAreFixed();
@@ -766,7 +777,7 @@ export class FsService {
         taken.add(name);
         if (staying.some((entry) => nfc(entry) === name)) throw new AppError(409, "Target already exists", "TARGET_EXISTS");
         if (!remote) {
-          const there = await occupant(move.target);
+          const there = await occupant(move);
           if (there !== null && !ids.has(there)) throw new AppError(409, "Target already exists", "TARGET_EXISTS");
         }
       }
@@ -788,7 +799,7 @@ export class FsService {
       while (pending.size > 0) {
         let progressed = false;
         for (const move of [...pending.values()]) {
-          const there = await occupant(move.target);
+          const there = await occupant(move);
           if (there !== null && there !== move.id) {
             // Whoever has the name is about to give it up.
             if (pending.has(there)) continue;
