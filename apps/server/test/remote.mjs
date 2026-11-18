@@ -135,6 +135,10 @@ test("a remote location behaves like a local one", { skip: remote ? false : "KAG
     const recasedMany = await api.post("/api/fs/rename-many", { rootSlug: slug, items: [{ path: recased.json.path, name: "renamed.txt" }] });
     assert.equal(recasedMany.status, 200, recasedMany.text);
     assert.deepEqual((await api.get(`/api/fs/list?${q("/docs")}`)).json.items.map((item) => item.name).filter((name) => name.toLowerCase() === "renamed.txt"), ["renamed.txt"]);
+    const recasedFolder = await api.post("/api/fs/rename", { rootSlug: slug, path: "/docs", name: "Docs" });
+    assert.equal(recasedFolder.status, 200, recasedFolder.text);
+    assert.equal((await api.post("/api/fs/rename", { rootSlug: slug, path: "/Docs", name: "docs" })).status, 200);
+    assert.deepEqual((await api.get(`/api/fs/list?${q("/")}`)).json.items.map((item) => item.name), ["docs"], "no folder is left behind under a name of Kago's own");
 
     // Tags reach an SMB server as streams of the file, written by smbclient; no other remote has a place for them.
     const tags = [{ name: "標籤", color: "red" }, { name: "Kago", color: null }];

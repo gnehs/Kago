@@ -1,4 +1,4 @@
-import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { createWriteStream } from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
@@ -7,7 +7,7 @@ import { pipeline } from "node:stream/promises";
 import type { Env } from "../config/env.js";
 import { AppError } from "../lib/errors.js";
 import type { FileTag } from "../lib/file-tags.js";
-import { nfc } from "../lib/filename.js";
+import { sameNameIgnoringCase } from "../lib/filename.js";
 import { id } from "../lib/ids.js";
 import { logger } from "../lib/logger.js";
 import { TRASH_FOLDER } from "../lib/system-files.js";
@@ -223,9 +223,20 @@ export class RemoteStorage {
     const fs = this.fs(root);
     try {
       if (directory) {
+        const recased = sameNameIgnoringCase(from, to);
+        // A remote that ignores case takes the two spellings for one folder, which rclone will not move onto itself: it goes by way of a name of its own.
+        if (recased && from !== to) {
+          const aside = path.posix.join(path.posix.dirname(to), `.kago-rename-${randomUUID()}`);
+          await this.move(root, from, aside, true);
+          // A name of Kago's own is hidden, so the folder never stays under it.
+          return await this.move(root, aside, to, true).catch(async (error: unknown) => {
+            await this.move(root, aside, from, true).catch(() => undefined);
+            throw error;
+          });
+        }
         await this.client.call("sync/move", { srcFs: joinFs(fs, this.rel(from)), dstFs: joinFs(fs, this.rel(to)), deleteEmptySrcDirs: true });
         // A remote that takes two spellings for one name would be asked to remove the folder it has just been given.
-        if (nfc(from).toLowerCase() !== nfc(to).toLowerCase()) await this.clearMoved(fs, this.rel(from));
+        if (!recased) await this.clearMoved(fs, this.rel(from));
       } else await this.client.call("operations/movefile", { srcFs: fs, srcRemote: this.rel(from), dstFs: fs, dstRemote: this.rel(to) });
     } catch (error) {
       throw remoteFailure(error);
