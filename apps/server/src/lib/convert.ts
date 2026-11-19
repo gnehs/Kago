@@ -54,7 +54,9 @@ export const convertSpecSchema = z.object({
   /** For a picture format that loses detail, from 1 to 100. */
   quality: z.number().int().min(1).max(100).nullable().default(null),
   /** Whether a video is decoded on the GPU where the server has one that can, and encoded there when the encoder is left open. */
-  hardware: z.boolean().default(true)
+  hardware: z.boolean().default(true),
+  /** Whether what is made of a file gets the tags the file has. */
+  copyTags: z.boolean().default(false)
 });
 
 export type ConvertSpec = z.infer<typeof convertSpecSchema>;

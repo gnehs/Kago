@@ -1248,6 +1248,49 @@ test("a disk that is full, or cannot hold a file that large, says so", () => {
   assert.deepEqual(refusal("EFBIG"), { statusCode: 413, body: { error: "The file is larger than the server’s disk can hold in one file", code: "FS_FILE_TOO_LARGE" } });
 });
 
+test("a copy, and a conversion asked to, carries the tags of what it was made from", async (t) => {
+  const fixture = await createFixture("kago-smoke-tags.");
+  const app = await buildApp(testEnv(fixture));
+  const admin = client(app);
+  const tagsOf = async (at) => (await admin.get(`/api/fs/meta?${new URLSearchParams({ rootSlug: "photos", path: at })}`)).json.tags;
+  const red = [{ name: "Work", color: "red" }];
+  const blue = [{ name: "Later", color: "blue" }, { name: "Plain", color: null }];
+
+  try {
+    await app.ready();
+    await admin.post("/api/auth/setup", { email: "admin@example.test", password: "fake-admin-password-123", displayName: "Smoke Admin" });
+    const tagged = await admin.put("/api/fs/tags", { rootSlug: "photos", path: "/src", tags: red });
+    if (tagged.statusCode !== 200) return t.skip("this disk keeps no tags");
+    assert.equal((await admin.put("/api/fs/tags", { rootSlug: "photos", path: "/src/file.txt", tags: blue })).statusCode, 200);
+    assert.equal((await admin.put("/api/fs/tags", { rootSlug: "photos", path: "/2026/demo.txt", tags: blue })).statusCode, 200);
+
+    const copied = await admin.post("/api/tasks", { type: "copy", sources: [{ rootSlug: "photos", path: "/src" }, { rootSlug: "photos", path: "/2026/demo.txt" }], destination: { rootSlug: "photos", path: "/public" } });
+    assert.equal((await waitTask(admin, copied.json.id)).status, "done");
+    assert.deepEqual(await tagsOf("/public/src"), red, "a copied folder keeps its tags");
+    assert.deepEqual(await tagsOf("/public/src/file.txt"), blue, "what is inside a copied folder keeps its tags");
+    assert.deepEqual(await tagsOf("/public/src/child"), [], "an untagged folder stays untagged");
+    assert.deepEqual(await tagsOf("/public/demo.txt"), blue, "a copied file keeps its tags");
+
+    // A copy kept beside its namesake is named anew and still tagged.
+    const again = await admin.post("/api/tasks", { type: "copy", sources: [{ rootSlug: "photos", path: "/2026/demo.txt" }], destination: { rootSlug: "photos", path: "/public" }, options: { conflicts: { "demo.txt": "keep" } } });
+    assert.equal((await waitTask(admin, again.json.id)).status, "done");
+    assert.deepEqual(await tagsOf("/public/demo 2.txt"), blue);
+
+    if (spawnSync("ffmpeg", ["-version"]).status !== 0) return;
+    const picture = path.join(fixture.dataDir, "photos", "2026", "dot.png");
+    assert.equal(spawnSync("ffmpeg", ["-loglevel", "error", "-f", "lavfi", "-i", "color=red:size=16x16", "-frames:v", "1", picture]).status, 0);
+    assert.equal((await admin.put("/api/fs/tags", { rootSlug: "photos", path: "/2026/dot.png", tags: red })).statusCode, 200);
+    const convert = (spec) => admin.post("/api/convert", { sources: [{ rootSlug: "photos", path: "/2026/dot.png" }], destination: { rootSlug: "photos", path: "/2026" }, spec });
+    assert.equal((await waitTask(admin, (await convert({ format: "gif" })).json.id)).status, "done");
+    assert.deepEqual(await tagsOf("/2026/dot.gif"), [], "a conversion is untagged unless asked");
+    assert.equal((await waitTask(admin, (await convert({ format: "jpg", copyTags: true })).json.id)).status, "done");
+    assert.deepEqual(await tagsOf("/2026/dot.jpg"), red, "a conversion asked to keeps the tags");
+  } finally {
+    await app.close();
+    await rm(fixture.baseDir, { recursive: true, force: true });
+  }
+});
+
 test("videos are probed and transcoded to HLS on demand", {
   skip: spawnSync("ffmpeg", ["-version"]).status !== 0
     ? "ffmpeg is not installed"

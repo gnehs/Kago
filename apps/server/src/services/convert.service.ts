@@ -232,6 +232,7 @@ export class ConvertService {
       try {
         if (this.isBusy(safe.root.slug, safe.logicalPath, this.busyPlaces())) throw sourceBusy();
         const made = await this.convertOne(safe, stat, folder, taken, parsed, false, handle);
+        if (parsed.copyTags) await this.storage.giveTags(folder, made.name, (await this.storage.tags([safe]))[0]!);
         this.audit.write({ actorType: "user", actorId: actor.id, action: "convert", rootId: safe.root.id, path: safe.logicalPath, target: { rootSlug: folder.root.slug, path: path.posix.join(folder.logicalPath, made.name), format: parsed.format }, result: "success" });
       } catch (error) {
         if (error instanceof ConvertStopped || sources.length === 1) throw error;
@@ -284,6 +285,7 @@ export class ConvertService {
         const made = jobConverts(name, spec.format, job.options.extensions)
           ? await this.convertOne(safe, stat, target.folder, target.taken, spec, job.options.keepSmaller, handle)
           : { name: await this.copyOriginal(safe, stat, target.folder, target.taken, handle), copied: true, size: stat.size };
+        if (spec.copyTags) await this.storage.giveTags(target.folder, made.name, (await this.storage.tags([safe]))[0]!);
         this.audit.write({ actorType: "user", actorId: actor.id, action: "convert", rootId: safe.root.id, path: safe.logicalPath, target: { jobId: job.id, rootSlug: destination.root.slug, path: path.posix.join(target.folder.logicalPath, made.name), copied: made.copied }, result: "success" });
         // A source that changed while it was read, as one still arriving does, is more than what was made of it.
         if (job.options.after === "trash" || job.options.after === "delete") {

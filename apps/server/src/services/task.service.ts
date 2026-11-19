@@ -9,6 +9,7 @@ import type { Db } from "../db/db.js";
 import { row, rows } from "../db/db.js";
 import { ConvertStopped } from "../lib/convert.js";
 import { AppError, errnoIs, fileSystemRefusal } from "../lib/errors.js";
+import { readFileTags, writeFileTags, type FileTag } from "../lib/file-tags.js";
 import { isSafeLogicalSegment, nfc, safeRelativeZipPath, sameName } from "../lib/filename.js";
 import { id, now } from "../lib/ids.js";
 import { logger } from "../lib/logger.js";
@@ -841,6 +842,8 @@ export class TaskService {
     for (const batch of batches) {
       const { source, directory, landing } = batch[0]!;
       await this.progress(task.id, source.logicalPath);
+      // Read before anything is carried, since a move takes the source away. What is merged into keeps its own.
+      const tags = landing.mode === "skip" || landing.mode === "merge" ? [] : await this.storage.tags(batch.map((operation) => operation.source));
       const from = this.rcloneAddress(source);
       const files = batch.reduce((sum, operation) => sum + operation.files, 0);
       if (landing.mode === "skip") {
@@ -946,7 +949,10 @@ export class TaskService {
       } finally {
         if (batch.length > 1) await fsp.rm(list, { force: true });
       }
-      for (const operation of batch) settle(operation);
+      for (const [index, operation] of batch.entries()) {
+        settle(operation);
+        await this.storage.giveTags(dest, operation.landing.name, tags[index] ?? []);
+      }
       // rclone counts no transfer for what the remote moved by itself, so the rest is counted once it is done.
       await this.bumpProcessed(task.id, files - countedFiles);
     }
@@ -2263,14 +2269,20 @@ async function assertTargetOutsideSource(sourcePath: string, targetPath: string)
  * Copies one file to a name that is not taken. A small one goes in one piece; a large one is streamed, counted and
  * stoppable on the way. A copy that does not get to the end is removed again, unless the name was taken after all.
  */
-async function copyFile(sourcePath: string, targetPath: string, stat: Stats, onBytes: (bytes: number) => void, signal: AbortSignal): Promise<void> {
+async function copyFile(sourcePath: string, targetPath: string, stat: Stats, tags: FileTag[], onBytes: (bytes: number) => void, signal: AbortSignal): Promise<void> {
   try {
     await copyFileContent(sourcePath, targetPath, stat, onBytes, signal);
   } catch (error) {
     if (!errnoIs(error, "EEXIST")) await fsp.rm(targetPath, { force: true }).catch(() => undefined);
     throw error;
   }
+  await giveTags(targetPath, tags);
   await preservePathMetadata(targetPath, stat);
+}
+
+/** Puts a source's tags on its copy, before a mode that may not be written to is. A volume that keeps none leaves the copy without. */
+async function giveTags(targetPath: string, tags: FileTag[]): Promise<void> {
+  if (tags.length > 0) await writeFileTags(path.dirname(targetPath), path.basename(targetPath), tags).catch(() => undefined);
 }
 
 async function copyFileContent(sourcePath: string, targetPath: string, stat: Stats, onBytes: (bytes: number) => void, signal: AbortSignal): Promise<void> {
@@ -2313,12 +2325,12 @@ async function copyTree(sourcePath: string, targetPath: string, onBytes: (bytes:
       stop.signal.throwIfAborted();
       return work();
     });
-  const visit = async (from: string, to: string): Promise<void> => {
+  const visit = async (from: string, to: string, tags: FileTag[]): Promise<void> => {
     try {
       const stat = await turn(() => fsp.lstat(from));
       assertFileOrFolder(stat);
       if (stat.isFile()) {
-        await turn(() => copyFile(from, to, stat, onBytes, stop.signal));
+        await turn(() => copyFile(from, to, stat, tags, onBytes, stop.signal));
         copied?.push({ path: from, stat });
         onFile?.();
         return;
@@ -2327,11 +2339,14 @@ async function copyTree(sourcePath: string, targetPath: string, onBytes: (bytes:
         // Made writable, as it has yet to be filled: a folder that may not be written to gets its mode once it is.
         await fsp.mkdir(to);
         if (to === targetPath) made = true;
-        return fsp.readdir(from);
+        const names = await fsp.readdir(from);
+        return { names, tags: await readFileTags(from, names) };
       });
       copied?.push({ path: from, stat });
-      await Promise.all(entries.map((entry) => visit(path.join(from, entry), path.join(to, entry))));
-      if (!stop.signal.aborted) await preservePathMetadata(to, stat);
+      await Promise.all(entries.names.map((entry) => visit(path.join(from, entry), path.join(to, entry), entries.tags.get(entry) ?? [])));
+      if (stop.signal.aborted) return;
+      await giveTags(to, tags);
+      await preservePathMetadata(to, stat);
     } catch (error) {
       if (stop.signal.aborted) return;
       failure = error;
@@ -2339,7 +2354,8 @@ async function copyTree(sourcePath: string, targetPath: string, onBytes: (bytes:
     }
   };
   await fsp.mkdir(path.dirname(targetPath), { recursive: true });
-  await visit(sourcePath, targetPath);
+  const name = path.basename(sourcePath);
+  await visit(sourcePath, targetPath, (await readFileTags(path.dirname(sourcePath), [name])).get(name) ?? []);
   if (!stop.signal.aborted) return;
   if (made) await fsp.rm(targetPath, { recursive: true, force: true }).catch(() => undefined);
   throw failure;

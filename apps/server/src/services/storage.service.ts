@@ -3,6 +3,7 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 import type { Readable } from "node:stream";
 import { AppError } from "../lib/errors.js";
+import { readFileTags, writeFileTags, type FileTag } from "../lib/file-tags.js";
 import { sameName } from "../lib/filename.js";
 import { isRemote, type RemoteStorage } from "../storage/remote-storage.js";
 import type { SafePath } from "./path.service.js";
@@ -61,6 +62,38 @@ export class StorageService {
   async names(safe: SafePath): Promise<string[]> {
     if (!isRemote(safe.root)) return fsp.readdir(safe.absolutePath);
     return (await this.remote.list(safe.root, safe.logicalPath)).map((entry) => entry.name);
+  }
+
+  /** The tags kept on each of some files and folders; none where the location keeps no tags. Never throws. */
+  async tags(items: SafePath[]): Promise<FileTag[][]> {
+    // Asked once for each folder they are in.
+    const byFolder = new Map<string, SafePath[]>();
+    for (const item of items) {
+      const key = isRemote(item.root) ? `${item.root.id}\n${path.posix.dirname(item.logicalPath)}` : path.dirname(item.absolutePath);
+      byFolder.set(key, [...(byFolder.get(key) ?? []), item]);
+    }
+    const found = new Map<SafePath, FileTag[]>();
+    for (const inside of byFolder.values()) {
+      const first = inside[0]!;
+      const names = inside.map((item) => this.name(item));
+      const tags = await (isRemote(first.root)
+        ? this.remote.fileTags(first.root, path.posix.dirname(first.logicalPath), names)
+        : readFileTags(path.dirname(first.absolutePath), names)
+      ).catch(() => new Map<string, FileTag[]>());
+      inside.forEach((item, index) => found.set(item, tags.get(names[index]!) ?? []));
+    }
+    return items.map((item) => found.get(item) ?? []);
+  }
+
+  /** Gives what lies at `name` in `folder` the tags of what it was made from. Never throws: a location that keeps no tags leaves it without. */
+  async giveTags(folder: SafePath, name: string, tags: FileTag[]): Promise<void> {
+    if (tags.length === 0) return;
+    try {
+      if (isRemote(folder.root)) await this.remote.setFileTags(folder.root, path.posix.join(folder.logicalPath, name), tags);
+      else await writeFileTags(folder.absolutePath, name, tags, await fsp.realpath(folder.root.base_path));
+    } catch {
+      // Not a reason for the copy itself to fail.
+    }
   }
 
   /** Refuses a new name that reads the same as one already in the folder; see `assertNameAvailable`. */
