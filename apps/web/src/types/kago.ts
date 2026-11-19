@@ -92,6 +92,8 @@ export type ConvertSpec = {
   quality: number | null;
   /** Whether a video is decoded on the server's GPU where it has one that can, and encoded there when the encoder is left open. */
   hardware: boolean;
+  /** Whether what is made of a file gets the tags the file has. */
+  copyTags: boolean;
 };
 /** What the server's ffmpeg can make; nothing at all without one. */
 /** `videoCodecs` names the encoders that can be asked for, the GPU's among them. */

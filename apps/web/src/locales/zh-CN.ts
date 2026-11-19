@@ -1263,6 +1263,7 @@ export const zhCN: Dictionary = {
   "Delete it": "删除",
   "Watch the input folder and convert new files by itself": "监视输入文件夹，有新文件就自动转换",
   "If the conversion comes out no smaller, put the original in the destination instead": "转换后没有变小的话，改为把原始文件送到目的地",
+  "Copy the original’s tags": "复制原始文件的标签",
   "Copy files with other extensions to the destination as they are": "其他扩展名的文件原样复制到目的地",
   "Copy the destination’s folder structure into the input folder now (folders only, no files)": "现在就把目的地的文件夹结构复制到输入文件夹（只有文件夹，不含文件）",
   "Convert {count} item | Convert {count} items": "转换 {count} 个项目",

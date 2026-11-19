@@ -1263,6 +1263,7 @@ export const ja: Dictionary = {
   "Delete it": "削除する",
   "Watch the input folder and convert new files by itself": "入力フォルダを監視し、新しいファイルを自動で変換する",
   "If the conversion comes out no smaller, put the original in the destination instead": "変換しても小さくならなければ、元のファイルを保存先に届ける",
+  "Copy the original’s tags": "元のファイルのタグをコピーする",
   "Copy files with other extensions to the destination as they are": "ほかの拡張子のファイルをそのまま保存先にコピーする",
   "Copy the destination’s folder structure into the input folder now (folders only, no files)": "保存先のフォルダ構造をいま入力フォルダにコピーする（フォルダのみ、ファイルなし）",
   "Convert {count} item | Convert {count} items": "{count} 項目を変換",

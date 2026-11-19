@@ -1263,6 +1263,7 @@ export const zhTW: Dictionary = {
   "Delete it": "刪除",
   "Watch the input folder and convert new files by itself": "監看輸入資料夾，有新檔案就自動轉檔",
   "If the conversion comes out no smaller, put the original in the destination instead": "轉檔後沒有比較小的話，改把原始檔案送到目的地",
+  "Copy the original’s tags": "複製原始檔案的標籤",
   "Copy files with other extensions to the destination as they are": "其他副檔名的檔案原樣複製到目的地",
   "Copy the destination’s folder structure into the input folder now (folders only, no files)": "現在就把目的地的資料夾結構複製到輸入資料夾（只有資料夾，不含檔案）",
   "Convert {count} item | Convert {count} items": "轉檔 {count} 個項目",

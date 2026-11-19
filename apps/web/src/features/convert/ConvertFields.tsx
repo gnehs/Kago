@@ -139,6 +139,7 @@ export function ConvertFields({ spec, formats, support, onChange }: { spec: Conv
           ) : null}
         </div>
       ) : null}
+      <Checkbox label={t("Copy the original’s tags")} checked={spec.copyTags} onChange={(event) => set({ copyTags: event.target.checked })} />
     </>
   );
 }

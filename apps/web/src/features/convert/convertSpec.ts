@@ -53,7 +53,7 @@ export function supportedFormats(formats: Record<MediaKind, string[]>, support: 
   return { video: kept(formats.video), audio: kept(formats.audio), image: kept(formats.image) };
 }
 
-export const specFor = (format: string): ConvertSpec => ({ format, height: null, videoCodec: "auto", crf: null, fps: null, audioCodec: "auto", audioBitrate: null, quality: null, hardware: true });
+export const specFor = (format: string): ConvertSpec => ({ format, height: null, videoCodec: "auto", crf: null, fps: null, audioCodec: "auto", audioBitrate: null, quality: null, hardware: true, copyTags: false });
 
 /** A spec moved to another format: what the new one has no use for is let go. */
 export function withFormat(spec: ConvertSpec, format: string): ConvertSpec {
@@ -61,7 +61,7 @@ export function withFormat(spec: ConvertSpec, format: string): ConvertSpec {
     // WebM holds only VP9 and AV1, and the sound that goes with them.
     return format === "webm" ? { ...spec, format, videoCodec: ["auto", "copy", "vp9", "av1"].includes(codecOf(spec.videoCodec)) ? spec.videoCodec : "auto", audioCodec: ["auto", "copy", "opus"].includes(spec.audioCodec) ? spec.audioCodec : "auto" } : { ...spec, format };
   }
-  return specFor(format);
+  return { ...specFor(format), copyTags: spec.copyTags };
 }
 
 /** Whether the conversion only moves what the file holds into another container, which loses nothing and takes moments. */
