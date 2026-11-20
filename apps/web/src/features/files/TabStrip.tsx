@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { folderTitle, useWorkspaceStore } from "@/stores/workspace";
 import type { FileTab, FileWindow, Root } from "@/types/kago";
 import { FileIcon } from "@/components/kago/file-icon";
+import { KagoTooltip } from "@/components/kago/tooltip";
 import { t } from "@/lib/i18n";
 
 const FOLDER = { kind: "folder", type: "", name: "" } as const;
@@ -51,6 +52,7 @@ export function TabStrip({ window, roots }: { window: FileWindow; roots: Root[] 
             key={tab.id}
             role="tab"
             aria-selected={active}
+            data-tab={tab.id}
             tabIndex={active ? 0 : -1}
             title={displayPath(roots.find((root) => root.slug === tab.rootSlug)?.name ?? tab.rootSlug, tab.logicalPath)}
             className={cn(
@@ -58,7 +60,22 @@ export function TabStrip({ window, roots }: { window: FileWindow; roots: Root[] 
               active ? cn("kago-pressed font-medium", window.focused ? "text-ink" : "text-muted") : "text-muted hover:bg-hover hover:text-ink"
             )}
             onClick={() => store().activateTab(window.id, tab.id)}
-            onKeyDown={(event) => (event.key === "Enter" || event.key === " ") && store().activateTab(window.id, tab.id)}
+            onKeyDown={(event) => {
+              if (event.target !== event.currentTarget) return;
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                store().activateTab(window.id, tab.id);
+                return;
+              }
+              const at = tabs.indexOf(tab);
+              const target = event.key === "ArrowRight" ? tabs[(at + 1) % tabs.length] : event.key === "ArrowLeft" ? tabs[(at - 1 + tabs.length) % tabs.length] : event.key === "Home" ? tabs[0] : event.key === "End" ? tabs.at(-1) : undefined;
+              if (!target) return;
+              event.preventDefault();
+              store().activateTab(window.id, target.id);
+              // The tab becomes the one Tab lands on once it is active; focus follows it there.
+              const strip = event.currentTarget.parentElement;
+              requestAnimationFrame(() => strip?.querySelector<HTMLElement>(`[data-tab="${target.id}"]`)?.focus());
+            }}
             onAuxClick={(event) => event.button === 1 && store().closeTab(window.id, tab.id)}
             // Twice on a tab is not twice on the title bar, which would maximize the window.
             onDoubleClick={(event) => event.stopPropagation()}
@@ -66,20 +83,21 @@ export function TabStrip({ window, roots }: { window: FileWindow; roots: Root[] 
             <FileIcon item={FOLDER} />
             <span className="flex min-w-0 flex-1 items-baseline gap-1">
               <span className="max-w-full shrink-0 truncate">{folderTitle(tab.rootSlug, tab.logicalPath)}</span>
-              {parents.has(tab.id) ? <span className="min-w-0 truncate text-xs font-normal text-faint">{parents.get(tab.id)}</span> : null}
+              {parents.has(tab.id) ? <span className="min-w-0 truncate text-xs font-normal text-muted">{parents.get(tab.id)}</span> : null}
             </span>
-            <button
-              aria-label={t("Close tab")}
-              title={t("Close tab")}
-              tabIndex={-1}
-              className={cn("flex size-4 shrink-0 items-center justify-center rounded-sm outline-none hover:bg-hover", !active && "opacity-0 group-hover:opacity-100")}
-              onClick={(event) => {
-                event.stopPropagation();
-                store().closeTab(window.id, tab.id);
-              }}
-            >
-              <X className="size-3" />
-            </button>
+            <KagoTooltip label={t("Close tab")}>
+              <button
+                aria-label={t("Close tab")}
+                tabIndex={-1}
+                className={cn("flex size-4 shrink-0 items-center justify-center rounded-sm outline-none hover:bg-hover pointer-coarse:size-7", !active && "opacity-0 group-hover:opacity-100 pointer-coarse:opacity-100")}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  store().closeTab(window.id, tab.id);
+                }}
+              >
+                <X className="size-3" />
+              </button>
+            </KagoTooltip>
           </div>
         );
       })}

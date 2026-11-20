@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { ChevronRight, ClipboardPaste, Copy, Download, ExternalLink, FolderOpen, FolderPlus, HardDrive, PanelTop, Pencil, Scissors, Server, Star, StarOff, Trash2 } from "lucide-react";
 import { useFileList } from "@/api/hooks";
@@ -41,10 +41,57 @@ type Tree = {
   dropTarget: string | null;
   setDropTarget: (key: string | null) => void;
   onDropInto: (event: React.DragEvent, folder: FileRef) => void;
+  /** The one row Tab lands on, by `folderKey`; the arrow keys move it. */
+  tabStop: string | null;
+  setTabStop: (key: string) => void;
   queryClient: QueryClient;
   /** How many items are waiting to be pasted. */
   clipCount: number;
 };
+
+const navItems = (from: HTMLElement) => [...(from.closest("nav")?.querySelectorAll<HTMLElement>("[data-nav]") ?? [])];
+const levelOf = (element: HTMLElement) => Number(element.getAttribute("aria-level") ?? 0);
+
+/**
+ * Arrow-key movement over the rows of the sidebar, as the tree pattern has it. Every row is one stop in a single
+ * order down the sidebar; `folder` is set on rows that open in place, with what left and right do to them.
+ */
+function navigate(event: React.KeyboardEvent<HTMLElement>, activate: () => void, folder?: { open: boolean; setOpen: (open: boolean) => void }) {
+  const row = event.currentTarget;
+  if (event.target !== row || event.altKey) return;
+  const rows = navItems(row);
+  const at = rows.indexOf(row);
+  const level = levelOf(row);
+  let next: HTMLElement | undefined;
+  if (event.key === "ArrowDown") next = rows[at + 1];
+  else if (event.key === "ArrowUp") next = rows[at - 1];
+  else if (event.key === "Home") next = rows[0];
+  else if (event.key === "End") next = rows.at(-1);
+  else if (event.key === "ArrowRight" && folder) {
+    if (!folder.open) folder.setOpen(true);
+    else if (rows[at + 1] && levelOf(rows[at + 1]!) > level) next = rows[at + 1];
+  } else if (event.key === "ArrowLeft" && folder) {
+    if (folder.open) folder.setOpen(false);
+    else next = rows.slice(0, at).reverse().find((candidate) => levelOf(candidate) > 0 && levelOf(candidate) < level);
+  } else if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    activate();
+    return;
+  } else return;
+  event.preventDefault();
+  next?.focus();
+}
+
+/** True once `active` has held for `ms`, so a wait that ends quickly shows nothing. */
+function useAfter(active: boolean, ms: number) {
+  const [elapsed, setElapsed] = useState(false);
+  useEffect(() => {
+    if (!active) return setElapsed(false);
+    const timer = setTimeout(() => setElapsed(true), ms);
+    return () => clearTimeout(timer);
+  }, [active, ms]);
+  return active && elapsed;
+}
 
 /** True for a folder and for everything inside it. */
 const isWithin = (path: string, folder: string) => path === folder || path.startsWith(`${folder}/`);
@@ -74,6 +121,8 @@ export function Sidebar({
   );
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
   const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const [focusKey, setFocusKey] = useState<string | null>(null);
+  const navRef = useRef<HTMLElement>(null);
   const queryClient = useQueryClient();
   const clipCount = useClipboardStore((state) => state.clip?.items.length ?? 0);
   const readonly = useMemo(() => new Set(roots.filter((root) => root.readonly).map((root) => root.slug)), [roots]);
@@ -100,6 +149,13 @@ export function Sidebar({
     });
   }, [window.rootSlug, window.logicalPath]);
 
+  // Tab lands on the row last focused, else on the window's own folder. When that row is not drawn, on the first one.
+  const tabStop = focusKey ?? folderKey(window.rootSlug, window.logicalPath);
+  useLayoutEffect(() => {
+    const rows = navRef.current ? [...navRef.current.querySelectorAll<HTMLElement>("[data-nav]")] : [];
+    if (rows.length > 0 && !rows.some((row) => row.dataset.nav === tabStop)) setFocusKey(rows[0]!.dataset.nav!);
+  });
+
   const tree = useMemo<Tree>(
     () => ({
       window,
@@ -113,6 +169,8 @@ export function Sidebar({
         setDropTarget(key);
       },
       onDropInto,
+      tabStop,
+      setTabStop: setFocusKey,
       queryClient,
       clipCount,
       expand,
@@ -123,7 +181,7 @@ export function Sidebar({
           return next;
         })
     }),
-    [window, expanded, onNavigate, readonly, remote, dropTarget, onDragTarget, onDropInto, queryClient, clipCount]
+    [window, expanded, onNavigate, readonly, remote, dropTarget, onDragTarget, onDropInto, tabStop, queryClient, clipCount]
   );
 
   const allFavorites = useSettingsStore((state) => state.favorites);
@@ -136,12 +194,12 @@ export function Sidebar({
   ];
 
   return (
-    <nav aria-label={t("Folders")} className="relative hidden max-w-[50%] shrink-0 border-r border-line bg-elevated select-none @lg/body:flex" style={{ width }}>
+    <nav ref={navRef} aria-label={t("Folders")} className="relative hidden max-w-[50%] shrink-0 border-r border-line bg-elevated select-none @lg/body:flex" style={{ width }}>
       <div className="absolute inset-y-0 -right-1 z-10 w-2 cursor-ew-resize touch-none" {...resizeHandlers} />
       <div className="flex min-w-0 flex-1 scroll-fade scroll-py-9 flex-col overflow-y-auto p-1.5">
         {favorites.length > 0 ? (
           <div className="mb-2 flex flex-col">
-            <span className="px-2 pt-0.5 pb-1 text-xs font-medium text-faint">{t("Favorites")}</span>
+            <span className="px-2 pt-0.5 pb-1 text-xs font-medium text-muted">{t("Favorites")}</span>
             <div role="list" aria-label={t("Favorites")} className="flex flex-col gap-px">
               {favorites.map((favorite) => (
                 <Favorite key={folderKey(favorite.rootSlug, favorite.path)} tree={tree} rootSlug={favorite.rootSlug} path={favorite.path} label={favorite.path === "/" ? (roots.find((root) => root.slug === favorite.rootSlug)?.name ?? favorite.rootSlug) : baseName(favorite.path)} />
@@ -152,7 +210,7 @@ export function Sidebar({
         {sections.map((section, index) =>
           section.roots.length === 0 ? null : (
             <div key={section.label} className={cn("flex flex-col", index > 0 && "mt-2")}>
-              <span className="px-2 pt-0.5 pb-1 text-xs font-medium text-faint">{section.label}</span>
+              <span className="px-2 pt-0.5 pb-1 text-xs font-medium text-muted">{section.label}</span>
               <div role="tree" aria-label={section.label} className="flex flex-col gap-px">
                 {section.roots.map((root) => (
                   <Node key={root.slug} tree={tree} rootSlug={root.slug} path="/" label={root.name} depth={0} />
@@ -190,8 +248,12 @@ function Favorite({ tree, rootSlug, path, label }: { tree: Tree; rootSlug: strin
     >
       <div
         role="listitem"
+        data-nav={key}
+        tabIndex={tree.tabStop === key ? 0 : -1}
         aria-current={current ? "location" : undefined}
-        className={cn("flex h-7 items-center gap-1.5 rounded-md pr-2 pl-2 hover:bg-hover", current && "bg-accent-soft font-medium hover:bg-accent-soft", tree.dropTarget === key && "ring-2 ring-accent ring-inset")}
+        onFocus={(event) => event.target === event.currentTarget && tree.setTabStop(key)}
+        onKeyDown={(event) => navigate(event, () => tree.onNavigate(here))}
+        className={cn("flex h-7 items-center gap-1.5 outline-none focus-visible:ring-2 focus-visible:ring-accent/50 rounded-md pr-2 pl-2 hover:bg-hover", current && "bg-accent-soft font-medium hover:bg-accent-soft", tree.dropTarget === key && "ring-2 ring-accent ring-inset")}
         onClick={(event) => (event.metaKey || event.ctrlKey ? openTab() : tree.onNavigate(here))}
         onAuxClick={(event) => event.button === 1 && openTab()}
         onDragOver={(event) => {
@@ -264,9 +326,14 @@ function Node({ tree, rootSlug, path, label, depth, locked }: { tree: Tree; root
         <div
           ref={row}
           role="treeitem"
+          data-nav={key}
+          tabIndex={tree.tabStop === key ? 0 : -1}
+          aria-level={depth + 1}
           aria-expanded={open}
           aria-current={current ? "location" : undefined}
-          className={cn("flex h-7 items-center gap-1.5 rounded-md pr-2 hover:bg-hover", current && "bg-accent-soft font-medium hover:bg-accent-soft", tree.dropTarget === key && "ring-2 ring-accent ring-inset")}
+          onFocus={(event) => event.target === event.currentTarget && tree.setTabStop(key)}
+          onKeyDown={(event) => navigate(event, () => (event.metaKey || event.ctrlKey ? openTab() : tree.onNavigate(here)), { open, setOpen: (next) => (next ? tree.expand(key) : open && tree.toggle(key)) })}
+          className={cn("flex h-7 items-center gap-1.5 outline-none focus-visible:ring-2 focus-visible:ring-accent/50 rounded-md pr-2 hover:bg-hover", current && "bg-accent-soft font-medium hover:bg-accent-soft", tree.dropTarget === key && "ring-2 ring-accent ring-inset")}
           style={{ paddingLeft: 4 + depth * INDENT }}
           onClick={(event) => (event.metaKey || event.ctrlKey ? openTab() : tree.onNavigate(here))}
           onAuxClick={(event) => event.button === 1 && openTab()}
@@ -300,7 +367,11 @@ function Node({ tree, rootSlug, path, label, depth, locked }: { tree: Tree; root
           <span className="min-w-0 flex-1 truncate">{label}</span>
         </div>
       </KagoContextMenu>
-      {open ? <Children tree={tree} rootSlug={rootSlug} path={path} depth={depth + 1} /> : null}
+      {open ? (
+        <div role="group" className="contents">
+          <Children tree={tree} rootSlug={rootSlug} path={path} depth={depth + 1} />
+        </div>
+      ) : null}
     </>
   );
 }
@@ -309,14 +380,15 @@ function Node({ tree, rootSlug, path, label, depth, locked }: { tree: Tree; root
 function Children({ tree, rootSlug, path, depth }: { tree: Tree; rootSlug: string; path: string; depth: number }) {
   const list = useFileList(rootSlug, path);
   const folders = useMemo(() => list.data?.items.filter((item) => item.kind === "folder").sort((a, b) => collator.compare(a.name, b.name)), [list.data]);
+  const showLoading = useAfter(list.isPending, 300);
   const note = (text: string) => (
-    <span className="truncate py-1 text-xs text-faint" style={{ paddingLeft: 24 + depth * INDENT }}>{text}</span>
+    <span className="truncate py-1 text-xs text-muted" style={{ paddingLeft: 24 + depth * INDENT }}>{text}</span>
   );
 
   // A folder still being read has only shown the first of what it holds, and one whose reading failed may not have shown all.
   const status = list.isError ? note(t("Couldn’t load")) : list.data?.partial ? note(t("Loading…")) : null;
 
-  if (!folders) return list.isError ? status : null;
+  if (!folders) return list.isError ? status : showLoading ? note(t("Loading…")) : null;
   if (folders.length === 0) return status ?? note(t("No folders inside"));
   return (
     <>
