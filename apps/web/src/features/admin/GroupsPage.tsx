@@ -1,15 +1,19 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Plus, UsersRound, X } from "lucide-react";
+import { Ellipsis, Pencil, Plus, Trash2, UsersRound, X } from "lucide-react";
 import { api } from "@/api/client";
 import { useGroups, useUsers } from "@/api/hooks";
 import { avatarUrl, KagoAvatar } from "@/components/kago/avatar";
 import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
+import { KagoDropdownMenu, KagoMenuItem } from "@/components/kago/menu";
+import { KagoStatusIcon } from "@/components/kago/status-icon";
+import { useWindowScope } from "@/components/kago/window-scope";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/input";
 import { Card, Page } from "@/components/kago/page";
 import { run } from "@/lib/run";
+import { confirmAction, promptText } from "@/stores/dialogs";
 import type { Group, UserAccount } from "@/types/kago";
 import { t } from "@/lib/i18n";
 
@@ -59,6 +63,8 @@ export function GroupsPage() {
 
 /** One group with its members; membership changes take effect on the server right away. */
 function GroupCard({ group, users, onChange }: { group: Group; users: UserAccount[]; onChange: () => Promise<void> }) {
+  const scope = useWindowScope();
+  const queryClient = useQueryClient();
   const [userId, setUserId] = useState("");
   const candidates = users.filter((user) => !group.members.some((member) => member.id === user.id));
 
@@ -79,8 +85,41 @@ function GroupCard({ group, users, onChange }: { group: Group; users: UserAccoun
     }, t("Couldn’t remove the member"));
   }
 
+  async function rename() {
+    const next = await promptText({ window: scope, title: t("Rename {name}", { name: group.name }), defaultValue: group.name, placeholder: t("Group name"), confirmLabel: t("Rename") });
+    if (next === null || !next.trim() || next.trim() === group.name) return;
+    await run(async () => {
+      await api(`/api/groups/${group.id}`, { method: "PATCH", body: JSON.stringify({ name: next.trim() }) });
+      await onChange();
+    }, t("Couldn’t rename the group"));
+  }
+
+  async function removeGroup() {
+    if (!(await confirmAction({ window: scope, title: t("Delete this group?"), subject: { icon: <KagoStatusIcon large><UsersRound /></KagoStatusIcon>, name: group.name, detail: t("{count} member | {count} members", { count: group.members.length }) }, description: t("Its members stay as users but lose the access this group gave them: the permission rules that name it are removed."), confirmLabel: t("Delete"), destructive: true }))) return;
+    await run(async () => {
+      await api(`/api/groups/${group.id}`, { method: "DELETE" });
+      await Promise.all([onChange(), queryClient.invalidateQueries({ queryKey: ["permissions"] })]);
+    }, t("Couldn’t delete the group"));
+  }
+
   return (
-    <Card title={group.name} description={t("{count} member | {count} members", { count: group.members.length })}>
+    <Card
+      title={group.name}
+      description={t("{count} member | {count} members", { count: group.members.length })}
+      action={
+        <KagoDropdownMenu
+          label={t("More actions")}
+          menu={
+            <>
+              <KagoMenuItem icon={<Pencil />} onClick={() => void rename()}>{t("Rename")}</KagoMenuItem>
+              <KagoMenuItem icon={<Trash2 />} destructive onClick={() => void removeGroup()}>{t("Delete")}</KagoMenuItem>
+            </>
+          }
+        >
+          <Ellipsis />
+        </KagoDropdownMenu>
+      }
+    >
       {group.members.length > 0 ? (
         <ul className="-mx-4 -mt-4 mb-4 flex list-none flex-col divide-y divide-line border-b border-line p-0">
           {group.members.map((member) => (

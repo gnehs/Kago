@@ -14,6 +14,7 @@ import { Card, Page, Row, RowList } from "@/components/kago/page";
 import { run } from "@/lib/run";
 import { confirmAction, promptText } from "@/stores/dialogs";
 import { toast } from "@/stores/toast";
+import { useWorkspaceStore } from "@/stores/workspace";
 import type { UserAccount } from "@/types/kago";
 import { t } from "@/lib/i18n";
 
@@ -29,6 +30,9 @@ export function UsersPage({ currentUserId }: { currentUserId: string }) {
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<Role>("USER");
   const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState<UserAccount | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editRole, setEditRole] = useState<Role>("USER");
   const canCreate = Boolean(email) && password.length >= 8;
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["users"] });
 
@@ -36,17 +40,41 @@ export function UsersPage({ currentUserId }: { currentUserId: string }) {
     event.preventDefault();
     if (!canCreate) return;
     await run(async () => {
-      await api("/api/users", { method: "POST", body: JSON.stringify({ email, displayName: displayName || email.split("@")[0], password, role }) });
+      const name = displayName || email.split("@")[0]!;
+      await api("/api/users", { method: "POST", body: JSON.stringify({ email, displayName: name, password, role }) });
       setEmail("");
       setDisplayName("");
       setPassword("");
       setRole("USER");
       setCreating(false);
       await refresh();
+      // An administrator reaches everything; a standard user starts with nothing, and nothing says so.
+      if (role === "USER") {
+        const open = () => (scope ? useWorkspaceStore.getState().setAppSection(scope, "permissions") : useWorkspaceStore.getState().openApp("settings", "permissions"));
+        toast(t("{name} can’t see any location yet. Give them access in Permissions.", { name }), "info", { action: { label: t("Open Permissions"), run: open } });
+      }
     }, t("Couldn’t add the user"));
   }
 
+  function startEdit(user: UserAccount) {
+    setCreating(false);
+    setEditing(user);
+    setEditName(user.display_name);
+    setEditRole(user.role);
+  }
+
+  async function saveEdit(event: React.FormEvent) {
+    event.preventDefault();
+    if (!editing || !editName.trim()) return;
+    await run(async () => {
+      await api(`/api/users/${editing.id}`, { method: "PATCH", body: JSON.stringify({ displayName: editName.trim(), role: editRole }) });
+      setEditing(null);
+      await refresh();
+    }, t("Couldn’t save the user"));
+  }
+
   async function setDisabled(user: UserAccount, disabled: boolean) {
+    if (disabled && !(await confirmAction({ window: scope, title: t("Disable this user?"), subject: { icon: <KagoAvatar name={user.display_name || user.email} picture={avatarUrl(user.id, user.avatar_at)} className="size-12 text-base" />, name: user.display_name || user.email, detail: user.display_name ? user.email : undefined }, description: t("They are signed out everywhere, and the share links they created stop working until the account is enabled again."), confirmLabel: t("Disable"), destructive: true }))) return;
     await run(async () => {
       await api(`/api/users/${user.id}`, { method: "PATCH", body: JSON.stringify({ disabled }) });
       await refresh();
@@ -78,8 +106,21 @@ export function UsersPage({ currentUserId }: { currentUserId: string }) {
     <Page
       title={t("Users")}
       description={t("Administrators can reach every location; everyone else needs permission rules.")}
-      actions={creating ? null : <Button variant="default" onClick={() => setCreating(true)}><Plus />{t("Add user")}</Button>}
+      actions={creating || editing ? null : <Button variant="default" onClick={() => { setEditing(null); setCreating(true); }}><Plus />{t("Add user")}</Button>}
     >
+      {editing ? (
+      <Card title={t("Edit {name}", { name: editing.display_name })} action={<KagoIconButton label={t("Cancel editing")} onClick={() => setEditing(null)}><X /></KagoIconButton>}>
+        <form className="grid grid-cols-2 gap-3" onSubmit={saveEdit}>
+          <Field label={t("Display name")}><Input autoFocus autoComplete="off" value={editName} onChange={(event) => setEditName(event.target.value)} /></Field>
+          <Field label={t("Role")}>
+            <Select value={editRole} onChange={(event) => setEditRole(event.target.value as Role)}>
+              {(Object.keys(roleLabels) as Role[]).map((value) => <option key={value} value={value}>{roleLabels[value]}</option>)}
+            </Select>
+          </Field>
+          <div className="col-span-2 flex justify-end"><Button type="submit" variant="default" disabled={!editName.trim()}>{t("Save")}</Button></div>
+        </form>
+      </Card>
+      ) : null}
       {creating ? (
       <Card title={t("Add user")} action={<KagoIconButton label={t("Cancel adding")} onClick={() => setCreating(false)}><X /></KagoIconButton>}>
         <form className="grid grid-cols-2 gap-3" onSubmit={create}>
@@ -111,6 +152,7 @@ export function UsersPage({ currentUserId }: { currentUserId: string }) {
                 </>
               }
             >
+              <Button onClick={() => startEdit(user)}>{t("Edit")}</Button>
               {user.identities.length > 0 ? <Button onClick={() => void unlinkSso(user)}>{t("Unlink")}</Button> : null}
               {user.id === currentUserId ? null : <Button onClick={() => void resetPassword(user)}>{t("Reset password")}</Button>}
               {user.id === currentUserId ? null : <Button onClick={() => void setDisabled(user, !user.disabled)}>{user.disabled ? t("Enable") : t("Disable")}</Button>}

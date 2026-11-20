@@ -353,6 +353,27 @@ test("minimum file-manager demo flow", async () => {
     ]);
     assert.equal((await admin.put("/api/permissions", { principalType: "group", principalId: group.json.id, rootId: root.json.id, level: "view" })).statusCode, 200);
 
+    // A group can be renamed, not onto another's name, and deleting it takes its memberships and rules with it.
+    const scratch = await admin.post("/api/groups", { name: "scratch" });
+    assert.equal((await admin.patch(`/api/groups/${scratch.json.id}`, { name: "public-readers" })).statusCode, 409);
+    assert.equal((await admin.patch(`/api/groups/${scratch.json.id}`, { name: "" })).statusCode, 400);
+    assert.equal((await admin.patch(`/api/groups/${scratch.json.id}`, { name: "scratch-renamed" })).json.name, "scratch-renamed");
+    assert.equal((await admin.post(`/api/groups/${scratch.json.id}/members`, { userId: reader.json.id })).statusCode, 200);
+    assert.equal((await admin.put("/api/permissions", { principalType: "group", principalId: scratch.json.id, rootId: root.json.id, level: "view" })).statusCode, 200);
+    assert.equal((await admin.delete(`/api/groups/${scratch.json.id}`)).statusCode, 200);
+    assert.equal((await admin.delete(`/api/groups/${scratch.json.id}`)).statusCode, 404);
+    assert.equal((await admin.get("/api/groups")).json.some((item) => item.id === scratch.json.id), false);
+    assert.equal((await admin.get(`/api/permissions?rootId=${root.json.id}`)).json.some((item) => item.principal_id === scratch.json.id), false);
+
+    // The audit log names who acted, and pages and filters on the server.
+    const trail = (await admin.get("/api/audit?action=group_delete&result=success")).json;
+    assert.equal(trail.length, 1);
+    assert.equal(trail[0].actor_email.length > 0, true);
+    const page = (await admin.get("/api/audit?limit=2")).json;
+    const older = (await admin.get(`/api/audit?limit=2&before=${page[1].created_at}:${page[1].id}`)).json;
+    assert.equal(older.some((entry) => page.some((seen) => seen.id === entry.id)), false);
+    assert.equal((await admin.get("/api/audit?result=bogus")).statusCode, 400);
+
     // The permissions page ticks one principal in one location: each tick replaces the rule there, and no tick leaves none.
     const tick = (level) => admin.put("/api/permissions", { principalType: "user", principalId: reader.json.id, rootId: root.json.id, level });
     const ticked = async () => (await admin.get(`/api/permissions?rootId=${root.json.id}`)).json.filter((item) => item.principal_type === "user").map((item) => item.level);

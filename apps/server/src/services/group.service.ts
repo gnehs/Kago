@@ -39,6 +39,30 @@ export class GroupService {
     return group;
   }
 
+  rename(groupId: string, name: string) {
+    this.assertGroupExists(groupId);
+    if (row(this.db.prepare("SELECT id FROM groups WHERE name = ? AND id <> ?").get(name, groupId))) throw new AppError(409, "A group with that name already exists", "GROUP_EXISTS");
+    this.db.prepare("UPDATE groups SET name = ?, updated_at = ? WHERE id = ?").run(name, now(), groupId);
+    return row<{ id: string; name: string }>(this.db.prepare("SELECT * FROM groups WHERE id = ?").get(groupId));
+  }
+
+  /** Removes the group with its memberships and the permission rules that name it; returns what went, for the audit log. */
+  remove(groupId: string) {
+    const group = row<{ id: string; name: string }>(this.db.prepare("SELECT id, name FROM groups WHERE id = ?").get(groupId));
+    if (!group) throw new AppError(404, "Group not found", "GROUP_NOT_FOUND");
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const members = Number(this.db.prepare("DELETE FROM group_members WHERE group_id = ?").run(groupId).changes);
+      const rules = Number(this.db.prepare("DELETE FROM permission_rules WHERE principal_type = 'group' AND principal_id = ?").run(groupId).changes);
+      this.db.prepare("DELETE FROM groups WHERE id = ?").run(groupId);
+      this.db.exec("COMMIT");
+      return { groupId, name: group.name, members, rules };
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
   addMember(groupId: string, userId: string) {
     this.assertGroupExists(groupId);
     this.assertUserExists(userId);

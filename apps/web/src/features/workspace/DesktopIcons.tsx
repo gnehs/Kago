@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { AppWindow, Copy, ExternalLink, HardDrive, Pencil, Plus, Server, Trash2 } from "lucide-react";
 import { api } from "@/api/client";
 import { useExternalApps } from "@/api/hooks";
+import { Button } from "@/components/ui/button";
 import { KagoAppIcon } from "@/components/kago/app-icon";
 import { KagoContextMenu, KagoMenuItem, KagoMenuSeparator } from "@/components/kago/menu";
 import { editExternalApp } from "@/features/apps/ExternalAppDialog";
@@ -106,7 +107,15 @@ export function DesktopIcons({ roots, isAdmin }: { roots: Root[]; isAdmin: boole
         </KagoContextMenu>
       ))}
       {home ? null : (
-        <p className="m-0 w-28 px-1 pt-2 text-center text-xs text-muted">{isAdmin ? t("No folders under /data yet") : t("No locations available. Contact an administrator")}</p>
+        <div data-empty="" className="kago-card mt-2 flex w-48 flex-col gap-2 rounded-lg border border-line bg-surface p-3 text-xs text-muted">
+          {isAdmin ? (
+            <>
+              <p className="m-0">{t("There are no folders yet. Add a location to start browsing files.")}</p>
+              <Button variant="default" onClick={() => store().openApp("settings", "locations")}>{t("Open Locations")}</Button>            </>
+          ) : (
+            <p className="m-0">{t("No locations available. Contact an administrator")}</p>
+          )}
+        </div>
       )}
     </div>
   );

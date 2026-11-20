@@ -1,5 +1,23 @@
+import { z } from "zod";
 import type { Db } from "../db/db.js";
 import { id, now } from "../lib/ids.js";
+
+/** `before` is the last row of the page already shown, as `<created_at>:<id>`. */
+export const auditQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(500).default(200),
+  before: z
+    .string()
+    .regex(/^\d{1,16}:[\w-]{1,64}$/)
+    .transform((value) => {
+      const split = value.indexOf(":");
+      return { at: Number(value.slice(0, split)), id: value.slice(split + 1) };
+    })
+    .optional(),
+  actor: z.string().min(1).max(64).optional(),
+  action: z.string().regex(/^[a-z_]{1,64}$/).optional(),
+  result: z.enum(["success", "failure", "denied"]).optional()
+});
+export type AuditQuery = z.output<typeof auditQuerySchema>;
 
 export type AuditInput = {
   actorType: "user" | "share_link" | "system";
@@ -81,9 +99,33 @@ export class AuditService {
     return entry.count <= ANONYMOUS_FAILURES;
   }
 
-  list(limit = 200) {
+  list(query: AuditQuery = { limit: 200 }) {
+    const where: string[] = [];
+    const args: Array<string | number> = [];
+    if (query.before !== undefined) {
+      // Rows made in the same millisecond are told apart by id, so a page never skips or repeats one.
+      where.push("(audit_logs.created_at < ? OR (audit_logs.created_at = ? AND audit_logs.id < ?))");
+      args.push(query.before.at, query.before.at, query.before.id);
+    }
+    if (query.actor) {
+      where.push("audit_logs.actor_id = ?");
+      args.push(query.actor);
+    }
+    if (query.action) {
+      where.push("audit_logs.action = ?");
+      args.push(query.action);
+    }
+    if (query.result) {
+      where.push("audit_logs.result = ?");
+      args.push(query.result);
+    }
     return this.db
-      .prepare("SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT ?")
-      .all(Math.min(Math.max(limit, 1), 500));
+      .prepare(
+        `SELECT audit_logs.*, users.display_name AS actor_name, users.email AS actor_email
+        FROM audit_logs LEFT JOIN users ON users.id = audit_logs.actor_id
+        ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+        ORDER BY audit_logs.created_at DESC, audit_logs.id DESC LIMIT ?`
+      )
+      .all(...args, query.limit);
   }
 }

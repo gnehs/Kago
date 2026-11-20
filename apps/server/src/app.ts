@@ -22,7 +22,7 @@ import { ICON_TYPES } from "./lib/icon-image.js";
 import { ensureSshKey } from "./lib/ssh-key.js";
 import { zipStream } from "./lib/zip-stream.js";
 import { isBrowserViewable } from "./lib/viewable.js";
-import { AuditService } from "./services/audit.service.js";
+import { AuditService, auditQuerySchema } from "./services/audit.service.js";
 import { AuthService, MAX_PASSWORD, changePasswordSchema, createUserSchema, loginSchema, patchUserSchema, resetPasswordSchema, setupAdminSchema } from "./services/auth.service.js";
 import { CompatibilityService } from "./services/compatibility.service.js";
 import { FsService, avatarSchema, fileTagsSchema, fsQuerySchema, maxUploadFiles, mkdirSchema, renameManySchema, renameSchema, searchQuerySchema, sqliteRowsSchema, thumbnailQuerySchema, uploadConflictSchema, writeTextSchema, zipQuerySchema } from "./services/fs.service.js";
@@ -507,6 +507,9 @@ function registerApi(app: FastifyInstance, services: Services) {
     if (body.disabled !== undefined) {
       services.audit.write({ actorType: "user", actorId: actor.id, action: "user_disable", target: { userId: params.id, disabled: body.disabled }, result: "success" });
     }
+    if (body.displayName !== undefined || body.role !== undefined) {
+      services.audit.write({ actorType: "user", actorId: actor.id, action: "user_update", target: { userId: params.id, displayName: body.displayName, role: body.role }, result: "success" });
+    }
     return user;
   });
 
@@ -533,6 +536,20 @@ function registerApi(app: FastifyInstance, services: Services) {
     const group = services.groups.create(createGroupSchema.parse(request.body).name);
     services.audit.write({ actorType: "user", actorId: actor.id, action: "group_create", target: group, result: "success" });
     return group;
+  });
+  app.patch("/api/groups/:id", async (request) => {
+    const actor = requireAdmin(request);
+    const params = z.object({ id: z.string() }).parse(request.params);
+    const group = services.groups.rename(params.id, createGroupSchema.parse(request.body).name);
+    services.audit.write({ actorType: "user", actorId: actor.id, action: "group_rename", target: group, result: "success" });
+    return group;
+  });
+  app.delete("/api/groups/:id", async (request) => {
+    const actor = requireAdmin(request);
+    const params = z.object({ id: z.string() }).parse(request.params);
+    const removed = services.groups.remove(params.id);
+    services.audit.write({ actorType: "user", actorId: actor.id, action: "group_delete", target: removed, result: "success" });
+    return { ok: true };
   });
   app.post("/api/groups/:id/members", async (request) => {
     const actor = requireAdmin(request);
@@ -1272,7 +1289,7 @@ function registerApi(app: FastifyInstance, services: Services) {
 
   app.get("/api/audit", async (request) => {
     requireAdmin(request);
-    return services.audit.list();
+    return services.audit.list(auditQuerySchema.parse(request.query));
   });
 
   app.get("/s/:token", async (request, reply) => {

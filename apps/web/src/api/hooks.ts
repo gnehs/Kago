@@ -1,4 +1,4 @@
-import { keepPreviousData, useMutation, useQueries, useQuery, useQueryClient, type Query, type QueryClient, type QueryKey, type UseQueryResult } from "@tanstack/react-query";
+import { keepPreviousData, useInfiniteQuery, useMutation, useQueries, useQuery, useQueryClient, type Query, type QueryClient, type QueryKey, type UseQueryResult } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { api, apiLines, ApiError, previewUrl, serverMessage } from "./client";
 import { decodeSubtitle } from "../lib/subtitles";
@@ -474,8 +474,26 @@ export function useTrash(enabled = true) {
   return useQuery({ queryKey: ["trash"], queryFn: () => api<TrashItem[]>("/api/trash"), enabled });
 }
 
-export function useAudit(enabled = true) {
-  return useQuery({ queryKey: ["audit"], queryFn: () => api<AuditLog[]>("/api/audit"), enabled, refetchInterval: enabled ? 6000 : false });
+export type AuditEntry = AuditLog & { actor_name: string | null; actor_email: string | null };
+export type AuditFilter = { action?: string; result?: AuditLog["result"] };
+const AUDIT_PAGE = 100;
+
+/** The log newest first, a page at a time; each page continues after the last row of the one before. */
+export function useAudit(filter: AuditFilter = {}, enabled = true) {
+  return useInfiniteQuery({
+    queryKey: ["audit", filter],
+    initialPageParam: "",
+    queryFn: ({ pageParam }) => {
+      const query = new URLSearchParams({ limit: String(AUDIT_PAGE) });
+      if (pageParam) query.set("before", pageParam);
+      if (filter.action) query.set("action", filter.action);
+      if (filter.result) query.set("result", filter.result);
+      return api<AuditEntry[]>(`/api/audit?${query}`);
+    },
+    getNextPageParam: (last) => (last.length < AUDIT_PAGE ? undefined : `${last[last.length - 1]!.created_at}:${last[last.length - 1]!.id}`),
+    enabled,
+    refetchInterval: enabled ? 6000 : false
+  });
 }
 
 /**

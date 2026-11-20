@@ -12,9 +12,9 @@ import { KagoPasswordInput } from "@/components/kago/password-input";
 import { Page, Row, RowList, Section } from "@/components/kago/page";
 import { KagoDialog } from "@/components/kago/dialog";
 import { KagoStatusIcon } from "@/components/kago/status-icon";
+import { errorMessage } from "@/lib/format";
 import { run } from "@/lib/run";
 import { confirmAction } from "@/stores/dialogs";
-import { toast } from "@/stores/toast";
 import type { RemoteField, RemoteProvider, RemoteRoot, Root } from "@/types/kago";
 import { SshKeyNote } from "./SshKeyNote";
 import { t } from "@/lib/i18n";
@@ -163,6 +163,8 @@ function RemoteForm({ providers, root, onCancel, onSaved }: { providers: RemoteP
   const [params, setParams] = useState<Record<string, string | boolean>>(() => ({ ...root?.remote.params, ...(root?.remote.params.key_file ? { key_file: true } : {}) }));
   const [readonly, setReadonly] = useState(false);
   const [busy, setBusy] = useState(false);
+  // What the last test said, kept with the settings it tested: it is gone as soon as one of them changes.
+  const [outcome, setOutcome] = useState<{ ok: boolean; text: string; tested: string } | null>(null);
   const provider = providers.find((item) => item.type === type);
   if (!provider) return null;
 
@@ -174,12 +176,14 @@ function RemoteForm({ providers, root, onCancel, onSaved }: { providers: RemoteP
 
   async function test() {
     setBusy(true);
-    await run(async () => {
+    const tested = JSON.stringify(config);
+    try {
       const result = await api<{ ok: boolean; error?: string }>("/api/storage/test", { method: "POST", body: JSON.stringify({ rootId: root?.id, config }) });
-      if (result.ok) toast(t("Connected"));
       // The reason is the remote's own, in its own words.
-      else toast(t("Couldn’t connect: {reason}", { reason: result.error ?? "" }), "error");
-    });
+      setOutcome({ ok: result.ok, text: result.ok ? t("Connected") : t("Couldn’t connect: {reason}", { reason: result.error ?? "" }), tested });
+    } catch (error) {
+      setOutcome({ ok: false, text: errorMessage(error, t("Couldn’t test the connection")), tested });
+    }
     setBusy(false);
   }
 
@@ -236,6 +240,9 @@ function RemoteForm({ providers, root, onCancel, onSaved }: { providers: RemoteP
       <Field label={label(provider.path.label)} hint={provider.path.hint ? label(provider.path.hint) : undefined} className="col-span-2"><Input value={base} placeholder={provider.path.placeholder} onChange={(event) => setBase(event.target.value)} /></Field>
       {type === "sftp" && params.key_file ? <SshKeyNote className="col-span-2" /> : null}
       {root ? null : <Checkbox className="col-span-2" label={t("Read-only")} checked={readonly} onChange={(event) => setReadonly(event.target.checked)} />}
+      {outcome && outcome.tested === JSON.stringify(config) ? (
+        <p role="status" className={`col-span-2 m-0 break-words whitespace-pre-wrap select-text ${outcome.ok ? "text-success" : "text-danger"}`}>{outcome.text}</p>
+      ) : null}
       <div className="col-span-2 flex justify-end gap-2 pt-1">
         <Button className="mr-auto" disabled={missing || busy} onClick={() => void test()}>{t("Test connection")}</Button>
         <Button onClick={onCancel}>{t("Cancel")}</Button>
