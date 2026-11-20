@@ -1,17 +1,18 @@
 import { useEffect, useReducer, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Download, FileWarning, PlugZap } from "lucide-react";
-import { API_VERSION, MAX_READ_BYTES, parsePluginMessage, THEME_TOKENS, type FailReason, type HostMessage, type PluginMessage, type Theme } from "@kago/plugin-sdk/protocol";
-import { downloadUrl, previewUrl } from "@/api/client";
+import { API_VERSION, MAX_READ_BYTES, parsePluginMessage, THEME_TOKENS, type FailReason, type FileInfo, type HostMessage, type PluginMessage, type Theme } from "@kago/plugin-sdk/protocol";
+import { api, downloadUrl, previewUrl } from "@/api/client";
 import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
 import { FileIcon } from "@/components/kago/file-icon";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { KagoWindow } from "@/components/kago/window";
 import { Button } from "@/components/ui/button";
 import { locale, t } from "@/lib/i18n";
-import { triggerDownload } from "@/lib/paths";
+import { parentPath, triggerDownload } from "@/lib/paths";
 import { useWorkspaceStore, type PreviewWindow } from "@/stores/workspace";
-import type { PluginPreviewer } from "@/types/kago";
+import type { FileMeta, PluginPreviewer } from "@/types/kago";
+import { companionNames } from "./companions";
 
 /** How long a plugin's page has to say hello before the window gives up on it. */
 const HELLO_TIMEOUT = 10_000;
@@ -46,9 +47,34 @@ function currentTheme(): Theme {
   return { mode: document.documentElement.dataset.theme === "dark" ? "dark" : "light", tokens };
 }
 
+type Companion = { path: string; info: FileInfo };
+
+/**
+ * The files the previewer's manifest names beside the opened one that are there to read, in the order it names them.
+ * Only names made from the opened file's own, in its own folder: the frame never gets to name a file.
+ */
+async function findCompanions(rootSlug: string, path: string, previewer: PluginPreviewer, signal: AbortSignal): Promise<Companion[]> {
+  const folder = parentPath(path);
+  const name = path.split("/").at(-1) ?? "";
+  const found = await Promise.all(
+    companionNames(name, previewer.companions).map(async (other) => {
+      const otherPath = `${folder === "/" ? "" : folder}/${other}`;
+      try {
+        const meta = await api<FileMeta>(`/api/fs/meta?${new URLSearchParams({ rootSlug, path: otherPath }).toString()}`, { signal });
+        return meta.kind === "file" ? { path: meta.path, info: { name: meta.name, size: meta.size, type: meta.type, mtime: meta.mtime } } : null;
+      } catch {
+        // Not there, or not this person's to read: the plugin goes without it.
+        return null;
+      }
+    })
+  );
+  return found.filter((companion) => companion !== null);
+}
+
 /** How many reads a frame may have Kago making at once, and waiting behind those. Past both, a read fails at once. */
 const READS_AT_ONCE = 3;
 const READS_WAITING = 32;
+type ReadRequest = { id: number; start: number; end: number; file?: number };
 /** A frame that asks more often than this is heard once: a click brings its window forward, a download starts once. */
 const ACTIVATE_INTERVAL = 100;
 const DOWNLOAD_INTERVAL = 2000;
@@ -143,17 +169,21 @@ function PluginFrame({ window, previewer, onDownload, onRetry }: { window: Previ
     const post = (message: HostMessage, transfer: Transferable[] = []) => element.contentWindow?.postMessage(message, "*", transfer);
     const reads = new AbortController();
     let reading = 0;
-    const waiting: { id: number; start: number; end: number }[] = [];
+    const waiting: ReadRequest[] = [];
+    let companions: Companion[] = [];
     let said = false;
     let lastActivate = -Infinity;
     let lastDownload = -Infinity;
 
-    async function read(id: number, start: number, end: number) {
+    async function read({ id, start, end, file = 0 }: ReadRequest) {
       const { rootSlug, item } = latest.current.window.preview;
-      const stop = Math.min(end, start + MAX_READ_BYTES, item.size);
+      const companion = companions[file - 1];
+      const target = file === 0 ? { path: item.path, size: item.size } : companion && { path: companion.path, size: companion.info.size };
+      if (!target) return post({ kind: "read:error", id });
+      const stop = Math.min(end, start + MAX_READ_BYTES, target.size);
       if (stop <= start) return post({ kind: "read:ok", id, bytes: new ArrayBuffer(0) });
       try {
-        const response = await fetch(previewUrl(rootSlug, item.path), { credentials: "include", headers: { Range: `bytes=${start}-${stop - 1}` }, signal: reads.signal });
+        const response = await fetch(previewUrl(rootSlug, target.path), { credentials: "include", headers: { Range: `bytes=${start}-${stop - 1}` }, signal: reads.signal });
         // A server that sends the whole file has still sent the start of it.
         if (response.status !== 206 && !(response.status === 200 && start === 0)) throw new Error(`HTTP ${response.status}`);
         const whole = await response.arrayBuffer();
@@ -165,13 +195,13 @@ function PluginFrame({ window, previewer, onDownload, onRetry }: { window: Previ
     }
 
     // A frame cannot have Kago fetch without end: a few reads at a time, a line of them behind, and no more.
-    function queueRead(request: { id: number; start: number; end: number }) {
+    function queueRead(request: ReadRequest) {
       if (reading >= READS_AT_ONCE) {
         if (waiting.length >= READS_WAITING) return post({ kind: "read:error", id: request.id });
         return void waiting.push(request);
       }
       reading++;
-      void read(request.id, request.start, request.end).finally(() => {
+      void read(request).finally(() => {
         reading--;
         const next = waiting.shift();
         if (next && !reads.signal.aborted) queueRead(next);
@@ -186,8 +216,14 @@ function PluginFrame({ window, previewer, onDownload, onRetry }: { window: Previ
           // A page says hello once. Another is a second page in the frame, heard before it has finished loading.
           if (said) return leave();
           said = true;
-          post({ kind: "init", api: API_VERSION, file: { name: item.name, size: item.size, type: item.type, mtime: item.mtime }, locale, theme: currentTheme(), focused: window.focused });
-          return dispatch({ kind: "hello" });
+          void findCompanions(window.preview.rootSlug, item.path, previewer, reads.signal).then((found) => {
+            if (reads.signal.aborted) return;
+            companions = found;
+            const { window } = latest.current;
+            post({ kind: "init", api: API_VERSION, file: { name: item.name, size: item.size, type: item.type, mtime: item.mtime }, companions: found.map((companion) => companion.info), locale, theme: currentTheme(), focused: window.focused });
+            dispatch({ kind: "hello" });
+          });
+          return;
         case "read":
           return queueRead(message);
         case "fail":

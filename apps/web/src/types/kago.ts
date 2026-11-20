@@ -23,8 +23,10 @@ export type Root = {
 export type ExternalApp = { id: string; name: string; url: string; /** On everyone's desktop. */ shared: boolean; /** Shown in a window of Kago's rather than in a tab of its own. */ embed: boolean; /** The name it signs in with (HTTP Basic), when it has a sign-in; the password stays on the server. */ authUser: string | null; /** Whether the person signed in may change it. */ editable: boolean; icon: string | null; created_at: number; updated_at: number };
 /** Whether a service lets itself be shown inside Kago, as the server found by asking it; `unknown` when it could not be asked. */
 export type FrameVerdict = "allowed" | "blocked" | "unknown";
+/** How a previewer names a file it reads beside the opened one: the opened file's name with the first `replace` swapped for `with`. */
+export type CompanionRule = { replace: string; with: string };
 /** A plugin's viewer for files of some extensions, and the address of the page to frame for one. */
-export type PluginPreviewer = { pluginId: string; previewerId: string; extensions: string[]; title: string; src: string };
+export type PluginPreviewer = { pluginId: string; previewerId: string; extensions: string[]; title: string; src: string; companions: CompanionRule[] };
 /** An icon of one of the open icon libraries, as suggested for a name. `exact` when it goes by that very name. */
 export type LibraryIcon = { source: string; name: string; label: string; exact: boolean };
 

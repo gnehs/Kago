@@ -19,10 +19,19 @@ const relativePath = z
   .max(200)
   .refine((value) => value.split("/").every((part) => part !== "" && part !== "." && part !== "..") && !/[\\\0]/.test(value), "a path inside the plugin's dist folder");
 
+/** A piece of a file's name, which may not lead out of its folder: no slashes, no NUL, no dots alone. */
+const namePiece = z
+  .string()
+  .min(1)
+  .max(32)
+  .refine((value) => !/[/\\\0]/.test(value) && value !== "." && value !== "..", "a plain piece of a name");
+
 const previewerSchema = z.object({
   id: z.string().regex(/^[a-z0-9][a-z0-9-]{0,39}$/),
   extensions: z.array(z.string().regex(/^[a-z0-9]{1,16}$/)).min(1).max(32),
-  entry: relativePath
+  entry: relativePath,
+  // Files the previewer reads beside the one opened, named after it: its name with the first `replace` swapped for `with`.
+  companions: z.array(z.object({ replace: namePiece, with: namePiece })).max(4).default([])
 });
 
 const manifestSchema = z.object({
@@ -37,6 +46,7 @@ const manifestSchema = z.object({
 });
 
 export type PreviewerManifest = z.infer<typeof previewerSchema>;
+export type CompanionRule = PreviewerManifest["companions"][number];
 
 export type PluginManifest = {
   id: PluginId;
@@ -50,7 +60,7 @@ export type PluginManifest = {
 };
 
 /** A previewer as the interface is told of it: what it opens, and the page to frame for it. */
-export type PluginPreviewer = { pluginId: PluginId; previewerId: string; extensions: string[]; title: string; src: string };
+export type PluginPreviewer = { pluginId: PluginId; previewerId: string; extensions: string[]; title: string; src: string; companions: CompanionRule[] };
 
 /**
  * The plugins found at start, from the folders given in order: Kago's own first, then those installed beside its
@@ -80,7 +90,7 @@ export class PluginService {
         const plugin: PluginManifest = { ...loaded, token };
         this.byToken.set(token, plugin);
         for (const previewer of plugin.previewers) {
-          const entry: PluginPreviewer = { pluginId: plugin.id, previewerId: previewer.id, extensions: [], title: plugin.title, src: `${PLUGIN_PREFIX}${token}/${previewer.entry}` };
+          const entry: PluginPreviewer = { pluginId: plugin.id, previewerId: previewer.id, extensions: [], title: plugin.title, src: `${PLUGIN_PREFIX}${token}/${previewer.entry}`, companions: previewer.companions };
           for (const extension of previewer.extensions) {
             if (this.byExtension.has(extension)) continue;
             this.byExtension.set(extension, entry);

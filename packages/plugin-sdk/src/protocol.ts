@@ -11,6 +11,9 @@ export const MAX_READ_BYTES = 8 * 1024 * 1024;
 
 export type FileInfo = { name: string; size: number; type: string; mtime: number };
 
+/** The most companion files a plugin is handed: the files beside the opened one that its manifest names. */
+export const MAX_COMPANIONS = 8;
+
 export type ThemeMode = "light" | "dark";
 export type Theme = { mode: ThemeMode; tokens: Record<string, string> };
 
@@ -47,7 +50,8 @@ export const THEME_TOKENS = [
 export type FailReason = "unsupported" | "unreadable";
 
 export type HostMessage =
-  | { kind: "init"; api: typeof API_VERSION; file: FileInfo; locale: string; theme: Theme; focused: boolean }
+  /** `companions` are the files beside this one that the previewer's manifest names and that exist, in the order it names them. */
+  | { kind: "init"; api: typeof API_VERSION; file: FileInfo; companions: FileInfo[]; locale: string; theme: Theme; focused: boolean }
   | { kind: "focus"; focused: boolean }
   | { kind: "theme"; theme: Theme }
   | { kind: "read:ok"; id: number; bytes: ArrayBuffer }
@@ -58,8 +62,8 @@ export type KeyChord = { key: string; code: string; meta: boolean; ctrl: boolean
 
 export type PluginMessage =
   | { kind: "hello"; api: typeof API_VERSION }
-  /** Bytes `start` up to, not including, `end`. */
-  | { kind: "read"; id: number; start: number; end: number }
+  /** Bytes `start` up to, not including, `end`, of the opened file, or with `file` set, of companion `file - 1`. */
+  | { kind: "read"; id: number; start: number; end: number; file?: number }
   /** Kago shows the file could not be previewed, with its own way to download it. `message` says why, in the plugin's words. */
   | { kind: "fail"; reason: FailReason; message?: string }
   | { kind: "download" }
@@ -86,8 +90,11 @@ export function parsePluginMessage(data: unknown): PluginMessage | null {
   switch (data.kind) {
     case "hello":
       return data.api === API_VERSION ? { kind: "hello", api: API_VERSION } : null;
-    case "read":
-      return isCount(data.id) && isCount(data.start) && isCount(data.end) && data.end >= data.start ? { kind: "read", id: data.id, start: data.start, end: data.end } : null;
+    case "read": {
+      const file = data.file === undefined ? 0 : data.file;
+      if (!isCount(data.id) || !isCount(data.start) || !isCount(data.end) || data.end < data.start || !isCount(file) || file > MAX_COMPANIONS) return null;
+      return { kind: "read", id: data.id, start: data.start, end: data.end, ...(file === 0 ? {} : { file }) };
+    }
     case "fail":
       if (data.reason !== "unsupported" && data.reason !== "unreadable") return null;
       if (data.message !== undefined && !isString(data.message, 500)) return null;
@@ -133,8 +140,10 @@ export function parseHostMessage(data: unknown): HostMessage | null {
     case "init": {
       const file = parseFile(data.file);
       const theme = parseTheme(data.theme);
-      if (data.api !== API_VERSION || !file || !theme || !isString(data.locale, 35) || !isBool(data.focused)) return null;
-      return { kind: "init", api: API_VERSION, file, locale: data.locale, theme, focused: data.focused };
+      // A host from before companions sends none.
+      const companions = data.companions === undefined ? [] : Array.isArray(data.companions) && data.companions.length <= MAX_COMPANIONS ? data.companions.map(parseFile) : null;
+      if (data.api !== API_VERSION || !file || !theme || !isString(data.locale, 35) || !isBool(data.focused) || !companions || companions.includes(null)) return null;
+      return { kind: "init", api: API_VERSION, file, companions: companions as FileInfo[], locale: data.locale, theme, focused: data.focused };
     }
     case "focus":
       return isBool(data.focused) ? { kind: "focus", focused: data.focused } : null;

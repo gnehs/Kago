@@ -1,18 +1,26 @@
 import { API_VERSION, isForwardedKey, MAX_READ_BYTES, parseHostMessage, type FailReason, type FileInfo, type HostMessage, type PluginMessage, type Theme } from "./protocol";
 
 export type { FailReason, FileInfo, Theme, ThemeMode } from "./protocol";
-export { MAX_READ_BYTES } from "./protocol";
+export { MAX_COMPANIONS, MAX_READ_BYTES } from "./protocol";
 
 export type Kago = {
   /** The file the plugin was opened on. */
   file: FileInfo;
+  /**
+   * The files beside it that the previewer's manifest names, such as the other half of a recording a camera writes
+   * as two files, and that exist. One is read by passing its index here plus one as `read`'s `file`.
+   */
+  companions: FileInfo[];
   /** The language of Kago's interface, as a BCP 47 tag such as `en` or `zh-TW`. */
   locale: string;
   theme: Theme;
   /** Whether the window the plugin is in is the one in front, which is the one keys are meant for. */
   focused: boolean;
-  /** The file's bytes from `start` up to, not including, `end`. Kago hands back at most `MAX_READ_BYTES` at a time. */
-  read(start: number, end: number): Promise<Uint8Array>;
+  /**
+   * The file's bytes from `start` up to, not including, `end`. Kago hands back at most `MAX_READ_BYTES` at a time.
+   * `file` 0, the default, is the opened file; `i` is `companions[i - 1]`.
+   */
+  read(start: number, end: number, file?: number): Promise<Uint8Array>;
   /** The whole file, read range after range, so a consumer can tell how far it has got. */
   stream(): ReadableStream<Uint8Array>;
   /** Leaves the file to Kago, which says it could not be previewed and offers to download it. */
@@ -52,8 +60,8 @@ export function connect(): Promise<Kago> {
       post(message(id));
     });
 
-  async function read(start: number, end: number) {
-    const reply = await ask((id) => ({ kind: "read", id, start, end }));
+  async function read(start: number, end: number, file = 0) {
+    const reply = await ask((id) => ({ kind: "read", id, start, end, ...(file === 0 ? {} : { file }) }));
     return reply.kind === "read:ok" ? new Uint8Array(reply.bytes) : new Uint8Array();
   }
 
@@ -68,6 +76,7 @@ export function connect(): Promise<Kago> {
           applyTheme(message.theme, message.locale);
           kago = {
             file: message.file,
+            companions: message.companions,
             locale: message.locale,
             theme: message.theme,
             focused: message.focused,

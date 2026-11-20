@@ -63,6 +63,27 @@ test("only a plugin of this API version with its files built is loaded, and each
   }
 });
 
+test("a previewer names the files it reads beside the opened one only by plain pieces of a name", async () => {
+  const fixture = await createFixture();
+  try {
+    const withCompanions = (name, companions) => ({ ...manifest(name), kago: { ...manifest(name).kago, previewers: [{ id: "view", extensions: [name.slice(0, 3)], entry: "index.html", companions }] } });
+    await addPlugin(fixture.pluginsDir, "pair", withCompanions("pair-plugin", [{ replace: "_00_", with: "_10_" }, { replace: "_10_", with: "_00_" }]));
+    await addPlugin(fixture.pluginsDir, "slash", withCompanions("slash-plugin", [{ replace: "a", with: "../a" }]));
+    await addPlugin(fixture.pluginsDir, "backslash", withCompanions("backslash-plugin", [{ replace: "a", with: "..\\a" }]));
+    await addPlugin(fixture.pluginsDir, "dots", withCompanions("dots-plugin", [{ replace: "a", with: ".." }]));
+    await addPlugin(fixture.pluginsDir, "empty", withCompanions("empty-plugin", [{ replace: "", with: "b" }]));
+    await addPlugin(fixture.pluginsDir, "many", withCompanions("many-plugin", Array.from({ length: 5 }, (_, index) => ({ replace: "a", with: `b${index}` }))));
+    const plugins = new PluginService([fixture.pluginsDir]);
+    assert.deepEqual(plugins.plugins().map((plugin) => plugin.id), ["pair-plugin"]);
+    assert.deepEqual(plugins.previewers()[0].companions, [{ replace: "_00_", with: "_10_" }, { replace: "_10_", with: "_00_" }]);
+    // A previewer that names none reads only the file it was opened on.
+    await addPlugin(fixture.pluginsDir, "plain", manifest("plain-plugin"));
+    assert.deepEqual(new PluginService([fixture.pluginsDir]).previewers().find((previewer) => previewer.pluginId === "plain-plugin").companions, []);
+  } finally {
+    await rm(fixture.baseDir, { recursive: true, force: true });
+  }
+});
+
 test("a plugin's policy names its own folder in full and nothing wider", () => {
   const policy = pluginPolicy("abc", ["kago.example.test:8443", "kago.example.test:8443", "evil host", "[::1]:8080", null]);
   assert.match(policy, /^sandbox allow-scripts; default-src 'none'/);
