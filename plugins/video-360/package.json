@@ -1,0 +1,19 @@
+{
+  "name": "@kago/plugin-video-360",
+  "version": "1.0.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "lint": "tsc -p tsconfig.json",
+    "test:plugins": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@kago/plugin-sdk": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "vite": "^6.4.4"
+  }
+}

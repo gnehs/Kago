@@ -399,6 +399,19 @@ importers:
         specifier: ^6.4.4
         version: 6.4.4(@types/node@22.19.20)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)
 
+  plugins/video-360:
+    dependencies:
+      '@kago/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../packages/plugin-sdk
+    devDependencies:
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+      vite:
+        specifier: ^6.4.4
+        version: 6.4.4(@types/node@22.19.20)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)
+
 packages:
 
   '@babel/code-frame@7.29.7':
