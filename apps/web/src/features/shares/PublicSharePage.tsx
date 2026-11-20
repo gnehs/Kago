@@ -9,7 +9,8 @@ import { AuthCard, FormError } from "@/components/kago/auth-card";
 import { FileTile } from "@/components/kago/file-icon";
 import { errorMessage, formatSize } from "@/lib/format";
 import { baseName, nfc } from "@/lib/paths";
-import { isUploadCancelled, uploadForm, uploadLabel } from "@/stores/uploads";
+import { cn } from "@/lib/utils";
+import { isUploadCancelled, uploadForm, uploadLabel, useUploadStore } from "@/stores/uploads";
 import { t } from "@/lib/i18n";
 
 type PublicShareInfo = {
@@ -27,14 +28,18 @@ type PublicShareInfo = {
   authenticated: boolean;
 };
 
-const primaryLink = buttonVariants({ variant: "default", size: "lg" });
+// Taller than the desktop buttons: this page is opened on phones by people who were only handed a link.
+const primaryLink = cn(buttonVariants({ variant: "default", size: "lg" }), "h-10");
 
 export function PublicSharePage({ token }: { token: string }) {
   const [share, setShare] = useState<PublicShareInfo | null>(null);
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [uploaded, setUploaded] = useState(false);
+  const [uploaded, setUploaded] = useState<string[]>([]);
+  const [failed, setFailed] = useState<File[]>([]);
+  const [dragging, setDragging] = useState(false);
+  const progress = useUploadStore((state) => state.uploads[0]);
   const [refused, setRefused] = useState(0);
 
   useEffect(() => {
@@ -66,23 +71,36 @@ export function PublicSharePage({ token }: { token: string }) {
     }
   }
 
-  async function upload(event: React.ChangeEvent<HTMLInputElement>) {
-    const files = event.target.files;
-    if (!files?.length) return;
+  async function send(files: File[]) {
+    if (!files.length || busy) return;
     setBusy(true);
     setError("");
-    setUploaded(false);
+    setFailed([]);
     try {
       const form = new FormData();
       for (const file of files) form.append("file", file, nfc(file.name));
       await uploadForm(`/s/${token}/upload`, form, uploadLabel(files));
-      setUploaded(true);
+      setUploaded((names) => [...names, ...files.map((file) => nfc(file.name))]);
     } catch (err) {
-      if (!isUploadCancelled(err)) setError(errorMessage(err, t("Upload failed")));
+      if (!isUploadCancelled(err)) {
+        setError(`${t("Couldn’t upload {name}", { name: uploadLabel(files) })}. ${errorMessage(err, t("Upload failed"))}`);
+        setFailed(files);
+      }
     } finally {
-      event.target.value = "";
       setBusy(false);
     }
+  }
+
+  function pick(event: React.ChangeEvent<HTMLInputElement>) {
+    const files = [...(event.target.files ?? [])];
+    event.target.value = "";
+    void send(files);
+  }
+
+  function drop(event: React.DragEvent) {
+    event.preventDefault();
+    setDragging(false);
+    void send([...event.dataTransfer.files]);
   }
 
   const needsPassword = Boolean(share?.requiresPassword && !share.authenticated);
@@ -104,7 +122,7 @@ export function PublicSharePage({ token }: { token: string }) {
               <Field label={t("Share password")}>
                 <KagoPasswordInput value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="off" autoFocus />
               </Field>
-              <Button type="submit" variant="default" size="lg" disabled={busy || !password}>{busy ? <KagoSpinner className="text-inherit" /> : null}{t("Unlock")}</Button>
+              <Button type="submit" variant="default" size="lg" className="h-10" disabled={busy || !password}>{busy ? <KagoSpinner className="text-inherit" /> : null}{t("Unlock")}</Button>
             </form>
           ) : null}
           {share && !needsPassword ? (
@@ -113,16 +131,60 @@ export function PublicSharePage({ token }: { token: string }) {
               {share.mode === "view_only" && share.previewable ? <a className={primaryLink} href={`/s/${token}/preview`} target="_blank" rel="noreferrer"><FileText />{" "}{t("View")}</a> : null}
               {share.mode === "view_only" && !share.previewable ? <p className="m-0 text-center text-muted">{t("This kind of file can’t be viewed in the browser.")}</p> : null}
               {share.mode === "upload_only" ? (
-                <label className={primaryLink} aria-disabled={busy}>
-                  <Upload /> {busy ? t("Uploading…") : t("Choose files to upload")}
-                  <input type="file" multiple hidden onChange={upload} disabled={busy} />
-                </label>
+                <div
+                  className={cn("flex flex-col gap-3 rounded-lg border border-dashed p-3 transition-colors", dragging ? "border-accent bg-hover" : "border-(--kago-window-edge)")}
+                  onDragOver={(event) => {
+                    if (!event.dataTransfer.types.includes("Files")) return;
+                    event.preventDefault();
+                    setDragging(true);
+                  }}
+                  onDragLeave={(event) => {
+                    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false);
+                  }}
+                  onDrop={drop}
+                >
+                  {busy ? <UploadProgress loaded={progress?.loaded ?? 0} total={progress?.total ?? 0} label={progress?.label ?? ""} onCancel={() => progress?.cancel()} /> : (
+                    <>
+                      <label className={primaryLink}>
+                        <Upload /> {failed.length ? t("Choose other files") : uploaded.length ? t("Choose more files") : t("Choose files to upload")}
+                        <input type="file" multiple hidden onChange={pick} />
+                      </label>
+                      {failed.length ? <Button size="lg" className="h-10" onClick={() => void send(failed)}>{t("Try again")}</Button> : null}
+                      <p className="m-0 text-center text-xs text-muted">{t("Or drop files here")}</p>
+                    </>
+                  )}
+                  {uploaded.length ? (
+                    <div className="flex flex-col gap-1.5">
+                      <p className="m-0 flex items-center justify-center gap-1.5 text-success"><Check />{" "}{t("{count} file uploaded | {count} files uploaded", { count: uploaded.length })}</p>
+                      <ul className="m-0 flex max-h-40 list-none flex-col gap-0.5 overflow-y-auto p-0 text-xs text-muted">
+                        {uploaded.map((name, index) => <li key={index} className="truncate">{name}</li>)}
+                      </ul>
+                    </div>
+                  ) : null}
+                </div>
               ) : null}
-              {uploaded ? <p className="m-0 flex items-center justify-center gap-1.5 text-success"><Check />{" "}{t("Uploaded")}</p> : null}
             </>
           ) : null}
         </div>
       )}
     </AuthCard>
+  );
+}
+
+function UploadProgress({ loaded, total, label, onCancel }: { loaded: number; total: number; label: string; onCancel: () => void }) {
+  const fraction = total > 0 ? Math.min(loaded / total, 1) : 0;
+  const percent = Math.floor(fraction * 100);
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="m-0 truncate text-center">{label}</p>
+      <div role="progressbar" aria-label={t("Uploading…")} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent} className="kago-well h-2 overflow-hidden rounded-full">
+        <div className="h-full rounded-full bg-accent" style={{ width: `${percent}%` }} />
+      </div>
+      <p className="m-0 flex justify-between text-xs text-muted tabular-nums">
+        <span>{fraction >= 1 ? t("Processing…") : `${formatSize(loaded)} / ${formatSize(total)}`}</span>
+        <span>{percent}%</span>
+      </p>
+      <Button size="lg" className="h-10" onClick={onCancel}>{t("Cancel")}</Button>
+    </div>
   );
 }

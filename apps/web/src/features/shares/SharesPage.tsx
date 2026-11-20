@@ -15,8 +15,10 @@ import { run } from "@/lib/run";
 import { confirmAction } from "@/stores/dialogs";
 import type { Root, ShareLink } from "@/types/kago";
 import { ShareForm } from "./ShareForm";
-import { parseShareMode, shareModeLabel } from "./shareUtils";
+import { parseShareMode, shareModeLabel, shareState, shareStateLabel, type ShareState } from "./shareUtils";
 import { t } from "@/lib/i18n";
+
+const stateTone: Record<ShareState, "neutral" | "success" | "warning" | "danger"> = { disabled: "neutral", expired: "warning", limit: "warning", active: "success" };
 
 function describe(share: ShareLink) {
   return [
@@ -43,7 +45,7 @@ export function SharesPage({ roots }: { roots: Root[] }) {
   }
 
   async function remove(share: ShareLink) {
-    if (!(await confirmAction({ window: scope, title: t("Delete this share link?"), subject: { icon: <KagoStatusIcon large tone={share.disabled ? "neutral" : "success"}><Share2 /></KagoStatusIcon>, name: baseName(share.path) || rootName(share.root_id), detail: displayPath(rootName(share.root_id), share.path) }, description: t("Links you’ve already sent stop working right away."), confirmLabel: t("Delete"), destructive: true }))) return;
+    if (!(await confirmAction({ window: scope, title: t("Delete this share link?"), subject: { icon: <KagoStatusIcon large tone={stateTone[shareState(share)]}><Share2 /></KagoStatusIcon>, name: baseName(share.path) || rootName(share.root_id), detail: displayPath(rootName(share.root_id), share.path) }, description: t("Links you’ve already sent stop working right away."), confirmLabel: t("Delete"), destructive: true }))) return;
     await run(async () => {
       await api(`/api/shares/${share.id}`, { method: "DELETE" });
       await refresh();
@@ -72,10 +74,10 @@ export function SharesPage({ roots }: { roots: Root[] }) {
           {shares.data.map((share) => (
             <Row
               key={share.id}
-              icon={<KagoStatusIcon tone={share.disabled ? "neutral" : "success"} label={share.disabled ? t("Disabled") : t("Active")}><Share2 /></KagoStatusIcon>}
+              icon={<KagoStatusIcon tone={stateTone[shareState(share)]} label={shareStateLabel(shareState(share))}><Share2 /></KagoStatusIcon>}
               title={baseName(share.path) || rootName(share.root_id)}
-              // A link that is switched off says so in words as well: it is the one that needs noticing.
-              subtitle={`${share.disabled ? `${t("Disabled")} · ` : ""}${displayPath(rootName(share.root_id), share.path)} · ${describe(share)}`}
+              // A link that no longer works says so in words as well: it is the one that needs noticing.
+              subtitle={`${shareState(share) === "active" ? "" : `${shareStateLabel(shareState(share))} · `}${displayPath(rootName(share.root_id), share.path)} · ${describe(share)}`}
             >
               <Button onClick={() => void setDisabled(share, !share.disabled)}>{share.disabled ? t("Enable") : t("Disable")}</Button>
               <Button variant="destructive" onClick={() => void remove(share)}>{t("Delete")}</Button>
