@@ -119,6 +119,8 @@ export function revealIndex(scroller: HTMLElement, layout: FileLayout, index: nu
 export type FileView = {
   items: FileItem[];
   reveal: (index: number) => void;
+  /** How many items sit side by side in a row, where the list is a grid of icons; one when left out. */
+  across?: number;
   /** Set while the list shows folders that open in place. */
   tree?: FileTree;
   /** Set in the column view: steps out to the column before, or into the one after. `items` are those of the column the selection is in. */

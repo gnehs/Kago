@@ -86,6 +86,9 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
   }, [typed, tabId]);
   const [anchorPath, setAnchorPath] = useState<string | null>(null);
   const [menuItem, setMenuItem] = useState<FileItem | null>(null);
+  // After a finger has rested on an item, each tap picks an item out or puts it back, until none is left.
+  const [picking, setPicking] = useState(false);
+  if (picking && frame.selectedItems.length === 0) setPicking(false);
   // The folder a right click on empty space was in: in the column view, that of the column clicked.
   const [menuFolder, setMenuFolder] = useState<string | null>(null);
   // Where the files picked for an upload go, set as the picker is opened.
@@ -282,7 +285,7 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
   const hasError = Boolean(error);
   useEffect(() => {
     if (hasError) fileViews.set(win.id, { items: [], reveal: () => undefined, folder: win.logicalPath, readonly: true });
-    else if (!columns) fileViews.set(win.id, { items, reveal: (index) => scroller && revealIndex(scroller, layout, index), tree, folder: win.logicalPath, readonly });
+    else if (!columns) fileViews.set(win.id, { items, reveal: (index) => scroller && revealIndex(scroller, layout, index), across: layout.columns, tree, folder: win.logicalPath, readonly });
     else {
       const select = (column: number, item: FileItem | undefined) => {
         if (!item) return;
@@ -333,14 +336,40 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
       return;
     }
     setAnchorPath(item.path);
-    if (event.metaKey || event.ctrlKey) {
-      // A selection never spans two columns: adding to it from another column starts over there.
-      const listedHere = new Set(paths);
-      const current = win.selectedItems.filter((path) => listedHere.has(path));
-      store().selectItems(win.id, current.includes(item.path) ? current.filter((path) => path !== item.path) : [...current, item.path]);
-    } else {
+    if (event.metaKey || event.ctrlKey) toggleItem(item, among);
+    else store().selectItems(win.id, [item.path]);
+  }
+
+  function toggleItem(item: FileItem, among: FileItem[]) {
+    // A selection never spans two columns: adding to it from another column starts over there.
+    const listedHere = new Set(among.map((entry) => entry.path));
+    const current = win.selectedItems.filter((path) => listedHere.has(path));
+    store().selectItems(win.id, current.includes(item.path) ? current.filter((path) => path !== item.path) : [...current, item.path]);
+  }
+
+  /** A tap opens what a double click would, unless items are being picked out. In the column view a folder is selected instead, which lists it in the next column. */
+  function tapItem(item: FileItem, among = items) {
+    if (picking) {
+      setAnchorPath(item.path);
+      toggleItem(item, among);
+    } else if (columns && item.kind === "folder") {
+      setAnchorPath(item.path);
       store().selectItems(win.id, [item.path]);
+    } else openItem(item);
+  }
+
+  /** Resting a finger on an item picks it out, and the context menu that opens for a long press is for it. */
+  function holdItem(item: FileItem, among = items) {
+    // A long press is heard twice on Android (the hold and its contextmenu event), and must come to the same.
+    const selection = store().windows.find((entry) => entry.id === win.id)?.selectedItems ?? [];
+    if (!selection.includes(item.path)) {
+      if (picking) toggleItem(item, among);
+      else store().selectItems(win.id, [item.path]);
     }
+    setPicking(true);
+    setAnchorPath(item.path);
+    setMenuItem(item);
+    setMenuFolder(null);
   }
 
   function onContextItem(item: FileItem) {
@@ -376,11 +405,27 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
     setDropChoice({ sources, destination, x: Math.min(event.clientX - rect.left, rect.width - 180), y: Math.min(event.clientY - rect.top, rect.height - 130) });
   }
 
-  /** A right click in the file area, before an item hears of it. On empty space the menu is for the folder there: in the column view, the column's. */
-  function onAreaMenu(event: React.MouseEvent) {
+  /**
+   * A right click in the file area, before an item hears of it. On empty space the menu is for the folder there: in the
+   * column view, the column's. A finger is heard as it lands, since a long press opens the menu without a contextmenu event on iOS.
+   */
+  function onAreaMenu(event: React.SyntheticEvent) {
     setMenuItem(null);
     setMenuFolder((event.target as Element).closest<HTMLElement>("[data-folder]")?.dataset.folder ?? null);
   }
+
+  /** Gives the keyboard back to the list: in the column view, to the column the selection is in. */
+  function focusList() {
+    const list = scroller?.querySelector("[aria-selected=true]")?.closest<HTMLElement>("[role=listbox]") ?? scroller?.querySelector<HTMLElement>("[role=listbox]");
+    list?.focus({ preventScroll: true });
+  }
+
+  function closeDropChoice() {
+    setDropChoice(null);
+    focusList();
+  }
+
+  const canTrash = (targets: FileItem[]) => !readonly && !targets.some((item) => item.readonly);
 
   // Right-clicking acts on the whole selection when the clicked item is part of it.
   const menuTargets = menuItem && selectedItems.some((item) => item.path === menuItem.path) ? selectedItems : menuItem ? [menuItem] : [];
@@ -446,7 +491,7 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
         {single && convertible === "video" ? <KagoMenuItem icon={<ListVideo />} disabled={readonly} onClick={() => openTrackEditor({ window: win.id, rootSlug: win.rootSlug, item: single, siblings: allItems.filter((item) => parentPath(item.path) === parentPath(single.path)) })}>{t("Edit tracks…")}</KagoMenuItem> : null}
         {single?.kind === "folder" ? <KagoMenuItem icon={<FileVideo />} disabled={readonly || single.readonly} onClick={() => autoConvertInto({ rootSlug: win.rootSlug, path: single.path })}>{t("Auto-convert into this folder…")}</KagoMenuItem> : null}
         <KagoMenuSeparator />
-        <KagoMenuItem icon={<Trash2 />} destructive disabled={readonly || targets.some((item) => item.readonly)} onClick={() => void actions.trash(paths)}>{t("Move to Trash")}</KagoMenuItem>
+        <KagoMenuItem icon={<Trash2 />} destructive disabled={!canTrash(targets)} onClick={() => void actions.trash(paths)}>{t("Move to Trash")}</KagoMenuItem>
       </>
     ) : (
       <>
@@ -477,7 +522,7 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
       titleExtra={
         <>
           {readonly ? <KagoBadge>{t("Read-only")}</KagoBadge> : null}
-          <KagoIconButton label={t("New tab (⌥T)")} className="size-6" onClick={() => store().openTab(win.id, win)}><Plus /></KagoIconButton>
+          <KagoIconButton label={t("New tab (⌥T)")} className="kago-hit-slop size-6" onClick={() => store().openTab(win.id, win)}><Plus /></KagoIconButton>
         </>
       }
       onDragOver={(event) => {
@@ -503,7 +548,7 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
         menu={error ? null : renderMenu(selectedItems)}
       />
 
-      <div className="@container/body flex min-h-0 flex-1">
+      <div className="@container/body relative flex min-h-0 flex-1">
         {win.sidebarOpen === false ? null : <Sidebar window={win} roots={roots} onNavigate={goTo} onDragTarget={() => setDropActive(false)} onDropInto={(event, folder) => dropInto(event, folder.path, folder.rootSlug)} />}
         {error ? (
           <div className="min-h-0 min-w-0 flex-1">
@@ -512,7 +557,18 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
         ) : (
           <KagoContextMenu menu={renderMenu(menuTargets, menuFolder ?? win.logicalPath)} className="flex min-h-0 min-w-0 flex-1">
             {/* The columns scroll one by one, so there is no one area for a rubber band to be drawn across. */}
-            <div ref={setScroller} className={cn("relative min-w-0 flex-1 select-none", columns && listed.length > 0 ? "flex overflow-hidden" : "overflow-auto")} onContextMenuCapture={onAreaMenu} {...(columns ? {} : marquee.handlers)}>
+            <div
+              ref={setScroller}
+              className={cn(
+                "relative min-w-0 flex-1 select-none",
+                columns && listed.length > 0 ? "flex overflow-hidden" : "overflow-auto",
+                // The list is taller than the area it scrolls in, so its focus ring is drawn on that area.
+                !columns && "has-[[role=listbox]:focus-visible]:outline-2 has-[[role=listbox]:focus-visible]:-outline-offset-2 has-[[role=listbox]:focus-visible]:outline-accent/60"
+              )}
+              onContextMenuCapture={onAreaMenu}
+              onTouchStartCapture={onAreaMenu}
+              {...(columns ? {} : marquee.handlers)}
+            >
               {fileList.isLoading || (searching && listed.length === 0 && searchPending && !searched.isError) ? <KagoLoading /> : null}
               {fileList.data && listed.length === 0 && !(searching && searchPending && !searched.isError) ? (
                 <KagoEmptyState
@@ -528,13 +584,15 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
                   columns={columns}
                   revealers={columnReveal}
                   onSelect={(event, item, column) => selectItem(event, item, columns[column]!.items)}
+                  onTap={(item, column) => tapItem(item, columns[column]!.items)}
+                  onHold={(item, column) => holdItem(item, columns[column]!.items)}
                   onSelectColumn={(column) => store().selectItems(win.id, column === 0 ? [] : [columns[column]!.folder])}
                   onOpen={openItem}
                   onContextItem={onContextItem}
                   onDropInto={readonly ? undefined : dropInto}
                 />
               ) : (
-                <FileList window={win} items={items} tree={tree} locateFrom={searching ? win.logicalPath : undefined} scroller={scroller} layout={layout} onSelect={selectItem} onOpen={openItem} onContextItem={onContextItem} onDropInto={readonly ? undefined : (event, folder) => dropInto(event, folder.path)} />
+                <FileList window={win} items={items} tree={tree} locateFrom={searching ? win.logicalPath : undefined} scroller={scroller} layout={layout} onSelect={selectItem} onOpen={openItem} onContextItem={onContextItem} onTap={tapItem} onHold={holdItem} onDropInto={readonly ? undefined : (event, folder) => dropInto(event, folder.path)} />
               )}
               {marquee.style ? <div className="pointer-events-none absolute border border-accent bg-accent/15" style={marquee.style} /> : null}
             </div>
@@ -543,17 +601,17 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
         {win.inspectorOpen ? <Inspector window={win} selection={selectedItems} /> : null}
       </div>
 
-      <footer className="kago-toolbar flex h-8 shrink-0 items-center gap-1 border-t border-line-strong px-3 text-xs text-muted">
+      <footer className="kago-toolbar flex h-8 shrink-0 items-center gap-1 border-t pointer-coarse:gap-2 border-line-strong px-3 text-xs text-muted">
         {selectedItems.length > 0 ? (
           <>
             <span className="min-w-0 flex-1 truncate text-ink">
               {t("{count} selected", { count: selectedItems.length })}
               {selectedItems.every((item) => item.kind === "file") ? ` · ${formatSize(selectedItems.reduce((total, item) => total + item.size, 0))}` : ""}
             </span>
-            <KagoIconButton label={t("Download")} className="size-6" onClick={() => void actions.download(selectedItems)}><Download /></KagoIconButton>
-            <KagoIconButton label={t("Add to Shelf")} className="size-6" onClick={() => void actions.addToShelf(selectedPaths)}><Inbox /></KagoIconButton>
-            <KagoIconButton label={t("Compress")} className="size-6" disabled={readonly} onClick={() => void actions.compress(selectedPaths)}><Archive /></KagoIconButton>
-            <KagoIconButton label={t("Move to Trash")} className="size-6" disabled={readonly} onClick={() => void actions.trash(selectedPaths)}><Trash2 /></KagoIconButton>
+            <KagoIconButton label={t("Download")} className="kago-hit-slop size-6" onClick={() => void actions.download(selectedItems)}><Download /></KagoIconButton>
+            <KagoIconButton label={t("Add to Shelf")} className="kago-hit-slop size-6" onClick={() => void actions.addToShelf(selectedPaths)}><Inbox /></KagoIconButton>
+            <KagoIconButton label={t("Compress")} className="kago-hit-slop size-6" disabled={readonly} onClick={() => void actions.compress(selectedPaths)}><Archive /></KagoIconButton>
+            <KagoIconButton label={t("Move to Trash")} className="kago-hit-slop size-6" disabled={!canTrash(selectedItems)} onClick={() => void actions.trash(selectedPaths)}><Trash2 /></KagoIconButton>
           </>
         ) : (
           <span className="truncate">{error ? t("Couldn’t load") : searching ? (results?.truncated ? t("Showing the first {count} matches", { count: found.length }) : t("{count} item found | {count} items found", { count: found.length })) : summary}{error ? "" : searching ? (searchPending ? ` · ${t("Searching…")}` : searched.isError && results ? ` · ${t("Couldn’t load")}` : "") : fileList.isError ? ` · ${t("Couldn’t load")}` : fileList.data?.partial ? ` · ${t("Loading…")}` : ""}</span>
@@ -573,7 +631,7 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
       ) : null}
       {dropChoice ? (
         <>
-          <div className="absolute inset-0 z-20" onClick={() => setDropChoice(null)} />
+          <div className="absolute inset-0 z-20" onClick={closeDropChoice} />
           {/* What to do with what was dropped is picked from a menu where it was dropped, as any other choice of one action is. Copying is the one already chosen, since it loses nothing. */}
           <div
             role="menu"
@@ -581,7 +639,7 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
             className="absolute z-30 kago-glass flex min-w-44 flex-col rounded-lg p-1 select-none"
             style={{ left: Math.max(8, dropChoice.x), top: Math.max(44, dropChoice.y) }}
             onKeyDown={(event) => {
-              if (event.key === "Escape") setDropChoice(null);
+              if (event.key === "Escape") closeDropChoice();
               if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
               event.preventDefault();
               const items = [...event.currentTarget.querySelectorAll("button")];
@@ -599,14 +657,14 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
                 icon={type === "copy" ? <Copy /> : <FolderInput />}
                 onClick={() => {
                   void actions.transfer(type, dropChoice.sources, dropChoice.destination);
-                  setDropChoice(null);
+                  closeDropChoice();
                 }}
               >
                 {type === "copy" ? t("Copy here") : t("Move here")}
               </KagoMenuButton>
             ))}
             <KagoMenuSeparator />
-            <KagoMenuButton icon={<X />} onClick={() => setDropChoice(null)}>{t("Cancel")}</KagoMenuButton>
+            <KagoMenuButton icon={<X />} onClick={closeDropChoice}>{t("Cancel")}</KagoMenuButton>
           </div>
         </>
       ) : null}

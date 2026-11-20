@@ -11,6 +11,8 @@ import { parseShareMode, shareModeLabel } from "@/features/shares/shareUtils";
 import { TagEditor } from "@/features/tags/TagEditor";
 import { formatDate, formatSize, isPicture, isVideoType, kindLabel } from "@/lib/format";
 import { displayPath } from "@/lib/paths";
+import { useCompact } from "@/lib/useCompact";
+import { cn } from "@/lib/utils";
 import { usePointerDrag } from "@/lib/usePointerDrag";
 import { useWorkspaceStore } from "@/stores/workspace";
 import type { FileItem, FilmRecipe, FileWindow, ImageMetadata } from "@/types/kago";
@@ -25,6 +27,8 @@ const MAX_WIDTH = 440;
 export function Inspector({ window: activeWindow, selection }: { window: FileWindow; /** The selected items as the window lists them. */ selection: FileItem[] }) {
   const width = useWorkspaceStore((state) => Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, state.inspector.width ?? 300)));
   const store = useWorkspaceStore.getState;
+  // Beside the list on a phone it would leave the list a sliver, so there it is a sheet over the bottom of the list.
+  const compact = useCompact();
   const rootSlug = activeWindow.rootSlug;
   const path = activeWindow.selectedItems.at(-1) ?? activeWindow.logicalPath;
   const selectedCount = activeWindow.selectedItems.length;
@@ -52,9 +56,13 @@ export function Inspector({ window: activeWindow, selection }: { window: FileWin
   );
 
   return (
-    <aside className="relative flex max-w-[60%] shrink-0 flex-col border-l border-line bg-surface" style={{ width }} aria-label={t("Info")}>
-      <div className="absolute inset-y-0 -left-1 z-10 w-2 cursor-ew-resize touch-none" {...resizeHandlers} />
-      <header className="flex h-9 shrink-0 items-center gap-2 border-b border-line pr-2 pl-4">
+    <aside
+      className={cn("flex flex-col bg-surface", compact ? "absolute inset-x-0 bottom-0 z-10 max-h-[70%] rounded-t-lg border-t border-line shadow-popup" : "relative max-w-[60%] shrink-0 border-l border-line")}
+      style={compact ? undefined : { width }}
+      aria-label={t("Info")}
+    >
+      {compact ? null : <div className="absolute inset-y-0 -left-1 z-10 w-2 cursor-ew-resize touch-none" {...resizeHandlers} />}
+      <header className="flex h-9 shrink-0 pointer-coarse:h-11 items-center gap-2 border-b border-line pr-2 pl-4">
         <strong className="flex-1 font-semibold">{t("Info")}</strong>
         <KagoIconButton label={t("Close info panel")} onClick={() => store().updateWindow(activeWindow.id, { inspectorOpen: false })}><X /></KagoIconButton>
       </header>

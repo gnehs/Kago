@@ -1,19 +1,20 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, ChevronRight } from "lucide-react";
 import { KagoLoading } from "@/components/kago/empty-state";
 import { TagDots } from "@/features/tags/TagDots";
 import { formatDate, formatSize, kindLabel } from "@/lib/format";
-import { baseName, parentPath } from "@/lib/paths";
+import { parentPath } from "@/lib/paths";
 import { cn } from "@/lib/utils";
 import { useClipboardStore } from "@/stores/clipboard";
 import { setFolderView } from "@/stores/settings";
-import { useWorkspaceStore } from "@/stores/workspace";
+import { folderTitle, useWorkspaceStore } from "@/stores/workspace";
 import type { FileItem, FolderView, FolderWindow } from "@/types/kago";
 import { setDragDownload, setDragPreview } from "./dragOut";
 import { FileIcon } from "@/components/kago/file-icon";
 import { FileThumbnail } from "./FileThumbnail";
 import { GRID_SIZES, LIST_HEADER_HEIGHT, revealIndex, useFileLayout, useVisibleRange, type FileLayout, type FileTree } from "./fileLayout";
 import { KAGO_DRAG_TYPE } from "./useFileActions";
+import { useTouchPress, type TouchPress } from "./useTouchPress";
 import { t } from "@/lib/i18n";
 
 type FileListProps = {
@@ -30,14 +31,34 @@ type FileListProps = {
   /** A folder can be opened where it is, in a tab of its own, or in a window of its own. */
   onOpen: (item: FileItem, where?: "window" | "tab") => void;
   onContextItem: (item: FileItem) => void;
+  /** A finger tapping an item, where a mouse would click it. */
+  onTap: (item: FileItem) => void;
+  /** A finger resting on an item. */
+  onHold: (item: FileItem) => void;
   /** Dropping onto a folder puts the items inside it. Omitted when the window cannot be written to. */
   onDropInto?: (event: React.DragEvent, folder: FileItem) => void;
 };
 
 type ViewProps = FileListProps & { selectedPaths: Set<string>; dropTarget: string | null; setDropTarget: (path: string | null) => void; cutPaths: Set<string> };
 
+/** One listbox of items: the ids its rows are known by, and the fingers on them. */
+type Listbox = { id: string; press: TouchPress };
+
+function useListbox(onHold: (item: FileItem) => void): Listbox {
+  return { id: useId(), press: useTouchPress(onHold) };
+}
+
+/**
+ * What a listbox says about itself. The row of the item selected last is the active one, but it can only be pointed
+ * at while it is rendered.
+ */
+function listboxProps({ id }: Listbox, label: string, items: FileItem[], range: { start: number; end: number }, last: string | undefined) {
+  const at = last === undefined ? -1 : items.slice(range.start, range.end).findIndex((item) => item.path === last);
+  return { role: "listbox", tabIndex: 0, "aria-multiselectable": true, "aria-label": label, "aria-activedescendant": at < 0 ? undefined : `${id}-${range.start + at}` } as const;
+}
+
 /** Behaviour shared by every view: selection, open, drag source, folder drop target and context-menu target. */
-function itemProps({ window, items, selectedPaths, onSelect, onOpen, onContextItem, onDropInto, setDropTarget }: ViewProps, item: FileItem, index: number) {
+function itemProps({ window, items, selectedPaths, onSelect, onOpen, onContextItem, onTap, onDropInto, setDropTarget }: ViewProps, { id, press }: Listbox, item: FileItem, index: number) {
   const selected = selectedPaths.has(item.path);
   const dropHandlers =
     item.kind === "folder" && onDropInto
@@ -60,6 +81,8 @@ function itemProps({ window, items, selectedPaths, onSelect, onOpen, onContextIt
       : {};
   return {
     ...dropHandlers,
+    ...press.handlers(item),
+    id: `${id}-${index}`,
     "data-file-path": item.path,
     "data-file-kind": item.kind,
     "aria-selected": selected,
@@ -76,12 +99,16 @@ function itemProps({ window, items, selectedPaths, onSelect, onOpen, onContextIt
       setDragDownload(event.dataTransfer, window.rootSlug, dragged);
       setDragPreview(event.dataTransfer, event.currentTarget, dragged.length);
     },
-    onClick: (event: React.MouseEvent) => onSelect(event, item),
-    onDoubleClick: () => onOpen(item),
+    onClick(event: React.MouseEvent) {
+      const from = press.click();
+      if (from === "pointer") onSelect(event, item);
+      else if (from === "tap") onTap(item);
+    },
+    onDoubleClick: () => press.click() === "pointer" && onOpen(item),
     onAuxClick(event: React.MouseEvent) {
       if (event.button === 1 && item.kind === "folder") onOpen(item, "tab");
     },
-    onContextMenu: () => onContextItem(item)
+    onContextMenu: () => press.contextMenu(item) || onContextItem(item)
   };
 }
 
@@ -99,7 +126,7 @@ function selectionRun(items: FileItem[], index: number, selectedPaths: Set<strin
 }
 
 /** Folder under a drag, and items waiting to be moved by a cut. */
-const stateClass = ({ dropTarget, cutPaths }: ViewProps, item: FileItem) => cn(dropTarget === item.path && "ring-2 ring-accent ring-inset", cutPaths.has(item.path) && "opacity-50");
+const stateClass = ({ dropTarget, cutPaths }: ViewProps, item: FileItem) => cn(dropTarget === item.path && "ring-2 ring-accent ring-inset", cutPaths.has(item.path) && "kago-cut");
 
 export function FileList(props: FileListProps) {
   const [dropTarget, setDropTarget] = useState<string | null>(null);
@@ -115,25 +142,26 @@ export function FileList(props: FileListProps) {
 function ListView(props: ViewProps) {
   const { window, items, tree, locateFrom, layout, selectedPaths } = props;
   const range = useVisibleRange(props.scroller, layout, items.length);
+  const list = useListbox(props.onHold);
   return (
-    <div className="@container min-w-0" role="listbox" aria-multiselectable>
+    <div className="@container min-w-0">
       <div className="sticky top-0 z-[1] flex items-center gap-2 border-b border-line bg-surface px-3 text-xs text-muted" style={{ height: LIST_HEADER_HEIGHT }}>
         <SortHeader window={window} sortBy="name" label={t("Name")} className="min-w-0 flex-1" />
         <SortHeader window={window} sortBy="mtime" label={t("Modified")} className="hidden w-36 @md:flex" />
         <SortHeader window={window} sortBy="size" label={t("Size")} className="w-20 justify-end" />
         <SortHeader window={window} sortBy="type" label={t("Kind")} className="hidden w-24 @xl:flex" />
       </div>
-      <div style={{ height: range.height + layout.bottom, paddingTop: range.offset }}>
+      <div {...listboxProps(list, folderTitle(window.rootSlug, window.logicalPath), items, range, window.selectedItems.at(-1))} className="outline-none" style={{ height: range.height + layout.bottom, paddingTop: range.offset }}>
         {items.slice(range.start, range.end).map((item, offset) => {
           const selected = selectedPaths.has(item.path);
           const open = tree?.expanded.has(item.path) ?? false;
           return (
-            <div key={item.path} role="option" data-run={selectionRun(items, range.start + offset, selectedPaths)} className={cn("mx-1 flex h-(--kago-row-h) items-center gap-2 rounded-sm px-2", selectedClass(window, selected), stateClass(props, item))} {...itemProps(props, item, range.start + offset)}>
+            <div key={item.path} role="option" data-run={selectionRun(items, range.start + offset, selectedPaths)} className={cn("mx-1 flex h-(--kago-row-h) items-center gap-2 rounded-sm px-2", selectedClass(window, selected), stateClass(props, item))} {...itemProps(props, list, item, range.start + offset)}>
               <span className="flex min-w-0 flex-1 items-center gap-2" style={{ paddingLeft: (tree?.depths[range.start + offset] ?? 0) * TREE_INDENT }}>
                 {tree ? (
                   item.kind === "folder" ? (
                     <button
-                      className={cn("-mx-1 flex size-4 shrink-0 items-center justify-center rounded-sm outline-none", selected && window.focused ? "text-inherit" : "text-muted hover:text-ink")}
+                      className={cn("kago-hit-slop -mx-1 flex size-4 shrink-0 items-center justify-center rounded-sm outline-none", selected && window.focused ? "text-inherit" : "text-muted hover:text-ink")}
                       aria-label={open ? t("Collapse folder") : t("Expand folder")}
                       aria-expanded={open}
                       tabIndex={-1}
@@ -198,7 +226,7 @@ function SortHeader({ window, sortBy, label, className }: { window: FolderWindow
   const sort = () => toggleSort(window, sortBy);
 
   return (
-    <button className={cn("flex h-full items-center gap-1 outline-none hover:text-ink", active && "font-medium text-ink", className)} aria-sort={active ? (ascending ? "ascending" : "descending") : "none"} onClick={sort}>
+    <button className={cn("flex h-full items-center gap-1 outline-none hover:text-ink", active && "font-medium text-ink", className)} onClick={sort}>
       {label}
       {active ? ascending ? <ArrowUp className="size-3" /> : <ArrowDown className="size-3" /> : null}
     </button>
@@ -209,18 +237,18 @@ function GridView(props: ViewProps) {
   const { window, items, layout, selectedPaths } = props;
   const range = useVisibleRange(props.scroller, layout, items.length);
   const { icon } = GRID_SIZES[window.iconSize];
+  const list = useListbox(props.onHold);
   return (
     <div
-      className="grid content-start px-2"
-      role="listbox"
-      aria-multiselectable
+      {...listboxProps(list, folderTitle(window.rootSlug, window.logicalPath), items, range, window.selectedItems.at(-1))}
+      className="grid content-start px-2 outline-none"
       style={{ gridTemplateColumns: `repeat(${layout.columns}, minmax(0, 1fr))`, gap: layout.gap, height: layout.top + range.height + layout.bottom, paddingTop: layout.top + range.offset }}
     >
       {items.slice(range.start, range.end).map((item, offset) => {
         const selected = selectedPaths.has(item.path);
         return (
           // Every cell is the same height whatever the length of its name, so rows can be placed without measuring them.
-          <div key={item.path} role="option" title={props.locateFrom !== undefined ? whereIn(props.locateFrom, item) || undefined : undefined} className={cn("flex flex-col items-center gap-1 overflow-hidden rounded-md p-1.5", stateClass(props, item))} style={{ height: layout.cellHeight }} {...itemProps(props, item, range.start + offset)}>
+          <div key={item.path} role="option" title={props.locateFrom !== undefined ? whereIn(props.locateFrom, item) || undefined : undefined} className={cn("flex flex-col items-center gap-1 overflow-hidden rounded-md p-1.5", stateClass(props, item))} style={{ height: layout.cellHeight }} {...itemProps(props, list, item, range.start + offset)}>
             <div className={cn("flex shrink-0 items-center justify-center rounded-md", selected && "bg-hover ring-1 ring-line ring-inset")} style={{ width: icon + 8, height: icon + 8 }}>
               <FileThumbnail rootSlug={window.rootSlug} item={item} size={icon} />
             </div>
@@ -245,6 +273,8 @@ type FileColumnsProps = Pick<FileListProps, "window" | "onOpen" | "onContextItem
   /** The window's folder first, then each folder opened from the column before it. */
   columns: FileColumn[];
   onSelect: (event: React.MouseEvent, item: FileItem, column: number) => void;
+  onTap: (item: FileItem, column: number) => void;
+  onHold: (item: FileItem, column: number) => void;
   /** A click on the empty part of a column, which goes back to the folder that column shows. */
   onSelectColumn: (column: number) => void;
   onDropInto?: (event: React.DragEvent, folder: string) => void;
@@ -279,13 +309,14 @@ export function FileColumns(props: FileColumnsProps) {
   );
 }
 
-function Column({ column, index, opened, revealers, onSelect, onSelectColumn, onDropInto, ...shared }: FileColumnsProps & Pick<ViewProps, "selectedPaths" | "cutPaths" | "dropTarget" | "setDropTarget"> & { column: FileColumn; index: number; /** The folder of this column that the next one shows. */ opened?: string }) {
+function Column({ column, index, opened, revealers, onSelect, onTap, onHold, onSelectColumn, onDropInto, ...shared }: FileColumnsProps & Pick<ViewProps, "selectedPaths" | "cutPaths" | "dropTarget" | "setDropTarget"> & { column: FileColumn; index: number; /** The folder of this column that the next one shows. */ opened?: string }) {
   const { window, dropTarget, setDropTarget } = shared;
   const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
   const layout = useFileLayout(scroller, "columns", window.iconSize);
   const items = column.items ?? EMPTY;
   const range = useVisibleRange(scroller, layout, items.length);
-  const view: ViewProps = { ...shared, items, scroller, layout, onSelect: (event, item) => onSelect(event, item, index), onDropInto: onDropInto ? (event, folder) => onDropInto(event, folder.path) : undefined };
+  const view: ViewProps = { ...shared, items, scroller, layout, onSelect: (event, item) => onSelect(event, item, index), onTap: (item) => onTap(item, index), onHold: (item) => onHold(item, index), onDropInto: onDropInto ? (event, folder) => onDropInto(event, folder.path) : undefined };
+  const list = useListbox(view.onHold);
 
   useEffect(() => {
     const list = revealers.current;
@@ -298,11 +329,9 @@ function Column({ column, index, opened, revealers, onSelect, onSelectColumn, on
   return (
     <div
       ref={setScroller}
-      role="listbox"
-      aria-multiselectable
-      aria-label={baseName(column.folder) || undefined}
+      {...listboxProps(list, folderTitle(window.rootSlug, column.folder), items, range, window.selectedItems.at(-1))}
       data-folder={column.folder}
-      className={cn("relative w-56 shrink-0 overflow-x-hidden overflow-y-auto border-r border-line", dropTarget === column.folder && "bg-hover")}
+      className={cn("relative w-56 shrink-0 overflow-x-hidden overflow-y-auto border-r border-line outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent/60", dropTarget === column.folder && "bg-hover")}
       onClick={(event) => onBlank(event) && onSelectColumn(index)}
       onDragOver={(event) => {
         // A folder row under the pointer takes the drop itself; anywhere else it goes to the folder this column shows.
@@ -317,18 +346,18 @@ function Column({ column, index, opened, revealers, onSelect, onSelectColumn, on
       }}
     >
       {items.length === 0 && column.failed ? (
-        <p className="m-0 px-3 py-2.5 text-faint">{t("Couldn’t load")}</p>
+        <p className="m-0 px-3 py-2.5 text-muted">{t("Couldn’t load")}</p>
       ) : items.length === 0 && (column.items === undefined || column.loading) ? (
         <KagoLoading />
       ) : items.length === 0 ? (
-        <p className="m-0 px-3 py-2.5 text-faint">{t("Empty folder")}</p>
+        <p className="m-0 px-3 py-2.5 text-muted">{t("Empty folder")}</p>
       ) : (
         <div style={{ height: layout.top + range.height + layout.bottom, paddingTop: layout.top + range.offset }}>
           {items.slice(range.start, range.end).map((item, offset) => {
             const selected = shared.selectedPaths.has(item.path);
             return (
               // A folder the next column was opened from stays marked after the selection has moved on into it.
-              <div key={item.path} role="option" data-run={selectionRun(items, range.start + offset, shared.selectedPaths)} className={cn("mx-1 flex h-(--kago-row-h) items-center gap-2 rounded-sm px-2", selected ? selectedClass(window, true) : item.path === opened ? "bg-accent-soft" : "hover:bg-hover", stateClass(view, item))} {...itemProps(view, item, range.start + offset)}>
+              <div key={item.path} role="option" data-run={selectionRun(items, range.start + offset, shared.selectedPaths)} className={cn("mx-1 flex h-(--kago-row-h) items-center gap-2 rounded-sm px-2", selected ? selectedClass(window, true) : item.path === opened ? "bg-accent-soft" : "hover:bg-hover", stateClass(view, item))} {...itemProps(view, list, item, range.start + offset)}>
                 <FileIcon item={item} />
                 <span className="min-w-0 flex-1 truncate">{item.name}</span>
                 <TagDots tags={item.tags} />
@@ -339,7 +368,7 @@ function Column({ column, index, opened, revealers, onSelect, onSelectColumn, on
         </div>
       )}
       {/* What came before the reading failed is shown, but not as all there is. */}
-      {items.length > 0 && column.failed ? <p className="m-0 px-3 py-2.5 text-faint">{t("Couldn’t load")}</p> : null}
+      {items.length > 0 && column.failed ? <p className="m-0 px-3 py-2.5 text-muted">{t("Couldn’t load")}</p> : null}
     </div>
   );
 }

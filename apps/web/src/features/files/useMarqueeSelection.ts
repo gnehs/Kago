@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useWorkspaceStore } from "@/stores/workspace";
 
 type Marquee = { pointerId: number; startX: number; startY: number; x: number; y: number };
@@ -9,6 +9,8 @@ function localPoint(event: React.PointerEvent<HTMLElement>) {
   return { x: event.clientX - rect.left + element.scrollLeft, y: event.clientY - rect.top + element.scrollTop };
 }
 
+const onBlank = (target: EventTarget) => !(target instanceof Element && target.closest("[data-file-path], button, a, input"));
+
 const bounds = (marquee: Marquee) => ({
   left: Math.min(marquee.startX, marquee.x),
   top: Math.min(marquee.startY, marquee.y),
@@ -17,11 +19,13 @@ const bounds = (marquee: Marquee) => ({
 });
 
 /**
- * Rubber-band selection that starts on the blank area of a file list.
+ * Rubber-band selection that starts on the blank area of a file list. A finger there scrolls the list instead, and a
+ * tap of it clears the selection, as a click does.
  * `pathsInArea` answers which items an area of the scrolled content covers; rows outside the viewport are not in the DOM to be measured.
  */
 export function useMarqueeSelection(windowId: string, pathsInArea: (area: ReturnType<typeof bounds>) => string[]) {
   const [marquee, setMarquee] = useState<Marquee | null>(null);
+  const touch = useRef(false);
   const select = (paths: string[]) => useWorkspaceStore.getState().selectItems(windowId, paths);
 
   function end(event: React.PointerEvent<HTMLElement>) {
@@ -34,8 +38,9 @@ export function useMarqueeSelection(windowId: string, pathsInArea: (area: Return
     style: box ? { left: box.left, top: box.top, width: box.right - box.left, height: box.bottom - box.top } : null,
     handlers: {
       onPointerDown(event: React.PointerEvent<HTMLElement>) {
-        if (!event.isPrimary || event.button !== 0) return;
-        if (event.target instanceof Element && event.target.closest("[data-file-path], button, a, input")) return;
+        touch.current = event.pointerType === "touch";
+        if (touch.current || !event.isPrimary || event.button !== 0) return;
+        if (!onBlank(event.target)) return;
         const point = localPoint(event);
         event.currentTarget.setPointerCapture(event.pointerId);
         setMarquee({ pointerId: event.pointerId, startX: point.x, startY: point.y, ...point });
@@ -48,7 +53,10 @@ export function useMarqueeSelection(windowId: string, pathsInArea: (area: Return
         select(pathsInArea(bounds(next)));
       },
       onPointerUp: end,
-      onPointerCancel: end
+      onPointerCancel: end,
+      onClick(event: React.MouseEvent<HTMLElement>) {
+        if (touch.current && onBlank(event.target)) select([]);
+      }
     }
   };
 }

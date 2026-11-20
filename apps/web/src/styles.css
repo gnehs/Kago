@@ -200,6 +200,14 @@
   color-scheme: dark;
 }
 
+/* A fingertip needs more room than a pointer: rows and controls grow on a screen worked by touch. */
+@media (pointer: coarse) {
+  :root {
+    --kago-row-h: 44px;
+    --kago-control-h: 40px;
+  }
+}
+
 @theme inline {
   --color-canvas: var(--kago-bg);
   --color-surface: var(--kago-surface);
@@ -856,6 +864,51 @@
     color: var(--kago-text-faint);
     background: none;
     box-shadow: inset 0 0 0 0.5px var(--kago-seam);
+  }
+
+  /*
+   * A small key worked by a finger is given a 32px square to land on around it, so the key itself keeps its size.
+   * The window controls are spaced out to match, so no key's square reaches over its neighbour.
+   */
+  @media (pointer: coarse) {
+    .kago-hit-slop,
+    .kago-window-control {
+      position: relative;
+    }
+
+    .kago-hit-slop::before,
+    .kago-window-control::before {
+      content: "";
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: max(100%, 32px);
+      height: max(100%, 32px);
+      translate: -50% -50%;
+    }
+
+    .kago-window-controls {
+      gap: 12px;
+    }
+
+    .kago-window-extra {
+      min-width: 84px;
+    }
+  }
+
+  @media (pointer: coarse) and (max-width: 639px) {
+    .kago-window-extra {
+      min-width: 52px;
+    }
+  }
+
+  /* An item waiting to be moved by a cut: its name is muted, and its icon greyed without being made see-through. */
+  .kago-cut:not(.kago-selection) {
+    color: var(--kago-text-muted);
+  }
+
+  .kago-cut :is(svg, img, .kago-tag-dot) {
+    filter: saturate(0.3) contrast(0.6);
   }
 
   /*
