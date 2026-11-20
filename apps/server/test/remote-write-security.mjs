@@ -47,6 +47,21 @@ test("failed restoration keeps the recovery copy on the remote", async () => {
   assert.equal(recovery?.[1].toString("utf8"), "original");
 });
 
+test("a remote's trash is recognised under any spelling, as SMB finds it under every one", async () => {
+  const webdav = new RemoteStorage(new FakeRclone(), roots, env);
+  for (const spelling of ["/.kago-trash", "/.KAGO-TRASH", "/.Kago-Trash/item"]) assert.ok(webdav.isTrash(root, spelling), spelling);
+  assert.ok(webdav.isTrashItem(root, "/.KAGO-TRASH/item"));
+  assert.ok(!webdav.isTrash(root, "/docs/.KAGO-TRASH"));
+
+  const smb = new RemoteStorage(new FakeRclone(), { remoteConfig: () => ({ type: "smb", base: "", params: {} }) }, env);
+  assert.ok(smb.isTrash(root, "/share/.KAGO-TRASH/item"));
+  assert.ok(smb.isTrashItem(root, "/share/.Kago-Trash/item"));
+
+  const listing = new FakeRclone();
+  listing.list = async () => [{ Path: ".KAGO-TRASH", Name: ".KAGO-TRASH", Size: 0, ModTime: new Date(0).toISOString(), IsDir: true }];
+  assert.deepEqual(await new RemoteStorage(listing, roots, env).list(root, "/"), []);
+});
+
 class FakeRclone {
   files;
   deleted = [];

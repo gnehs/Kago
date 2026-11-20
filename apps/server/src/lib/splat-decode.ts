@@ -23,7 +23,14 @@ const BLOCK = 16;
 const RUN = 4096;
 const MAX_HEADER_BYTES = 64 * 1024;
 const MAX_META_BYTES = 4 * 1024 * 1024;
-const MAX_IMAGE_BYTES = 512 * 1024 * 1024;
+/**
+ * The most pixels a SOG picture may hold, about thirty million splats: more than scenes are trained to. A picture is
+ * a few bytes in the file and four a pixel unpacked, so one of a single colour could otherwise ask for gigabytes.
+ */
+const MAX_SOG_PIXELS = 32 * 1024 * 1024;
+const MAX_IMAGE_BYTES = MAX_SOG_PIXELS * 4;
+/** Bytes a PLY splat may take; a trained one with all its coefficients takes 248. */
+const MAX_PLY_STRIDE = 4096;
 
 /** The runs of splats read out of `count`: all of them, or evenly spaced ones that add up to about `budget`. */
 function blocks(count: number, budget: number): Array<{ start: number; length: number }> {
@@ -97,7 +104,7 @@ function plyLayout(head: Buffer): PlyLayout | null {
   }
   for (const each of elements) {
     if (each.name === "vertex") {
-      if (each.listed || !Number.isSafeInteger(each.count) || each.count <= 0 || !PLY_FIELDS.every((field) => field in each.fields)) return null;
+      if (each.stride > MAX_PLY_STRIDE || each.listed || !Number.isSafeInteger(each.count) || each.count <= 0 || !PLY_FIELDS.every((field) => field in each.fields)) return null;
       return { count: each.count, offset, stride: each.stride, fields: each.fields };
     }
     // An element of lists before the splats leaves no way to tell where they begin without reading it all.
@@ -188,7 +195,8 @@ async function entryBytes(zip: yauzl.ZipFile, entry: yauzl.Entry, limit: number)
 
 /**
  * A bundled SOG: a zip of `meta.json` and lossless WebP pictures, pixel `i` of each holding part of splat `i`, read
- * the way PlayCanvas reads them. The pictures are unpacked one after another, so only one is held whole at a time.
+ * the way PlayCanvas reads them. The pictures are unpacked one after another, and only the pixels of the splats read
+ * are kept of each, so only one is held whole at a time.
  */
 async function decodeSog(file: string, budget: number): Promise<SplatCloud | null> {
   const { default: sharp } = await import("sharp");
@@ -201,58 +209,65 @@ async function decodeSog(file: string, budget: number): Promise<SplatCloud | nul
     if (!metaBytes) return null;
     const meta = JSON.parse(metaBytes.toString("utf8")) as SogMeta;
     if ((meta.version !== 1 && meta.version !== 2) || !Number.isSafeInteger(meta.count) || meta.count <= 0) return null;
+    // splat-transform lays a picture out a multiple of four pixels a side, as near square as that allows.
+    const side = Math.ceil(Math.sqrt(meta.count) / 4) * 4 + 4;
+    const pixelLimit = Math.min(MAX_SOG_PIXELS, Math.max(meta.count * 2, side * side));
+    if (meta.count > pixelLimit) return null;
     const runs = blocks(meta.count, budget);
     const cloud = emptyCloud(runs.reduce((sum, run) => sum + run.length, 0));
-
+    const each = (read: (splat: number, index: number) => void) => {
+      let index = 0;
+      for (const run of runs) for (let splat = run.start; splat < run.start + run.length; splat++, index++) read(splat, index);
+    };
+    /** The four bytes of each splat read, in the order they are read. */
     const picture = async (name: string | undefined) => {
       const entry = name === undefined ? undefined : entries.get(name);
       const bytes = entry && (await entryBytes(zip, entry, MAX_IMAGE_BYTES));
       if (!bytes) throw new Error(`no ${name} in the SOG`);
-      const { data, info } = await sharp(bytes, { limitInputPixels: false }).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+      // sharp refuses a picture of more pixels from its header, before unpacking any of it.
+      const { data, info } = await sharp(bytes, { limitInputPixels: pixelLimit }).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
       if (info.channels !== 4 || info.width * info.height < meta.count) throw new Error(`${name} is too small`);
-      return data;
-    };
-    const each = (read: (splat: number, index: number) => void) => {
-      let index = 0;
-      for (const run of runs) for (let splat = run.start; splat < run.start + run.length; splat++, index++) read(splat, index);
+      const kept = new Uint8Array(cloud.count * 4);
+      each((splat, index) => kept.set(data.subarray(splat * 4, splat * 4 + 4), index * 4));
+      return kept;
     };
     const lerp = (bounds: Bounds, part: number, t: number) => bounds.mins[part]! * (1 - t) + bounds.maxs[part]! * t;
     const decoded = (table: Bounds | { codebook: number[] }, part: number, byte: number) => ("codebook" in table ? table.codebook[byte]! : lerp(table, part, byte / 255));
 
     const lower = await picture(meta.means.files[0]);
     const upper = await picture(meta.means.files[1]);
-    each((splat, index) => {
+    for (let index = 0; index < cloud.count; index++) {
       for (let axis = 0; axis < 3; axis++) {
-        const value = lerp(meta.means, axis, ((upper[splat * 4 + axis]! << 8) + lower[splat * 4 + axis]!) / 65535);
+        const value = lerp(meta.means, axis, ((upper[index * 4 + axis]! << 8) + lower[index * 4 + axis]!) / 65535);
         cloud.positions[index * 3 + axis] = Math.sign(value) * (Math.exp(Math.abs(value)) - 1);
       }
-    });
+    }
 
     const quats = await picture(meta.quats.files[0]);
-    each((splat, index) => {
-      const a = (quats[splat * 4]! / 255 - 0.5) * Math.SQRT2;
-      const b = (quats[splat * 4 + 1]! / 255 - 0.5) * Math.SQRT2;
-      const c = (quats[splat * 4 + 2]! / 255 - 0.5) * Math.SQRT2;
+    for (let index = 0; index < cloud.count; index++) {
+      const a = (quats[index * 4]! / 255 - 0.5) * Math.SQRT2;
+      const b = (quats[index * 4 + 1]! / 255 - 0.5) * Math.SQRT2;
+      const c = (quats[index * 4 + 2]! / 255 - 0.5) * Math.SQRT2;
       const d = Math.sqrt(Math.max(0, 1 - (a * a + b * b + c * c)));
       // Which part was left out for being the largest, and is made up from the other three; written w, x, y, z.
-      const mode = quats[splat * 4 + 3]! - 252;
+      const mode = quats[index * 4 + 3]! - 252;
       if (mode === 0) setRotation(cloud, index, d, a, b, c);
       else if (mode === 1) setRotation(cloud, index, a, d, b, c);
       else if (mode === 2) setRotation(cloud, index, a, b, d, c);
       else setRotation(cloud, index, a, b, c, d);
-    });
+    }
 
     const scales = await picture(meta.scales.files[0]);
-    each((splat, index) => {
-      for (let axis = 0; axis < 3; axis++) cloud.scales[index * 3 + axis] = Math.exp(decoded(meta.scales, axis, scales[splat * 4 + axis]!));
-    });
+    for (let index = 0; index < cloud.count; index++) {
+      for (let axis = 0; axis < 3; axis++) cloud.scales[index * 3 + axis] = Math.exp(decoded(meta.scales, axis, scales[index * 4 + axis]!));
+    }
 
     const colors = await picture(meta.sh0.files[0]);
-    each((splat, index) => {
-      for (let part = 0; part < 3; part++) cloud.colors[index * 4 + part] = 0.5 + SH_C0 * decoded(meta.sh0, part, colors[splat * 4 + part]!);
-      const alpha = colors[splat * 4 + 3]!;
+    for (let index = 0; index < cloud.count; index++) {
+      for (let part = 0; part < 3; part++) cloud.colors[index * 4 + part] = 0.5 + SH_C0 * decoded(meta.sh0, part, colors[index * 4 + part]!);
+      const alpha = colors[index * 4 + 3]!;
       cloud.colors[index * 4 + 3] = "codebook" in meta.sh0 ? alpha / 255 : sigmoid(lerp(meta.sh0, 3, alpha / 255));
-    });
+    }
     return compensate(cloud, meta.count);
   } finally {
     zip.close();

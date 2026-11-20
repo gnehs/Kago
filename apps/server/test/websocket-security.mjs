@@ -40,6 +40,9 @@ test("a disabled account loses events on the existing socket", async (t) => {
 
   assert.deepEqual(socket.messages, []);
   assert.equal(socket.closeCode, 1008);
+
+  auth.patchUser(signedIn.actor.id, { disabled: false });
+  assert.equal(auth.actorForSession(signedIn.token), null, "enabling the account again does not revive its old session");
 });
 
 test("logout revokes the existing socket session", async (t) => {

@@ -149,6 +149,30 @@ test("a SOG is read the way PlayCanvas reads it, whichever part of a rotation wa
   });
 });
 
+test("a SOG whose pictures are far larger than its splats need is refused from their headers, not unpacked", async () => {
+  await withDir(async (dir) => {
+    // Only the header of a lossless WebP 16383 pixels a side: all a reader needs to know how much it would unpack to.
+    const edge = 16383;
+    const bits = (edge - 1) | ((edge - 1) << 14) | (1 << 28);
+    const stream = Buffer.concat([Buffer.from([0x2f]), Buffer.from(new Uint32Array([bits >>> 0]).buffer), Buffer.alloc(31)]);
+    const huge = Buffer.concat([Buffer.from("RIFF"), Buffer.from(new Uint32Array([4 + 8 + stream.length]).buffer), Buffer.from("WEBPVP8L"), Buffer.from(new Uint32Array([stream.length]).buffer), stream]);
+    assert.deepEqual(await sharp(huge, { limitInputPixels: false }).metadata().then(({ width, height }) => [width, height]), [edge, edge]);
+    const zip = new AdmZip(await sog(SPLATS));
+    for (const name of ["means_l.webp", "means_u.webp", "quats.webp", "scales.webp", "sh0.webp"]) zip.updateFile(name, huge);
+    const file = path.join(dir, "huge.sog");
+    await writeFile(file, zip.toBuffer());
+    const started = performance.now();
+    await assert.rejects(readSplats(file, 1000), /pixel limit/);
+    assert.ok(performance.now() - started < 1000, `refused in ${Math.round(performance.now() - started)} ms`);
+
+    const counted = new AdmZip(zip.toBuffer());
+    const meta = JSON.parse(counted.readAsText("meta.json"));
+    counted.updateFile("meta.json", Buffer.from(JSON.stringify({ ...meta, count: edge * edge })));
+    await writeFile(file, counted.toBuffer());
+    assert.equal(await readSplats(file, 1000), null, "a count past the pixel cap is refused before any picture is read");
+  });
+});
+
 test("a PLY that is a mesh, an ASCII PLY or a compressed splat PLY has no splats to read", async () => {
   await withDir(async (dir) => {
     const mesh = path.join(dir, "mesh.ply");

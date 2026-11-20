@@ -182,6 +182,7 @@ function PluginFrame({ window, previewer, onDownload, onRetry }: { window: Previ
   useEffect(() => {
     const element = frame.current;
     if (!element) return;
+    // A sandboxed frame's origin is opaque, and no target origin but "*" reaches one.
     const post = (message: HostMessage, transfer: Transferable[] = []) => element.contentWindow?.postMessage(message, "*", transfer);
     const reads = new AbortController();
     let reading = 0;
@@ -271,8 +272,8 @@ function PluginFrame({ window, previewer, onDownload, onRetry }: { window: Previ
     }
 
     const onMessage = (event: MessageEvent) => {
-      // Only this window's own frame is listened to, and only in the words the protocol has.
-      if (event.source !== element.contentWindow) return;
+      // Only this window's own frame is listened to, still sandboxed, and only in the words the protocol has.
+      if (event.source !== element.contentWindow || event.origin !== "null") return;
       const message = parsePluginMessage(event.data);
       if (message) handle(message);
     };

@@ -260,7 +260,8 @@ export class Thumbnailer {
   private startWorker(): Worker {
     const worker = new Worker(new URL(import.meta.url.endsWith(".ts") ? "../workers/thumbnail-worker.ts" : "../workers/thumbnail-worker.js", import.meta.url), {
       name: "kago-thumbnail-worker",
-      // What it reads is someone's file, whole: one written to exhaust memory takes the worker with it and not the server.
+      // Bounds only the worker's JavaScript heap. Buffers and what MuPDF and libvips allocate are the server's memory,
+      // which is why each reader caps what a file may make it allocate before allocating it.
       resourceLimits: { maxOldGenerationSizeMb: 512 }
     });
     // Idle between folders; it must not keep the server from shutting down.

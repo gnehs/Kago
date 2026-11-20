@@ -4,7 +4,7 @@ import type { RootService } from "./root.service.js";
 import type { Root } from "./types.js";
 import { AppError, errnoIs } from "../lib/errors.js";
 import { nfc, sameName } from "../lib/filename.js";
-import { KAGO_PREFIX, TRASH_FOLDER } from "../lib/system-files.js";
+import { isReservedName, TRASH_FOLDER } from "../lib/system-files.js";
 import { isRemote, type RemoteEntry, type RemoteStorage } from "../storage/remote-storage.js";
 
 export type SafePath = {
@@ -51,7 +51,7 @@ export class PathService {
     const root = this.roots.getBySlug(rootSlug);
     const requested = this.normalizeLogicalPath(logicalPath);
     // Kago clears away what it finds under its own names, so nothing else may be given one.
-    if (nfc(path.posix.basename(requested)).startsWith(KAGO_PREFIX)) throw new AppError(400, "Invalid filename", "INVALID_FILENAME");
+    if (isReservedName(path.posix.basename(requested))) throw new AppError(400, "Invalid filename", "INVALID_FILENAME");
     if (isRemote(root)) {
       const parent = await this.resolveRemote(root, path.posix.dirname(requested));
       if (!parent.entry?.directory) throw new AppError(404, "Path not found", "PATH_NOT_FOUND");

@@ -165,15 +165,24 @@ export class AuthService {
     if (user.role === "ADMIN" && (nextRole !== "ADMIN" || nextDisabled)) {
       this.assertAnotherEnabledAdmin(userId);
     }
-    this.db
-      .prepare("UPDATE users SET display_name = ?, role = ?, disabled = ?, updated_at = ? WHERE id = ?")
-      .run(
-        input.displayName ?? user.display_name,
-        nextRole,
-        nextDisabled,
-        now(),
-        userId
-      );
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      this.db
+        .prepare("UPDATE users SET display_name = ?, role = ?, disabled = ?, updated_at = ? WHERE id = ?")
+        .run(
+          input.displayName ?? user.display_name,
+          nextRole,
+          nextDisabled,
+          now(),
+          userId
+        );
+      // Enabling the account again must not bring back a session someone may have taken while it was off.
+      if (nextDisabled && !user.disabled) this.db.prepare("DELETE FROM sessions WHERE user_id = ?").run(userId);
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
     return this.publicUser(this.getUser(userId));
   }
 

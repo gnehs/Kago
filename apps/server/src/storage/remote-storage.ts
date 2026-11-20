@@ -85,9 +85,12 @@ export class RemoteStorage {
     return segmentsOf(logicalPath).length <= this.fixedDepth(root);
   }
 
-  /** Whether the path is, or lies in, a trash folder: one sits at the top of the location, or of each share. */
+  /**
+   * Whether the path is, or lies in, a trash folder: one sits at the top of the location, or of each share. In any
+   * case, as a remote that does not mind it (SMB) finds the trash under every spelling.
+   */
   isTrash(root: Root, logicalPath: string): boolean {
-    return segmentsOf(logicalPath)[this.fixedDepth(root)] === TRASH_FOLDER;
+    return segmentsOf(logicalPath)[this.fixedDepth(root)]?.toLowerCase() === TRASH_FOLDER;
   }
 
   /** The trash folder that takes what is deleted at `logicalPath`: the one of the same share. */
@@ -99,7 +102,7 @@ export class RemoteStorage {
   isTrashItem(root: Root, logicalPath: string): boolean {
     const segments = segmentsOf(logicalPath);
     const depth = this.fixedDepth(root);
-    return logicalPath.startsWith("/") && segments.length === depth + 2 && segments[depth] === TRASH_FOLDER && !segments.includes("..") && !segments.includes(".");
+    return logicalPath.startsWith("/") && segments.length === depth + 2 && segments[depth]?.toLowerCase() === TRASH_FOLDER && !segments.includes("..") && !segments.includes(".");
   }
 
   async stat(root: Root, logicalPath: string): Promise<RemoteEntry | null> {
@@ -124,7 +127,7 @@ export class RemoteStorage {
       throw remoteFailure(error);
     });
     const hidden = segmentsOf(logicalPath).length === this.fixedDepth(root);
-    return items.map(entryOf).filter((entry) => !hidden || entry.name !== TRASH_FOLDER);
+    return items.map(entryOf).filter((entry) => !hidden || entry.name.toLowerCase() !== TRASH_FOLDER);
   }
 
   open(root: Root, logicalPath: string, range?: { start: number; end: number }): Promise<Readable> {

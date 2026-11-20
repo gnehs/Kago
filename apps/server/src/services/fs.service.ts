@@ -876,7 +876,8 @@ export class FsService {
   }
 
   async publicUpload(rootSlug: string, parentPath: string, fileName: string, stream: NodeJS.ReadableStream, shareId: string) {
-    if (!fileName || fileName.includes("/") || fileName.includes("..") || fileName.includes("\0") || fileName.length > 255) {
+    // Nor a name a listing leaves out: whoever has the link could leave files in the folder that its owner never sees.
+    if (!fileName || fileName.includes("/") || fileName.includes("..") || fileName.includes("\0") || fileName.length > 255 || isSystemFile(nfc(fileName))) {
       throw new AppError(400, "Invalid filename", "INVALID_FILENAME");
     }
     const parent = await this.paths.resolveExisting(rootSlug, parentPath);

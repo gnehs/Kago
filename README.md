@@ -195,7 +195,7 @@ Kago follows the linuxserver.io convention: the container starts as root, fixes 
 | `PORT` | `8080` | The port listened on inside the container |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | none | Creates the administrator on first start and skips the setup page. Both must be given together |
 | `SESSION_SECRET` | generated | The secret that signs sign-in sessions. When not given, one is generated and kept in `/app-data/session.secret` for reuse |
-| `TRUST_PROXY` | trust nothing | Set it when Kago is behind a reverse proxy; see [Access from outside](#access-from-outside). The number of proxies (`1`), the proxy's address or subnet, or `true` (trust everything; only when Kago can't be reached directly) |
+| `TRUST_PROXY` | trust nothing | Set it when Kago is behind a reverse proxy; see [Access from outside](#access-from-outside). The number of proxies (`1`) or the proxy's address or subnet. `true` trusts whatever address a client puts in `X-Forwarded-For`, which lets anyone who can set that header get around the limit on wrong passwords; don't use it |
 
 ## Video transcoding and hardware acceleration
 
@@ -265,7 +265,7 @@ Kago itself only serves HTTP. To reach it from outside, put it behind a reverse 
 
 - **Enable WebSocket**: task progress and live updates go through `/ws`.
 - **Raise the upload size limit**: Kago doesn't limit upload size, but most reverse proxies have a default cap (Nginx's `client_max_body_size`, for example).
-- **Set `TRUST_PROXY`**: without it, everyone Kago sees comes from the reverse proxy's address. The IPs in the audit log are wrong, the limit on wrong password guesses is shared by everybody, and the sign-in cookie isn't marked HTTPS-only. With a single reverse proxy in front, set it to `1` (the number of proxies), or to the address or subnet the proxy connects from (for example `172.16.0.0/12`). **Don't set it when there is no reverse proxy**, or anyone can claim to be some other address.
+- **Set `TRUST_PROXY`**: without it, everyone Kago sees comes from the reverse proxy's address. The IPs in the audit log are wrong, the limit on wrong password guesses is shared by everybody, and the sign-in cookie isn't marked HTTPS-only. With a single reverse proxy in front, set it to `1` (the number of proxies), or to the address or subnet the proxy connects from (for example `172.16.0.0/12`). Not `true`: it believes the address a client writes into `X-Forwarded-For` itself, so whoever guesses passwords can claim a new address for every guess. **Don't set it when there is no reverse proxy**, or anyone can claim to be some other address.
 
 ## Updating
 

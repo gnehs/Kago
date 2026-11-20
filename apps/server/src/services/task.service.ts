@@ -19,7 +19,7 @@ import { SecretBox } from "../lib/secret-box.js";
 import { zipStream, type ZipEntry, type ZipOptions } from "../lib/zip-stream.js";
 import { RcloneJobStopped, refusedForPermission, type RcloneItem, type RcloneStats } from "../storage/rclone-client.js";
 import { runRclone } from "../storage/rclone-daemon.js";
-import { REPLACE_PARTIAL, TRASH_FOLDER } from "../lib/system-files.js";
+import { isReservedName, REPLACE_PARTIAL, TRASH_FOLDER } from "../lib/system-files.js";
 import { isRemote, joinFs, transferProgress, type RemoteEntry, type RemoteStorage } from "../storage/remote-storage.js";
 import type { EventPublisher } from "../ws/events.js";
 import { ArchivePasswordService } from "./archive-password.service.js";
@@ -1650,7 +1650,8 @@ export class TaskService {
       throw new AppError(400, "Unsafe zip entry", "UNSAFE_ZIP_ENTRY");
     }
     const segments = name.split("/").filter(Boolean);
-    if (segments.length === 0 || segments.some((segment) => segment === "." || segment === "..")) {
+    // Kago clears away or moves back what it finds under its own names, so no archive may plant one.
+    if (segments.length === 0 || segments.some((segment) => segment === "." || segment === ".." || isReservedName(segment))) {
       throw new AppError(400, "Unsafe zip entry", "UNSAFE_ZIP_ENTRY");
     }
     return segments;

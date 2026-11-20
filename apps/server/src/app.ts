@@ -37,7 +37,7 @@ import { PathService } from "./services/path.service.js";
 import { permissionSetSchema, PermissionService } from "./services/permission.service.js";
 import { favoriteSchema, folderViewQuerySchema, folderViewSchema, PreferenceService, settingsSchema } from "./services/preference.service.js";
 import { remoteRootPatchSchema, remoteRootSchema, rootPatchSchema, RootService } from "./services/root.service.js";
-import { SHARE_VISIT_SECONDS, ShareService, shareSchema, type ShareVisitor } from "./services/share.service.js";
+import { SHARE_ACCESS_SECONDS, SHARE_VISIT_SECONDS, ShareService, shareSchema, type ShareVisitor } from "./services/share.service.js";
 import { ShelfService } from "./services/shelf.service.js";
 import { StorageService, type FileSource } from "./services/storage.service.js";
 import { syncJobSchema, SyncService } from "./services/sync.service.js";
@@ -82,7 +82,7 @@ export async function buildApp(env: Env) {
   const workspace = new WorkspaceService(db, roots, paths);
   const tasks = new TaskService(db, paths, permissions, audit, events, env.appDataDir, fsService, storage, preferences);
   const shelves = new ShelfService(db, paths, permissions, events, audit, storage);
-  const shares = new ShareService(db, paths, permissions, audit, events, storage);
+  const shares = new ShareService(db, paths, permissions, audit, events, storage, env.sessionSecret);
   const sync = new SyncService(db, tasks, auth, audit, remotes);
   const convertJobs = new ConvertJobService(db, tasks, auth, audit);
   const groups = new GroupService(db);
@@ -1320,7 +1320,7 @@ function registerApi(app: FastifyInstance, services: Services) {
       sameSite: "lax",
       secure: request.protocol === "https",
       path: `/s/${params.token}`,
-      maxAge: 60 * 60 * 12
+      maxAge: SHARE_ACCESS_SECONDS
     });
     return { ok: true, shareId: auth.shareId };
   });

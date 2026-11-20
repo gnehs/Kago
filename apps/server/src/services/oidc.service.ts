@@ -3,7 +3,7 @@ import type { FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import type { Db } from "../db/db.js";
 import { row, rows } from "../db/db.js";
-import { AttemptLimiter } from "../lib/attempts.js";
+import { AttemptLimiter, guesserOf } from "../lib/attempts.js";
 import { randomToken, sha256 } from "../lib/crypto.js";
 import { AppError } from "../lib/errors.js";
 import { isRecord, TokenError, UnknownKeyError, verifyIdToken, type IdTokenClaims, type Jwk } from "../lib/id-token.js";
@@ -305,7 +305,7 @@ export class OidcService {
       throw new AppError(403, "The identity provider did not sign you in", "OIDC_PROVIDER_REFUSED");
     }
 
-    const attempt = this.attempts.begin([{ key: `oidc:${request.ip ?? ""}`, limit: CALLBACK_TRIES }]);
+    const attempt = this.attempts.begin([{ key: `oidc:${guesserOf(request.ip ?? "")}`, limit: CALLBACK_TRIES }]);
     const answer = await this.tokenRequest(config, provider, {
       grant_type: "authorization_code",
       code: query.data.code,

@@ -34,6 +34,31 @@ test("extract rejects a small stored archive with a forged huge size without wri
   }
 });
 
+test("extract refuses an archive that would plant one of Kago's own names, in any case", async () => {
+  const fixture = await createFixture("kago-zip-reserved.");
+  const app = await buildApp(testEnv(fixture));
+  const admin = client(app);
+
+  try {
+    await app.ready();
+    assert.equal((await admin.post("/api/auth/setup", { email: "admin@example.test", password: "fake-admin-password-123", displayName: "Test Admin" })).statusCode, 200);
+    for (const [index, planted] of [".kago-replace-x/old/notes.txt", "inner/.KAGO-Upload-x"].entries()) {
+      const archive = new AdmZip();
+      archive.addFile("ok.txt", Buffer.from("ok"));
+      archive.addFile(planted, Buffer.from("planted"));
+      await writeFile(path.join(fixture.dataDir, "photos", "public", `planted-${index}.zip`), archive.toBuffer());
+      const created = await admin.post("/api/tasks", { type: "extract", sources: [{ rootSlug: "photos", path: `/public/planted-${index}.zip` }], destination: { rootSlug: "photos", path: "/public" } });
+      assert.equal(created.statusCode, 200);
+      assert.equal((await waitTask(admin, created.json.id)).status, "failed", planted);
+      const left = await readdir(path.join(fixture.dataDir, "photos", "public"));
+      assert.deepEqual(left.filter((name) => !name.endsWith(".zip")), [], `nothing of ${planted} was written`);
+    }
+  } finally {
+    await app.close();
+    await rm(fixture.baseDir, { recursive: true, force: true });
+  }
+});
+
 test("background ZIPs leave symlinks out and stop serving an artifact once its location is taken away", async () => {
   const fixture = await createFixture("kago-zip-acl.");
   const publicDir = path.join(fixture.dataDir, "photos", "public");

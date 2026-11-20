@@ -1,3 +1,4 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import { lookup } from "mime-types";
 import type { Db } from "../db/db.js";
@@ -28,6 +29,8 @@ const SHARE_TRIES = 5;
 const SHARE_TRIES_PER_ADDRESS = 50;
 /** For how long someone who was counted against a link's limit may come back to it without being counted again. */
 export const SHARE_VISIT_SECONDS = 12 * 60 * 60;
+/** For how long the right password, once given, opens a link: the cookie that carries it lasts as long. */
+export const SHARE_ACCESS_SECONDS = 12 * 60 * 60;
 
 /** Who is asking for a link: where from, and the cookie the link's page was given. */
 export type ShareVisitor = { address: string; session?: string };
@@ -39,7 +42,8 @@ export class ShareService {
     private readonly permissions: PermissionService,
     private readonly audit: AuditService,
     private readonly events: EventPublisher,
-    private readonly storage: StorageService
+    private readonly storage: StorageService,
+    private readonly secret: string
   ) {}
 
   private readonly attempts = new AttemptLimiter();
@@ -219,7 +223,7 @@ export class ShareService {
 
   async publicInfo(token: string, accessToken?: string, visitor?: ShareVisitor) {
     const share = this.resolveToken(token, visitor);
-    const authenticated = !share.password_hash || accessToken === this.accessTokenForShare(share);
+    const authenticated = !share.password_hash || this.opens(share, accessToken);
     const base = {
       id: share.id,
       mode: (JSON.parse(share.permission_json) as { mode: string }).mode,
@@ -247,7 +251,7 @@ export class ShareService {
 
   async authenticatePublicShare(token: string, password: string, address = "", visitor?: ShareVisitor): Promise<{ shareId: string; accessToken: string }> {
     const share = this.resolveToken(token, visitor);
-    if (!share.password_hash) return { shareId: share.id, accessToken: this.accessTokenForShare(share) };
+    if (!share.password_hash) return { shareId: share.id, accessToken: this.accessTokenForShare(share, now()) };
     // A link is handed around, so its password is the one anyone at all may guess at.
     const guesser = guesserOf(address);
     const attempt = this.attempts.begin([
@@ -266,12 +270,12 @@ export class ShareService {
       throw new AppError(401, "Invalid share password", "INVALID_SHARE_PASSWORD");
     }
     attempt.succeeded();
-    return { shareId: share.id, accessToken: this.accessTokenForShare(share) };
+    return { shareId: share.id, accessToken: this.accessTokenForShare(share, now()) };
   }
 
   assertPublicAccess(share: ResolvedShare, accessToken?: string): void {
     if (!share.password_hash) return;
-    if (accessToken && accessToken === this.accessTokenForShare(share)) return;
+    if (this.opens(share, accessToken)) return;
     throw new AppError(401, "Share password required", "SHARE_PASSWORD_REQUIRED");
   }
 
@@ -332,8 +336,22 @@ export class ShareService {
     if (!stat.isFile()) throw new AppError(400, "Download and view shares must target a file", "SHARE_TARGET_NOT_FILE");
   }
 
-  private accessTokenForShare(share: ResolvedShare): string {
-    return sha256(`share-access:${share.id}:${share.password_hash ?? "none"}`);
+  /**
+   * Proof that the link's password was given at `issuedAt`, in seconds. It names the password's hash, so a new
+   * password turns away everyone let in by the old one.
+   */
+  private accessTokenForShare(share: ResolvedShare, issuedAt: number): string {
+    const mac = createHmac("sha256", this.secret).update(`share-access:${share.id}:${share.password_hash ?? "none"}:${issuedAt}`).digest("hex");
+    return `${issuedAt}.${mac}`;
+  }
+
+  private opens(share: ResolvedShare, accessToken: string | undefined): boolean {
+    const issuedAt = Number(accessToken?.split(".", 1)[0]);
+    const age = now() - issuedAt;
+    if (!accessToken || !Number.isSafeInteger(issuedAt) || age < 0 || age > SHARE_ACCESS_SECONDS) return false;
+    const expected = Buffer.from(this.accessTokenForShare(share, issuedAt));
+    const given = Buffer.from(accessToken);
+    return given.length === expected.length && timingSafeEqual(given, expected);
   }
 
   private requireCreatorPermissions(share: ResolvedShare, safe: SafePath): void {
