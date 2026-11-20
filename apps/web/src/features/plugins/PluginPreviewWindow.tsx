@@ -47,6 +47,22 @@ function currentTheme(): Theme {
   return { mode: document.documentElement.dataset.theme === "dark" ? "dark" : "light", tokens };
 }
 
+/** The first `length` bytes of a response, leaving the rest of a file of gigabytes unfetched. */
+async function readStart(response: Response, length: number) {
+  const bytes = new Uint8Array(length);
+  const reader = response.body!.getReader();
+  let filled = 0;
+  while (filled < length) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    const take = Math.min(value.byteLength, length - filled);
+    bytes.set(value.subarray(0, take), filled);
+    filled += take;
+  }
+  void reader.cancel();
+  return bytes.buffer.slice(0, filled);
+}
+
 type Companion = { path: string; info: FileInfo };
 
 /**
@@ -183,11 +199,15 @@ function PluginFrame({ window, previewer, onDownload, onRetry }: { window: Previ
       const stop = Math.min(end, start + MAX_READ_BYTES, target.size);
       if (stop <= start) return post({ kind: "read:ok", id, bytes: new ArrayBuffer(0) });
       try {
-        const response = await fetch(previewUrl(rootSlug, target.path), { credentials: "include", headers: { Range: `bytes=${start}-${stop - 1}` }, signal: reads.signal });
+        // Not kept: with part of a file cached, the browser asks again with If-Range on the server's weak ETag, which
+        // can never match, so the server sends the whole file instead of the range.
+        const response = await fetch(previewUrl(rootSlug, target.path), { credentials: "include", cache: "no-store", headers: { Range: `bytes=${start}-${stop - 1}` }, signal: reads.signal });
         // A server that sends the whole file has still sent the start of it.
-        if (response.status !== 206 && !(response.status === 200 && start === 0)) throw new Error(`HTTP ${response.status}`);
-        const whole = await response.arrayBuffer();
-        const bytes = response.status === 200 ? whole.slice(0, stop) : whole;
+        if (response.status !== 206 && !(response.status === 200 && start === 0)) {
+          void response.body?.cancel();
+          throw new Error(`HTTP ${response.status}`);
+        }
+        const bytes = response.status === 200 ? await readStart(response, stop) : await response.arrayBuffer();
         if (!reads.signal.aborted) post({ kind: "read:ok", id, bytes }, [bytes]);
       } catch {
         if (!reads.signal.aborted) post({ kind: "read:error", id });
