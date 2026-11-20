@@ -11,7 +11,8 @@ import { chooseAction, promptText } from "@/stores/dialogs";
 import { toast } from "@/stores/toast";
 import { hideLeaving, leavingSettled, showLeaving } from "@/stores/leaving";
 import { followTask } from "@/features/tasks/taskToast";
-import { isUploadCancelled, uploadForm, uploadLabel } from "@/stores/uploads";
+import { isActiveTask } from "@/features/tasks/taskUtils";
+import { isUploadCancelled, startUpload, uploadLabel } from "@/stores/uploads";
 import { folderTitle, useWorkspaceStore } from "@/stores/workspace";
 import { startExtract } from "./ArchivePassword";
 import { askConflicts, resolveConflicts, type Conflict, type ConflictChoices } from "./TransferConflicts";
@@ -19,7 +20,7 @@ import { MAX_BATCH_RENAME, promptBatchRename } from "./BatchRenameDialog";
 import { promptCompress } from "./CompressDialog";
 import { promptConvert } from "@/features/convert/ConvertDialog";
 import type { MediaKind } from "@/features/convert/convertSpec";
-import type { FileItem, FileList, FileTask, FileWindow } from "@/types/kago";
+import type { FileItem, FileList, FileTask, FileWindow, Root, TrashItem } from "@/types/kago";
 import { t } from "@/lib/i18n";
 
 export type { FileRef };
@@ -177,6 +178,28 @@ export function renameFile(queryClient: QueryClient, item: FileRef & { name: str
 /** Past this much to copy, moving to the Trash is slow enough to ask whether it is wanted at all. */
 const SLOW_TRASH_BYTES = 1024 ** 3;
 
+/**
+ * Puts back what a trash task moved. The task records each item in the Trash as it goes and says nothing of which, so
+ * once it is over they are found there by the place they came from, among what was thrown away since it began.
+ */
+async function undoTrash(queryClient: QueryClient, sources: FileRef[], task: FileTask) {
+  let current = task;
+  while (isActiveTask(current)) {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    current = await api<FileTask>(`/api/tasks/${task.id}`);
+  }
+  const [roots, trashed] = await Promise.all([api<Root[]>("/api/roots"), api<TrashItem[]>("/api/trash")]);
+  const found: TrashItem[] = [];
+  for (const source of sources) {
+    const rootId = roots.find((root) => root.slug === source.rootSlug)?.id;
+    const match = trashed.find((item) => item.original_root_id === rootId && nfc(item.original_path) === nfc(source.path) && item.deleted_at >= task.created_at);
+    if (match) found.push(match);
+  }
+  if (found.length === 0) throw new Error(t("Nothing to put back"));
+  for (const item of found) followTask(await api<FileTask>(`/api/trash/${item.id}/restore`, { method: "POST" }));
+  await Promise.all(["trash", "tasks"].map((key) => queryClient.invalidateQueries({ queryKey: [key] })));
+}
+
 /** Resolves to the task moving them, or to nothing when it could not be started. */
 export function trashFiles(queryClient: QueryClient, picked: FileRef[], scope: string | null = null) {
   const sources = outermost(picked);
@@ -198,7 +221,11 @@ export function trashFiles(queryClient: QueryClient, picked: FileRef[], scope: s
     // The server moves them in the background; here they are gone at once.
     const task = await createTask(queryClient, { type, sources }, sources);
     letGo(sources);
-    toast(type === "delete" ? t("Deleted {count} item | Deleted {count} items", { count: sources.length }) : t("Moved {count} item to Trash | Moved {count} items to Trash", { count: sources.length }));
+    if (type === "delete") toast(t("Deleted {count} item | Deleted {count} items", { count: sources.length }));
+    else
+      toast(t("Moved {count} item to Trash | Moved {count} items to Trash", { count: sources.length }), "info", {
+        action: { label: t("Undo"), run: () => void run(() => undoTrash(queryClient, sources, task), t("Couldn’t undo")) }
+      });
     return task;
   });
 }
@@ -300,52 +327,91 @@ export function useFileActions(window: FileWindow) {
         const dirs = tree.dirs.filter((dir) => choiceOf(dir) !== "skip");
         const files = tree.files.filter(({ file, dir }) => (dir ? choiceOf(dir) : choices[nfc(file.name)]) !== "skip");
         if (files.length === 0 && dirs.length === 0) return;
-        try {
-          for (const dir of dirs) {
-            const top = dir === topOf(dir);
-            const choice = choiceOf(dir);
-            // A folder merged into its namesake has the folders inside it merged in turn.
-            const conflict = choice?.startsWith("merge_") ? "merge" : top ? choice : undefined;
-            const full = target(dir);
-            const made = await api<{ path: string }>("/api/fs/mkdir", { method: "POST", body: JSON.stringify({ rootSlug, path: parentPath(full), name: full.slice(full.lastIndexOf("/") + 1), conflict }) });
-            if (top) placed.set(dir, made.path);
+        const byDir = new Map<string, File[]>();
+        for (const { file, dir } of files) byDir.set(dir, [...(byDir.get(dir) ?? []), file]);
+        const batches: Array<{ dir: string; files: File[]; bytes: number }> = [];
+        for (const [dir, inDir] of byDir) {
+          for (let start = 0; start < inDir.length; start += uploadBatchSize) {
+            const batch = inDir.slice(start, start + uploadBatchSize);
+            batches.push({ dir, files: batch, bytes: batch.reduce((sum, file) => sum + file.size, 0) });
           }
-          const byDir = new Map<string, File[]>();
-          for (const { file, dir } of files) byDir.set(dir, [...(byDir.get(dir) ?? []), file]);
-          for (const [dir, inDir] of byDir) {
-            const choice = dir ? choiceOf(dir) : undefined;
-            for (let start = 0; start < inDir.length; start += uploadBatchSize) {
-              const batch = inDir.slice(start, start + uploadBatchSize);
+        }
+        const totalBytes = batches.reduce((sum, batch) => sum + batch.bytes, 0);
+        const uploadName = uploadLabel(files.map(({ file }) => file));
+        /** Where a run stopped, so the next one goes on from there: what has gone across is not sent again, nor asked about again. */
+        let dirsMade = 0;
+        let batchesSent = 0;
+        let sentBytes = 0;
+        let sentFiles = 0;
+        /** The batch that was in flight when a run failed. Some of its files may have arrived. */
+        let interrupted = -1;
+
+        const sendRemaining = async () => {
+          const job = startUpload({ label: uploadName, files: files.length, total: totalBytes, done: sentFiles, loaded: sentBytes });
+          try {
+            for (; dirsMade < dirs.length; dirsMade++) {
+              const dir = dirs[dirsMade]!;
+              const top = dir === topOf(dir);
+              const choice = choiceOf(dir);
+              // A folder merged into its namesake has the folders inside it merged in turn.
+              const conflict = choice?.startsWith("merge_") ? "merge" : top ? choice : undefined;
+              const full = target(dir);
+              const made = await api<{ path: string }>("/api/fs/mkdir", { method: "POST", body: JSON.stringify({ rootSlug, path: parentPath(full), name: full.slice(full.lastIndexOf("/") + 1), conflict }) });
+              if (top) placed.set(dir, made.path);
+            }
+            for (; batchesSent < batches.length; batchesSent++) {
+              const { dir, files: batch, bytes } = batches[batchesSent]!;
+              const choice = dir ? choiceOf(dir) : undefined;
               // A file at the top meets its namesake as was chosen for it; one in a merged folder, as was chosen for the files both folders have.
               const conflicts: Record<string, string> = {};
               for (const file of batch) {
                 const action = dir ? (choice?.startsWith("merge_") ? choice.slice("merge_".length) : undefined) : choices[nfc(file.name)];
                 if (action) conflicts[nfc(file.name)] = action;
+                // A file the interrupted batch got across has itself for a namesake now; leaving it be is right, and one that never arrived is not in conflict.
+                // One to be kept beside its namesake is sent again either way: a second copy can be seen and removed, a missing file cannot.
+                else if (batchesSent === interrupted) conflicts[nfc(file.name)] = "skip";
               }
               const form = new FormData();
               form.append("rootSlug", rootSlug);
               form.append("path", target(dir));
               if (Object.keys(conflicts).length > 0) form.append("conflicts", JSON.stringify(conflicts));
               for (const file of batch) form.append("file", file, nfc(file.name));
-              await uploadForm("/api/fs/upload", form, uploadLabel(batch));
+              await job.send("/api/fs/upload", form);
+              sentBytes += bytes;
+              sentFiles += batch.length;
             }
+          } finally {
+            job.end();
           }
-        } catch (error) {
-          // Whatever made it across before the failure is already on disk.
-          await refreshRoot(rootSlug);
-          if (isUploadCancelled(error)) {
-            toast(t("Upload cancelled"));
+        };
+
+        const remaining = () => dirs.length - dirsMade + batches.slice(batchesSent).reduce((sum, batch) => sum + batch.files.length, 0);
+        const attempt = async (): Promise<void> => {
+          try {
+            await sendRemaining();
+          } catch (error) {
+            interrupted = dirsMade < dirs.length ? -1 : batchesSent;
+            // Whatever made it across before the failure is already on disk.
+            await refreshRoot(rootSlug);
+            if (isUploadCancelled(error)) {
+              toast(t("Upload cancelled"));
+              return;
+            }
+            // A large upload runs long enough for no one to be watching when it fails, so what went wrong waits to be read.
+            const count = remaining();
+            toast(errorMessage(error, t("Upload failed")), "error", {
+              ongoing: true,
+              action: { label: t("Retry the remaining {count} item | Retry the remaining {count} items", { count }), run: () => void run(attempt, t("Upload failed")) }
+            });
             return;
           }
-          // A large upload runs long enough for no one to be watching when it fails, so what went wrong waits to be read.
-          toast(errorMessage(error, t("Upload failed")), "error", { ongoing: true });
-          return;
-        }
-        await refreshRoot(rootSlug);
-        // A drop on a folder row, or on one in the sidebar, lands inside that folder, out of sight; say so.
-        const folder = path === window.logicalPath && rootSlug === window.rootSlug ? "" : folderTitle(rootSlug, path);
-        if (files.length > 0) toast(folder ? t("Uploaded {count} file to “{folder}” | Uploaded {count} files to “{folder}”", { count: files.length, folder }) : t("Uploaded {count} file | Uploaded {count} files", { count: files.length }));
-        else toast(folder ? t("Created {count} folder in “{folder}” | Created {count} folders in “{folder}”", { count: dirs.length, folder }) : t("Created {count} folder | Created {count} folders", { count: dirs.length }));
+          await refreshRoot(rootSlug);
+          // A drop on a folder row, or on one in the sidebar, lands inside that folder, out of sight; say so.
+          const folder = path === window.logicalPath && rootSlug === window.rootSlug ? "" : folderTitle(rootSlug, path);
+          if (files.length > 0) toast(folder ? t("Uploaded {count} file to “{folder}” | Uploaded {count} files to “{folder}”", { count: files.length, folder }) : t("Uploaded {count} file | Uploaded {count} files", { count: files.length }));
+          else toast(folder ? t("Created {count} folder in “{folder}” | Created {count} folders in “{folder}”", { count: dirs.length, folder }) : t("Created {count} folder | Created {count} folders", { count: dirs.length }));
+        };
+        await attempt();
       }, t("Upload failed")),
     rename: (item: FileItem) => renameFile(queryClient, { rootSlug: window.rootSlug, path: item.path, name: item.name, kind: item.kind }, clearSelection, window.id),
     /** Asks for a pattern and names the items by it. What is beside each of them, in its own folder, has its name taken. */
@@ -391,8 +457,8 @@ export function useFileActions(window: FileWindow) {
     addToShelf: (paths: string[]) =>
       run(async () => {
         const shelves = await api<Array<{ id: string }>>("/api/shelves");
-        const shelfId = shelves[0]?.id;
-        if (!shelfId) return;
+        // The server keeps one shelf for every account, so none is only a listing that came back empty; make the one the shelf starts with.
+        const shelfId = shelves[0]?.id ?? (await api<{ id: string }>("/api/shelves", { method: "POST", body: JSON.stringify({ name: "Default" }) })).id;
         await Promise.all(refs(paths).map((ref) => api(`/api/shelves/${shelfId}/items`, { method: "POST", body: JSON.stringify(ref) })));
         await queryClient.invalidateQueries({ queryKey: ["shelves"] });
         toast(t("Added to Shelf ({count})", { count: paths.length }));

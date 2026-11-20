@@ -9,6 +9,7 @@ export function UploadRow({ upload }: { upload: Upload }) {
   const detail = sent
     ? t("Processing…")
     : [
+        upload.files > 1 ? t("{done} of {count} file | {done} of {count} files", { done: upload.done, count: upload.files }) : null,
         `${formatWholeSize(upload.loaded)} / ${formatWholeSize(upload.total)}`,
         upload.speed > 0 ? t("{duration} left", { duration: formatDuration((upload.total - upload.loaded) / upload.speed) }) : null
       ].filter(Boolean).join(" · ");

@@ -77,7 +77,7 @@ export function TopBar({ user, onOpenPalette }: { user: Actor; onOpenPalette: ()
               className={cn(
                 "flex h-7 max-w-40 min-w-0 items-center gap-1.5 rounded-md px-2 outline-none focus-visible:ring-2 focus-visible:ring-accent/50",
                 window.focused && !window.minimized ? "kago-raised" : "kago-flat text-muted",
-                window.minimized && "opacity-60"
+                window.minimized && "text-muted [&_svg]:grayscale [&_img]:grayscale"
               )}
               onClick={() => activate(window)}
             >
@@ -89,7 +89,7 @@ export function TopBar({ user, onOpenPalette }: { user: Actor; onOpenPalette: ()
       </nav>
 
       <button
-        className="kago-well flex h-7 shrink-0 items-center gap-2 rounded-full pr-2.5 pl-2.5 text-faint outline-none hover:text-muted focus-visible:ring-2 focus-visible:ring-accent/50"
+        className="kago-well flex h-7 shrink-0 items-center gap-2 rounded-full pr-2.5 pl-2.5 text-muted outline-none hover:text-ink focus-visible:ring-2 focus-visible:ring-accent/50"
         onClick={onOpenPalette}
       >
         <Search className="size-3.5" />

@@ -22,6 +22,8 @@ export function KagoToaster() {
           // Still being read: it does not go while the pointer is on it.
           onPointerEnter={() => hold(toast.id)}
           onPointerLeave={() => release(toast.id)}
+          onFocusCapture={() => hold(toast.id)}
+          onBlurCapture={() => release(toast.id)}
         >
           {toast.progress ? (
             <Count title={toast.message} speed={toast.progress.speed} value={toast.progress.value} max={toast.progress.max} details={toast.progress.detail} close={<Close label={t("Dismiss notification")} onClick={() => dismiss(toast.id)} />} />
@@ -29,6 +31,17 @@ export function KagoToaster() {
             <>
               {toast.kind === "error" ? <CircleAlert /> : null}
               <span className="min-w-0 wrap-anywhere">{toast.message}</span>
+              {toast.action ? (
+                <button
+                  className="shrink-0 rounded-sm px-1.5 py-0.5 font-medium text-accent outline-none kago-flat focus-visible:ring-2 focus-visible:ring-accent/50"
+                  onClick={() => {
+                    toast.action!.run();
+                    dismiss(toast.id);
+                  }}
+                >
+                  {toast.action.label}
+                </button>
+              ) : null}
               <Close label={t("Dismiss notification")} onClick={() => dismiss(toast.id)} />
             </>
           )}

@@ -1,11 +1,13 @@
 import type { FileItem } from "../types/kago";
 import { locale, t } from "./i18n";
 
+const sizeNumber = new Intl.NumberFormat(locale, { maximumFractionDigits: 1 });
+
 export function formatSize(size: number) {
-  if (size < 1024) return `${size} B`;
-  if (size < 1024 ** 2) return `${(size / 1024).toFixed(1)} KB`;
-  if (size < 1024 ** 3) return `${(size / 1024 ** 2).toFixed(1)} MB`;
-  return `${(size / 1024 ** 3).toFixed(2)} GB`;
+  if (size < 1024) return `${sizeNumber.format(size)} B`;
+  if (size < 1024 ** 2) return `${sizeNumber.format(size / 1024)} KB`;
+  if (size < 1024 ** 3) return `${sizeNumber.format(size / 1024 ** 2)} MB`;
+  return `${sizeNumber.format(size / 1024 ** 3)} GB`;
 }
 
 /** A size to the nearest whole unit, for a count that moves too fast for its decimals to be read. */
