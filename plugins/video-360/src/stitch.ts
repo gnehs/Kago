@@ -3,7 +3,7 @@ import type { Crop, Optics } from "./source";
 /** Where the camera looks: `yaw` and `pitch` in radians, `fov` the vertical field of view in radians. */
 export type View = { yaw: number; pitch: number; fov: number };
 
-/** A lens as drawn: the stream whose picture it is in, the part of that picture it fills, and how it bends light. */
+/** A lens as drawn: the stream whose picture it is in, and the part of that picture it fills. */
 export type LensGeometry = { stream: number; crop: Crop };
 
 const VERTEX = `#version 300 es

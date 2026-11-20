@@ -97,7 +97,7 @@ export type Optics = {
   fov: number;
   /** The image circle's radius as a share of half the crop's shorter side. */
   radius: number;
-  /** How far each lens's picture is turned about its axis, in degrees, clockwise as seen in the picture. */
+  /** How far each lens's picture is turned about its axis, in degrees. */
   roll: [number, number];
 };
 
