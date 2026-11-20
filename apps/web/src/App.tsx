@@ -1,11 +1,14 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Navigate, Route, Routes, useParams } from "react-router";
+import { SESSION_ENDED_EVENT } from "./api/client";
 import { useMe, useSetupStatus } from "./api/hooks";
 import { KagoDialogHost } from "./components/kago/dialog";
 import { KagoLoading } from "./components/kago/empty-state";
 import { KagoToaster } from "./components/kago/toaster";
 import { AvatarDialogHost } from "./features/auth/AvatarDialog";
 import { Login } from "./features/auth/Login";
+import { SessionEnded } from "./features/auth/SessionEnded";
 import { SetupAdmin } from "./features/auth/SetupAdmin";
 import { useSsoNotice } from "./features/auth/sso";
 import { ArchivePasswordDialogHost } from "./features/files/ArchivePassword";
@@ -54,9 +57,27 @@ function AppGate({ children }: { children?: ReactNode }) {
   const setup = useSetupStatus();
   const me = useMe();
   useSsoNotice(me.isLoading ? undefined : Boolean(me.data?.user));
+  const queryClient = useQueryClient();
+  const user = me.data?.user ?? null;
+  // Whoever was signed in stays on the desktop when the session ends under them, and is asked to sign in over it.
+  const [last, setLast] = useState(user);
+  useEffect(() => {
+    if (user) setLast(user);
+  }, [user]);
+  useEffect(() => {
+    const ended = () => void queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
+    window.addEventListener(SESSION_ENDED_EVENT, ended);
+    return () => window.removeEventListener(SESSION_ENDED_EVENT, ended);
+  }, [queryClient]);
 
   if (setup.isLoading || me.isLoading) return <div className="h-full bg-canvas"><KagoLoading /></div>;
   if (setup.data?.needsSetup) return <SetupAdmin />;
-  if (!me.data?.user) return <Login />;
-  return children ?? <Workspace user={me.data.user} />;
+  const shown = user ?? last;
+  if (!shown) return <Login />;
+  return (
+    <>
+      {children ?? <Workspace user={shown} />}
+      <SessionEnded open={!user} user={shown} />
+    </>
+  );
 }

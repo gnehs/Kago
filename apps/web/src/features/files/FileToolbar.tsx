@@ -1,10 +1,12 @@
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, Columns3, Ellipsis, FolderPlus, Info, LayoutGrid, List, PanelLeft, RotateCcw, Search, SlidersHorizontal, Square, Star, Upload, X } from "lucide-react";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { KagoDropdownMenu, KagoMenuItem, KagoMenuSeparator } from "@/components/kago/menu";
 import { KagoDivider } from "@/components/kago/divider";
 import { KagoSegmented } from "@/components/kago/segmented";
 import { baseName } from "@/lib/paths";
+import { cn } from "@/lib/utils";
+import { FOCUS_SEARCH_EVENT } from "@/features/workspace/useShortcuts";
 import { resetFolderView, saveSettings, setFolderView } from "@/stores/settings";
 import { toast } from "@/stores/toast";
 import { useWorkspaceStore } from "@/stores/workspace";
@@ -54,6 +56,26 @@ export function FileToolbar({ window, folderView, rootName, readonly, canGoBack,
   // Picking a view says how this folder is to be shown, here and in every window that comes to it.
   const setView = (view: Partial<FolderView>) => void setFolderView(window.rootSlug, window.logicalPath, view);
   const { own } = folderView;
+  // Too narrow for the field beside the path, the bar keeps a button for it, and the field takes the path's place while it is in use.
+  const [searching, setSearching] = useState(false);
+  const searchShown = searching || Boolean(search);
+  const searchField = useRef<HTMLInputElement>(null);
+  const focusSearch = useRef(false);
+  const openSearch = () => {
+    focusSearch.current = true;
+    setSearching(true);
+    // Already on show, it only needs the caret.
+    searchField.current?.focus();
+  };
+  useEffect(() => {
+    if (searching && focusSearch.current) searchField.current?.focus();
+    focusSearch.current = false;
+  }, [searching]);
+  useEffect(() => {
+    const onFocusSearch = (event: Event) => (event as CustomEvent<string>).detail === window.id && openSearch();
+    globalThis.addEventListener(FOCUS_SEARCH_EVENT, onFocusSearch);
+    return () => globalThis.removeEventListener(FOCUS_SEARCH_EVENT, onFocusSearch);
+  }, [window.id]);
   const view: FolderView = { viewMode: window.viewMode, iconSize: window.iconSize, sortBy: window.sortBy, sortDirection: window.sortDirection };
   const viewOrigin =
     folderView.source === "folder"
@@ -84,85 +106,99 @@ export function FileToolbar({ window, folderView, rootName, readonly, canGoBack,
         <KagoIconButton label={t("Back")} className="size-6" disabled={!canGoBack} onClick={() => onGo(-1)}><ChevronLeft /></KagoIconButton>
         <KagoIconButton label={t("Forward")} className="size-6" disabled={!canGoForward} onClick={() => onGo(1)}><ChevronRight /></KagoIconButton>
       </div>
-      <Breadcrumb window={window} rootName={rootName} onNavigate={onNavigate} />
+      <div className={cn("min-w-0 flex-1", searchShown ? "hidden @2xl:flex" : "flex")}>
+        <Breadcrumb window={window} rootName={rootName} onNavigate={onNavigate} />
+      </div>
 
-      <label className="kago-well hidden h-7 w-40 items-center gap-1.5 rounded-full px-2.5 @2xl:flex">
-        <Search className="size-3.5 text-faint" />
+      <KagoIconButton label={t("Search")} className={cn("@2xl:hidden", searchShown && "hidden")} onClick={openSearch}><Search /></KagoIconButton>
+      <label className={cn("kago-well h-7 items-center gap-1.5 rounded-full px-2.5 @2xl:flex @2xl:w-40 @2xl:flex-none", searchShown ? "flex min-w-0 flex-1" : "hidden")}>
+        <Search className="size-3.5 shrink-0 text-muted" />
         <input
+          ref={searchField}
           type="search"
           aria-label={t("Search this folder and its subfolders")}
           placeholder={t("Search")}
-          className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-faint [&::-webkit-search-cancel-button]:hidden"
+          className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted [&::-webkit-search-cancel-button]:hidden"
           value={search}
           onChange={(event) => onSearch(event.target.value)}
-          onKeyDown={(event) => event.key === "Escape" && search && (event.stopPropagation(), onSearch(""))}
+          onBlur={() => setSearching(false)}
+          onKeyDown={(event) => {
+            if (event.key !== "Escape") return;
+            event.stopPropagation();
+            if (search) onSearch("");
+            else event.currentTarget.blur();
+          }}
         />
         {search ? (
-          <button aria-label={t("Clear search")} className="text-faint hover:text-ink" onClick={() => onSearch("")}><X className="size-3.5" /></button>
+          <button aria-label={t("Clear search")} className="text-muted hover:text-ink" onClick={() => onSearch("")}><X className="size-3.5" /></button>
         ) : null}
       </label>
 
-      <KagoDivider />
-      {/* Already in the icon view, its segment steps to the next size instead; each mode says what a press of it does. */}
-      <KagoSegmented iconOnly label={t("View as")} options={viewModes.map(({ mode, label, icon }) => ({ value: mode, label, icon }))} value={window.viewMode} onChange={(mode) => viewModes.find((item) => item.mode === mode)?.onClick()} />
+      {/* A phone has no room for the field beside these, so they step aside while it is searched and come back with the path. */}
+      <div className={cn("shrink-0 items-center gap-1", searchShown ? "hidden @md:flex" : "flex")}>
+        <KagoDivider />
+        {/* Already in the icon view, its segment steps to the next size instead; each mode says what a press of it does. */}
+        <KagoSegmented iconOnly label={t("View as")} options={viewModes.map(({ mode, label, icon }) => ({ value: mode, label, icon }))} value={window.viewMode} onChange={(mode) => viewModes.find((item) => item.mode === mode)?.onClick()} />
 
-      {/* The list view sorts from its column headers; the other views have none. */}
-      {window.viewMode === "list" ? null : (
+        {/* The list view sorts from its column headers; the other views have none. */}
+        {window.viewMode === "list" ? null : (
+          <KagoDropdownMenu
+            label={t("Sort by")}
+            menu={sortColumns.map(({ sortBy, label }) => (
+              <KagoMenuItem
+                key={sortBy}
+                closeOnClick={false}
+                icon={window.sortBy !== sortBy ? <span className="size-4" /> : window.sortDirection === "asc" ? <ArrowUp /> : <ArrowDown />}
+                onClick={() => toggleSort(window, sortBy)}
+              >
+                {label}
+              </KagoMenuItem>
+            ))}
+          >
+            <ArrowUpDown />
+          </KagoDropdownMenu>
+        )}
         <KagoDropdownMenu
-          label={t("Sort by")}
-          menu={sortColumns.map(({ sortBy, label }) => (
-            <KagoMenuItem
-              key={sortBy}
-              closeOnClick={false}
-              icon={window.sortBy !== sortBy ? <span className="size-4" /> : window.sortDirection === "asc" ? <ArrowUp /> : <ArrowDown />}
-              onClick={() => toggleSort(window, sortBy)}
-            >
-              {label}
-            </KagoMenuItem>
-          ))}
+          label={t("View options")}
+          className="hidden @md:flex"
+          menu={
+            <>
+              <div className="px-2 py-1 text-xs text-muted">{viewOrigin}</div>
+              <KagoMenuSeparator />
+              {/* Passing the view down passes all of it, as it looks now, not just the parts set by hand. */}
+              <KagoMenuItem
+                closeOnClick={false}
+                // It is switched on and off, so it shows a box that is ticked or empty, not a tick that is there or missing.
+                icon={<span className="flex size-4 items-center justify-center"><input type="checkbox" aria-hidden tabIndex={-1} readOnly checked={Boolean(own?.recursive)} className="kago-checkbox pointer-events-none" /></span>}
+                onClick={() => void setFolderView(window.rootSlug, window.logicalPath, own?.recursive ? { recursive: false } : { ...view, recursive: true })}
+              >
+                {t("Apply to subfolders")}
+              </KagoMenuItem>
+              <KagoMenuItem
+                icon={<Star />}
+                onClick={() => {
+                  void saveSettings({ defaultView: view });
+                  toast(t("Folders without a view of their own now open like this one"));
+                }}
+              >
+                {t("Use as default")}
+              </KagoMenuItem>
+              <KagoMenuItem icon={<RotateCcw />} disabled={!own || !(own.viewMode || own.iconSize || own.sortBy || own.recursive)} onClick={() => void resetFolderView(window.rootSlug, window.logicalPath)}>
+                {t("Reset to inherited setting")}
+              </KagoMenuItem>
+            </>
+          }
         >
-          <ArrowUpDown />
+          <SlidersHorizontal />
         </KagoDropdownMenu>
-      )}
-      <KagoDropdownMenu
-        label={t("View options")}
-        className="hidden @md:flex"
-        menu={
-          <>
-            <div className="px-2 py-1 text-xs text-muted">{viewOrigin}</div>
-            <KagoMenuSeparator />
-            {/* Passing the view down passes all of it, as it looks now, not just the parts set by hand. */}
-            <KagoMenuItem
-              closeOnClick={false}
-              // It is switched on and off, so it shows a box that is ticked or empty, not a tick that is there or missing.
-              icon={<span className="flex size-4 items-center justify-center"><input type="checkbox" aria-hidden tabIndex={-1} readOnly checked={Boolean(own?.recursive)} className="kago-checkbox pointer-events-none" /></span>}
-              onClick={() => void setFolderView(window.rootSlug, window.logicalPath, own?.recursive ? { recursive: false } : { ...view, recursive: true })}
-            >
-              {t("Apply to subfolders")}
-            </KagoMenuItem>
-            <KagoMenuItem
-              icon={<Star />}
-              onClick={() => {
-                void saveSettings({ defaultView: view });
-                toast(t("Folders without a view of their own now open like this one"));
-              }}
-            >
-              {t("Use as default")}
-            </KagoMenuItem>
-            <KagoMenuItem icon={<RotateCcw />} disabled={!own || !(own.viewMode || own.iconSize || own.sortBy || own.recursive)} onClick={() => void resetFolderView(window.rootSlug, window.logicalPath)}>
-              {t("Reset to inherited setting")}
-            </KagoMenuItem>
-          </>
-        }
-      >
-        <SlidersHorizontal />
-      </KagoDropdownMenu>
+      </div>
 
       <KagoDivider className="hidden @xl:block" />
       <KagoIconButton label={t("New folder")} className="hidden @xl:inline-flex" disabled={readonly} onClick={onNewFolder}><FolderPlus /></KagoIconButton>
       <KagoIconButton label={t("Upload files")} className="hidden @xl:inline-flex" disabled={readonly} onClick={onUpload}><Upload /></KagoIconButton>
-      <KagoDivider />
-      <KagoIconButton label={t("Info (⌘I)")} active={Boolean(window.inspectorOpen)} onClick={() => store().updateWindow(window.id, { inspectorOpen: !window.inspectorOpen })}><Info /></KagoIconButton>
+      <KagoDivider className="hidden @sm:block" />
+      {/* The narrowest window leaves it to the menu beside it, which has it too. */}
+      <KagoIconButton label={t("Info (⌘I)")} className="hidden @sm:inline-flex" active={Boolean(window.inspectorOpen)} onClick={() => store().updateWindow(window.id, { inspectorOpen: !window.inspectorOpen })}><Info /></KagoIconButton>
       {menu ? <KagoDropdownMenu label={window.selectedItems.length > 0 ? t("All actions for the selection") : t("Folder actions")} menu={menu}><Ellipsis /></KagoDropdownMenu> : null}
     </div>
   );

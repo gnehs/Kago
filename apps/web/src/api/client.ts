@@ -13,6 +13,9 @@ export class ApiError extends Error {
 /** The server words its errors in English; they are translated here like the rest of the interface. */
 export const serverMessage = (message: unknown) => (typeof message === "string" && message ? t(message) : t("Request failed"));
 
+/** Sent on the page when a request is refused for want of a session, so the desktop can ask to sign in again. */
+export const SESSION_ENDED_EVENT = "kago:session-ended";
+
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(path, {
     credentials: "include",
@@ -23,6 +26,10 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
       ...(init.method && init.method !== "GET" ? { "x-kago-csrf": "1" } : {}),
       ...init.headers
     }
+  }).catch((error: unknown) => {
+    // A request called off is not a failure to report. Any other rejection is the network's, worded by the browser in its own language.
+    if (error instanceof DOMException && error.name === "AbortError") throw error;
+    throw new ApiError(t("Can’t reach the Kago server"), "NETWORK", 0);
   });
 
   if (!response.ok) throw await refusal(response);
@@ -33,7 +40,10 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 async function refusal(response: Response): Promise<ApiError> {
   const error = await response.json().catch(() => ({ error: response.statusText, code: "REQUEST_FAILED" }));
-  return new ApiError(serverMessage(error.error), error.code ?? "REQUEST_FAILED", response.status);
+  if (response.status === 401 && error.code === "AUTH_REQUIRED") window.dispatchEvent(new Event(SESSION_ENDED_EVENT));
+  // Input turned down names the fields at fault, which the message alone does not.
+  const fields = Array.isArray(error.issues) ? [...new Set((error.issues as { path?: unknown[] }[]).map((issue) => issue.path?.join(".")).filter(Boolean))].join(", ") : "";
+  return new ApiError(fields ? `${serverMessage(error.error)} (${fields})` : serverMessage(error.error), error.code ?? "REQUEST_FAILED", response.status);
 }
 
 /** An answer the server sends a line at a time, each line handed over as it arrives. */

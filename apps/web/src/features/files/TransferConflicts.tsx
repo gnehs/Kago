@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Combine, CopyPlus, Replace, SkipForward } from "lucide-react";
 import { create } from "zustand";
+import { useShallow } from "zustand/react/shallow";
 import { api } from "@/api/client";
 import { KagoChoice } from "@/components/kago/choice";
 import { KagoDialog } from "@/components/kago/dialog";
@@ -27,18 +28,21 @@ export type Conflict = Details & { rootSlug: string; path: string; name: string;
 type Answer = { action: ConflictAction; /** The same goes for every conflict still to come. */ all: boolean };
 type ConflictRequest = { window: string | null; type: Arrival; conflict: Conflict; folder: string; remaining: number; resolve: (answer: Answer | null) => void };
 
-const useConflictStore = create<{ request: ConflictRequest | null }>(() => ({ request: null }));
+/** The conflict each window is asked about, by window id; the page's is under "". Each window's copy or move waits on its own. */
+const useConflictStore = create<{ requests: Record<string, ConflictRequest> }>(() => ({ requests: {} }));
 
 function ask(request: Omit<ConflictRequest, "resolve">) {
+  const scope = request.window ?? "";
   return new Promise<Answer | null>((resolve) => {
-    useConflictStore.getState().request?.resolve(null);
-    useConflictStore.setState({ request: { ...request, resolve } });
+    useConflictStore.getState().requests[scope]?.resolve(null);
+    useConflictStore.setState(({ requests }) => ({ requests: { ...requests, [scope]: { ...request, resolve } } }));
   });
 }
 
-function settle(answer: Answer | null) {
-  useConflictStore.getState().request?.resolve(answer);
-  useConflictStore.setState({ request: null });
+function settle(scope: string, answer: Answer | null) {
+  const { [scope]: request, ...rest } = useConflictStore.getState().requests;
+  request?.resolve(answer);
+  useConflictStore.setState({ requests: rest });
 }
 
 const mergeable = (conflict: Conflict) => conflict.kind === "folder" && conflict.existing.kind === "folder";
@@ -96,7 +100,15 @@ function Side({ label, details, newer }: { label: string; details: Details; newe
 }
 
 export function TransferConflictDialogHost() {
-  const pending = useConflictStore((state) => state.request);
+  const scopes = useConflictStore(useShallow((state) => Object.keys(state.requests)));
+  // A scope stays drawn a moment after its question is settled, so the dialog can fade out.
+  const [shown, setShown] = useState<string[]>([]);
+  useEffect(() => setShown((before) => [...new Set([...before, ...scopes])]), [scopes]);
+  return shown.map((scope) => <ConflictDialog key={scope} scope={scope} onGone={() => setShown((before) => before.filter((item) => item !== scope))} />);
+}
+
+function ConflictDialog({ scope, onGone }: { scope: string; onGone: () => void }) {
+  const pending = useConflictStore((state) => state.requests[scope] ?? null);
   // The last request stays on show while its dialog fades out.
   const [request, setRequest] = useState(pending);
   const [choice, setChoice] = useState<Clash | "merge">("keep");
@@ -130,12 +142,12 @@ export function TransferConflictDialogHost() {
   }[choice];
 
   return (
-    <KagoDialog question scope={request.window} open={Boolean(pending)} onClose={() => settle(null)} title={t("“{folder}” already has an item with this name", { folder })}>
+    <KagoDialog question scope={request.window} open={Boolean(pending)} onClose={() => settle(scope, null)} onGone={onGone} title={t("“{folder}” already has an item with this name", { folder })}>
       <form
         className="flex min-h-0 flex-col"
         onSubmit={(event) => {
           event.preventDefault();
-          settle({ action: choice === "merge" ? `merge_${inside}` : choice, all });
+          settle(scope, { action: choice === "merge" ? `merge_${inside}` : choice, all });
         }}
       >
         <div className="flex min-h-0 flex-col gap-3 overflow-y-auto px-5 py-5">
@@ -166,7 +178,7 @@ export function TransferConflictDialogHost() {
           ) : null}
         </div>
         <footer className="grid shrink-0 grid-cols-2 gap-2 rounded-b-lg border-t border-line bg-elevated p-3">
-          <Button size="lg" onClick={() => settle(null)}>{t("Cancel")}</Button>
+          <Button size="lg" onClick={() => settle(scope, null)}>{t("Cancel")}</Button>
           <Button size="lg" type="submit" variant={choice === "replace" || (choice === "merge" && inside === "replace") ? "destructive-primary" : "default"} autoFocus>
             {t("Continue")}
           </Button>
