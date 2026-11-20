@@ -84,7 +84,7 @@ export function VideoPlaylist({ id, videos, currentPath, loading, error, onSelec
                   if (event.detail > 0) returnFocus?.();
                 }}
               >
-                <span className="flex w-5 shrink-0 justify-end text-xs tabular-nums opacity-70" aria-hidden="true">
+                <span className="flex w-5 shrink-0 justify-end text-xs tabular-nums text-[#c4c7cc]" aria-hidden="true">
                   {current ? <Play className="size-3.5 fill-current" /> : index + 1}
                 </span>
                 <span className="min-w-0 flex-1 truncate">{video.name}</span>

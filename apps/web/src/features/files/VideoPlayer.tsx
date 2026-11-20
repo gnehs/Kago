@@ -20,7 +20,7 @@ const VOLUME_STEP = 0.1;
 const CONTROLS_HEIGHT = 74;
 
 /** Classes that put a ghost control on the player's dark bar, whatever the app theme is. */
-export const PLAYER_CONTROL_CLASS = "text-white/80 hover:text-white data-[popup-open]:text-white";
+export const PLAYER_CONTROL_CLASS = "text-[#d4d6d9] hover:text-white data-[popup-open]:text-white";
 
 /** Chromium's Document Picture-in-Picture: a floating window that holds page content, not just a video's frames. */
 const documentPip = (globalThis as { documentPictureInPicture?: { requestWindow: (options: { width: number; height: number }) => Promise<Window> } }).documentPictureInPicture;
@@ -488,7 +488,7 @@ export function VideoPlayer({
   return (
     <>
       {floating ? (
-        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 bg-black text-white/80">
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 bg-black text-[#d4d6d9]">
           <PictureInPicture2 />
           <span>{t("Playing in picture in picture")}</span>
           <Button onClick={() => floating.close()}>{t("Play here again")}</Button>

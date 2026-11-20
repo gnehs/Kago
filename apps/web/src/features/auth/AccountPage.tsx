@@ -115,10 +115,10 @@ export function AccountPage({ user }: { user: Actor }) {
           ) : (
             <p className="col-span-2 m-0 text-xs text-muted">{t("This account has no password yet: it is signed in to through single sign-on only. Setting one gives it a second way in.")}</p>
           )}
-          <Field label={t("New password")} hint={tooShort ? t("At least 8 characters") : undefined} className="col-start-1">
+          <Field label={t("New password")} error={tooShort ? t("At least 8 characters") : undefined} className="col-start-1">
             <KagoPasswordInput autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} />
           </Field>
-          <Field label={t("Confirm new password")} hint={mismatch ? t("The passwords don’t match") : undefined}>
+          <Field label={t("Confirm new password")} error={mismatch ? t("The passwords don’t match") : undefined}>
             <KagoPasswordInput autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} />
           </Field>
           <div className="col-span-2 flex items-center justify-between gap-3">

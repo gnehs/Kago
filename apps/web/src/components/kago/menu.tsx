@@ -92,7 +92,7 @@ export function KagoMenuItem({ icon, shortcut, destructive, className, children,
   return (
     <ContextMenu.Item
       className={cn(
-        "kago-menu-item flex h-7 items-center gap-2 rounded-[calc(var(--kago-radius-md)+1px)] [corner-shape:squircle] px-2 outline-none data-[disabled]:opacity-40",
+        "kago-menu-item flex h-7 items-center gap-2 rounded-[calc(var(--kago-radius-md)+1px)] [corner-shape:squircle] px-2 outline-none data-[disabled]:text-[color-mix(in_srgb,var(--kago-text)_40%,var(--kago-surface))]",
         destructive && "text-danger data-[highlighted]:text-white",
         className
       )}

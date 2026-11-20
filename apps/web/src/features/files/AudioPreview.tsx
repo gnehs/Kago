@@ -656,7 +656,7 @@ function TrackList({
                   if (event.detail > 0) returnFocus();
                 }}
               >
-                <span className="flex w-5 shrink-0 justify-end text-xs tabular-nums opacity-60">{chosen && playing ? <Volume2 className="size-3.5" /> : track.number}</span>
+                <span className={cn("flex w-5 shrink-0 justify-end text-xs tabular-nums", chosen && focused ? "text-[#dbe6ff]" : "text-muted")}>{chosen && playing ? <Volume2 className="size-3.5" /> : track.number}</span>
                 <span className="min-w-0 flex-1 truncate">{track.title}</span>
                 {length > 0 ? <span className="shrink-0 text-xs tabular-nums opacity-60">{formatClock(length)}</span> : null}
               </button>

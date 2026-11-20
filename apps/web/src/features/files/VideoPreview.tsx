@@ -1,7 +1,8 @@
-import { AudioLines, Captions, CaptionsOff, Download, Info, ListVideo, X } from "lucide-react";
+import { AudioLines, Captions, CaptionsOff, Download, FileWarning, Info, ListVideo, X } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { api, downloadUrl, previewUrl, thumbnailUrl } from "@/api/client";
 import { useFileList, useMediaInfo, useStoryboard, useSubtitles } from "@/api/hooks";
+import { Button } from "@/components/ui/button";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { KagoDropdownMenu, KagoMenuCheckItem, KagoMenuHeading, KagoMenuNote, KagoMenuSeparator } from "@/components/kago/menu";
 import { KagoWindow } from "@/components/kago/window";
@@ -100,6 +101,11 @@ export function VideoPreview({
   const [picked, setPicked] = useState<VideoQualityPref | null>(null);
   const [audioIndex, setAudioIndex] = useState(0);
   const [status, setStatus] = useState<"idle" | "preparing" | "error">("idle");
+  const [errorKind, setErrorKind] = useState<PlaybackErrorKind>("media");
+  // Kept across sources: a load() puts the element back to its default rate, so the default is set as well.
+  const [speed, setSpeed] = useState(1);
+  const speedRef = useRef(speed);
+  speedRef.current = speed;
   const [panel, setPanel] = useState<"playlist" | "info" | null>(() => getVideoPlaylistOpen() ? "playlist" : null);
   const playlistId = useId();
   const playlistButton = useRef<HTMLButtonElement>(null);
@@ -163,6 +169,11 @@ export function VideoPreview({
   const guarded = qualities.length > 0 && Boolean(media?.video);
 
   useEffect(() => {
+    const video = videoRef.current;
+    if (video) video.defaultPlaybackRate = video.playbackRate = speed;
+  }, [speed]);
+
+  useEffect(() => {
     if (probedAspect > 0) reportAspect.current?.(probedAspect);
   }, [probedAspect]);
 
@@ -173,6 +184,7 @@ export function VideoPreview({
     let sessionId: string | null = null;
     let teardown = () => {};
     let sourceFailed = false;
+    video.defaultPlaybackRate = video.playbackRate = speedRef.current;
     let prewarmer: ReturnType<typeof createSeekPrewarmer> | undefined;
     let previewAt: number | null = null;
     const active = () => !cancelled && latestMedia.current === mediaKey;
@@ -202,7 +214,10 @@ export function VideoPreview({
       position.fail();
       const source = height === null ? "direct" : hdr ? "hdr" : "sdr";
       const next = recoverPlayback(recovery, source, failure, guarded);
-      if (!next) return setStatus("error");
+      if (!next) {
+        setErrorKind(failure);
+        return setStatus("error");
+      }
       if (source === "direct") toast(t("The browser can’t play this file directly, so it is being transcoded"));
       setRecovery(next);
     };
@@ -281,7 +296,9 @@ export function VideoPreview({
         hls.loadSource(session.playlistUrl);
         hls.attachMedia(video);
       })().catch(() => {
-        if (active()) setStatus("error");
+        if (!active()) return;
+        setErrorKind("server");
+        setStatus("error");
       });
     }
 
@@ -308,6 +325,11 @@ export function VideoPreview({
     toast(t("Couldn’t load this subtitle"), "error");
     setSubtitlePick("off");
   });
+
+  const retry = () => {
+    setRecovery({ ...INITIAL_RECOVERY });
+    setStatus("idle");
+  };
 
   const resetRetries = () => setRecovery((current) => current.retries === 0 ? current : { ...current, retries: 0 });
 
@@ -437,6 +459,18 @@ export function VideoPreview({
           {subtitle ? <Captions /> : subtitles.length > 0 ? <CaptionsOff /> : <AudioLines />}
         </KagoDropdownMenu>
       ) : null}
+      <KagoDropdownMenu
+        label={t("Playback speed")}
+        side="top"
+        className={`h-7! w-auto! px-2 text-xs font-medium tabular-nums ${PLAYER_CONTROL_CLASS}`}
+        container={slot.container}
+        onOpenChange={slot.onOpenChange}
+        menu={SPEEDS.map((rate) => (
+          <KagoMenuCheckItem key={rate} checked={speed === rate} onClick={() => setSpeed(rate)}>{rate === 1 ? t("Normal") : `${rate}×`}</KagoMenuCheckItem>
+        ))}
+      >
+        {speed}×
+      </KagoDropdownMenu>
       {qualityMenu(slot)}
       {onNavigate ? (
         <KagoIconButton
@@ -468,9 +502,12 @@ export function VideoPreview({
         next={videos.length > 1 && position !== -1 ? neighbour(videos[position + 1]) : undefined}
         fallbackDuration={media?.duration}
         hdr={hdr || (height === null && sourceHdr !== null && screenHdr)}
-        notice={status === "preparing" ? t("Transcoding…") : status === "error" ? t("Couldn’t play this video") : null}
+        notice={status === "preparing" ? t("Transcoding…") : null}
         renderSettings={renderSettings}
-        overlay={playlistOpen && onNavigate ? (
+        overlay={(
+          <>
+            {status === "error" ? <PlaybackFailure kind={errorKind} onRetry={retry} onDownload={() => triggerDownload(downloadUrl(rootSlug, path))} /> : null}
+            {playlistOpen && onNavigate ? (
           <VideoPlaylist
             id={playlistId}
             videos={videos}
@@ -482,6 +519,8 @@ export function VideoPreview({
             onClose={closePlaylist}
           />
         ) : panel === "info" && infoGroups.length > 0 ? <VideoInfoPanel groups={infoGroups} onClose={() => setPanel(null)} /> : null}
+          </>
+        )}
         onInfo={infoGroups.length > 0 ? toggleInfo : undefined}
         onAspect={onAspect}
         onLoadedData={() => setStatus((current) => current === "error" ? current : "idle")}
@@ -491,6 +530,29 @@ export function VideoPreview({
         seekPicture={board ? (seconds) => timelinePicture(board, sheets, seconds) : undefined}
         onError={() => playbackError.current()}
       />
+  );
+}
+
+const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
+
+type PlaybackErrorKind = "network" | "media" | "server";
+
+/** Where recovery has given up: what went wrong, if it is known, and a way on. */
+function PlaybackFailure({ kind, onRetry, onDownload }: { kind: PlaybackErrorKind; onRetry: () => void; onDownload: () => void }) {
+  const description =
+    kind === "network" ? t("The connection was lost while loading this video.")
+    : kind === "server" ? t("The server couldn’t transcode this video.")
+    : t("This video can’t be decoded. The file may be damaged or in an unsupported format.");
+  return (
+    <div role="alert" className="absolute inset-x-0 top-0 bottom-[84px] flex flex-col items-center justify-center gap-1.5 px-6 text-center text-[#d4d6d9]">
+      <FileWarning className="mb-2 size-8" />
+      <strong className="font-medium text-white">{t("Couldn’t play this video")}</strong>
+      <span className="max-w-xs">{description}</span>
+      <div className="mt-2 flex flex-wrap justify-center gap-2">
+        <Button variant="default" onClick={onRetry}>{t("Retry")}</Button>
+        <Button onClick={onDownload}>{t("Download")}</Button>
+      </div>
+    </div>
   );
 }
 
