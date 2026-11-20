@@ -4,7 +4,23 @@
   "private": true,
   "license": "AGPL-3.0-only",
   "type": "module",
+  "kago": {
+    "api": 1,
+    "title": "360° video viewer",
+    "previewers": [
+      {
+        "id": "video-360",
+        "extensions": ["osv", "insv"],
+        "entry": "index.html",
+        "companions": [
+          { "replace": "_00_", "with": "_10_" },
+          { "replace": "_10_", "with": "_00_" }
+        ]
+      }
+    ]
+  },
   "scripts": {
+    "build": "tsc -p tsconfig.json && vite build",
     "typecheck": "tsc -p tsconfig.json",
     "lint": "tsc -p tsconfig.json",
     "test:plugins": "node --test test/*.test.mjs"

@@ -1,0 +1,119 @@
+body {
+  display: flex;
+  flex-direction: column;
+}
+
+.viewer {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  background: #000000;
+}
+
+.stage {
+  display: block;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  touch-action: none;
+  cursor: grab;
+}
+
+.stage:active {
+  cursor: grabbing;
+}
+
+/* A spinner only shows once the wait is long enough to be one; a quick answer never flashes it. */
+.waiting {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #b3b3b3;
+  pointer-events: none;
+  animation: fade-in 200ms ease-out 200ms both;
+}
+
+.waiting[hidden] {
+  display: none;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.time {
+  padding: 0 4px;
+  white-space: nowrap;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.scrubber {
+  flex: 1 1 120px;
+  min-width: 60px;
+  height: 24px;
+  margin: 0 4px;
+  background: none;
+  appearance: none;
+  outline: none;
+}
+
+.scrubber::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(to right, var(--kago-accent) var(--progress, 0%), var(--kago-border-strong) var(--progress, 0%));
+}
+
+.scrubber::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(to right, var(--kago-accent) var(--progress, 0%), var(--kago-border-strong) var(--progress, 0%));
+}
+
+.scrubber::-webkit-slider-thumb {
+  width: 12px;
+  height: 12px;
+  margin-top: -4px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--kago-surface);
+  box-shadow: 0 0 0 0.5px var(--kago-border-strong), 0 1px 2px rgb(0 0 0 / 0.3);
+  appearance: none;
+}
+
+.scrubber::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--kago-surface);
+  box-shadow: 0 0 0 0.5px var(--kago-border-strong), 0 1px 2px rgb(0 0 0 / 0.3);
+}
+
+.scrubber:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid color-mix(in srgb, var(--kago-accent) 60%, transparent);
+  outline-offset: 2px;
+}
+
+.scrubber:disabled {
+  visibility: hidden;
+}
+
+.notice {
+  flex: 0 1 auto;
+  max-width: 40%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.last {
+  margin-right: -6px;
+}
