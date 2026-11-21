@@ -1012,11 +1012,10 @@ export class TaskService {
         operations.push({ safe, trashPath: `${this.storage.remote.trashFolder(safe.root, safe.logicalPath)}/${Date.now()}-${id("trash")}-${this.storage.name(safe)}`, bytes: 0 });
         continue;
       }
-      const stats = await collectPathStats(safe.absolutePath);
-      totalBytes += stats.bytes;
-      const trashName = `${Date.now()}-${id("trash")}-${path.basename(safe.absolutePath)}`;
-      const trashPath = path.join(await this.localTrashDir(safe.root), trashName);
-      operations.push({ safe, trashPath, bytes: stats.bytes });
+      const trashDir = await this.localTrashDir(safe.root);
+      const bytes = await bytesToCarry(safe.absolutePath, trashDir);
+      totalBytes += bytes;
+      operations.push({ safe, trashPath: path.join(trashDir, `${Date.now()}-${id("trash")}-${path.basename(safe.absolutePath)}`), bytes });
     }
     await this.updateTotals(task.id, operations.length, totalBytes);
 
@@ -1118,7 +1117,7 @@ export class TaskService {
       const { root } = await this.paths.resolveRootById(item.original_root_id, "/");
       if (isRemote(root)) continue;
       await assertRealPathInside(this.requireLocalTrashOf(root, item.trash_path), item.trash_path);
-      totalBytes += (await collectPathStats(item.trash_path)).bytes;
+      totalBytes += await bytesToCarry(item.trash_path, await nearestFolder(path.join(root.base_path, path.posix.dirname(item.original_path))));
     }
     await this.updateTotals(task.id, sources.length, totalBytes);
 
@@ -1145,7 +1144,7 @@ export class TaskService {
       const safe = await this.restoreFolder(root, folder);
       this.permissions.require(actor, "edit", safe.root, safe.logicalPath);
       const target = path.join(safe.absolutePath, await this.restoredName(safe, name, (await fsp.lstat(item.trash_path)).isDirectory()));
-      const stats = await collectPathStats(item.trash_path);
+      const bytes = await bytesToCarry(item.trash_path, safe.absolutePath);
       const streamed = await movePath(item.trash_path, target, (processedBytes) => this.bumpProcessedBytes(task.id, processedBytes));
       this.db.prepare("UPDATE trash_items SET restored_at = ? WHERE id = ?").run(now(), item.id);
       this.audit.write({
@@ -1156,7 +1155,7 @@ export class TaskService {
         path: item.original_path,
         result: "success"
       });
-      if (!streamed) this.bumpProcessedBytes(task.id, stats.bytes);
+      if (!streamed) this.bumpProcessedBytes(task.id, bytes);
       await this.bumpProcessed(task.id);
     }
   }
@@ -1187,8 +1186,7 @@ export class TaskService {
       const safe = await this.paths.resolveExisting(source.rootSlug, source.path);
       this.permissions.require(actor, "edit", safe.root, safe.logicalPath);
       if (isRemote(safe.root)) continue;
-      const [item, trash] = await Promise.all([fsp.lstat(safe.absolutePath), fsp.stat(await this.localTrashDir(safe.root))]);
-      if (item.dev !== trash.dev) copyBytes += (await collectPathStats(safe.absolutePath)).bytes;
+      copyBytes += await bytesToCarry(safe.absolutePath, await this.localTrashDir(safe.root));
     }
     return { copyBytes };
   }
@@ -2250,6 +2248,22 @@ async function collectPathStats(targetPath: string): Promise<PathStats> {
     return found.reduce((sum, child) => ({ bytes: sum.bytes + child.bytes, files: sum.files + child.files }), { bytes: 0, files: 0 });
   };
   return visit(targetPath);
+}
+
+/**
+ * How much has to be copied to get a file or folder into `folder`: all of it when that is on another disk, and
+ * nothing on its own, where it is renamed however much it holds. Only what is copied is added up, as reading a
+ * whole folder through takes minutes on a hard disk.
+ */
+async function bytesToCarry(sourcePath: string, folder: string): Promise<number> {
+  const [item, there] = await Promise.all([fsp.lstat(sourcePath), fsp.stat(folder)]);
+  return item.dev === there.dev ? 0 : (await collectPathStats(sourcePath)).bytes;
+}
+
+/** The folder, or the nearest one above it that is still there. */
+async function nearestFolder(folder: string): Promise<string> {
+  const parent = path.dirname(folder);
+  return parent === folder || (await fsp.stat(folder).catch(() => null))?.isDirectory() ? folder : nearestFolder(parent);
 }
 
 /**
