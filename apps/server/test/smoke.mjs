@@ -1262,6 +1262,31 @@ test("a request refused partway through its body ends the connection, so a brows
   }
 });
 
+test("what is thrown away on its own disk, or put back there, is renamed without being read through", { skip: process.getuid?.() === 0 && "running as root" }, async (t) => {
+  const fixture = await createFixture("kago-smoke-trash-rename.");
+  const app = await buildApp(testEnv(fixture));
+  const admin = client(app);
+  // Nobody can list it, so anything that walks the folder it is in fails.
+  const sealed = path.join(fixture.dataDir, "photos", "src", "child");
+  await chmod(sealed, 0o000);
+  t.after(async () => {
+    await app.close();
+    await chmod(sealed, 0o755).catch(() => undefined);
+    await rm(fixture.baseDir, { recursive: true, force: true });
+  });
+  await app.ready();
+  assert.equal((await admin.post("/api/auth/setup", { email: "admin@example.test", password: "fake-admin-password-123", displayName: "Admin" })).statusCode, 200);
+  const sources = [{ rootSlug: "photos", path: "/src" }];
+  assert.deepEqual((await admin.post("/api/trash/cost", { sources })).json, { copyBytes: 0 });
+  const trashed = await admin.post("/api/tasks", { type: "delete_to_trash", sources });
+  assert.equal((await waitTask(admin, trashed.json.id)).status, "done");
+  await assert.rejects(access(path.join(fixture.dataDir, "photos", "src")));
+  const [item] = (await admin.get("/api/trash")).json;
+  const restored = await admin.post(`/api/trash/${item.id}/restore`);
+  assert.equal((await waitTask(admin, restored.json.id)).status, "done");
+  assert.equal(await readFile(path.join(fixture.dataDir, "photos", "src", "file.txt"), "utf8"), "demo");
+});
+
 test("a disk that is full, or cannot hold a file that large, says so", () => {
   const refusal = (code) => publicError(Object.assign(new Error(code), { code, syscall: "write" }));
   assert.deepEqual(refusal("ENOSPC"), { statusCode: 507, body: { error: "There is not enough free space on the server’s disk for this", code: "FS_NO_SPACE" } });
