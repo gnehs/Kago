@@ -2,17 +2,17 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useWindowScope } from "@/components/kago/window-scope";
 import { Trash2 } from "lucide-react";
 import { api } from "@/api/client";
-import { useRoots, useTrash } from "@/api/hooks";
+import { useRoots, useTasks, useTrash } from "@/api/hooks";
 import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
 import { Button } from "@/components/ui/button";
 import { Page, Row, RowList } from "@/components/kago/page";
 import { KagoStatusIcon } from "@/components/kago/status-icon";
 import { followTask } from "@/features/tasks/taskToast";
+import { isActiveTask } from "@/features/tasks/taskUtils";
 import { formatUnixDate } from "@/lib/format";
 import { baseName, displayPath } from "@/lib/paths";
 import { run } from "@/lib/run";
 import { confirmAction } from "@/stores/dialogs";
-import { toast } from "@/stores/toast";
 import { t } from "@/lib/i18n";
 import type { FileTask } from "@/types/kago";
 
@@ -21,6 +21,7 @@ export function TrashPage() {
   const queryClient = useQueryClient();
   const trash = useTrash();
   const roots = useRoots();
+  const emptying = useTasks().data?.some((task) => task.type === "empty_trash" && isActiveTask(task)) ?? false;
   const rootName = (rootId: string) => roots.data?.find((root) => root.id === rootId)?.name ?? t("Removed location");
 
   async function restore(itemId: string) {
@@ -41,16 +42,16 @@ export function TrashPage() {
     });
     if (!confirmed) return;
     await run(async () => {
-      await api("/api/trash", { method: "DELETE" });
-      await queryClient.invalidateQueries({ queryKey: ["trash"] });
-      toast(t("Trash emptied"));
+      // Emptied by a task, which counts what it removes: the list is read again once it is done.
+      followTask(await api<FileTask>("/api/trash", { method: "DELETE" }));
+      await queryClient.invalidateQueries({ queryKey: ["tasks"] });
     }, t("Couldn’t empty the Trash"));
   }
 
   return (
     <Page
       description={trash.data?.length ? t("{count} item, which can be put back where it was. | {count} items, which can be put back where they were.", { count: trash.data.length }) : t("Deleted items wait here, and can be put back where they were.")}
-      actions={trash.data?.length ? <Button variant="destructive-primary" onClick={() => void empty()}>{t("Empty Trash")}</Button> : null}
+      actions={trash.data?.length ? <Button variant="destructive-primary" disabled={emptying} onClick={() => void empty()}>{t("Empty Trash")}</Button> : null}
     >
       {trash.isLoading ? <KagoLoading /> : null}
       {trash.data?.length === 0 ? <KagoEmptyState icon={<Trash2 />} title={t("The Trash is empty")} /> : null}

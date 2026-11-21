@@ -401,6 +401,8 @@ export type FileTask = {
   sources_json: string;
   destination: string | null;
   current_path: string | null;
+  /** What a running task is at before it can count: `counting` what it has to do, its totals then being what it has found so far, or `preparing`. */
+  phase?: string | null;
   error_message: string | null;
   created_at: number;
   updated_at: number;

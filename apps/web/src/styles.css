@@ -321,6 +321,18 @@
     background: linear-gradient(var(--kago-primary-from), var(--kago-primary-to));
   }
 
+  /* Without a value there is no telling how far along it is: a stretch of the bar runs to and fro to say it goes on. */
+  progress:indeterminate {
+    background:
+      linear-gradient(var(--kago-primary-from), var(--kago-primary-to)) 0 0 / 35% 100% no-repeat,
+      var(--kago-well-track);
+    animation: kago-progress-unknown 1.2s ease-in-out infinite alternate;
+  }
+
+  progress:indeterminate::-moz-progress-bar {
+    background: transparent;
+  }
+
   ::selection {
     background: var(--kago-accent-soft);
   }
@@ -1320,6 +1332,12 @@
  * at once and only fade on their way out. No bounce, nothing arriving in turn, and dragging is never animated.
  * Windows are moved by lib/motion.ts.
  */
+@keyframes kago-progress-unknown {
+  to {
+    background-position: 100% 0;
+  }
+}
+
 @keyframes kago-fade {
   from {
     opacity: 0;

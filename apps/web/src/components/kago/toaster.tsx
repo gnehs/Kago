@@ -26,7 +26,7 @@ export function KagoToaster() {
           onBlurCapture={() => release(toast.id)}
         >
           {toast.progress ? (
-            <Count title={toast.message} speed={toast.progress.speed} value={toast.progress.value} max={toast.progress.max} details={toast.progress.detail} close={<Close label={t("Dismiss notification")} onClick={() => dismiss(toast.id)} />} />
+            <Count title={toast.message} speed={toast.progress.speed} value={toast.progress.unknown ? null : toast.progress.value} max={toast.progress.max} details={toast.progress.detail} close={<Close label={t("Dismiss notification")} onClick={() => dismiss(toast.id)} />} />
           ) : (
             <>
               {toast.kind === "error" ? <CircleAlert /> : null}
@@ -63,7 +63,7 @@ function Close({ label, onClick }: { label: string; onClick: () => void }) {
  * What a card that counts holds: what is being done, a bar, and under it the figures, ending in how far along it is where the bar ends.
  * How fast it goes sits across from its name, where there is room for it whatever the figures run to.
  */
-function Count({ title, speed, value, max, details, close }: { title: string; speed?: string; value: number; max: number; details: string; close: React.ReactNode }) {
+function Count({ title, speed, value, max, details, close }: { title: string; speed?: string; value: number | null; max: number; details: string; close: React.ReactNode }) {
   return (
     <>
       <div className="flex items-center gap-2">
@@ -71,10 +71,10 @@ function Count({ title, speed, value, max, details, close }: { title: string; sp
         {speed ? <span className="shrink-0 text-xs text-muted tabular-nums">{speed}</span> : null}
         {close}
       </div>
-      <progress className="mr-1.5 w-auto" value={value} max={Math.max(max, 1)} />
+      <progress className="mr-1.5 w-auto" value={value ?? undefined} max={Math.max(max, 1)} />
       <div className="mr-1.5 flex items-baseline gap-2 text-xs text-muted tabular-nums">
         <span className="min-w-0 flex-1 truncate">{details}</span>
-        <span className="shrink-0">{formatPercent(value, max)}%</span>
+        {value === null ? null : <span className="shrink-0">{formatPercent(value, max)}%</span>}
       </div>
     </>
   );

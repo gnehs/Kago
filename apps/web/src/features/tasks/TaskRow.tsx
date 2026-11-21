@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { Ban, Check, Clock, Pause, X } from "lucide-react";
+import { Ban, Calculator, Check, Clock, Pause, X } from "lucide-react";
 import { api, downloadUrl, taskDownloadUrl } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { extractWithPassword, lockedExtract } from "@/features/files/ArchivePassword";
@@ -8,7 +8,7 @@ import { triggerDownload } from "@/lib/paths";
 import { run } from "@/lib/run";
 import { cn } from "@/lib/utils";
 import type { FileTask } from "@/types/kago";
-import { canCancelTask, canRetryTask, compressDownloadTarget, hasTaskDownload, isActiveTask, taskErrorLabel, taskProgressLabel, taskProgressMax, taskProgressValue, taskSpeedLabel, taskStatus, taskTypeLabel } from "./taskUtils";
+import { canCancelTask, canRetryTask, compressDownloadTarget, hasTaskDownload, isActiveTask, isCountingTask, taskErrorLabel, taskProgressLabel, taskProgressMax, taskProgressValue, taskSpeedLabel, taskStatus, taskTypeLabel } from "./taskUtils";
 import { t } from "@/lib/i18n";
 
 /** The colour of a state, on the plate at the row's far end. */
@@ -54,7 +54,8 @@ export function TaskRow({ task }: { task: FileTask }) {
           <strong className="min-w-0 flex-1 truncate font-medium">{taskTypeLabel(task)}</strong>
           {speed ? <span className="shrink-0 text-xs text-muted tabular-nums">{speed}</span> : null}
         </div>
-        {isActiveTask(task) ? <progress value={taskProgressValue(task)} max={taskProgressMax(task)} /> : null}
+        {/* With no value the bar runs to and fro: there is no telling yet how far along it is. */}
+        {isActiveTask(task) ? <progress value={isCountingTask(task) ? undefined : taskProgressValue(task)} max={taskProgressMax(task)} /> : null}
         <span className="truncate text-xs text-muted">{task.status === "running" ? detail : `${status.label} · ${detail}`}</span>
         {downloadHref || canCancelTask(task) || canRetryTask(task) ? (
           <div className="flex gap-1.5">
@@ -68,7 +69,9 @@ export function TaskRow({ task }: { task: FileTask }) {
         ) : null}
       </div>
       <div aria-hidden className="kago-cap flex w-14 shrink-0 items-center justify-center [&>.lucide]:size-[18px] [&>.lucide]:stroke-[2.2]">
-        {counting ? (
+        {isCountingTask(task) ? (
+          <Calculator />
+        ) : counting ? (
           <span className="flex items-baseline font-semibold tabular-nums">
             <span className="text-lg leading-none">{percent}</span>
             <span className="ml-px text-[10px]">{tenth ? `.${tenth}` : ""}%</span>

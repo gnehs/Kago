@@ -1,6 +1,10 @@
 import { useEffect, type RefObject } from "react";
 import { cjkFontFamily, cjkFontsFor, cjkFontUrl, decodeSubtitle, srtToAss } from "@/lib/subtitles";
+import { t } from "@/lib/i18n";
+import { dismissToast, toast } from "@/stores/toast";
 import type { SubtitleTrack } from "@/types/kago";
+
+const LOADING = "subtitles:loading";
 
 /** Served as-is by the build; see `libassAssets` in vite.config.ts. */
 const LIBASS = `${location.origin}/libass`;
@@ -35,7 +39,12 @@ export function useSubtitleRenderer(videoRef: RefObject<HTMLVideoElement | null>
       if (embedded && video.readyState < HTMLMediaElement.HAVE_FUTURE_DATA) {
         await new Promise((resolve) => video.addEventListener("canplay", resolve, { once: true, signal: stop.signal }));
       }
-      const [response, { default: SubtitlesOctopus }] = await Promise.all([fetch(url), import("@jellyfin/libass-wasm")]);
+      // Taking a track out of a large video can be minutes, during which the film plays on without it: that is said, not left to look broken.
+      const waiting = setTimeout(() => toast(t("Loading subtitles…"), "info", { key: LOADING, ongoing: true }), 1000);
+      const [response, { default: SubtitlesOctopus }] = await Promise.all([fetch(url, { signal: stop.signal }), import("@jellyfin/libass-wasm")]).finally(() => {
+        clearTimeout(waiting);
+        dismissToast(LOADING);
+      });
       if (!response.ok) throw new Error(`Subtitle request failed: ${response.status}`);
       const text = decodeSubtitle(await response.arrayBuffer(), language);
       if (cancelled) return;

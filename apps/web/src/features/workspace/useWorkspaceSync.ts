@@ -90,7 +90,7 @@ export function useWorkspaceSync() {
       if (timer === undefined || !useWorkspaceStore.getState().hydrated) return;
       window.clearTimeout(timer);
       timer = undefined;
-      void api("/api/workspace", { method: "PUT", body: JSON.stringify(useWorkspaceStore.getState().snapshot()), keepalive: true }).catch(() => undefined);
+      void api("/api/workspace", { method: "PUT", body: JSON.stringify(useWorkspaceStore.getState().snapshot()), keepalive: true, quiet: true }).catch(() => undefined);
     };
     window.addEventListener("pagehide", flushOnHide);
 

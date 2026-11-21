@@ -246,7 +246,9 @@ export function VideoPreview({
       void (async () => {
         const session = await api<{ id: string; playlistUrl: string }>("/api/media/sessions", {
           method: "POST",
-          body: JSON.stringify({ rootSlug, path, height, audioIndex, subtitleIndex: burned, subtitlePath: burnedFile, hdr, lift })
+          body: JSON.stringify({ rootSlug, path, height, audioIndex, subtitleIndex: burned, subtitlePath: burnedFile, hdr, lift }),
+          // The player says it is preparing for as long as this takes.
+          quiet: true
         });
         if (!active()) return closeSession(session.id);
         sessionId = session.id;
@@ -254,7 +256,8 @@ export function VideoPreview({
           method: "POST",
           body: JSON.stringify({ time, revision }),
           signal,
-          keepalive: time === null
+          keepalive: time === null,
+          quiet: true
         }));
         prewarmer.hover(previewAt);
         const { default: Hls } = await import("hls.js");
@@ -621,5 +624,5 @@ function useHdrScreen(): boolean {
 }
 
 function closeSession(id: string) {
-  void api(`/api/media/sessions/${encodeURIComponent(id)}`, { method: "DELETE", keepalive: true }).catch(() => {});
+  void api(`/api/media/sessions/${encodeURIComponent(id)}`, { method: "DELETE", keepalive: true, quiet: true }).catch(() => {});
 }

@@ -11,7 +11,7 @@ export type Toast = {
   /** It stays up until it is replaced or dismissed: it reports on work still going, or on an outcome no one may be there to see. */
   ongoing?: boolean;
   /** How far along that work is, with the figures in words, and how fast it is going if that is known. */
-  progress?: { value: number; max: number; detail: string; speed?: string };
+  progress?: { value: number; max: number; detail: string; speed?: string; /** How far along it is cannot be told yet: the bar runs to and fro. */ unknown?: boolean };
   /** What can be done about it from the notification itself; it stays up longer for it, and is dismissed once it is taken. */
   action?: { label: string; run: () => void };
 };

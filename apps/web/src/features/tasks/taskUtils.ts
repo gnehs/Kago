@@ -12,6 +12,7 @@ const typeLabels: Record<string, string> = {
   delete_to_trash: t("Move to Trash"),
   delete: t("Delete"),
   restore_trash: t("Restore from Trash"),
+  empty_trash: t("Empty Trash"),
   thumbnail: t("Thumbnails"),
   sync: t("Sync"),
   convert: t("Convert"),
@@ -63,13 +64,21 @@ export const canCancelTask = (task: FileTask) => ["queued", "paused", "running"]
 export const isFinishedTask = (task: FileTask) => !isActiveTask(task);
 export const canRetryTask = (task: FileTask) => ["failed", "cancelled", "interrupted"].includes(task.status);
 
-export const taskProgressValue = (task: FileTask) => (task.total_bytes > 0 ? task.processed_bytes : task.processed_files);
+/** Whether a task under way has yet to start on its work: it is adding up what there is to do, or fetching it. How far along it is cannot be told. */
+export const isCountingTask = (task: FileTask) => Boolean(task.phase) && (task.status === "running" || task.status === "cancelling");
+
+export const taskProgressValue = (task: FileTask) => (isCountingTask(task) ? 0 : task.total_bytes > 0 ? task.processed_bytes : task.processed_files);
 export const taskProgressMax = (task: FileTask) => Math.max(task.total_bytes > 0 ? task.total_bytes : task.total_files, 1);
 
 /** How far along several tasks are taken together, from 0 to 1: each counts the same, whatever it is counted in. */
 export const tasksProgress = (tasks: FileTask[]) => (tasks.length > 0 ? tasks.reduce((sum, task) => sum + taskProgressValue(task) / taskProgressMax(task), 0) / tasks.length : 0);
 
 export function taskProgressLabel(task: FileTask) {
+  if (isCountingTask(task)) {
+    if (task.phase !== "counting") return t("Getting ready…");
+    const found = t("Counting… {count} item found | Counting… {count} items found", { count: task.total_files });
+    return task.total_bytes > 0 ? `${found} · ${formatWholeSize(task.total_bytes)}` : found;
+  }
   const files = t("{done}/{total} items", { done: task.processed_files, total: Math.max(task.total_files, 1) });
   return task.total_bytes > 0 ? `${formatWholeSize(task.processed_bytes)} / ${formatWholeSize(task.total_bytes)} · ${files}` : files;
 }

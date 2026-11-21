@@ -92,7 +92,7 @@ export function useWorkspace() {
 export function useSaveWorkspace() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (workspace: WorkspaceState) => api<WorkspaceState>("/api/workspace", { method: "PUT", body: JSON.stringify(workspace) }),
+    mutationFn: (workspace: WorkspaceState) => api<WorkspaceState>("/api/workspace", { method: "PUT", body: JSON.stringify(workspace), quiet: true }),
     onSuccess: (workspace) => queryClient.setQueryData(["workspace"], workspace)
   });
 }

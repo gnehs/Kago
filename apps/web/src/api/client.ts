@@ -1,4 +1,5 @@
 import { t } from "../lib/i18n";
+import { dismissToast, toast } from "../stores/toast";
 
 export class ApiError extends Error {
   constructor(
@@ -16,7 +17,38 @@ export const serverMessage = (message: unknown) => (typeof message === "string" 
 /** Sent on the page when a request is refused for want of a session, so the desktop can ask to sign in again. */
 export const SESSION_ENDED_EVENT = "kago:session-ended";
 
-export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+/** How long a change may go unanswered before the wait is put into words. */
+const SLOW_MS = 1000;
+const SLOW_KEY = "api:slow";
+let slow = 0;
+
+/**
+ * Says that the server is still at it for as long as a change it was asked for goes unanswered. What a request
+ * does there can take minutes on a hard disk or a remote location, and nothing else on screen need tell of it.
+ */
+async function whileSlow<T>(work: Promise<T>): Promise<T> {
+  let told = false;
+  const timer = setTimeout(() => {
+    told = true;
+    slow += 1;
+    toast(t("Still working on it…"), "info", { key: SLOW_KEY, ongoing: true });
+  }, SLOW_MS);
+  try {
+    return await work;
+  } finally {
+    clearTimeout(timer);
+    if (told && (slow -= 1) === 0) dismissToast(SLOW_KEY);
+  }
+}
+
+/** `quiet` is for what is sent behind the user's back, whose wait is not theirs: nothing is said of it however long it takes. */
+export function api<T>(path: string, init: RequestInit & { quiet?: boolean } = {}): Promise<T> {
+  const { quiet, ...request } = init;
+  const sent = send<T>(path, request);
+  return quiet || !request.method || request.method === "GET" ? sent : whileSlow(sent);
+}
+
+async function send<T>(path: string, init: RequestInit): Promise<T> {
   const response = await fetch(path, {
     credentials: "include",
     ...init,

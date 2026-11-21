@@ -43,7 +43,8 @@ export async function loadSettings() {
 async function send(path: string, init: RequestInit) {
   pending += 1;
   try {
-    const remote = await api<AccountPreferences>(path, init);
+    // Shown ahead of the server, so there is no wait to tell of.
+    const remote = await api<AccountPreferences>(path, { ...init, quiet: true });
     if (pending === 1) adopt(remote);
   } catch {
     // What was shown ahead of the server did not get there; go back to what it has.
