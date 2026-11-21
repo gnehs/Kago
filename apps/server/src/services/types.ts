@@ -73,6 +73,11 @@ export type FileTask = {
   total_bytes: number;
   processed_bytes: number;
   current_path: string | null;
+  /**
+   * What a running task is at before there is anything to count: `counting` while it adds up what it has to do,
+   * its totals being what it has found so far, `preparing` while it fetches what it works on.
+   */
+  phase?: string | null;
   error_message: string | null;
   auth_snapshot_json: string | null;
   created_at: number;

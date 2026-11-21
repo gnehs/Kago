@@ -366,7 +366,7 @@ test("a remote location behaves like a local one", { skip: remote ? false : "KAG
     const restore = await api.post(`/api/trash/${folderItem.id}/restore`);
     assert.equal((await waitTask(api, restore.json.id)).status, "done");
     assert.equal((await api.get(`/api/fs/preview?${q("/docs/nested/two.txt")}`)).text, "two two");
-    assert.equal((await api.delete("/api/trash")).json.deleted, 1);
+    assert.equal((await waitTask(api, (await api.delete("/api/trash")).json.id)).status, "done");
     assert.deepEqual((await api.get(`/api/fs/list?rootSlug=${outer.json.slug}&path=${encodeURIComponent(`/${sandbox}/.kago-trash`)}`)).json.items, [], "emptying the trash removes what it held");
 
     // Archives: made from remote files, kept on the remote, and unpacked there.
@@ -470,7 +470,7 @@ test("a remote location behaves like a local one", { skip: remote ? false : "KAG
     assert.equal((await api.get(`/api/fs/list?rootSlug=${outer.json.slug}&path=${encodeURIComponent(`/${sandbox}/backup`)}`)).json.items.length, 2);
     const cleanup = await api.post("/api/tasks", { type: "delete_to_trash", sources: [{ rootSlug: outer.json.slug, path: `/${sandbox}` }] });
     assert.equal((await waitTask(api, cleanup.json.id)).status, "done");
-    await api.delete("/api/trash");
+    await waitTask(api, (await api.delete("/api/trash")).json.id);
   } finally {
     await app.close();
     await rm(dir, { recursive: true, force: true });
@@ -555,7 +555,7 @@ test("a whole server is one location with its shares at the top", { skip: proces
     assert.ok(archive.getEntry(`${two}/${box}/note.txt`));
 
     for (const share of [one, two]) assert.equal((await task({ type: "delete_to_trash", sources: [{ rootSlug: slug, path: `/${share}/${box}` }] })).status, "done");
-    assert.equal((await api.delete("/api/trash")).json.deleted, 3);
+    assert.equal((await waitTask(api, (await api.delete("/api/trash")).json.id)).status, "done");
     assert.equal((await api.delete(`/api/roots/${created.json.id}`)).status, 200);
   } finally {
     await app.close();

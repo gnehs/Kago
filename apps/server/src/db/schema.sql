@@ -127,6 +127,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   -- How fast a running conversion is making its video; emptied once it stops.
   pace_fps REAL,
   pace_height INTEGER,
+  -- What a running task is at before it can count: 'counting' what it has to do, its totals being what it has found so far, or 'preparing'.
+  phase TEXT,
   FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
 );
 

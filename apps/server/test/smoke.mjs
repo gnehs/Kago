@@ -437,7 +437,8 @@ test("minimum file-manager demo flow", async () => {
     assert.ok(!(await admin.get("/api/fs/list?rootSlug=photos&path=/")).json.items.some((item) => item.name === ".kago-trash"));
     assert.equal((await admin.get("/api/fs/list?rootSlug=photos&path=/.kago-trash")).statusCode, 404);
     assert.equal((await admin.post("/api/fs/mkdir", { rootSlug: "photos", path: "/.kago-trash", name: "inside" })).statusCode, 404);
-    assert.deepEqual((await admin.delete("/api/trash")).json, { deleted: 1 });
+    const emptied = await waitTask(admin, (await admin.delete("/api/trash")).json.id);
+    assert.deepEqual([emptied.type, emptied.status, emptied.processed_files, emptied.total_files], ["empty_trash", "done", 1, 1]);
     assert.deepEqual((await admin.get("/api/trash")).json, []);
     assert.deepEqual(await readdir(ownTrash), []);
 
@@ -1285,6 +1286,27 @@ test("what is thrown away on its own disk, or put back there, is renamed without
   const restored = await admin.post(`/api/trash/${item.id}/restore`);
   assert.equal((await waitTask(admin, restored.json.id)).status, "done");
   assert.equal(await readFile(path.join(fixture.dataDir, "photos", "src", "file.txt"), "utf8"), "demo");
+});
+
+test("a delete for good counts every file and folder it removes", async (t) => {
+  const fixture = await createFixture("kago-smoke-delete-count.");
+  const app = await buildApp(testEnv(fixture));
+  const admin = client(app);
+  t.after(async () => {
+    await app.close();
+    await rm(fixture.baseDir, { recursive: true, force: true });
+  });
+  await app.ready();
+  assert.equal((await admin.post("/api/auth/setup", { email: "admin@example.test", password: "fake-admin-password-123", displayName: "Admin" })).statusCode, 200);
+  // A link is removed as itself: what it points at stays.
+  await symlink(path.join(fixture.dataDir, "photos", "public"), path.join(fixture.dataDir, "photos", "src", "child", "link"));
+  const created = await admin.post("/api/tasks", { type: "delete", sources: [{ rootSlug: "photos", path: "/src" }, { rootSlug: "photos", path: "/2026/demo.txt" }] });
+  const task = await waitTask(admin, created.json.id);
+  // src, src/child, src/child/link, src/file.txt, and the one file beside them.
+  assert.deepEqual([task.status, task.processed_files, task.total_files], ["done", 5, 5]);
+  await assert.rejects(access(path.join(fixture.dataDir, "photos", "src")));
+  await assert.rejects(access(path.join(fixture.dataDir, "photos", "2026", "demo.txt")));
+  assert.equal(await readFile(path.join(fixture.dataDir, "photos", "public", "readme.txt"), "utf8"), "public");
 });
 
 test("a disk that is full, or cannot hold a file that large, says so", () => {

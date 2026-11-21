@@ -79,6 +79,7 @@ export const taskInputSchema = z.object({
     "delete_to_trash",
     "delete",
     "restore_trash",
+    "empty_trash",
     "compress",
     "download_zip",
     "extract",
@@ -387,27 +388,55 @@ export class TaskService {
       .all(actor.id);
   }
 
-  /** Permanently deletes everything the actor can see in the trash. */
-  async emptyTrash(actor: Actor): Promise<{ deleted: number }> {
-    const items = rows<RestorableTrashItem>(
+  /**
+   * Queues the removal for good of everything the actor can see in the trash. It is a task like any other removal:
+   * a trash that holds many files takes minutes to empty, which a request would spend without a word.
+   */
+  async emptyTrash(actor: Actor): Promise<FileTask> {
+    const items = rows<{ id: string }>(
       actor.role === "ADMIN"
-        ? this.db.prepare("SELECT * FROM trash_items WHERE restored_at IS NULL").all()
-        : this.db.prepare("SELECT * FROM trash_items WHERE deleted_by = ? AND restored_at IS NULL").all(actor.id)
+        ? this.db.prepare("SELECT id FROM trash_items WHERE restored_at IS NULL").all()
+        : this.db.prepare("SELECT id FROM trash_items WHERE deleted_by = ? AND restored_at IS NULL").all(actor.id)
     );
-    for (const item of items) {
+    return this.create(actor, { type: "empty_trash", sources: items.map((item) => ({ rootSlug: "trash", path: item.id })) });
+  }
+
+  /** Removes for good the items of the trash a task names. One that has gone since, or is not the actor's, is passed over. */
+  private async runEmptyTrash(task: FileTask, actor: Actor): Promise<void> {
+    const sources = JSON.parse(task.sources_json) as Array<{ rootSlug: string; path: string }>;
+    const operations = [];
+    let total = 0;
+    const found = this.counter(task.id);
+    for (const source of sources) {
+      const item = row<RestorableTrashItem>(this.db.prepare("SELECT * FROM trash_items WHERE id = ? AND restored_at IS NULL").get(source.path));
+      if (!item || (actor.role !== "ADMIN" && item.deleted_by !== actor.id)) continue;
       const root = await this.paths.resolveRootById(item.original_root_id, "/").then((safe) => safe.root, () => null);
-      if (root && isRemote(root)) {
+      const remote = root && isRemote(root) ? root : null;
+      // Trashed entries always sit directly inside a trash dir; never remove anything else.
+      const local = !remote && this.localTrashOf(root, item.trash_path) ? item.trash_path : null;
+      const entries = local ? await countEntries(local, found) : 1;
+      total += entries;
+      operations.push({ item, remote, local, entries });
+    }
+    await this.updateTotals(task.id, total, 0);
+    for (const { item, remote, local, entries } of operations) {
+      await this.progress(task.id, item.original_path);
+      let counted = 0;
+      if (remote) {
         // What a remote location threw away lies in its own hidden folder; anything else is not Kago's to remove.
-        const entry = this.storage.remote.isTrashItem(root, item.trash_path) ? await this.storage.remote.stat(root, item.trash_path) : null;
-        if (entry) await this.storage.remote.remove(root, item.trash_path, entry.directory);
-      } else if (this.localTrashOf(root, item.trash_path)) {
-        // Trashed entries always sit directly inside a trash dir; never remove anything else.
-        await fsp.rm(item.trash_path, { recursive: true, force: true });
+        const entry = this.storage.remote.isTrashItem(remote, item.trash_path) ? await this.storage.remote.stat(remote, item.trash_path) : null;
+        if (entry) await this.storage.remote.remove(remote, item.trash_path, entry.directory);
+      } else if (local) {
+        await removeTree(local, () => {
+          this.assertNotCancelled(task.id);
+          counted += 1;
+          this.countFiles(task.id, 1);
+        });
       }
       this.db.prepare("DELETE FROM trash_items WHERE id = ?").run(item.id);
+      await this.bumpProcessed(task.id, entries - counted);
     }
-    this.audit.write({ actorType: "user", actorId: actor.id, action: "trash_empty", target: { count: items.length }, result: "success" });
-    return { deleted: items.length };
+    this.audit.write({ actorType: "user", actorId: actor.id, action: "trash_empty", target: { count: operations.length }, result: "success" });
   }
 
   get(taskId: string): FileTask {
@@ -578,6 +607,7 @@ export class TaskService {
       else if (task.type === "delete_to_trash") await this.runTrash(task, actor);
       else if (task.type === "delete") await this.runDelete(task, actor);
       else if (task.type === "restore_trash") await this.runRestore(task, actor);
+      else if (task.type === "empty_trash") await this.runEmptyTrash(task, actor);
       else if (task.type === "compress") await this.runCompress(task, actor);
       else if (task.type === "download_zip") await this.runDownloadZip(task, actor);
       else if (task.type === "extract") await this.runExtract(task, actor);
@@ -711,13 +741,14 @@ export class TaskService {
     const there = await this.entries(dest);
     let totalBytes = 0;
     let totalFiles = 0;
+    const found = this.counter(task.id);
     for (const safeSource of resolved) {
       this.permissions.require(actor, move ? "edit" : "view", safeSource.root, safeSource.logicalPath);
       // A location's top holds its trash, which is nobody's to carry elsewhere.
       if (move) this.assertNotFixed(safeSource);
       else if (safeSource.logicalPath === "/") throw new AppError(400, "Invalid path", "INVALID_PATH");
       this.assertNotFixed(dest, this.storage.name(safeSource));
-      const stats = await collectPathStats(safeSource.absolutePath);
+      const stats = await collectPathStats(safeSource.absolutePath, found);
       // A folder with no file in it still counts as one thing to carry.
       const files = Math.max(stats.files, 1);
       totalBytes += stats.bytes;
@@ -781,6 +812,7 @@ export class TaskService {
     const there = await this.entries(dest);
     let totalBytes = 0;
     let totalFiles = 0;
+    const found = this.counter(task.id);
     for (const source of sources) {
       this.permissions.require(actor, move ? "edit" : "view", source.root, source.logicalPath);
       if (source.logicalPath === "/") throw new AppError(400, "Invalid path", "INVALID_PATH");
@@ -794,10 +826,13 @@ export class TaskService {
       names.add(nfc(name));
       const landing = await this.landing(source, directory, dest, there, conflicts, move);
       let size: PathStats;
-      if (!isRemote(source.root)) size = await collectPathStats(source.absolutePath);
+      if (!isRemote(source.root)) size = await collectPathStats(source.absolutePath, found);
       else if (directory) {
-        const found = await this.storage.remote.size(source.root, source.logicalPath, true);
-        size = { bytes: found.bytes, files: found.count };
+        // The remote adds a folder up in one go, and says nothing until it has.
+        found(0, 0);
+        const measured = await this.storage.remote.size(source.root, source.logicalPath, true);
+        size = { bytes: measured.bytes, files: measured.count };
+        found(size.files, size.bytes);
       } else size = { bytes: stat.size, files: 1 };
       const files = Math.max(size.files, 1);
       totalBytes += size.bytes;
@@ -1003,6 +1038,7 @@ export class TaskService {
     const sources = JSON.parse(task.sources_json) as Array<{ rootSlug: string; path: string }>;
     const operations = [];
     let totalBytes = 0;
+    const found = this.counter(task.id);
     for (const source of sources) {
       const safe = await this.paths.resolveExisting(source.rootSlug, source.path);
       this.permissions.require(actor, "edit", safe.root, safe.logicalPath);
@@ -1013,7 +1049,7 @@ export class TaskService {
         continue;
       }
       const trashDir = await this.localTrashDir(safe.root);
-      const bytes = await bytesToCarry(safe.absolutePath, trashDir);
+      const bytes = await bytesToCarry(safe.absolutePath, trashDir, found);
       totalBytes += bytes;
       operations.push({ safe, trashPath: path.join(trashDir, `${Date.now()}-${id("trash")}-${path.basename(safe.absolutePath)}`), bytes });
     }
@@ -1112,12 +1148,13 @@ export class TaskService {
   private async runRestore(task: FileTask, actor: Actor): Promise<void> {
     const sources = JSON.parse(task.sources_json) as Array<{ rootSlug: string; path: string }>;
     let totalBytes = 0;
+    const found = this.counter(task.id);
     for (const source of sources) {
       const item = this.getRestorableTrashItem(actor, source.path);
       const { root } = await this.paths.resolveRootById(item.original_root_id, "/");
       if (isRemote(root)) continue;
       await assertRealPathInside(this.requireLocalTrashOf(root, item.trash_path), item.trash_path);
-      totalBytes += await bytesToCarry(item.trash_path, await nearestFolder(path.join(root.base_path, path.posix.dirname(item.original_path))));
+      totalBytes += await bytesToCarry(item.trash_path, await nearestFolder(path.join(root.base_path, path.posix.dirname(item.original_path))), found);
     }
     await this.updateTotals(task.id, sources.length, totalBytes);
 
@@ -1163,15 +1200,31 @@ export class TaskService {
   /** Deletes for good, without the detour through the trash: for what would take long to carry there. */
   private async runDelete(task: FileTask, actor: Actor): Promise<void> {
     const sources = JSON.parse(task.sources_json) as Array<{ rootSlug: string; path: string }>;
-    await this.updateTotals(task.id, sources.length, 0);
+    const operations = [];
+    let total = 0;
+    const found = this.counter(task.id);
     for (const source of sources) {
       const safe = await this.paths.resolveExisting(source.rootSlug, source.path);
       this.permissions.require(actor, "edit", safe.root, safe.logicalPath);
       this.assertNotFixed(safe);
+      // A remote removes a folder in one go, and counts as one. A local one is counted by what it holds, to be told of as it goes.
+      const entries = isRemote(safe.root) ? 1 : await countEntries(safe.absolutePath, found);
+      total += entries;
+      operations.push({ safe, entries });
+    }
+    await this.updateTotals(task.id, total, 0);
+    for (const { safe, entries } of operations) {
       await this.progress(task.id, safe.logicalPath);
+      let counted = 0;
       if (isRemote(safe.root)) await this.storage.remote.remove(safe.root, safe.logicalPath, (await this.storage.stat(safe)).isDirectory());
-      else await fsp.rm(safe.absolutePath, { recursive: true, force: true });
-      await this.bumpProcessed(task.id);
+      else
+        await removeTree(safe.absolutePath, () => {
+          this.assertNotCancelled(task.id);
+          counted += 1;
+          this.countFiles(task.id, 1);
+        });
+      // What was counted and had gone by the time it was its turn.
+      await this.bumpProcessed(task.id, entries - counted);
       this.audit.write({ actorType: "user", actorId: actor.id, action: "delete", rootId: safe.root.id, path: safe.logicalPath, result: "success" });
     }
   }
@@ -1290,9 +1343,11 @@ export class TaskService {
     const operations: PlannedZipSource[] = [];
     const taken = new Set<string>();
     let totalBytes = 0;
+    const found = this.counter(task.id);
     const addEntry = (safe: SafePath, logicalPath: string, name: string, directory: boolean, size: number, mtime: Date, absolutePath?: string) => {
       const entry: ZipEntry = { name, open: async () => Readable.from([]), directory, size, mtime };
       if (!directory) totalBytes += size;
+      found(directory ? 0 : 1, size);
       return { entry, safe, logicalPath, absolutePath } satisfies PlannedZipEntry;
     };
 
@@ -1309,6 +1364,8 @@ export class TaskService {
         if (!rootEntry) throw new AppError(404, "Path not found", "PATH_NOT_FOUND");
         entries.push(addEntry(safe, safe.logicalPath, name, rootEntry.isDirectory(), rootEntry.isDirectory() ? 0 : rootEntry.size, rootEntry.mtime));
         if (rootEntry.isDirectory()) {
+          // The remote lists a folder in one go, and says nothing until it has.
+          found(0, 0);
           for (const child of await this.storage.remote.walk(safe.root, safe.logicalPath)) {
             const segments = safeRelativeZipPath(child.path);
             if (!segments || segments.length === 0) continue;
@@ -1450,6 +1507,8 @@ export class TaskService {
       const safe = await this.paths.resolveExisting(source.rootSlug, source.path);
       this.permissions.require(actor, "view", safe.root, safe.logicalPath);
       // Remote archives are staged to disk by storage.localFile; yauzl reads the local archive by ranges.
+      // A remote archive is fetched whole before it can be read, and nothing counts on the way.
+      if (isRemote(safe.root)) this.setTotals(task.id, 1, 0, "preparing");
       const archivePath = await this.storage.localFile(safe, await this.storage.stat(safe));
       const zip = await openZipArchive(archivePath);
       let stats: { totalFiles: number; totalBytes: number; totalEntries: number; password?: string };
@@ -1793,6 +1852,12 @@ export class TaskService {
       return;
     }
 
+    if (input.type === "empty_trash") {
+      // Which of them are the actor's to remove is asked of each as its turn comes.
+      if (input.sources.some((source) => source.rootSlug !== "trash")) throw new AppError(404, "Trash item not found", "TRASH_ITEM_NOT_FOUND");
+      return;
+    }
+
     if (input.type === "restore_trash") {
       for (const source of input.sources) {
         if (source.rootSlug !== "trash") throw new AppError(400, "Invalid restore source", "INVALID_RESTORE_SOURCE");
@@ -1913,25 +1978,42 @@ export class TaskService {
     this.flushProgress(taskId);
   }
 
+  /**
+   * Reports on a task that is still adding up what it has to do, which on a hard disk with many files is minutes
+   * of its time: what it has found so far stands as its totals, told a few times a second, and it stops here when
+   * asked to. `updateTotals` ends the count with what there is in all.
+   */
+  private counter(taskId: string): Found {
+    let files = 0;
+    let bytes = 0;
+    let toldAt = 0;
+    return (moreFiles, moreBytes) => {
+      files += moreFiles;
+      bytes += moreBytes;
+      if (Date.now() - toldAt < progressFlushIntervalMs) return;
+      toldAt = Date.now();
+      this.assertNotCancelled(taskId);
+      this.setTotals(taskId, files, bytes, "counting");
+    };
+  }
+
   private async updateTotals(taskId: string, totalFiles: number, totalBytes: number): Promise<void> {
     this.flushProgress(taskId, true);
+    this.setTotals(taskId, Math.max(totalFiles, 1), Math.max(totalBytes, 0), null);
+  }
+
+  private setTotals(taskId: string, totalFiles: number, totalBytes: number, phase: "counting" | "preparing" | null): void {
     this.db
-      .prepare("UPDATE tasks SET total_files = ?, total_bytes = ?, updated_at = ? WHERE id = ? AND status IN ('running', 'cancelling')")
-      .run(Math.max(totalFiles, 1), Math.max(totalBytes, 0), now(), taskId);
-    const task = this.get(taskId);
-    this.events.publish({
-      type: "task.progress",
-      userId: task.created_by,
-      taskId,
-      patch: { total_files: Math.max(totalFiles, 1), total_bytes: Math.max(totalBytes, 0) }
-    });
+      .prepare("UPDATE tasks SET total_files = ?, total_bytes = ?, phase = ?, updated_at = ? WHERE id = ? AND status IN ('running', 'cancelling')")
+      .run(totalFiles, totalBytes, phase, now(), taskId);
+    this.events.publish({ type: "task.progress", userId: this.get(taskId).created_by, taskId, patch: { total_files: totalFiles, total_bytes: totalBytes, phase } });
   }
 
   /** Returns false when the task was asked to stop in the meantime, in which case its row is left alone. */
   private finish(taskId: string, status: "done" | "failed", error?: string): boolean {
     this.flushProgress(taskId, true);
     const result = this.db
-      .prepare("UPDATE tasks SET status = ?, error_message = ?, updated_at = ?, finished_at = ? WHERE id = ? AND status = 'running'")
+      .prepare("UPDATE tasks SET status = ?, error_message = ?, phase = NULL, updated_at = ?, finished_at = ? WHERE id = ? AND status = 'running'")
       .run(status, error ?? null, now(), now(), taskId);
     return Number(result.changes) > 0;
   }
@@ -2074,6 +2156,9 @@ type Landing = { mode: "new" | "skip" | "keep" | "replace" | "merge"; name: stri
 
 /** Sizes are of files only, and a time is 0 where the location keeps none. */
 export type TransferConflict = { rootSlug: string; path: string; name: string; kind: "file" | "folder"; size: number; mtime: number; existing: { kind: "file" | "folder"; size: number; mtime: number }; same: boolean };
+
+/** Hears of what a count comes upon as it goes: so many more files, and bytes. */
+type Found = (files: number, bytes: number) => void;
 
 type PathStats = {
   bytes: number;
@@ -2233,7 +2318,7 @@ function assertFileOrFolder(entry: { isSymbolicLink(): boolean; isFile(): boolea
 }
 
 /** Adds up a file or a whole folder, several entries at a time, and refuses one that holds a symlink or anything else that is neither. */
-async function collectPathStats(targetPath: string): Promise<PathStats> {
+async function collectPathStats(targetPath: string, found?: Found): Promise<PathStats> {
   const limit = limiter(treeConcurrency);
   const visit = async (current: string, known?: Dirent): Promise<PathStats> => {
     if (known) assertFileOrFolder(known);
@@ -2241,11 +2326,14 @@ async function collectPathStats(targetPath: string): Promise<PathStats> {
     if (!known?.isDirectory()) {
       const stat = await limit(() => fsp.lstat(current));
       assertFileOrFolder(stat);
-      if (stat.isFile()) return { bytes: stat.size, files: 1 };
+      if (stat.isFile()) {
+        found?.(1, stat.size);
+        return { bytes: stat.size, files: 1 };
+      }
     }
     const entries = await limit(() => fsp.readdir(current, { withFileTypes: true }));
-    const found = await Promise.all(entries.map((entry) => visit(path.join(current, entry.name), entry)));
-    return found.reduce((sum, child) => ({ bytes: sum.bytes + child.bytes, files: sum.files + child.files }), { bytes: 0, files: 0 });
+    const children = await Promise.all(entries.map((entry) => visit(path.join(current, entry.name), entry)));
+    return children.reduce((sum, child) => ({ bytes: sum.bytes + child.bytes, files: sum.files + child.files }), { bytes: 0, files: 0 });
   };
   return visit(targetPath);
 }
@@ -2255,9 +2343,47 @@ async function collectPathStats(targetPath: string): Promise<PathStats> {
  * nothing on its own, where it is renamed however much it holds. Only what is copied is added up, as reading a
  * whole folder through takes minutes on a hard disk.
  */
-async function bytesToCarry(sourcePath: string, folder: string): Promise<number> {
+async function bytesToCarry(sourcePath: string, folder: string, found?: Found): Promise<number> {
   const [item, there] = await Promise.all([fsp.lstat(sourcePath), fsp.stat(folder)]);
-  return item.dev === there.dev ? 0 : (await collectPathStats(sourcePath)).bytes;
+  return item.dev === there.dev ? 0 : (await collectPathStats(sourcePath, found)).bytes;
+}
+
+/** How many files and folders there are to remove, the one given among them, or none if it has gone. Only names are read, not what each one holds. */
+async function countEntries(targetPath: string, found?: Found): Promise<number> {
+  const limit = limiter(treeConcurrency);
+  const visit = async (current: string, directory: boolean): Promise<number> => {
+    found?.(1, 0);
+    if (!directory) return 1;
+    const entries = await limit(() => fsp.readdir(current, { withFileTypes: true }));
+    const counts = await Promise.all(entries.map((entry) => visit(path.join(current, entry.name), entry.isDirectory())));
+    return counts.reduce((sum, count) => sum + count, 1);
+  };
+  const stat = await fsp.lstat(targetPath).catch((error: unknown) => {
+    if (!errnoIs(error, "ENOENT")) throw error;
+    return null;
+  });
+  return stat ? visit(targetPath, stat.isDirectory()) : 0;
+}
+
+/**
+ * Removes a file or a whole folder, several entries at a time, saying so of each one as it goes: `removed` may
+ * throw to stop it. A symlink is removed, never followed. What has gone meanwhile is not missed.
+ */
+async function removeTree(targetPath: string, removed: () => void): Promise<void> {
+  const limit = limiter(treeConcurrency);
+  const gone = (error: unknown) => {
+    if (!errnoIs(error, "ENOENT")) throw error;
+  };
+  const visit = async (current: string, directory: boolean): Promise<void> => {
+    if (directory) {
+      const entries = await limit(() => fsp.readdir(current, { withFileTypes: true }).catch((error: unknown) => (gone(error), [])));
+      await Promise.all(entries.map((entry) => visit(path.join(current, entry.name), entry.isDirectory())));
+      await limit(() => fsp.rmdir(current).catch(gone));
+    } else await limit(() => fsp.unlink(current).catch(gone));
+    removed();
+  };
+  const stat = await fsp.lstat(targetPath).catch((error: unknown) => (gone(error), null));
+  if (stat) await visit(targetPath, stat.isDirectory());
 }
 
 /** The folder, or the nearest one above it that is still there. */
