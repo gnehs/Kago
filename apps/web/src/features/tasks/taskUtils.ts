@@ -1,3 +1,4 @@
+import { useEffect, useReducer } from "react";
 import { formatSize, formatWholeSize } from "@/lib/format";
 import type { FileTask } from "@/types/kago";
 import { t } from "@/lib/i18n";
@@ -31,8 +32,33 @@ const statusMeta: Record<string, { label: string; tone: "neutral" | "accent" | "
 export const taskTypeLabel = (task: FileTask) => typeLabels[task.type] ?? task.type;
 export const taskStatus = (task: FileTask) => statusMeta[task.status] ?? { label: task.status, tone: "neutral" as const };
 export const isActiveTask = (task: FileTask) => ["queued", "running", "cancelling", "paused"].includes(task.status);
-/** Moving to the Trash, or deleting, looks instant to the user, so it only shows up among the live tasks when it goes wrong. */
-export const isQuietTask = (task: FileTask) => (task.type === "delete_to_trash" || task.type === "delete") && (isActiveTask(task) || task.status === "done");
+/** How long moving to the Trash, or deleting, may run before it is shown as the work it has turned out to be. */
+const QUIET_MS = 2000;
+/** When this tab first saw each such task under way. The server's clock is not this one's, so its times are not compared. */
+const firstSeen = new Map<string, number>();
+
+/**
+ * The tasks to show among the live ones. Moving to the Trash, or deleting, looks instant to the user and is over
+ * in a moment on one disk, so it is left out unless it goes wrong, or goes on: across disks, or through a great
+ * many files, it takes minutes, and then it is counted like any other.
+ */
+export function useShownTasks(tasks: FileTask[]): FileTask[] {
+  const [, wake] = useReducer((count: number) => count + 1, 0);
+  const at = Date.now();
+  const quick = tasks.filter((task) => (task.type === "delete_to_trash" || task.type === "delete") && isActiveTask(task));
+  for (const task of quick) if (!firstSeen.has(task.id)) firstSeen.set(task.id, at);
+  const due = Math.min(...quick.map((task) => firstSeen.get(task.id)! + QUIET_MS).filter((time) => time > at));
+  useEffect(() => {
+    for (const id of firstSeen.keys()) if (!quick.some((task) => task.id === id)) firstSeen.delete(id);
+    if (!Number.isFinite(due)) return;
+    const timer = setTimeout(wake, due - Date.now());
+    return () => clearTimeout(timer);
+  });
+  return tasks.filter((task) => {
+    if (task.type !== "delete_to_trash" && task.type !== "delete") return true;
+    return isActiveTask(task) ? at >= firstSeen.get(task.id)! + QUIET_MS : task.status !== "done";
+  });
+}
 export const canCancelTask = (task: FileTask) => ["queued", "paused", "running"].includes(task.status);
 export const isFinishedTask = (task: FileTask) => !isActiveTask(task);
 export const canRetryTask = (task: FileTask) => ["failed", "cancelled", "interrupted"].includes(task.status);

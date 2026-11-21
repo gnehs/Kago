@@ -13,7 +13,7 @@ import { BrandMark } from "@/components/kago/brand-mark";
 import { markSignedOut } from "@/features/auth/sso";
 import { TaskRow } from "@/features/tasks/TaskRow";
 import { UploadRow } from "@/features/tasks/UploadRow";
-import { isActiveTask, isFinishedTask, isQuietTask, tasksProgress } from "@/features/tasks/taskUtils";
+import { isActiveTask, isFinishedTask, tasksProgress, useShownTasks } from "@/features/tasks/taskUtils";
 import { useClearFinishedTasks } from "@/features/tasks/useClearFinishedTasks";
 import { formatDuration, formatSize } from "@/lib/format";
 import { displayPath } from "@/lib/paths";
@@ -151,7 +151,7 @@ function TaskStatus() {
   const uploads = useUploadStore((state) => state.uploads);
   const clear = useClearFinishedTasks();
   const [open, setOpen] = useState(false);
-  const all = (tasks.data ?? []).filter((task) => !isQuietTask(task));
+  const all = useShownTasks(tasks.data ?? []);
   const active = all.filter(isActiveTask);
   const activeCount = active.length;
   // Active tasks first, then the most recent finished ones.

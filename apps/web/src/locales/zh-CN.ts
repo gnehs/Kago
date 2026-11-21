@@ -505,6 +505,7 @@ export const zhCN: Dictionary = {
   "Couldn’t rename": "重命名失败",
   "Moved {count} item to Trash | Moved {count} items to Trash": "已将 {count} 个项目移到回收站",
   "Deleted {count} item | Deleted {count} items": "已删除 {count} 个项目",
+  "Getting ready to move to Trash…": "正在准备移到回收站…",
   "Moving this to the Trash will take a while": "移到回收站需要一些时间",
   "The Trash is on another disk, so {size} has to be copied there first. Deleting right away is instant, but can’t be undone.": "回收站在另一块磁盘上，要先把 {size} 复制过去。直接删除不用等，但无法恢复。",
   "Delete right away": "直接删除",

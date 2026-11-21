@@ -8,7 +8,7 @@ import { randomId } from "@/lib/utils";
 import type { UploadTree } from "@/lib/uploadTree";
 import { useClipboardStore, type FileRef } from "@/stores/clipboard";
 import { chooseAction, promptText } from "@/stores/dialogs";
-import { toast } from "@/stores/toast";
+import { dismissToast, toast } from "@/stores/toast";
 import { hideLeaving, leavingSettled, showLeaving } from "@/stores/leaving";
 import { followTask } from "@/features/tasks/taskToast";
 import { isActiveTask } from "@/features/tasks/taskUtils";
@@ -205,7 +205,13 @@ export function trashFiles(queryClient: QueryClient, picked: FileRef[], scope: s
   const sources = outermost(picked);
   return run(async () => {
     // The Trash of a location is on its own disk, and getting there is a rename. Only what has to be copied to it takes time.
-    const { copyBytes } = await api<{ copyBytes: number }>("/api/trash/cost", { method: "POST", body: JSON.stringify({ sources }) });
+    // Across disks the server has to add up all of it to answer, which is long enough on a hard disk to look like nothing happened.
+    const checking = `trash-cost:${randomId()}`;
+    const slow = setTimeout(() => toast(t("Getting ready to move to Trash…"), "info", { key: checking, ongoing: true }), 500);
+    const { copyBytes } = await api<{ copyBytes: number }>("/api/trash/cost", { method: "POST", body: JSON.stringify({ sources }) }).finally(() => {
+      clearTimeout(slow);
+      dismissToast(checking);
+    });
     let type = "delete_to_trash";
     if (copyBytes >= SLOW_TRASH_BYTES) {
       const choice = await chooseAction({
