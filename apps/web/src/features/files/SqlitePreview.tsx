@@ -113,10 +113,10 @@ function SqliteRows({ rootSlug, file, table, offset, onOffset }: { rootSlug: str
         <span className="mr-auto tabular-nums">
           {page ? rangeLabel(page) : ""}
         </span>
-        <KagoIconButton label={t("Back")} className="size-6" disabled={offset === 0} onClick={() => onOffset(Math.max(0, offset - PAGE_SIZE))}>
+        <KagoIconButton label={t("Back")} size="sm" disabled={offset === 0} onClick={() => onOffset(Math.max(0, offset - PAGE_SIZE))}>
           <ChevronLeft />
         </KagoIconButton>
-        <KagoIconButton label={t("Forward")} className="size-6" disabled={!page?.hasMore} onClick={() => onOffset(offset + PAGE_SIZE)}>
+        <KagoIconButton label={t("Forward")} size="sm" disabled={!page?.hasMore} onClick={() => onOffset(offset + PAGE_SIZE)}>
           <ChevronRight />
         </KagoIconButton>
       </KagoStatusBar>

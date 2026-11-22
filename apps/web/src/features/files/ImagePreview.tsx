@@ -484,7 +484,7 @@ export function ImagePreviewWindow({ window }: { window: PreviewWindow }) {
     <PreviewWindowFrame
       window={window}
       extra={
-        <KagoIconButton label={t("Photo info (⌘I)")} className="size-6" active={infoOpen} onClick={toggleInfo}>
+        <KagoIconButton label={t("Photo info (⌘I)")} size="sm" active={infoOpen} onClick={toggleInfo}>
           <Info />
         </KagoIconButton>
       }
@@ -531,7 +531,7 @@ export function ImagePreviewWindow({ window }: { window: PreviewWindow }) {
             <span className="tabular-nums">
               {position + 1} / {pictures.length}
             </span>
-            <KagoIconButton label={t("Next (→)")} className="size-6" disabled={!next} onClick={() => show(next)}>
+            <KagoIconButton label={t("Next (→)")} size="sm" disabled={!next} onClick={() => show(next)}>
               <ChevronRight />
             </KagoIconButton>
           </>
@@ -545,10 +545,10 @@ export function ImagePreviewWindow({ window }: { window: PreviewWindow }) {
           </span>
         ) : null}
         {fit > 0 ? <span className="px-1 tabular-nums">{Math.round(fit * view.z * 100)}%</span> : null}
-        <KagoIconButton label={t("Zoom out (−)")} className="size-6" disabled={!zoomed} onClick={() => zoomStep(1 / STEP)}>
+        <KagoIconButton label={t("Zoom out (−)")} size="sm" disabled={!zoomed} onClick={() => zoomStep(1 / STEP)}>
           <ZoomOut />
         </KagoIconButton>
-        <KagoIconButton label={t("Zoom in (+)")} className="size-6" disabled={fit === 0 || view.z >= maxZoom} onClick={() => zoomStep(STEP)}>
+        <KagoIconButton label={t("Zoom in (+)")} size="sm" disabled={fit === 0 || view.z >= maxZoom} onClick={() => zoomStep(STEP)}>
           <ZoomIn />
         </KagoIconButton>
         <KagoIconButton label={t("Fit to window (0)")} className="-mr-1.5 size-6" active={!zoomed} onClick={resetZoom}>

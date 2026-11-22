@@ -41,13 +41,13 @@ export function PdfPreviewWindow({ window }: { window: PreviewWindow }) {
             {t("Page {page} of {pages}", { page: state.page, pages: state.pages })}
           </span>
           <span className="px-1 tabular-nums">{Math.round(state.scale * 100)}%</span>
-          <KagoIconButton label={t("Zoom out")} className="size-6" onClick={() => view.current?.zoomOut()}>
+          <KagoIconButton label={t("Zoom out")} size="sm" onClick={() => view.current?.zoomOut()}>
             <ZoomOut />
           </KagoIconButton>
-          <KagoIconButton label={t("Zoom in")} className="size-6" onClick={() => view.current?.zoomIn()}>
+          <KagoIconButton label={t("Zoom in")} size="sm" onClick={() => view.current?.zoomIn()}>
             <ZoomIn />
           </KagoIconButton>
-          <KagoIconButton label={t("Fit to width")} className="size-6" active={state.fitted} onClick={() => view.current?.fit()}>
+          <KagoIconButton label={t("Fit to width")} size="sm" active={state.fitted} onClick={() => view.current?.fit()}>
             <MoveHorizontal />
           </KagoIconButton>
         </KagoStatusBar>

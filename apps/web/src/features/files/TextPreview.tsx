@@ -133,7 +133,7 @@ export function TextPreviewWindow({ window }: { window: PreviewWindow }) {
       extra={
         <>
           {isMarkdown && loaded ? (
-            <KagoIconButton label={previewing ? t("Edit") : t("Preview")} className="size-6" onClick={togglePreview}>
+            <KagoIconButton label={previewing ? t("Edit") : t("Preview")} size="sm" onClick={togglePreview}>
               {previewing ? <Pencil /> : <Eye />}
             </KagoIconButton>
           ) : null}

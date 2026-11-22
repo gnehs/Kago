@@ -76,7 +76,7 @@ export function ArchivePreviewWindow({ window }: { window: PreviewWindow }) {
       window={window}
       extra={
         item.readonly ? null : (
-          <KagoIconButton label={t("Extract here")} className="size-6" disabled={!listing.data} onClick={extract}>
+          <KagoIconButton label={t("Extract here")} size="sm" disabled={!listing.data} onClick={extract}>
             <ArchiveRestore />
           </KagoIconButton>
         )
@@ -91,7 +91,7 @@ export function ArchivePreviewWindow({ window }: { window: PreviewWindow }) {
       ) : (
         <div className="flex min-h-0 flex-1 flex-col bg-surface">
           <nav aria-label={t("Folders in the archive")} className="flex h-9 shrink-0 items-center gap-1 border-b border-line bg-elevated px-1.5">
-            <KagoIconButton label={t("Back")} className="size-6" disabled={!here} onClick={up}>
+            <KagoIconButton label={t("Back")} size="sm" disabled={!here} onClick={up}>
               <ChevronLeft />
             </KagoIconButton>
             <ol className="flex min-w-0 items-center gap-0.5 overflow-hidden">

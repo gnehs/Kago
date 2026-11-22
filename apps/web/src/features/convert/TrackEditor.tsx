@@ -219,9 +219,9 @@ function TrackEditor({ request, onClose }: { request: EditorRequest; onClose: ()
                         <Checkbox className="w-16 flex-none" label={t("Default")} checked={track.isDefault} disabled={!track.enabled} onChange={(event) => setDefault(track, event.target.checked)} />
                         {kind === "subtitle" ? <Checkbox className="w-16 flex-none" label={t("Forced")} checked={track.forced} disabled={!track.enabled} onChange={(event) => patch(track.key, { forced: event.target.checked })} /> : null}
                         <span className="flex w-18 flex-none">
-                          <KagoIconButton label={t("Move up")} className="size-6" disabled={position === 0} onClick={() => move(track, -1)}><ArrowUp /></KagoIconButton>
-                          <KagoIconButton label={t("Move down")} className="size-6" disabled={position === group.length - 1} onClick={() => move(track, 1)}><ArrowDown /></KagoIconButton>
-                          {"file" in track.source ? <KagoIconButton label={t("Remove")} className="size-6" onClick={() => setTracks(tracks.filter((item) => item.key !== track.key))}><X /></KagoIconButton> : null}
+                          <KagoIconButton label={t("Move up")} size="sm" disabled={position === 0} onClick={() => move(track, -1)}><ArrowUp /></KagoIconButton>
+                          <KagoIconButton label={t("Move down")} size="sm" disabled={position === group.length - 1} onClick={() => move(track, 1)}><ArrowDown /></KagoIconButton>
+                          {"file" in track.source ? <KagoIconButton label={t("Remove")} size="sm" onClick={() => setTracks(tracks.filter((item) => item.key !== track.key))}><X /></KagoIconButton> : null}
                         </span>
                       </>
                     )}

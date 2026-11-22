@@ -90,7 +90,7 @@ function PartCard({ part, kind, drag, className, onChange, onRemove }: { part: R
       <div className="flex cursor-grab touch-none items-center gap-1 select-none in-data-[dragging]:cursor-grabbing" onPointerDown={(event) => !isInteractiveTarget(event.target) && onPointerDown(event)}>
         <GripVertical className="size-3.5 shrink-0 text-faint" />
         <span className="min-w-0 flex-1 truncate text-xs font-medium text-muted">{kind.label}</span>
-        <KagoIconButton label={t("Remove")} className="size-6" onClick={onRemove}><X /></KagoIconButton>
+        <KagoIconButton label={t("Remove")} size="sm" onClick={onRemove}><X /></KagoIconButton>
       </div>
       {fields.length > 0 ? (
         <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">

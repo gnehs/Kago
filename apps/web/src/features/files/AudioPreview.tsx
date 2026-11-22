@@ -434,7 +434,7 @@ export function AudioPreviewWindow({ window }: { window: PreviewWindow }) {
       keepMounted
       extra={
         tracks.length > 1 ? (
-          <KagoIconButton label={t("Tracks")} className="size-6" active={panels.tracks} onClick={() => togglePanel("tracks")}>
+          <KagoIconButton label={t("Tracks")} size="sm" active={panels.tracks} onClick={() => togglePanel("tracks")}>
             <ListMusic />
           </KagoIconButton>
         ) : null

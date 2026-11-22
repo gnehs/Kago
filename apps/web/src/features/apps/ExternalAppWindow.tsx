@@ -33,8 +33,8 @@ export function ExternalAppWindow({ window }: { window: ExternalWindow }) {
       icon={<ExternalAppGlyph icon={app.icon} className="text-muted" />}
       titleExtra={
         <>
-          {mixed || refused ? null : <KagoIconButton label={t("Reload")} className="size-6" onClick={() => setLoad((count) => count + 1)}><RotateCw /></KagoIconButton>}
-          <KagoIconButton label={t("Open in new tab")} className="size-6" onClick={() => openInNewTab(app)}><ExternalLink /></KagoIconButton>
+          {mixed || refused ? null : <KagoIconButton label={t("Reload")} size="sm" onClick={() => setLoad((count) => count + 1)}><RotateCw /></KagoIconButton>}
+          <KagoIconButton label={t("Open in new tab")} size="sm" onClick={() => openInNewTab(app)}><ExternalLink /></KagoIconButton>
         </>
       }
     >

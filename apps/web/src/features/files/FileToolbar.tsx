@@ -103,8 +103,8 @@ export function FileToolbar({ window, folderView, rootName, readonly, canGoBack,
     <div className="kago-toolbar @container flex h-10 shrink-0 items-center gap-1 border-b border-line-strong px-2">
       <KagoIconButton label={t("Sidebar")} className="hidden @lg:inline-flex" active={window.sidebarOpen !== false} onClick={() => store().updateWindow(window.id, { sidebarOpen: window.sidebarOpen === false })}><PanelLeft /></KagoIconButton>
       <div className="kago-segments mr-1">
-        <KagoIconButton label={t("Back")} className="size-6" disabled={!canGoBack} onClick={() => onGo(-1)}><ChevronLeft /></KagoIconButton>
-        <KagoIconButton label={t("Forward")} className="size-6" disabled={!canGoForward} onClick={() => onGo(1)}><ChevronRight /></KagoIconButton>
+        <KagoIconButton label={t("Back")} size="sm" disabled={!canGoBack} onClick={() => onGo(-1)}><ChevronLeft /></KagoIconButton>
+        <KagoIconButton label={t("Forward")} size="sm" disabled={!canGoForward} onClick={() => onGo(1)}><ChevronRight /></KagoIconButton>
       </div>
       <div className={cn("min-w-0 flex-1", searchShown ? "hidden @2xl:flex" : "flex")}>
         <Breadcrumb window={window} rootName={rootName} onNavigate={onNavigate} />

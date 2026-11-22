@@ -41,7 +41,7 @@ export function PreviewWindowFrame({ window, extra, keepMounted, children }: { w
       titleExtra={
         <>
           {extra}
-          <KagoIconButton label={t("Download")} className="size-6" onClick={() => downloadPreview(window.preview)}>
+          <KagoIconButton label={t("Download")} size="sm" onClick={() => downloadPreview(window.preview)}>
             <Download />
           </KagoIconButton>
         </>
