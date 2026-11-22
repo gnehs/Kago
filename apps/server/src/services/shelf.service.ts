@@ -101,7 +101,8 @@ export class ShelfService {
     this.events.publish({ type: "shelf.updated", userId: actor.id, shelfId });
   }
 
-  itemsForTask(actor: Actor, shelfId: string) {
+  /** What a task over the shelf works on: the files on it, as the `rootSlug` and `path` a task names them by. */
+  sourcesForTask(actor: Actor, shelfId: string): Array<{ rootSlug: string; path: string }> {
     this.requireOwnedShelf(actor, shelfId);
     return rows<{ root_slug: string; path: string }>(
       this.db
@@ -112,7 +113,7 @@ export class ShelfService {
           WHERE shelf_id = ?`
         )
         .all(shelfId)
-    );
+    ).map((item) => ({ rootSlug: item.root_slug, path: item.path }));
   }
 
   private requireOwnedShelf(actor: Actor, shelfId: string): void {

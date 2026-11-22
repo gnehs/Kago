@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import { z } from "zod";
+import { retryTask } from "../services/task-retry.js";
 import { taskInputSchema, transferCheckSchema } from "../services/task.service.js";
 import { contentDisposition } from "./respond.js";
 import { idParams } from "./schemas.js";
@@ -19,11 +20,7 @@ export const register = signedIn((app, s) => {
     return fs.createReadStream(file.path);
   });
   app.post("/api/tasks/:id/cancel", async (request) => s.tasks.cancel(request.actor, idParams.parse(request.params).id));
-  app.post("/api/tasks/:id/retry", async (request) => {
-    const { actor } = request;
-    const task = s.tasks.retryable(actor, idParams.parse(request.params).id);
-    return (await s.sync.retryRun(actor, task)) ?? (await s.convertJobs.retryRun(actor, task)) ?? s.tasks.retry(actor, task.id);
-  });
+  app.post("/api/tasks/:id/retry", async (request) => retryTask(request.actor, idParams.parse(request.params).id, s));
   app.post("/api/tasks/:id/pause", async (request) => s.tasks.pause(request.actor, idParams.parse(request.params).id));
   app.post("/api/tasks/:id/resume", async (request) => s.tasks.resume(request.actor, idParams.parse(request.params).id));
 
@@ -58,10 +55,9 @@ export const register = signedIn((app, s) => {
       destination: z.object({ rootSlug: z.string(), path: z.string() }),
       options: taskInputSchema.shape.options
     }).parse(request.body);
-    const items = s.shelves.itemsForTask(actor, params.id);
     return s.tasks.create(actor, {
       type: body.type,
-      sources: items.map((item) => ({ rootSlug: item.root_slug, path: item.path })),
+      sources: s.shelves.sourcesForTask(actor, params.id),
       destination: body.destination,
       options: body.options
     });
