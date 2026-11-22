@@ -30,17 +30,17 @@ export function FileThumbnail({ rootSlug, item, size }: { rootSlug: string; item
   if (shows === null || shows === "text") return <span style={{ width: size, height: size }}>{tile}</span>;
   // A thumbnail replaces the icon, so what said which kind of file this is moves onto its corner.
   const badge =
-    shows === "video" ? (
+    shows === "video" || shows === "lens" ? (
       <svg viewBox="0 0 10 10" aria-hidden className="m-0.5 size-2.5">
         <path d="M2.6 1.4 8.6 5 2.6 8.6Z" fill="currentColor" />
       </svg>
     ) : shows === "page" || shows === "scene" ? (
       <span className="px-1 text-[9px] leading-4 font-bold tracking-wide uppercase">{extensionOf(item.name)}</span>
     ) : null;
-  return <Picture key={source} source={source} size={size} fallback={tile} badge={badge} tone={KIND_TONES[fileKind(item)]} />;
+  return <Picture key={source} source={source} size={size} fallback={tile} badge={badge} tone={KIND_TONES[fileKind(item)]} round={shows === "lens"} />;
 }
 
-function Picture({ source, size, fallback, badge, tone }: { source: string; size: number; fallback: React.ReactNode; badge: React.ReactNode; tone: string }) {
+function Picture({ source, size, fallback, badge, tone, round = false }: { source: string; size: number; fallback: React.ReactNode; badge: React.ReactNode; tone: string; round?: boolean }) {
   const [state, setState] = useState<"loading" | "loaded" | "failed">("loading");
   return (
     <span className="relative flex items-center justify-center" style={state === "loaded" ? undefined : { width: size, height: size }}>
@@ -52,7 +52,7 @@ function Picture({ source, size, fallback, badge, tone }: { source: string; size
           draggable={false}
           src={source}
           // Until it has loaded it sits unseen over the icon, since a hidden image is never fetched.
-          className={state === "loaded" ? "block rounded-sm object-contain ring-1 ring-line" : "absolute inset-0 size-full opacity-0"}
+          className={state === "loaded" ? cn("block object-contain ring-1 ring-line", round ? "rounded-full" : "rounded-sm") : "absolute inset-0 size-full opacity-0"}
           style={state === "loaded" ? { maxWidth: size, maxHeight: size } : undefined}
           onLoad={() => setState("loaded")}
           onError={() => setState("failed")}

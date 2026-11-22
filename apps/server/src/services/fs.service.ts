@@ -97,6 +97,8 @@ const BROWSER_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "im
 const EMBEDDED_PREVIEW_EXTENSIONS = new Set(["docx", "docm", "xlsx", "xlsm", "pptx", "pptm", "ppsx", "odt", "ods", "odp", "pages", "numbers", "key"]);
 /** Gaussian splat scenes, drawn the way the preview opens on them. A PLY may as well be a mesh, which is found out on reading it. */
 const SPLAT_EXTENSIONS = new Set(["ply", "splat", "sog"]);
+/** 360° camera recordings, drawn as the first frame of their first lens. */
+const LENS_EXTENSIONS = new Set(["osv", "insv"]);
 const MAX_ORIGINAL_THUMBNAIL_BYTES = 8 * 1024 * 1024;
 /** The longer side of a medium thumbnail: sharp across a window, and a fraction of what a camera's picture weighs. */
 const MEDIUM_THUMBNAIL_EDGE = 2048;
@@ -948,7 +950,9 @@ export class FsService {
             ? "embedded"
             : SPLAT_EXTENSIONS.has(extension)
               ? "splat"
-              : null;
+              : LENS_EXTENSIONS.has(extension)
+                ? "lens"
+                : null;
     if (medium && source !== "image") return null;
 
     if (source) {
@@ -961,7 +965,7 @@ export class FsService {
         const file = await onDisk();
         picture = file ? await this.images?.rendition(file, stat).catch(() => undefined) : undefined;
       } else if (!remote) picture = (await this.isKeptPicture(safe.absolutePath)) ? undefined : safe.absolutePath;
-      else picture = source === "image" || source === "video" ? this.storage.mediaInput(safe) : await onDisk();
+      else picture = source === "image" || source === "video" || source === "lens" ? this.storage.mediaInput(safe) : await onDisk();
       const drawn = picture ? await this.thumbnailer.render(picture, key, source, medium ? MEDIUM_THUMBNAIL_EDGE : undefined) : null;
       if (drawn) return { contentType: "image/avif", path: drawn, size: (await fsp.stat(drawn)).size };
       if (medium) return null;

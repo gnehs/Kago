@@ -40,6 +40,9 @@ const cut = (square: true | Crop) =>
 
 // Where ffmpeg does the reading, it cuts the picture, scales it down and hands it over as a PNG, with whatever is transparent in it.
 const filter = (edge: number, square: boolean | Crop = false) => `[0:v:0]${square ? cut(square) : ""}scale='min(${edge},iw)':'min(${edge},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2[out]`;
+// A 360° camera's first lens is a circle in a square, the left one when both lenses share a frame; outside it is made clear.
+const LENS_FILTER = (edge: number) =>
+  `[0:v:0]crop='min(iw,ih)':'min(iw,ih)':0:'(ih-min(iw,ih))/2',scale='min(${edge},iw)':-2,format=rgba,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='if(lte(hypot(X-W/2+0.5,Y-H/2+0.5),W/2),255,0)'[out]`;
 // Barely packed: it is read back at once, and packing it well would take longer than writing the AVIF.
 const AS_PNG = ["-map", "[out]", "-frames:v", "1", "-c:v", "png", "-compression_level", "1", "-f", "image2pipe", "pipe:1"];
 const AVIF_QUALITY = 50;
@@ -73,7 +76,7 @@ async function sharpReads(file: string): Promise<boolean> {
  * How a file becomes a picture: images and videos are read by ffmpeg directly; the first page of a PDF is drawn first,
  * a document's own preview picture is taken out of it, and a splat scene is drawn, all off the main thread.
  */
-export type ThumbnailSource = "image" | "video" | "pdf" | "embedded" | "splat";
+export type ThumbnailSource = "image" | "video" | "lens" | "pdf" | "embedded" | "splat";
 
 /**
  * Draws AVIF thumbnails, keeping each one on disk under the key it was asked for. sharp writes them all, and reads
@@ -158,7 +161,8 @@ export class Thumbnailer {
     // An SVG is a document that may name other files to draw; the browser shows it as it is instead.
     if (kind === "image" && /\.svgz?$/i.test(source)) return null;
     // A video is read as a video and everything else as a still picture, whatever the file turns out to hold.
-    const formats = kind === "video" ? undefined : PICTURE_FORMATS;
+    const moving = kind === "video" || kind === "lens";
+    const formats = moving ? undefined : PICTURE_FORMATS;
     await this.acquire();
     const partial = `${target}.partial`;
     const prepared = `${target}.source`;
@@ -172,7 +176,7 @@ export class Thumbnailer {
       // A tenth of the way in is past most title cards; the very first frame is tried when nothing is there.
       const seeks = kind === "video" ? [(await this.duration(source)) * 0.1, 0].filter((seek, index) => index > 0 || seek > 0) : [null];
       let reason = "no frame to draw";
-      if (kind !== "video" && (await sharpReads(picture))) {
+      if (!moving && (await sharpReads(picture))) {
         try {
           await writeAvif({ input: picture, target: partial, quality: AVIF_QUALITY, edge });
           await fsp.rename(partial, target);
@@ -184,9 +188,10 @@ export class Thumbnailer {
       for (const seek of seeks) {
         // Past the start only keyframes are decoded: landing between two would mean decoding every frame up to that point,
         // which for 4K HEVC with keyframes ten seconds apart outlasts the timeout on a slow machine.
-        const input = seek === null ? guardedInput(picture, formats) : [...(seek > 0 ? ["-skip_frame", "nokey"] : []), "-ss", seek.toFixed(2), ...guardedInput(picture, formats), "-an", "-sn", "-dn"];
+        // A lens's first frame is its first keyframe; decoding only keyframes spares a 4K HEVC decoder's warm-up.
+        const input = seek === null ? [...(kind === "lens" ? ["-skip_frame", "nokey"] : []), ...guardedInput(picture, formats)] : [...(seek > 0 ? ["-skip_frame", "nokey"] : []), "-ss", seek.toFixed(2), ...guardedInput(picture, formats), "-an", "-sn", "-dn"];
         try {
-          const frame = await this.read(input, edge);
+          const frame = await this.read(input, edge, false, kind === "lens");
           // With no frame after the seek, ffmpeg still succeeds and hands over nothing.
           if (!frame) continue;
           await writeAvif({ input: frame, target: partial, quality: AVIF_QUALITY });
@@ -206,8 +211,8 @@ export class Thumbnailer {
   }
 
   /** What ffmpeg makes of a picture: cut, scaled down to `edge`, and handed over as a PNG. Null when there was no frame to read. */
-  private async read(input: string[], edge: number, square: boolean | Crop = false): Promise<Buffer | null> {
-    const { stdout } = await execFileAsync(this.ffmpeg, ["-v", "warning", "-nostdin", ...input, "-filter_complex", filter(edge, square), ...AS_PNG], { timeout: TIMEOUT_MS, encoding: "buffer", maxBuffer: MAX_FRAME_BYTES });
+  private async read(input: string[], edge: number, square: boolean | Crop = false, lens = false): Promise<Buffer | null> {
+    const { stdout } = await execFileAsync(this.ffmpeg, ["-v", "warning", "-nostdin", ...input, "-filter_complex", lens ? LENS_FILTER(edge) : filter(edge, square), ...AS_PNG], { timeout: TIMEOUT_MS, encoding: "buffer", maxBuffer: MAX_FRAME_BYTES });
     return stdout.length > 0 ? stdout : null;
   }
 

@@ -71,19 +71,22 @@ export const KIND_TONES: Record<FileKind, string> = {
 };
 
 /** Documents whose file may hold a preview picture of its first page; the server looks for it. */
+/** 360° camera recordings, shown as their first lens: a circle. */
+const LENS_RECORDINGS = words("osv insv");
 const PREVIEWED_DOCUMENTS = words("docx docm xlsx xlsm pptx pptm ppsx odt ods odp pages numbers key");
 
 /**
  * What the contents of a file can be shown as on its icon, if anything:
- * a picture, a frame of a video, the first page of a document, a 3D scene as its preview opens on it, or its opening lines of text.
+ * a picture, a frame of a video, the first lens of a 360° recording, the first page of a document, a 3D scene as its preview opens on it, or its opening lines of text.
  */
-export function thumbnailKind(item: Pick<FileItem, "kind" | "type" | "name" | "size">): "picture" | "video" | "page" | "scene" | "text" | null {
+export function thumbnailKind(item: Pick<FileItem, "kind" | "type" | "name" | "size">): "picture" | "video" | "lens" | "page" | "scene" | "text" | null {
   if (item.kind !== "file" || item.size === 0) return null;
   const kind = fileKind(item);
   if (kind === "image") return "picture";
   if (kind === "video") return "video";
   if (kind === "pdf") return "page";
   if (isSplatFile(item)) return "scene";
+  if (LENS_RECORDINGS.has(extensionOf(item.name))) return "lens";
   if (hasTextName(item.name) || item.type.startsWith("text/")) return "text";
   return PREVIEWED_DOCUMENTS.has(extensionOf(item.name)) ? "page" : null;
 }
