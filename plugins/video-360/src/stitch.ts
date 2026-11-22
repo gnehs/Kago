@@ -6,6 +6,12 @@ export type View = { yaw: number; pitch: number; fov: number };
 /** A lens as drawn: the stream whose picture it is in, and the part of that picture it fills. */
 export type LensGeometry = { stream: number; crop: Crop };
 
+/**
+ * What the pictures handed over are of: each lens's fisheye picture, stitched here, or the whole sphere already
+ * stitched into one equirectangular picture, as Kago's server makes for a browser that cannot decode the lenses.
+ */
+export type Projection = { kind: "fisheye"; lenses: LensGeometry[]; optics: Optics } | { kind: "equirect" };
+
 const VERTEX = `#version 300 es
 in vec2 position;
 out vec2 ndc;
@@ -28,7 +34,7 @@ uniform vec3 forward;
 uniform vec2 tangent;
 uniform sampler2D picture0;
 uniform sampler2D picture1;
-uniform sampler2D poster;
+uniform sampler2D sphere;
 uniform int stream[2];
 uniform mat3 basis[2];
 uniform vec4 circle[2];
@@ -54,7 +60,7 @@ void main() {
   vec3 ray = normalize(right * ndc.x * tangent.x + up * ndc.y * tangent.y + forward);
   if (mode == 1) {
     vec2 uv = vec2(0.5 + atan(ray.x, ray.z) / (2.0 * PI), 0.5 - asin(clamp(ray.y, -1.0, 1.0)) / PI);
-    color = vec4(texture(poster, uv).rgb, 1.0);
+    color = vec4(texture(sphere, uv).rgb, 1.0);
     return;
   }
   float theta0;
@@ -73,23 +79,26 @@ void main() {
 
 /**
  * Draws the recording on a canvas as the inside of a sphere, stitching the lenses' fisheye pictures together as it
- * goes. Each stream's frames are uploaded into a texture of their own; the frame can be closed once it is.
+ * goes. Each stream's frames are uploaded into a texture of their own; the frame can be closed once it is. An
+ * equirectangular picture goes into the texture of the whole sphere, which until then holds the poster, if any.
  */
 export class Stitcher {
   private readonly gl: WebGL2RenderingContext;
   private readonly program: WebGLProgram;
   private readonly textures: WebGLTexture[];
-  private readonly poster: WebGLTexture;
+  private readonly sphere: WebGLTexture;
   private readonly sizes: { width: number; height: number }[] = [];
   private readonly uniforms = new Map<string, WebGLUniformLocation | null>();
+  /** The lenses to stitch, or null for a picture of the sphere that is stitched already. */
+  private readonly fisheye: Extract<Projection, { kind: "fisheye" }> | null;
   private hasPicture = false;
   private hasPoster = false;
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
-    private readonly lenses: LensGeometry[],
-    private readonly optics: Optics
+    projection: Projection
   ) {
+    this.fisheye = projection.kind === "fisheye" ? projection : null;
     const gl = canvas.getContext("webgl2", { antialias: false, alpha: false, preserveDrawingBuffer: false });
     if (!gl) throw new Error("WebGL 2 is not available");
     this.gl = gl;
@@ -102,10 +111,15 @@ export class Stitcher {
     gl.enableVertexAttribArray(position);
     gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0);
     this.textures = [texture(gl), texture(gl)];
-    this.poster = texture(gl);
+    this.sphere = texture(gl);
     gl.uniform1i(this.uniform("picture0"), 0);
     gl.uniform1i(this.uniform("picture1"), 1);
-    gl.uniform1i(this.uniform("poster"), 2);
+    gl.uniform1i(this.uniform("sphere"), 2);
+    if (this.fisheye) this.setLenses(this.fisheye);
+  }
+
+  private setLenses({ lenses, optics }: Extract<Projection, { kind: "fisheye" }>) {
+    const { gl } = this;
     gl.uniform1i(this.uniform("lenses"), lenses.length);
     gl.uniform1f(this.uniform("halfFov"), (optics.fov / 2) * (Math.PI / 180));
     gl.uniform1f(this.uniform("band"), Math.min(5 * (Math.PI / 180), 0.8 * ((optics.fov / 2 - 90) * (Math.PI / 180))));
@@ -115,12 +129,17 @@ export class Stitcher {
   }
 
   /** Takes a stream's frame into its texture. */
-  upload(stream: number, frame: VideoFrame) {
+  upload(stream: number, frame: VideoFrame | HTMLVideoElement) {
     const { gl } = this;
+    if (!this.fisheye) {
+      this.uploadSphere(frame);
+      this.hasPicture = true;
+      return;
+    }
     gl.activeTexture(gl.TEXTURE0 + stream);
     gl.bindTexture(gl.TEXTURE_2D, this.textures[stream]!);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, frame);
-    const size = { width: frame.displayWidth, height: frame.displayHeight };
+    const size = "displayWidth" in frame ? { width: frame.displayWidth, height: frame.displayHeight } : { width: frame.videoWidth, height: frame.videoHeight };
     const known = this.sizes[stream];
     if (!known || known.width !== size.width || known.height !== size.height) {
       this.sizes[stream] = size;
@@ -131,11 +150,16 @@ export class Stitcher {
 
   /** An equirectangular picture of the whole sphere, shown until the first frames are. */
   uploadPoster(picture: ImageBitmap) {
+    if (this.hasPicture) return;
+    this.uploadSphere(picture);
+    this.hasPoster = true;
+  }
+
+  private uploadSphere(picture: TexImageSource) {
     const { gl } = this;
     gl.activeTexture(gl.TEXTURE2);
-    gl.bindTexture(gl.TEXTURE_2D, this.poster);
+    gl.bindTexture(gl.TEXTURE_2D, this.sphere);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, picture);
-    this.hasPoster = true;
   }
 
   get ready() {
@@ -161,7 +185,7 @@ export class Stitcher {
     gl.uniform3fv(this.uniform("forward"), forward);
     gl.uniform3fv(this.uniform("right"), right);
     gl.uniform3fv(this.uniform("up"), up);
-    gl.uniform1i(this.uniform("mode"), this.hasPicture ? 0 : 1);
+    gl.uniform1i(this.uniform("mode"), this.hasPicture && this.fisheye ? 0 : 1);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   }
 
@@ -173,10 +197,11 @@ export class Stitcher {
   private placeLenses() {
     const circles: number[] = [];
     const bounds: number[] = [];
-    for (const lens of this.lenses) {
+    const { lenses, optics } = this.fisheye!;
+    for (const lens of lenses) {
       const size = this.sizes[lens.stream] ?? { width: 1, height: 1 };
       const { x, y, w, h } = lens.crop;
-      const radius = (Math.min(w, h) / 2) * this.optics.radius;
+      const radius = (Math.min(w, h) / 2) * optics.radius;
       circles.push((x + w / 2) / size.width, (y + h / 2) / size.height, radius / size.width, radius / size.height);
       bounds.push(x / size.width, y / size.height, (x + w) / size.width, (y + h) / size.height);
     }

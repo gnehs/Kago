@@ -34,6 +34,8 @@ export type Track = {
   height: number;
   sampleRate: number;
   channels: number;
+  /** Units of the track's own timeline in a second. */
+  timescale: number;
   duration: number;
   samples: Samples;
 };
@@ -183,7 +185,22 @@ function parseTrack(bytes: Uint8Array, view: DataView, trak: Box, movieScale: nu
   }
   const samples = sampleTable(bytes, view, stbl, timescale, editShift(bytes, view, trak, timescale, movieScale));
   const duration = samples.count ? samples.times.reduce((latest, time, index) => Math.max(latest, time + samples.durations[index]!), 0) : 0;
-  return { id, kind, format, codec, description, width, height, sampleRate, channels, duration, samples };
+  return { id, kind, format, codec, description, width, height, sampleRate, channels, timescale, duration, samples };
+}
+
+/** When a fragmented MP4 segment's first sample of a track is decoded, in seconds of the track's own timeline. */
+export function fragmentTime(segment: Uint8Array, track: Pick<Track, "id" | "timescale">): number | null {
+  const view = new DataView(segment.buffer, segment.byteOffset, segment.byteLength);
+  for (const moof of children(segment, 0, segment.byteLength).filter((box) => box.type === "moof")) {
+    for (const traf of children(segment, moof.start, moof.end).filter((box) => box.type === "traf")) {
+      const tfhd = child(segment, traf, "tfhd");
+      const tfdt = child(segment, traf, "tfdt");
+      if (!tfhd || !tfdt || view.getUint32(tfhd.start + 4) !== track.id) continue;
+      const time = segment[tfdt.start] === 1 ? Number(view.getBigUint64(tfdt.start + 4)) : view.getUint32(tfdt.start + 4);
+      return time / track.timescale;
+    }
+  }
+  return null;
 }
 
 /** Searches the boxes in a range, and the boxes inside those, for the first of a type. */

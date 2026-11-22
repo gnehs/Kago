@@ -25,6 +25,15 @@ body {
   cursor: grabbing;
 }
 
+/* The panorama's video is drawn on the stage; the element itself only has to be in the page for its frames to come. */
+.panorama-source {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
 /* A spinner only shows once the wait is long enough to be one; a quick answer never flashes it. */
 .waiting {
   position: absolute;
@@ -32,13 +41,25 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-direction: column;
+  gap: 12px;
   color: #b3b3b3;
   pointer-events: none;
   animation: fade-in 200ms ease-out 200ms both;
 }
 
-.waiting[hidden] {
+.waiting[hidden],
+.waiting-note[hidden] {
   display: none;
+}
+
+.waiting-note {
+  max-width: 80%;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 0.5);
+  font-size: 12px;
+  text-align: center;
 }
 
 @keyframes fade-in {

@@ -15,7 +15,8 @@
         "companions": [
           { "replace": "_00_", "with": "_10_" },
           { "replace": "_10_", "with": "_00_" }
-        ]
+        ],
+        "panorama": true
       }
     ]
   },

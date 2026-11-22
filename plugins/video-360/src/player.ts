@@ -48,6 +48,26 @@ type Audio = StreamSource & { config: AudioDecoderConfig; decoder: AudioDecoder;
 
 export type PlayerStats = { decoded: number; presented: number; dropped: number };
 
+/** What the viewer's controls drive: the lenses decoded here, or a panorama the server stitched. */
+export interface Playback {
+  readonly duration: number;
+  /** How playback is keeping up, for the end-to-end check to read. */
+  readonly stats: object;
+  readonly playing: boolean;
+  /** Playing, but waiting on what to show. */
+  readonly waiting: boolean;
+  time(): number;
+  play(): void;
+  pause(): void;
+  seek(time: number): void;
+  setMuted(muted: boolean): void;
+  /** Lets sound play. It may only start inside a user's gesture in the frame. */
+  resumeAudio(): void;
+  /** Called once per animation frame. */
+  tick(): void;
+  destroy(): void;
+}
+
 /**
  * Where the playhead is. It runs off the audio hardware's clock once Web Audio may play, so sound and picture keep
  * together however long the recording, and off the page's own clock until then.
@@ -82,7 +102,7 @@ class Clock {
   }
 }
 
-class Signal {
+export class Signal {
   private waiters: (() => void)[] = [];
   wait() {
     return new Promise<void>((resolve) => this.waiters.push(resolve));
@@ -113,7 +133,7 @@ export const audioConfig = (track: Track): AudioDecoderConfig => ({
  * Kago, decodes each stream with WebCodecs, and hands over, as their time comes, frames of the same instant from every
  * stream at once. Each frame handed over is closed once `present` returns.
  */
-export class Player {
+export class Player implements Playback {
   readonly duration: number;
   readonly stats: PlayerStats = { decoded: 0, presented: 0, dropped: 0 };
   playing = false;

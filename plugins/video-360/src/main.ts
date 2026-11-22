@@ -2,7 +2,8 @@ import { connect } from "@kago/plugin-sdk";
 import "@kago/plugin-sdk/kago.css";
 import "./style.css";
 import { parseMovie, readMoov, type Movie, type Track } from "./mp4";
-import { audioConfig, Player, videoConfig, type FileReader, type StreamSource } from "./player";
+import { PanoramaPlayer } from "./panorama";
+import { audioConfig, Player, videoConfig, type FileReader, type Playback, type StreamSource } from "./player";
 import { opticsFor, planRecording, type Recording } from "./source";
 import { Stitcher, type View } from "./stitch";
 import { stringsFor } from "./strings";
@@ -14,6 +15,8 @@ const MIN_FOV = 20 * DEGREE;
 const MAX_FOV = 120 * DEGREE;
 /** How far the arrow keys seek, in seconds. */
 const STEP = 5;
+/** How long a wait on Kago's server goes before the viewer says what it is waiting for. */
+const SAY_WAIT = 4000;
 
 // Lucide's glyphs, as Kago draws them elsewhere: Play, Pause, Volume2, VolumeX, RotateCcw and LoaderCircle.
 const SPEAKER = "M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z";
@@ -74,7 +77,8 @@ const text = stringsFor(kago.locale);
 let muted = (await kago.storage.get(MUTED_KEY)) === "true";
 
 const canvas = element("canvas", "stage");
-const waiting = element("div", "waiting", glyph("spinner", "kago-glyph kago-spinner"));
+const waitingNote = element("span", "waiting-note", text.preparing);
+const waiting = element("div", "waiting", glyph("spinner", "kago-glyph kago-spinner"), waitingNote);
 waiting.role = "status";
 waiting.ariaLabel = text.loading;
 const playButton = iconButton(() => (player?.playing ? player.pause() : player?.play()));
@@ -89,13 +93,17 @@ const muteButton = iconButton(() => setMuted(!muted));
 const resetButton = iconButton(() => setView(HOME));
 setIcon(resetButton, "reset", text.reset);
 resetButton.classList.add("last");
-document.body.append(element("main", "viewer", canvas, waiting), element("footer", "kago-status-bar", playButton, time, scrubber, notice, muteButton, resetButton));
+const viewer = element("main", "viewer", canvas, waiting);
+document.body.append(viewer, element("footer", "kago-status-bar", playButton, time, scrubber, notice, muteButton, resetButton));
 
-let player: Player | null = null;
+let player: Playback | null = null;
 let stitcher: Stitcher | null = null;
 let view: View = { ...HOME };
 let dirty = true;
 let failed = false;
+/** Whether Kago's server stitches the picture, which can keep the viewer waiting a while. */
+let stitchedByServer = false;
+let waitingSince: number | null = null;
 
 function fail(reason: "unsupported" | "unreadable", message?: string) {
   if (failed) return;
@@ -132,6 +140,8 @@ function render() {
   scrubber.style.setProperty("--progress", `${duration ? (Number(scrubber.value) / duration) * 100 : 0}%`);
   for (const control of [playButton, scrubber, muteButton, resetButton]) control.disabled = !player;
   waiting.hidden = Boolean(stitcher?.ready) && !player?.waiting;
+  waitingSince = waiting.hidden ? null : (waitingSince ?? performance.now());
+  waitingNote.hidden = !stitchedByServer || waitingSince === null || performance.now() - waitingSince < SAY_WAIT;
 }
 
 function frame() {
@@ -152,8 +162,9 @@ const spread = () => {
   const [a, b] = [...pointers.values()];
   return a && b ? Math.hypot(a.x - b.x, a.y - b.y) : 0;
 };
+// Sound may start with any click in the frame, the controls' included.
+addEventListener("pointerdown", () => player?.resumeAudio(), { capture: true });
 canvas.addEventListener("pointerdown", (event) => {
-  player?.resumeAudio();
   canvas.setPointerCapture(event.pointerId);
   pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
   pinch = spread();
@@ -207,12 +218,6 @@ addEventListener("keydown", (event) => {
 render();
 requestAnimationFrame(frame);
 
-if (typeof VideoDecoder === "undefined") {
-  // WebCodecs exist only in a secure context, so Kago opened at a plain http:// address other than localhost has none.
-  fail("unsupported", isSecureContext ? text.unsupported.replace("{codec}", "WebCodecs") : text.insecure);
-  throw new Error("WebCodecs is not available");
-}
-
 const files = [kago.file, ...kago.companions];
 const read: FileReader = (file, start, end) => kago.read(start, end, file);
 let movies: (Movie | null)[];
@@ -239,13 +244,25 @@ if (!plan) {
 }
 const trackOf = (file: number, id: number) => movies[file]!.tracks.find((track) => track.id === id)!;
 const sources: StreamSource[] = plan.streams.map(({ file, trackId }) => ({ file, track: trackOf(file, trackId) }));
-for (const { track } of sources) {
-  const support = await VideoDecoder.isConfigSupported(videoConfig(track)).catch(() => ({ supported: false }));
-  if (!support.supported) {
-    fail("unsupported", text.unsupported.replace("{codec}", track.codec ?? track.format));
-    throw new Error(`${track.codec} is not supported`);
+
+/** The first lens's codec this browser can't decode, or null when it can decode them all. */
+async function undecodable() {
+  // WebCodecs exist only in a secure context, so Kago opened at a plain http:// address other than localhost has none.
+  if (typeof VideoDecoder === "undefined") return "WebCodecs";
+  for (const { track } of sources) {
+    const support = await VideoDecoder.isConfigSupported(videoConfig(track)).catch(() => ({ supported: false }));
+    if (!support.supported) return track.codec ?? track.format;
   }
+  return null;
 }
+
+// What this browser can't decode, Kago's server stitches into one picture the browser plays as any video.
+const missing = await undecodable();
+if (missing !== null && typeof MediaSource === "undefined") {
+  fail("unsupported", isSecureContext ? text.unsupported.replace("{codec}", missing) : text.insecure);
+  throw new Error(`${missing} is not supported`);
+}
+stitchedByServer = missing !== null;
 
 /** The sound, from the file of the front lens if it has some, else from any other. */
 async function findAudio(): Promise<StreamSource | null> {
@@ -261,7 +278,7 @@ async function findAudio(): Promise<StreamSource | null> {
 
 const extension = kago.file.name.split(".").at(-1)?.toLowerCase() ?? "";
 try {
-  stitcher = new Stitcher(canvas, plan.lenses, opticsFor(extension));
+  stitcher = new Stitcher(canvas, missing === null ? { kind: "fisheye", lenses: plan.lenses, optics: opticsFor(extension) } : { kind: "equirect" });
 } catch {
   fail("unsupported");
   throw new Error("WebGL 2 is not available");
@@ -281,16 +298,20 @@ if (cover) {
     .catch(() => undefined);
 }
 
-player = new Player(
-  sources,
-  await findAudio(),
-  read,
-  (stream, decoded) => {
-    stitcher?.upload(stream, decoded);
-    dirty = true;
-  },
-  () => fail("unreadable")
-);
+const present = (stream: number, picture: VideoFrame | HTMLVideoElement) => {
+  stitcher?.upload(stream, picture);
+  dirty = true;
+};
+if (missing === null) {
+  player = new Player(sources, await findAudio(), read, present, () => fail("unreadable"));
+} else {
+  try {
+    player = await PanoramaPlayer.open(kago.panorama, viewer, (video) => present(0, video), (reason) => fail(reason, reason === "unsupported" ? text.unsupported.replace("{codec}", missing) : undefined));
+  } catch {
+    fail("unsupported", text.noPanorama);
+    throw new Error("Kago could not stitch the recording");
+  }
+}
 player.setMuted(muted);
 // Read by the end-to-end check, which measures how well playback keeps up.
 Object.assign(globalThis, { video360: player.stats });
