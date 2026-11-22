@@ -940,6 +940,7 @@ export const zhCN: Dictionary = {
   "The source and the destination overlap": "来源与目标互相重叠",
   "Invalid sync task": "同步任务无效",
   "The transfer failed": "传输失败",
+  "The other file must be in the same folder": "另一个文件必须在同一个文件夹里",
   "Unknown kind of location": "未知的位置种类",
   "Invalid port": "端口无效",
   "A required field is empty": "有必填字段没有填写",

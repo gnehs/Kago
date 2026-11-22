@@ -940,6 +940,7 @@ export const ja: Dictionary = {
   "The source and the destination overlap": "同期元と同期先が重なっています",
   "Invalid sync task": "同期タスクが正しくありません",
   "The transfer failed": "転送に失敗しました",
+  "The other file must be in the same folder": "もう一方のファイルは同じフォルダにある必要があります",
   "Unknown kind of location": "不明な種類の場所です",
   "Invalid port": "ポートが正しくありません",
   "A required field is empty": "必須の項目が入力されていません",

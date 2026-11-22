@@ -940,6 +940,7 @@ export const zhTW: Dictionary = {
   "The source and the destination overlap": "來源與目的地互相重疊",
   "Invalid sync task": "同步任務無效",
   "The transfer failed": "傳輸失敗",
+  "The other file must be in the same folder": "另一個檔案必須在同一個資料夾裡",
   "Unknown kind of location": "不明的位置種類",
   "Invalid port": "連接埠無效",
   "A required field is empty": "有必填欄位沒有填寫",
