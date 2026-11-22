@@ -402,6 +402,8 @@ function PluginFrame({ window, previewer, onDownload, onRetry }: { window: Previ
         title={previewer.title}
         // Scripts only: no origin of its own to share with Kago's, no forms, no popups, no way out of the frame.
         sandbox="allow-scripts"
+        // The viewer inside may take its own frame fullscreen; a frame cannot unless it is allowed to.
+        allow="fullscreen"
         // The page is told whose it is, so its policy can name its own address as the browser sees it.
         src={`${previewer.src}?${new URLSearchParams({ _o: location.origin }).toString()}`}
         referrerPolicy="no-referrer"
