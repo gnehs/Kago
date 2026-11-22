@@ -208,7 +208,8 @@ render();
 requestAnimationFrame(frame);
 
 if (typeof VideoDecoder === "undefined") {
-  fail("unsupported", text.unsupported.replace("{codec}", "WebCodecs"));
+  // WebCodecs exist only in a secure context, so Kago opened at a plain http:// address other than localhost has none.
+  fail("unsupported", isSecureContext ? text.unsupported.replace("{codec}", "WebCodecs") : text.insecure);
   throw new Error("WebCodecs is not available");
 }
 
