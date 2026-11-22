@@ -40,6 +40,8 @@ export const THEME_TOKENS = [
   "--kago-shadow-popup",
   "--kago-selection",
   "--kago-primary-ring",
+  "--kago-primary-from",
+  "--kago-primary-to",
   "--kago-radius-md",
   "--kago-radius-lg",
   "--kago-control-h",

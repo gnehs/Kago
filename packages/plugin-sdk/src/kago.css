@@ -174,3 +174,288 @@
     transform: rotate(360deg);
   }
 }
+
+/*
+ * Kago's video player, for a plugin that plays video: the controls float on a bar of dark glass over the picture
+ * and fade out while it plays. The player keeps the same light-on-dark colours in either theme, as Kago's own does,
+ * so the glass redefines the materials its controls draw with instead of following the theme's.
+ *
+ * Markup: `.kago-player` holds the picture and a `.kago-player-bar`, which holds a `.kago-player-slider` and a
+ * `.kago-player-row` of `.kago-player-button`s. The player is shown with `data-controls` and hides its pointer
+ * without it. A slider is told how far it is with --value, and how far it is loaded with --loaded.
+ */
+:where(.kago-player) {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: #000000;
+  outline: none;
+  container-type: inline-size;
+}
+
+:where(.kago-player:not([data-controls])) {
+  cursor: none;
+}
+
+:where(.kago-player-glass) {
+  --kago-hover: rgb(255 255 255 / 0.12);
+  --kago-sunk: linear-gradient(rgb(0 0 0 / 0.4), rgb(0 0 0 / 0.28));
+  --kago-sunk-shadow: inset 0 1px 2px rgb(0 0 0 / 0.45), inset 0 0 0 0.5px rgb(0 0 0 / 0.35), 0 0.5px 0 rgb(255 255 255 / 0.14);
+  color: #ffffff;
+  background: linear-gradient(rgb(52 56 63 / 0.62), rgb(20 22 26 / 0.7));
+  box-shadow:
+    0 0 0 0.5px rgb(0 0 0 / 0.7),
+    0 8px 24px rgb(0 0 0 / 0.35),
+    inset 0 0.5px 0 rgb(255 255 255 / 0.3),
+    inset 0 0 0 1px rgb(255 255 255 / 0.07);
+  backdrop-filter: blur(24px) saturate(1.7);
+  -webkit-backdrop-filter: blur(24px) saturate(1.7);
+}
+
+:where(.kago-player-bar) {
+  position: absolute;
+  inset: auto 8px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  box-sizing: border-box;
+  padding: 6px 10px;
+  border-radius: var(--kago-radius-lg, 12px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 150ms;
+  user-select: none;
+}
+
+:where(.kago-player[data-controls] .kago-player-bar) {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+:where(.kago-player-row) {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+:where(.kago-player-spacer) {
+  flex: 1;
+}
+
+/* A control on the bar: a ghost button in the player's own light grey, which lights up under the pointer. */
+:where(.kago-player-button) {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--kago-radius-md, 7px);
+  background: none;
+  color: #d4d6d9;
+  outline: none;
+  transition: color 150ms, background-color 150ms;
+}
+
+:where(.kago-player-button:not(:disabled):hover) {
+  color: #ffffff;
+  background: var(--kago-hover);
+  box-shadow: var(--kago-sunk-shadow);
+}
+
+:where(.kago-player-button:not(:disabled):active) {
+  background: var(--kago-sunk);
+  box-shadow: var(--kago-sunk-shadow);
+}
+
+:where(.kago-player-button:focus-visible) {
+  outline: 2px solid color-mix(in srgb, var(--kago-accent) 60%, transparent);
+  outline-offset: 2px;
+}
+
+/* Dimmed with a solid colour: a translucent glyph would darken where its strokes cross. */
+:where(.kago-player-button:disabled) {
+  color: #6b7078;
+}
+
+/* Play and pause: the one key on the bar that stands out of it. */
+:where(.kago-player-key) {
+  width: 32px;
+  height: 32px;
+  margin: 0 4px;
+  border-radius: 50%;
+  color: #ffffff;
+  background: linear-gradient(rgb(255 255 255 / 0.3), rgb(255 255 255 / 0.1));
+  box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.6), 0 1px 2.5px rgb(0 0 0 / 0.4), inset 0 0.5px 0 rgb(255 255 255 / 0.5);
+}
+
+:where(.kago-player-key:not(:disabled):hover) {
+  background: linear-gradient(rgb(255 255 255 / 0.38), rgb(255 255 255 / 0.16));
+  box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.6), 0 1px 2.5px rgb(0 0 0 / 0.4), inset 0 0.5px 0 rgb(255 255 255 / 0.5);
+}
+
+:where(.kago-player-key:not(:disabled):active) {
+  background: linear-gradient(rgb(0 0 0 / 0.35), rgb(0 0 0 / 0.2));
+  box-shadow: var(--kago-sunk-shadow);
+}
+
+/* The glyphs the native player draws solid: play, pause, skip. */
+:where(.kago-glyph-solid) {
+  fill: currentColor;
+}
+
+:where(.kago-player-time) {
+  min-width: 0;
+  padding: 0 6px;
+  overflow: hidden;
+  color: rgb(255 255 255 / 0.8);
+  font-size: 12px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A thin track for the playhead and the volume, which the pointer drags. */
+:where(.kago-player-slider) {
+  position: relative;
+  flex-shrink: 0;
+  height: 16px;
+  touch-action: none;
+}
+
+:where(.kago-player-slider[aria-disabled="true"]) {
+  pointer-events: none;
+}
+
+/* Beside the volume, where the bar is wide enough for it. */
+:where(.kago-player-volume) {
+  display: none;
+  width: 64px;
+}
+
+@container (min-width: 384px) {
+  :where(.kago-player-volume) {
+    display: block;
+  }
+}
+
+/* A groove cut into the glass, filled with the accent up to where the playhead is. */
+:where(.kago-player-track) {
+  position: absolute;
+  inset: 50% 0 auto;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 0.5);
+  box-shadow: inset 0 1px 1.5px rgb(0 0 0 / 0.6), 0 0.5px 0 rgb(255 255 255 / 0.16);
+  transform: translateY(-50%);
+}
+
+:where(.kago-player-loaded, .kago-player-fill) {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 999px;
+}
+
+:where(.kago-player-loaded) {
+  width: var(--loaded, 0%);
+  background: rgb(255 255 255 / 0.25);
+}
+
+:where(.kago-player-fill) {
+  width: var(--value, 0%);
+  background: linear-gradient(var(--kago-primary-from, var(--kago-accent)), var(--kago-primary-to, var(--kago-accent)));
+  box-shadow: inset 0 0.5px 0 rgb(255 255 255 / 0.5);
+}
+
+:where(.kago-player-knob) {
+  position: absolute;
+  top: 50%;
+  left: var(--value, 0%);
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: linear-gradient(#ffffff, #d5d9e0);
+  box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.5), 0 1px 3px rgb(0 0 0 / 0.5), inset 0 0.5px 0 #ffffff;
+  opacity: 0;
+  transform: translate(-50%, -50%);
+}
+
+:where(.kago-player-slider:hover .kago-player-knob, .kago-player-slider[data-dragging] .kago-player-knob) {
+  opacity: 1;
+}
+
+/* What a point of the slider stands for, over the pointer. */
+:where(.kago-player-hint) {
+  position: absolute;
+  bottom: 100%;
+  left: var(--hint, 0%);
+  margin-bottom: 8px;
+  padding: 2px 6px;
+  border-radius: var(--kago-radius-sm, 5px);
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+:where(.kago-player-hint[hidden]) {
+  display: none;
+}
+
+/* What the player says in the middle of the picture, and the play key it shows while paused. */
+:where(.kago-player-centre) {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+:where(.kago-player-centre[hidden]) {
+  display: none;
+}
+
+:where(.kago-player-pill) {
+  max-width: 80%;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 16px;
+  text-align: center;
+}
+
+:where(.kago-player-badge) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+}
+
+:where(.kago-player-badge .kago-glyph) {
+  width: 24px;
+  height: 24px;
+  transform: translateX(2px);
+}
+
+/* The name of a control on the bar is centred over it, and the last one's ends at the bar's edge. */
+:where(.kago-player-button[data-tip]:hover::after) {
+  right: auto;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+:where(.kago-player-row > .kago-player-button[data-tip]:last-child:hover::after) {
+  right: 0;
+  left: auto;
+  transform: none;
+}
