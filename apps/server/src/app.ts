@@ -165,7 +165,7 @@ export async function buildApp(env: Env) {
     }
   }
   await remotes.start();
-  const services: Services = { auth, audit, roots, paths, permissions, fsService, workspace, preferences, tasks, shelves, shares, groups, oidc, media, compatibility, images, apps, iconLibrary, frameProbe: new FrameProbe(), events, db, storage, remotes, sync, convertJobs, plugins, env };
+  const services: Services = { auth, audit, roots, paths, permissions, fsService, workspace, preferences, tasks, trash: tasks.trash, shelves, shares, groups, oidc, media, compatibility, images, apps, iconLibrary, frameProbe: new FrameProbe(), events, db, storage, remotes, sync, convertJobs, plugins, env };
   for (const register of [registerAuth, registerAdmin, registerRoots, registerJobs, registerPrefs, registerApps, registerFs, registerMedia, registerTasks, registerShares]) register(app, services);
 
   app.get("/ws", {

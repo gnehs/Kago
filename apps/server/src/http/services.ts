@@ -22,6 +22,7 @@ import type { ShelfService } from "../services/shelf.service.js";
 import type { StorageService } from "../services/storage.service.js";
 import type { SyncService } from "../services/sync.service.js";
 import type { TaskService } from "../services/task.service.js";
+import type { TrashService } from "../services/trash.service.js";
 import type { WorkspaceService } from "../services/workspace.service.js";
 import type { RemoteManager } from "../storage/remote-manager.js";
 import type { EventHub } from "../ws/events.js";
@@ -36,6 +37,7 @@ export type Services = {
   workspace: WorkspaceService;
   preferences: PreferenceService;
   tasks: TaskService;
+  trash: TrashService;
   shelves: ShelfService;
   shares: ShareService;
   groups: GroupService;

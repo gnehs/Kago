@@ -27,9 +27,9 @@ export const register = signedIn((app, s) => {
   app.post("/api/tasks/:id/pause", async (request) => s.tasks.pause(request.actor, idParams.parse(request.params).id));
   app.post("/api/tasks/:id/resume", async (request) => s.tasks.resume(request.actor, idParams.parse(request.params).id));
 
-  app.get("/api/trash", async (request) => s.tasks.listTrash(request.actor));
+  app.get("/api/trash", async (request) => s.trash.list(request.actor));
   app.delete("/api/trash", async (request) => s.tasks.emptyTrash(request.actor));
-  app.post("/api/trash/cost", async (request) => s.tasks.trashCost(request.actor, z.object({ sources: z.array(z.object({ rootSlug: z.string().min(1), path: z.string().min(1) })) }).parse(request.body).sources));
+  app.post("/api/trash/cost", async (request) => s.trash.cost(request.actor, z.object({ sources: z.array(z.object({ rootSlug: z.string().min(1), path: z.string().min(1) })) }).parse(request.body).sources));
   app.post("/api/trash/:id/restore", async (request) => {
     const params = idParams.parse(request.params);
     return s.tasks.createRestoreTrash(request.actor, params.id);
