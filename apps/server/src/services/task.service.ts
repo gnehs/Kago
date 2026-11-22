@@ -179,28 +179,7 @@ export class TaskService {
 
     await this.assertTaskPermissions(actor, input);
 
-    const ts = now();
-    const task: FileTask = {
-      id: id("task"),
-      type: input.type,
-      status: "queued",
-      created_by: actor.id,
-      sources_json: JSON.stringify(sources),
-      destination,
-      total_files: Math.max(sources.length, 1),
-      processed_files: 0,
-      total_bytes: 0,
-      processed_bytes: 0,
-      current_path: null,
-      error_message: null,
-      auth_snapshot_json: JSON.stringify({ actorId: actor.id, role: actor.role }),
-      created_at: ts,
-      updated_at: ts,
-      started_at: null,
-      finished_at: null
-    };
-
-    this.insertTask(task);
+    const task = this.insertQueued(actor, input.type, sources, destination, {});
     this.audit.write({ actorType: "user", actorId: actor.id, action: "create_task", target: withoutPassword(input), result: "success" });
     this.events.publish({ type: "task.created", userId: task.created_by, task });
     return task;
@@ -214,27 +193,7 @@ export class TaskService {
   /** Queues one run of a sync. Syncs are not asked for like other tasks: a saved job is their only way in. */
   async createSync(actor: Actor, spec: SyncSpec, scheduled = false): Promise<FileTask> {
     await this.assertSyncPermissions(actor, spec);
-    const ts = now();
-    const task: FileTask = {
-      id: id("task"),
-      type: "sync",
-      status: "queued",
-      created_by: actor.id,
-      sources_json: JSON.stringify([{ rootSlug: spec.source.rootSlug, path: spec.source.path }]),
-      destination: JSON.stringify({ sync: spec }),
-      total_files: 1,
-      processed_files: 0,
-      total_bytes: 0,
-      processed_bytes: 0,
-      current_path: null,
-      error_message: null,
-      auth_snapshot_json: JSON.stringify({ actorId: actor.id, role: actor.role, scheduled }),
-      created_at: ts,
-      updated_at: ts,
-      started_at: null,
-      finished_at: null
-    };
-    this.insertTask(task);
+    const task = this.insertQueued(actor, "sync", [{ rootSlug: spec.source.rootSlug, path: spec.source.path }], JSON.stringify({ sync: spec }), { scheduled });
     this.audit.write({ actorType: "user", actorId: actor.id, action: "create_task", target: { type: "sync", jobId: spec.jobId, scheduled }, result: "success" });
     this.events.publish({ type: "task.created", userId: task.created_by, task });
     return task;
@@ -258,6 +217,13 @@ export class TaskService {
   }
 
   private queue(actor: Actor, type: string, sources: Array<{ rootSlug: string; path: string }>, destination: string, scheduled = false): FileTask {
+    const task = this.insertQueued(actor, type, sources, destination, scheduled ? { scheduled } : {});
+    this.events.publish({ type: "task.created", userId: task.created_by, task });
+    return task;
+  }
+
+  /** Inserts a fresh queued task. `auth` is what goes into its auth snapshot beside the actor. */
+  private insertQueued(actor: Actor, type: string, sources: Array<{ rootSlug: string; path: string }>, destination: string | null, auth: Record<string, unknown>): FileTask {
     const ts = now();
     const task: FileTask = {
       id: id("task"),
@@ -272,14 +238,13 @@ export class TaskService {
       processed_bytes: 0,
       current_path: null,
       error_message: null,
-      auth_snapshot_json: JSON.stringify({ actorId: actor.id, role: actor.role, ...(scheduled ? { scheduled } : {}) }),
+      auth_snapshot_json: JSON.stringify({ actorId: actor.id, role: actor.role, ...auth }),
       created_at: ts,
       updated_at: ts,
       started_at: null,
       finished_at: null
     };
     this.insertTask(task);
-    this.events.publish({ type: "task.created", userId: task.created_by, task });
     return task;
   }
 
@@ -2118,32 +2083,7 @@ export class TaskService {
       finished_at: null
     };
 
-    this.db
-      .prepare(
-        `INSERT INTO tasks
-        (id, type, status, created_by, sources_json, destination, total_files, processed_files, total_bytes,
-         processed_bytes, current_path, error_message, auth_snapshot_json, created_at, updated_at, started_at, finished_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      )
-      .run(
-        retryTask.id,
-        retryTask.type,
-        retryTask.status,
-        retryTask.created_by,
-        retryTask.sources_json,
-        retryTask.destination,
-        retryTask.total_files,
-        retryTask.processed_files,
-        retryTask.total_bytes,
-        retryTask.processed_bytes,
-        retryTask.current_path,
-        retryTask.error_message,
-        retryTask.auth_snapshot_json,
-        retryTask.created_at,
-        retryTask.updated_at,
-        retryTask.started_at,
-        retryTask.finished_at
-      );
+    this.insertTask(retryTask);
     this.events.publish({ type: "task.created", userId: retryTask.created_by, task: retryTask });
     return retryTask;
   }
