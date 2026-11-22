@@ -30,6 +30,8 @@ export type Track = {
   codec: string | null;
   /** The decoder configuration record: `hvcC`, `avcC`, or the AudioSpecificConfig out of `esds`. */
   description: Uint8Array | null;
+  /** The sample entry box, header and all, as the track's `stsd` holds it. */
+  entry: Uint8Array;
   width: number;
   height: number;
   sampleRate: number;
@@ -185,7 +187,7 @@ function parseTrack(bytes: Uint8Array, view: DataView, trak: Box, movieScale: nu
   }
   const samples = sampleTable(bytes, view, stbl, timescale, editShift(bytes, view, trak, timescale, movieScale));
   const duration = samples.count ? samples.times.reduce((latest, time, index) => Math.max(latest, time + samples.durations[index]!), 0) : 0;
-  return { id, kind, format, codec, description, width, height, sampleRate, channels, timescale, duration, samples };
+  return { id, kind, format, codec, description, entry: bytes.slice(entry.start - 8, entry.end), width, height, sampleRate, channels, timescale, duration, samples };
 }
 
 /** When a fragmented MP4 segment's first sample of a track is decoded, in seconds of the track's own timeline. */
