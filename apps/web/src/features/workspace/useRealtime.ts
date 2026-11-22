@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { api, taskDownloadUrl } from "@/api/client";
 import { dropLeft, foldersChanged, type FolderChange } from "@/api/hooks";
-import { invalidateEvent, invalidateKeys, isServerEventType } from "@/api/invalidations";
+import { invalidateEvent, invalidateKeys, isServerEventType, reconnectKeys } from "@/api/invalidations";
 import { isListingKey, keys } from "@/api/keys";
 import { askForArchivePassword, pendingExtracts } from "@/features/files/ArchivePassword";
 import { pendingDownloads } from "@/features/files/useFileActions";
@@ -119,9 +119,9 @@ export function useRealtime(userId: string, onRemoteWorkspaceChange: () => void)
       const ws = new WebSocket(`${protocol}://${location.host}/ws`);
       socket = ws;
       ws.onopen = () => {
-        if (retryCount > 0) {
+        const reconnecting = retryCount > 0;
+        if (reconnecting) {
           onRemoteWorkspaceChange();
-          void invalidateKeys(queryClient, [keys.workspace()]);
           void loadSettings();
         }
         // Whatever changed while the socket was away went unheard. Only listings are read again, and none is started
@@ -132,7 +132,8 @@ export function useRealtime(userId: string, onRemoteWorkspaceChange: () => void)
             : Promise.resolve();
         if (retryCount > 0) void queryClient.invalidateQueries({ queryKey: keys.fs.all(), refetchType: "none" });
         retryCount = 0;
-        void invalidateKeys(queryClient, [keys.tasks(), keys.shelves(), keys.shares(), keys.permissions.all(), keys.roots(), keys.externalApps()]);
+        // The workspace was just read on the first connect; only a gap can have left it behind.
+        void invalidateKeys(queryClient, reconnecting ? reconnectKeys : reconnectKeys.filter((key) => key[0] !== "workspace"));
         void settleUnheard(listings).catch(() => undefined);
       };
       ws.onmessage = handleMessage;

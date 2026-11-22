@@ -39,6 +39,18 @@ export const eventKeys = {
   "fs.changed": []
 } as const satisfies Record<ServerEventType, readonly QueryKey[]>;
 
+/**
+ * Everything an event can make stale, for a socket that was away and heard none of them. Folder data is left out:
+ * reconnecting reads listings again and marks the rest of `fs` stale without refetching it.
+ */
+export const reconnectKeys: readonly QueryKey[] = (() => {
+  const seen = new Map<string, QueryKey>();
+  for (const queryKeys of Object.values(eventKeys)) {
+    for (const queryKey of queryKeys) if (queryKey[0] !== "fs") seen.set(JSON.stringify(queryKey), queryKey);
+  }
+  return [...seen.values()];
+})();
+
 export function isServerEventType(type: string): type is ServerEventType {
   return Object.hasOwn(eventKeys, type);
 }
