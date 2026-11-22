@@ -51,3 +51,21 @@ test('init carries the companions found, and a host that sends none sends an emp
   assert.equal(parseHostMessage(init({ companions: Array(9).fill(file) })), null);
   assert.equal(parseHostMessage(init({ companions: 'b.insv' })), null);
 });
+
+test('a panorama segment is named by its index or as the init segment, and by nothing else', () => {
+  assert.deepEqual(parsePluginMessage({ kind: 'panorama:open', id: 3 }), { kind: 'panorama:open', id: 3 });
+  assert.deepEqual(parsePluginMessage({ kind: 'panorama:segment', id: 1, segment: 'init' }), { kind: 'panorama:segment', id: 1, segment: 'init' });
+  assert.deepEqual(parsePluginMessage({ kind: 'panorama:segment', id: 1, segment: 4, url: '/etc/passwd' }), { kind: 'panorama:segment', id: 1, segment: 4 });
+  for (const bad of [-1, 1.5, '4', '4.m4s', '../index.m3u8', 'init.mp4', null, undefined]) assert.equal(parsePluginMessage({ kind: 'panorama:segment', id: 1, segment: bad }), null, String(bad));
+  assert.equal(parsePluginMessage({ kind: 'panorama:open' }), null);
+});
+
+test('a panorama is described by a positive length of segment and at least one of them', () => {
+  const info = { kind: 'panorama:info', id: 1, duration: 413.7, segmentSeconds: 6, segmentCount: 69 };
+  assert.deepEqual(parseHostMessage(info), info);
+  for (const bad of [{ segmentSeconds: 0 }, { segmentCount: 0 }, { duration: -1 }, { duration: Infinity }, { segmentCount: 2.5 }, { segmentSeconds: '6' }]) assert.equal(parseHostMessage({ ...info, ...bad }), null, JSON.stringify(bad));
+  const bytes = new ArrayBuffer(4);
+  assert.deepEqual(parseHostMessage({ kind: 'panorama:bytes', id: 2, bytes }), { kind: 'panorama:bytes', id: 2, bytes });
+  assert.equal(parseHostMessage({ kind: 'panorama:bytes', id: 2, bytes: new Uint8Array(4) }), null);
+  assert.deepEqual(parseHostMessage({ kind: 'panorama:error', id: 2 }), { kind: 'panorama:error', id: 2 });
+});

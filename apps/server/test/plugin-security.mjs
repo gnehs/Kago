@@ -84,6 +84,20 @@ test("a previewer names the files it reads beside the opened one only by plain p
   }
 });
 
+test("only a previewer that says so may have the server stitch a panorama", async () => {
+  const fixture = await createFixture();
+  try {
+    const withPanorama = (name, panorama) => ({ ...manifest(name), kago: { ...manifest(name).kago, previewers: [{ id: "view", extensions: [name.slice(0, 3)], entry: "index.html", ...(panorama === undefined ? {} : { panorama }) }] } });
+    await addPlugin(fixture.pluginsDir, "asks", withPanorama("asks-plugin", true));
+    await addPlugin(fixture.pluginsDir, "silent", withPanorama("silent-plugin"));
+    await addPlugin(fixture.pluginsDir, "stringy", withPanorama("stringy-plugin", "yes"));
+    const previewers = new PluginService([fixture.pluginsDir]).previewers();
+    assert.deepEqual(Object.fromEntries(previewers.map((previewer) => [previewer.pluginId, previewer.panorama])), { "asks-plugin": true, "silent-plugin": false });
+  } finally {
+    await rm(fixture.baseDir, { recursive: true, force: true });
+  }
+});
+
 test("a plugin's policy names its own folder in full and nothing wider", () => {
   const policy = pluginPolicy("abc", ["kago.example.test:8443", "kago.example.test:8443", "evil host", "[::1]:8080", null]);
   assert.match(policy, /^sandbox allow-scripts; default-src 'none'/);

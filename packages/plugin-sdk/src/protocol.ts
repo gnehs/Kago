@@ -49,6 +49,17 @@ export const THEME_TOKENS = [
 
 export type FailReason = "unsupported" | "unreadable";
 
+/**
+ * A recording of a 360° camera stitched by Kago's server into one equirectangular picture, for a browser that cannot
+ * decode the lenses itself. It comes as fragmented MP4 for Media Source: an init segment, then `segmentCount`
+ * segments of `segmentSeconds` each, the last one shorter. Only a previewer whose manifest says `"panorama": true`
+ * may ask for one.
+ */
+export type PanoramaInfo = { duration: number; segmentSeconds: number; segmentCount: number };
+
+/** A segment of the panorama, or its init segment. */
+export type PanoramaSegment = number | "init";
+
 export type HostMessage =
   /** `companions` are the files beside this one that the previewer's manifest names and that exist, in the order it names them. */
   | { kind: "init"; api: typeof API_VERSION; file: FileInfo; companions: FileInfo[]; locale: string; theme: Theme; focused: boolean }
@@ -56,7 +67,11 @@ export type HostMessage =
   | { kind: "theme"; theme: Theme }
   | { kind: "read:ok"; id: number; bytes: ArrayBuffer }
   | { kind: "read:error"; id: number }
-  | { kind: "storage:value"; id: number; value: string | null };
+  | { kind: "storage:value"; id: number; value: string | null }
+  | ({ kind: "panorama:info"; id: number } & PanoramaInfo)
+  | { kind: "panorama:bytes"; id: number; bytes: ArrayBuffer }
+  /** The panorama could not be made, or the segment fetched; or this previewer may not ask for one. */
+  | { kind: "panorama:error"; id: number };
 
 export type KeyChord = { key: string; code: string; meta: boolean; ctrl: boolean; shift: boolean; alt: boolean };
 
@@ -72,7 +87,10 @@ export type PluginMessage =
   /** The pointer went down inside the frame, which Kago's window never hears of: its window comes to the front. */
   | { kind: "activate" }
   /** A key pressed inside the frame that Kago may have a shortcut for. Only chords with a modifier, and Escape. */
-  | ({ kind: "key" } & KeyChord);
+  | ({ kind: "key" } & KeyChord)
+  /** Has Kago stitch the opened file, with its companions, into a panorama. Asked again, it answers with the same one. */
+  | { kind: "panorama:open"; id: number }
+  | { kind: "panorama:segment"; id: number; segment: PanoramaSegment };
 
 type Shape = Record<string, unknown>;
 
@@ -80,6 +98,7 @@ const isObject = (value: unknown): value is Shape => typeof value === "object" &
 const isString = (value: unknown, max = 4096): value is string => typeof value === "string" && value.length <= max;
 const isBool = (value: unknown): value is boolean => typeof value === "boolean";
 const isCount = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+const isSeconds = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value) && value >= 0;
 
 /** Whether a key pressed inside a frame is one Kago is told of. Plain typing stays the plugin's own. */
 export const isForwardedKey = (chord: Pick<KeyChord, "key" | "meta" | "ctrl" | "alt">) => chord.meta || chord.ctrl || chord.alt || chord.key === "Escape";
@@ -113,6 +132,10 @@ export function parsePluginMessage(data: unknown): PluginMessage | null {
       const chord = { key, code, meta, ctrl, shift, alt };
       return isForwardedKey(chord) ? { kind: "key", ...chord } : null;
     }
+    case "panorama:open":
+      return isCount(data.id) ? { kind: "panorama:open", id: data.id } : null;
+    case "panorama:segment":
+      return isCount(data.id) && (data.segment === "init" || isCount(data.segment)) ? { kind: "panorama:segment", id: data.id, segment: data.segment } : null;
     default:
       return null;
   }
@@ -157,6 +180,15 @@ export function parseHostMessage(data: unknown): HostMessage | null {
       return isCount(data.id) ? { kind: "read:error", id: data.id } : null;
     case "storage:value":
       return isCount(data.id) && (data.value === null || isString(data.value, 64 * 1024)) ? { kind: "storage:value", id: data.id, value: data.value } : null;
+    case "panorama:info": {
+      const { id, duration, segmentSeconds, segmentCount } = data;
+      if (!isCount(id) || !isSeconds(duration) || !isSeconds(segmentSeconds) || segmentSeconds === 0 || !isCount(segmentCount) || segmentCount === 0) return null;
+      return { kind: "panorama:info", id, duration, segmentSeconds, segmentCount };
+    }
+    case "panorama:bytes":
+      return isCount(data.id) && data.bytes instanceof ArrayBuffer ? { kind: "panorama:bytes", id: data.id, bytes: data.bytes } : null;
+    case "panorama:error":
+      return isCount(data.id) ? { kind: "panorama:error", id: data.id } : null;
     default:
       return null;
   }

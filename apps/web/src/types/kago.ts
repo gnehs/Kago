@@ -26,7 +26,7 @@ export type FrameVerdict = "allowed" | "blocked" | "unknown";
 /** How a previewer names a file it reads beside the opened one: the opened file's name with the first `replace` swapped for `with`. */
 export type CompanionRule = { replace: string; with: string };
 /** A plugin's viewer for files of some extensions, and the address of the page to frame for one. */
-export type PluginPreviewer = { pluginId: string; previewerId: string; extensions: string[]; title: string; src: string; companions: CompanionRule[] };
+export type PluginPreviewer = { pluginId: string; previewerId: string; extensions: string[]; title: string; src: string; companions: CompanionRule[]; panorama: boolean };
 /** An icon of one of the open icon libraries, as suggested for a name. `exact` when it goes by that very name. */
 export type LibraryIcon = { source: string; name: string; label: string; exact: boolean };
 

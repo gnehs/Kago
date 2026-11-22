@@ -1,6 +1,6 @@
-import { API_VERSION, isForwardedKey, MAX_READ_BYTES, parseHostMessage, type FailReason, type FileInfo, type HostMessage, type PluginMessage, type Theme } from "./protocol";
+import { API_VERSION, isForwardedKey, MAX_READ_BYTES, parseHostMessage, type FailReason, type FileInfo, type HostMessage, type PanoramaInfo, type PanoramaSegment, type PluginMessage, type Theme } from "./protocol";
 
-export type { FailReason, FileInfo, Theme, ThemeMode } from "./protocol";
+export type { FailReason, FileInfo, PanoramaInfo, PanoramaSegment, Theme, ThemeMode } from "./protocol";
 export { MAX_COMPANIONS, MAX_READ_BYTES } from "./protocol";
 
 export type Kago = {
@@ -26,6 +26,11 @@ export type Kago = {
   /** Leaves the file to Kago, which says it could not be previewed and offers to download it. */
   fail(reason: FailReason, message?: string): void;
   download(): void;
+  /**
+   * The opened recording stitched by Kago's server into an equirectangular panorama, for a previewer whose manifest
+   * says `"panorama": true`. `open` rejects when Kago cannot make one; `segment` when a segment could not be fetched.
+   */
+  panorama: { open(): Promise<PanoramaInfo>; segment(segment: PanoramaSegment): Promise<Uint8Array> };
   /** A few strings the plugin keeps between openings; the frame has no storage of its own. */
   storage: { get(key: string): Promise<string | null>; set(key: string, value: string): void };
   onFocus(listener: (focused: boolean) => void): () => void;
@@ -56,7 +61,7 @@ export function connect(): Promise<Kago> {
   const ask = (message: (id: number) => PluginMessage) =>
     new Promise<HostMessage>((resolve, reject) => {
       const id = nextId++;
-      pending.set(id, { resolve, reject: () => reject(new Error("Kago could not read the file")) });
+      pending.set(id, { resolve, reject: () => reject(new Error("Kago could not do what was asked")) });
       post(message(id));
     });
 
@@ -84,6 +89,18 @@ export function connect(): Promise<Kago> {
             stream: () => streamFile(read, message.file.size),
             fail: (reason, text) => post({ kind: "fail", reason, ...(text === undefined ? {} : { message: text }) }),
             download: () => post({ kind: "download" }),
+            panorama: {
+              open: async () => {
+                const reply = await ask((id) => ({ kind: "panorama:open", id }));
+                if (reply.kind !== "panorama:info") throw new Error("Kago could not make a panorama");
+                return { duration: reply.duration, segmentSeconds: reply.segmentSeconds, segmentCount: reply.segmentCount };
+              },
+              segment: async (segment) => {
+                const reply = await ask((id) => ({ kind: "panorama:segment", id, segment }));
+                if (reply.kind !== "panorama:bytes") throw new Error("Kago could not fetch the segment");
+                return new Uint8Array(reply.bytes);
+              }
+            },
             storage: {
               get: async (key) => {
                 const reply = await ask((id) => ({ kind: "storage:get", id, key }));
@@ -110,10 +127,13 @@ export function connect(): Promise<Kago> {
           return;
         case "read:ok":
         case "read:error":
-        case "storage:value": {
+        case "storage:value":
+        case "panorama:info":
+        case "panorama:bytes":
+        case "panorama:error": {
           const waiting = pending.get(message.id);
           pending.delete(message.id);
-          if (message.kind === "read:error") waiting?.reject();
+          if (message.kind === "read:error" || message.kind === "panorama:error") waiting?.reject();
           else waiting?.resolve(message);
           return;
         }

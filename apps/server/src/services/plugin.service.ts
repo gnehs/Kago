@@ -31,7 +31,9 @@ const previewerSchema = z.object({
   extensions: z.array(z.string().regex(/^[a-z0-9]{1,16}$/)).min(1).max(32),
   entry: relativePath,
   // Files the previewer reads beside the one opened, named after it: its name with the first `replace` swapped for `with`.
-  companions: z.array(z.object({ replace: namePiece, with: namePiece })).max(4).default([])
+  companions: z.array(z.object({ replace: namePiece, with: namePiece })).max(4).default([]),
+  // Whether the previewer may have Kago's server stitch a 360° recording into a panorama, which costs the server an encoder.
+  panorama: z.boolean().default(false)
 });
 
 const manifestSchema = z.object({
@@ -60,7 +62,7 @@ export type PluginManifest = {
 };
 
 /** A previewer as the interface is told of it: what it opens, and the page to frame for it. */
-export type PluginPreviewer = { pluginId: PluginId; previewerId: string; extensions: string[]; title: string; src: string; companions: CompanionRule[] };
+export type PluginPreviewer = { pluginId: PluginId; previewerId: string; extensions: string[]; title: string; src: string; companions: CompanionRule[]; panorama: boolean };
 
 /**
  * The plugins found at start, from the folders given in order: Kago's own first, then those installed beside its
@@ -90,7 +92,7 @@ export class PluginService {
         const plugin: PluginManifest = { ...loaded, token };
         this.byToken.set(token, plugin);
         for (const previewer of plugin.previewers) {
-          const entry: PluginPreviewer = { pluginId: plugin.id, previewerId: previewer.id, extensions: [], title: plugin.title, src: `${PLUGIN_PREFIX}${token}/${previewer.entry}`, companions: previewer.companions };
+          const entry: PluginPreviewer = { pluginId: plugin.id, previewerId: previewer.id, extensions: [], title: plugin.title, src: `${PLUGIN_PREFIX}${token}/${previewer.entry}`, companions: previewer.companions, panorama: previewer.panorama };
           for (const extension of previewer.extensions) {
             if (this.byExtension.has(extension)) continue;
             this.byExtension.set(extension, entry);

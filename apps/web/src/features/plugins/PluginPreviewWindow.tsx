@@ -1,7 +1,7 @@
 import { useEffect, useReducer, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Download, FileWarning, PlugZap } from "lucide-react";
-import { API_VERSION, MAX_READ_BYTES, parsePluginMessage, THEME_TOKENS, type FailReason, type FileInfo, type HostMessage, type PluginMessage, type Theme } from "@kago/plugin-sdk/protocol";
+import { API_VERSION, MAX_READ_BYTES, parsePluginMessage, THEME_TOKENS, type FailReason, type FileInfo, type HostMessage, type PanoramaInfo, type PanoramaSegment, type PluginMessage, type Theme } from "@kago/plugin-sdk/protocol";
 import { api, downloadUrl, previewUrl } from "@/api/client";
 import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
 import { FileIcon } from "@/components/kago/file-icon";
@@ -90,7 +90,30 @@ async function findCompanions(rootSlug: string, path: string, previewer: PluginP
 /** How many reads a frame may have Kago making at once, and waiting behind those. Past both, a read fails at once. */
 const READS_AT_ONCE = 3;
 const READS_WAITING = 32;
+/** The same for a panorama's segments, each of which can wait most of a minute on the server's encoder. */
+const SEGMENTS_AT_ONCE = 2;
+const SEGMENTS_WAITING = 8;
 type ReadRequest = { id: number; start: number; end: number; file?: number };
+type PanoramaSession = PanoramaInfo & { id: string };
+
+/** Runs `atOnce` jobs at a time and keeps up to `waitingMax` in line behind them; past both, a job is refused at once. */
+function jobQueue(atOnce: number, waitingMax: number, signal: AbortSignal) {
+  let running = 0;
+  const waiting: (() => Promise<void>)[] = [];
+  const run = (job: () => Promise<void>) => {
+    running++;
+    void job().finally(() => {
+      running--;
+      const next = waiting.shift();
+      if (next && !signal.aborted) run(next);
+    });
+  };
+  return (job: () => Promise<void>, refuse: () => void) => {
+    if (running < atOnce) return run(job);
+    if (waiting.length >= waitingMax) return refuse();
+    waiting.push(job);
+  };
+}
 /** A frame that asks more often than this is heard once: a click brings its window forward, a download starts once. */
 const ACTIVATE_INTERVAL = 100;
 const DOWNLOAD_INTERVAL = 2000;
@@ -185,9 +208,10 @@ function PluginFrame({ window, previewer, onDownload, onRetry }: { window: Previ
     // A sandboxed frame's origin is opaque, and no target origin but "*" reaches one.
     const post = (message: HostMessage, transfer: Transferable[] = []) => element.contentWindow?.postMessage(message, "*", transfer);
     const reads = new AbortController();
-    let reading = 0;
-    const waiting: ReadRequest[] = [];
+    const readQueue = jobQueue(READS_AT_ONCE, READS_WAITING, reads.signal);
+    const segmentQueue = jobQueue(SEGMENTS_AT_ONCE, SEGMENTS_WAITING, reads.signal);
     let companions: Companion[] = [];
+    let panorama: Promise<PanoramaSession> | null = null;
     let said = false;
     let lastActivate = -Infinity;
     let lastDownload = -Infinity;
@@ -215,18 +239,46 @@ function PluginFrame({ window, previewer, onDownload, onRetry }: { window: Previ
       }
     }
 
-    // A frame cannot have Kago fetch without end: a few reads at a time, a line of them behind, and no more.
-    function queueRead(request: ReadRequest) {
-      if (reading >= READS_AT_ONCE) {
-        if (waiting.length >= READS_WAITING) return post({ kind: "read:error", id: request.id });
-        return void waiting.push(request);
+    /** The one panorama this frame has, made on its first asking. Only the opened file and its companions go into it. */
+    function openPanorama() {
+      if (!panorama) {
+        const { rootSlug, item } = latest.current.window.preview;
+        panorama = api<PanoramaSession>("/api/media/panoramas", {
+          method: "POST",
+          body: JSON.stringify({ rootSlug, path: item.path, companionPath: companions[0]?.path ?? null }),
+          // The viewer shows its own spinner while the server starts.
+          quiet: true
+        });
+        // A panorama that could not be made may be asked for again.
+        panorama.catch(() => (panorama = null));
       }
-      reading++;
-      void read(request).finally(() => {
-        reading--;
-        const next = waiting.shift();
-        if (next && !reads.signal.aborted) queueRead(next);
-      });
+      return panorama;
+    }
+
+    async function panoramaInfo(id: number) {
+      try {
+        const { duration, segmentSeconds, segmentCount } = await openPanorama();
+        if (!reads.signal.aborted) post({ kind: "panorama:info", id, duration, segmentSeconds, segmentCount });
+      } catch {
+        if (!reads.signal.aborted) post({ kind: "panorama:error", id });
+      }
+    }
+
+    async function panoramaSegment(id: number, segment: PanoramaSegment) {
+      try {
+        const session = await openPanorama();
+        if (segment !== "init" && segment >= session.segmentCount) throw new Error("no such segment");
+        const name = segment === "init" ? "init.mp4" : `${segment}.m4s`;
+        const response = await fetch(`/api/media/sessions/${encodeURIComponent(session.id)}/${name}`, { credentials: "include", cache: "no-store", signal: reads.signal });
+        if (!response.ok) {
+          void response.body?.cancel();
+          throw new Error(`HTTP ${response.status}`);
+        }
+        const bytes = await response.arrayBuffer();
+        if (!reads.signal.aborted) post({ kind: "panorama:bytes", id, bytes }, [bytes]);
+      } catch {
+        if (!reads.signal.aborted) post({ kind: "panorama:error", id });
+      }
     }
 
     function handle(message: PluginMessage) {
@@ -245,8 +297,22 @@ function PluginFrame({ window, previewer, onDownload, onRetry }: { window: Previ
             dispatch({ kind: "hello" });
           });
           return;
+        // A frame cannot have Kago fetch without end: a few at a time, a line of them behind, and no more.
         case "read":
-          return queueRead(message);
+          return readQueue(
+            () => read(message),
+            () => post({ kind: "read:error", id: message.id })
+          );
+        case "panorama:open":
+          // Only a previewer that said it would ask: each panorama keeps an encoder on the server busy.
+          if (!previewer.panorama) return post({ kind: "panorama:error", id: message.id });
+          return void panoramaInfo(message.id);
+        case "panorama:segment":
+          if (!previewer.panorama) return post({ kind: "panorama:error", id: message.id });
+          return segmentQueue(
+            () => panoramaSegment(message.id, message.segment),
+            () => post({ kind: "panorama:error", id: message.id })
+          );
         case "fail":
           return dispatch(message);
         case "download":
@@ -286,7 +352,9 @@ function PluginFrame({ window, previewer, onDownload, onRetry }: { window: Previ
       clearTimeout(silence);
       themes.disconnect();
       reads.abort();
-      waiting.length = 0;
+      // The encoder stops with the window, not a quarter of an hour later when the server would give up on it.
+      void panorama?.then((session) => api(`/api/media/sessions/${encodeURIComponent(session.id)}`, { method: "DELETE", keepalive: true, quiet: true })).catch(() => undefined);
+      panorama = null;
     };
     // The frame is given its page once, and a new frame is made for any other (see the key on PluginFrame). So a
     // second load is the plugin sending its frame somewhere itself. The window is still the same, so it would be
