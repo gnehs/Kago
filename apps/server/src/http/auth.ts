@@ -5,10 +5,35 @@ import { logger } from "../lib/logger.js";
 import { changePasswordSchema, loginSchema, setupAdminSchema } from "../services/auth.service.js";
 import { idParams } from "./schemas.js";
 import type { Services } from "./services.js";
-import { guards } from "./guards.js";
+import { signedIn, auditor } from "./guards.js";
+
+const userRoutes = signedIn((app, s) => {
+  const auditAs = auditor(s);
+  // Linking is asked for with a request another site cannot make, so nobody is led into linking an identity that is not theirs.
+  app.post("/api/auth/oidc/link", async (request, reply) => ({ url: await s.oidc.begin(reply, { returnTo: "/_kago/account", linkUserId: request.actor.id }) }));
+  app.get("/api/auth/identities", async (request) => {
+    const { actor } = request;
+    return { sso: s.oidc.publicInfo(), hasPassword: s.auth.hasPassword(actor.id), identities: s.oidc.identitiesOf(actor.id) };
+  });
+  app.delete("/api/auth/identities/:id", async (request) => {
+    const { actor } = request;
+    const params = idParams.parse(request.params);
+    s.oidc.unlink(actor.id, params.id, { keepWayIn: true, request });
+    auditAs(actor, "sso_unlink", { userId: actor.id });
+    return { ok: true };
+  });
+  app.post("/api/auth/password", async (request) => {
+    const { actor } = request;
+    await s.auth.changePassword(request, actor, changePasswordSchema.parse(request.body));
+    auditAs(actor, "password_change");
+    return { ok: true };
+  });
+
+  app.get("/api/admins", async () => s.auth.listAdminContacts());
+});
 
 export function register(app: FastifyInstance, s: Services) {
-  const { requireActor, auditAs } = guards(s);
+  const auditAs = auditor(s);
 
   // `oidc` is what the sign-in page needs to offer single sign-on: nothing of how it is set up.
   app.get("/api/auth/setup", async () => ({ needsSetup: s.auth.needsSetup(), oidc: s.oidc.publicInfo() }));
@@ -73,33 +98,7 @@ export function register(app: FastifyInstance, s: Services) {
       return reply.redirect(`${actor ? "/_kago/account" : "/login"}?sso_error=${ssoFailure(error)}`);
     }
   });
-  // Linking is asked for with a request another site cannot make, so nobody is led into linking an identity that is not theirs.
-  app.post("/api/auth/oidc/link", async (request, reply) => {
-    const actor = requireActor(request);
-    return { url: await s.oidc.begin(reply, { returnTo: "/_kago/account", linkUserId: actor.id }) };
-  });
-  app.get("/api/auth/identities", async (request) => {
-    const actor = requireActor(request);
-    return { sso: s.oidc.publicInfo(), hasPassword: s.auth.hasPassword(actor.id), identities: s.oidc.identitiesOf(actor.id) };
-  });
-  app.delete("/api/auth/identities/:id", async (request) => {
-    const actor = requireActor(request);
-    const params = idParams.parse(request.params);
-    s.oidc.unlink(actor.id, params.id, { keepWayIn: true, request });
-    auditAs(actor, "sso_unlink", { userId: actor.id });
-    return { ok: true };
-  });
 
   app.get("/api/auth/me", async (request) => ({ user: s.auth.actorFromRequest(request) }));
-  app.post("/api/auth/password", async (request) => {
-    const actor = requireActor(request);
-    await s.auth.changePassword(request, actor, changePasswordSchema.parse(request.body));
-    auditAs(actor, "password_change");
-    return { ok: true };
-  });
-
-  app.get("/api/admins", async (request) => {
-    requireActor(request);
-    return s.auth.listAdminContacts();
-  });
+  userRoutes(app, s);
 }

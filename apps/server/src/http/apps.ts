@@ -10,25 +10,23 @@ import { framingHost, PLUGIN_PREFIX, pluginPolicy } from "../services/plugin.ser
 import { FRAME_POLICY, framePage, sandboxContent } from "./respond.js";
 import { idParams } from "./schemas.js";
 import type { Services } from "./services.js";
-import { guards } from "./guards.js";
+import { signedIn } from "./guards.js";
 
-export function register(app: FastifyInstance, s: Services) {
-  const { requireActor } = guards(s);
-
+const userRoutes = signedIn((app, s) => {
   // Shortcuts on the desktop to other services: one's own, and the ones an administrator shares with everyone.
-  app.get("/api/external-apps", async (request) => s.apps.list(requireActor(request)));
-  app.post("/api/external-apps", async (request) => s.apps.create(requireActor(request), externalAppSchema.parse(request.body)));
-  app.put("/api/external-apps/order", async (request) => s.apps.arrange(requireActor(request), externalAppOrderSchema.parse(request.body).ids));
+  app.get("/api/external-apps", async (request) => s.apps.list(request.actor));
+  app.post("/api/external-apps", async (request) => s.apps.create(request.actor, externalAppSchema.parse(request.body)));
+  app.put("/api/external-apps/order", async (request) => s.apps.arrange(request.actor, externalAppOrderSchema.parse(request.body).ids));
   app.put("/api/external-apps/:id", async (request) => {
     const params = idParams.parse(request.params);
-    return s.apps.update(requireActor(request), params.id, externalAppSchema.parse(request.body));
+    return s.apps.update(request.actor, params.id, externalAppSchema.parse(request.body));
   });
   app.delete("/api/external-apps/:id", async (request) => {
-    await s.apps.remove(requireActor(request), idParams.parse(request.params).id);
+    await s.apps.remove(request.actor, idParams.parse(request.params).id);
     return { ok: true };
   });
   app.get("/api/external-apps/:id/icon", async (request, reply) => {
-    const icon = s.apps.iconFile(requireActor(request), idParams.parse(request.params).id);
+    const icon = s.apps.iconFile(request.actor, idParams.parse(request.params).id);
     const stat = await fs.promises.stat(icon.file).catch(() => null);
     if (!stat) throw new AppError(404, "Icon not found", "ICON_NOT_FOUND");
     reply.header("Cache-Control", "private, max-age=31536000, immutable");
@@ -38,7 +36,7 @@ export function register(app: FastifyInstance, s: Services) {
   });
   // Opening a shortcut that has a sign-in goes through here: the browser is sent on to the address with the sign-in in it.
   app.get("/api/external-apps/:id/open", async (request, reply) => {
-    const target = s.apps.openTarget(requireActor(request), idParams.parse(request.params).id);
+    const target = s.apps.openTarget(request.actor, idParams.parse(request.params).id);
     reply.header("Cache-Control", "no-store");
     reply.header("Referrer-Policy", "no-referrer");
     return reply.redirect(target);
@@ -46,23 +44,31 @@ export function register(app: FastifyInstance, s: Services) {
   // Whether a service lets itself be shown inside Kago, asked of the service itself before a blank window says so.
   // The page the question is for is named by the browser, not by the request's own say-so.
   app.post("/api/external-apps/probe", async (request) => {
-    const actor = requireActor(request);
     const body = z.object({ url: z.string().trim().min(1).max(2048) }).parse(request.body);
-    return { verdict: await s.frameProbe.ask(actor.id, appUrl(body.url), String(request.headers.origin ?? "")) };
+    return { verdict: await s.frameProbe.ask(request.actor.id, appUrl(body.url), String(request.headers.origin ?? "")) };
   });
   // A shortcut that is shown inside Kago is shown through this page: a frame around the service and nothing else.
   app.get("/api/external-apps/:id/frame", async (request, reply) => {
-    const target = s.apps.frameTarget(requireActor(request), idParams.parse(request.params).id);
+    const target = s.apps.frameTarget(request.actor, idParams.parse(request.params).id);
     reply.header("Content-Type", "text/html; charset=utf-8");
     reply.header("Cache-Control", "no-store");
     reply.header("Content-Security-Policy", FRAME_POLICY);
     return framePage(target);
   });
   // The previewers plugins add, for files none of the interface's own viewers open.
-  app.get("/api/plugins", async (request) => {
-    requireActor(request);
-    return { previewers: s.plugins.previewers() };
+  app.get("/api/plugins", async () => ({ previewers: s.plugins.previewers() }));
+  // The icon libraries, asked by this server so that no browser has to: which icons answer to a name, and what one looks like.
+  app.get("/api/app-icons", async (request) => s.iconLibrary.search(z.object({ q: z.string().max(80) }).parse(request.query).q));
+  app.get("/api/app-icons/:source/:name", async (request, reply) => {
+    const params = z.object({ source: z.string().max(40), name: z.string().max(80) }).parse(request.params);
+    const icon = await s.iconLibrary.icon(params.source, params.name);
+    reply.header("Cache-Control", "private, max-age=86400");
+    sandboxContent(reply);
+    return sendFile(request, reply, icon.file, await fs.promises.stat(icon.file), ICON_TYPES[icon.type]);
   });
+});
+
+export function register(app: FastifyInstance, s: Services) {
   // A plugin's own files. Its page runs sandboxed, in a frame of the interface's, under a policy that lets it load
   // these files and nothing else; it reaches the file it shows only through messages to the interface.
   app.get(`${PLUGIN_PREFIX}:token/*`, async (request, reply) => {
@@ -84,17 +90,5 @@ export function register(app: FastifyInstance, s: Services) {
     reply.header("Cache-Control", found.file.endsWith(".html") ? "private, no-cache" : "private, max-age=31536000, immutable");
     return sendFile(request, reply, found.file, found, lookup(found.file) || "application/octet-stream");
   });
-  // The icon libraries, asked by this server so that no browser has to: which icons answer to a name, and what one looks like.
-  app.get("/api/app-icons", async (request) => {
-    requireActor(request);
-    return s.iconLibrary.search(z.object({ q: z.string().max(80) }).parse(request.query).q);
-  });
-  app.get("/api/app-icons/:source/:name", async (request, reply) => {
-    requireActor(request);
-    const params = z.object({ source: z.string().max(40), name: z.string().max(80) }).parse(request.params);
-    const icon = await s.iconLibrary.icon(params.source, params.name);
-    reply.header("Cache-Control", "private, max-age=86400");
-    sandboxContent(reply);
-    return sendFile(request, reply, icon.file, await fs.promises.stat(icon.file), ICON_TYPES[icon.type]);
-  });
+  userRoutes(app, s);
 }

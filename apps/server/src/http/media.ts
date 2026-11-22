@@ -1,6 +1,5 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { AppError } from "../lib/errors.js";
 import { isPictureFormat } from "../lib/subtitles.js";
@@ -8,20 +7,16 @@ import { sendFile } from "../lib/send-file.js";
 import { fsQuerySchema } from "../services/fs.service.js";
 import { mediaAudioSchema, mediaPanoramaSchema, mediaPrewarmSchema, mediaSessionSchema, mediaStreamSchema } from "../services/media.service.js";
 import { sandboxContent } from "./respond.js";
-import type { Services } from "./services.js";
-import { guards } from "./guards.js";
+import { signedIn } from "./guards.js";
 
-export function register(app: FastifyInstance, s: Services) {
-  const { requireActor } = guards(s);
-
+export const register = signedIn((app, s) => {
   app.get("/api/media/info", async (request) => {
-    const actor = requireActor(request);
     const query = fsQuerySchema.parse(request.query);
-    const file = await s.fsService.media(actor, query.rootSlug, query.path);
+    const file = await s.fsService.media(request.actor, query.rootSlug, query.path);
     return s.media.info(file.input, file.stat);
   });
   app.get("/api/media/subtitles", async (request) => {
-    const actor = requireActor(request);
+    const { actor } = request;
     const query = fsQuerySchema.parse(request.query);
     const file = await s.fsService.media(actor, query.rootSlug, query.path);
     const sidecars = await s.fsService.subtitles(actor, query.rootSlug, query.path);
@@ -87,49 +82,44 @@ export function register(app: FastifyInstance, s: Services) {
     };
   });
   app.get("/api/media/subtitle", async (request, reply) => {
-    const actor = requireActor(request);
     const query = mediaStreamSchema.parse(request.query);
-    const file = await s.fsService.media(actor, query.rootSlug, query.path);
+    const file = await s.fsService.media(request.actor, query.rootSlug, query.path);
     const subtitle = await s.media.subtitle(file.input, file.stat, query.index);
     reply.header("Cache-Control", "private, max-age=3600");
     sandboxContent(reply);
     return sendFile(request, reply, subtitle.file, await fs.promises.stat(subtitle.file), "text/plain; charset=utf-8");
   });
   app.get("/api/media/attachment", async (request, reply) => {
-    const actor = requireActor(request);
     const query = mediaStreamSchema.parse(request.query);
-    const file = await s.fsService.media(actor, query.rootSlug, query.path);
+    const file = await s.fsService.media(request.actor, query.rootSlug, query.path);
     const font = await s.media.font(file.input, file.stat, query.index);
     reply.header("Cache-Control", "private, max-age=3600");
     sandboxContent(reply);
     return sendFile(request, reply, font, await fs.promises.stat(font), "application/octet-stream");
   });
   app.get("/api/media/cover", async (request, reply) => {
-    const actor = requireActor(request);
     const query = fsQuerySchema.parse(request.query);
-    const file = await s.fsService.media(actor, query.rootSlug, query.path);
+    const file = await s.fsService.media(request.actor, query.rootSlug, query.path);
     const cover = await s.media.cover(file.input, file.stat);
     reply.header("Cache-Control", "private, max-age=3600");
     sandboxContent(reply);
     return sendFile(request, reply, cover, await fs.promises.stat(cover), cover.endsWith(".avif") ? "image/avif" : "image/jpeg");
   });
   app.get("/api/media/storyboard", async (request) => {
-    const actor = requireActor(request);
     const query = fsQuerySchema.parse(request.query);
-    const file = await s.fsService.media(actor, query.rootSlug, query.path);
+    const file = await s.fsService.media(request.actor, query.rootSlug, query.path);
     return s.media.storyboard(file.input, file.stat);
   });
   app.get("/api/media/storyboard/sheet", async (request, reply) => {
-    const actor = requireActor(request);
     const query = mediaStreamSchema.parse(request.query);
-    const file = await s.fsService.media(actor, query.rootSlug, query.path);
+    const file = await s.fsService.media(request.actor, query.rootSlug, query.path);
     const sheet = await s.media.storyboardSheet(file.input, file.stat, query.index);
     reply.header("Cache-Control", "private, max-age=86400");
     sandboxContent(reply);
     return sendFile(request, reply, sheet, await fs.promises.stat(sheet), "image/jpeg");
   });
   app.get("/api/media/audio", async (request, reply) => {
-    const actor = requireActor(request);
+    const { actor } = request;
     const query = mediaAudioSchema.parse(request.query);
     const file = await s.fsService.media(actor, query.rootSlug, query.path);
     const audio = await s.media.audioStream(actor.id, file.input, file.stat, query.start);
@@ -143,7 +133,7 @@ export function register(app: FastifyInstance, s: Services) {
     return reply.send(audio.stream);
   });
   app.post("/api/media/sessions", async (request) => {
-    const actor = requireActor(request);
+    const { actor } = request;
     const input = mediaSessionSchema.parse(request.body);
     const file = await s.fsService.media(actor, input.rootSlug, input.path);
     // A subtitle file is taken only from among the ones found for this video, never as a path of the caller's choosing.
@@ -154,7 +144,7 @@ export function register(app: FastifyInstance, s: Services) {
     return { id: session.id, hdr: session.hdr, playlistUrl: `/api/media/sessions/${session.id}/index.m3u8` };
   });
   app.post("/api/media/panoramas", async (request) => {
-    const actor = requireActor(request);
+    const { actor } = request;
     const input = mediaPanoramaSchema.parse(request.body);
     // The other half of a recording lies beside the opened file; each is read only by someone who may view it.
     if (input.companionPath !== null && path.posix.dirname(input.companionPath) !== path.posix.dirname(input.path)) throw new AppError(400, "The other file must be in the same folder", "INVALID_INPUT");
@@ -167,13 +157,12 @@ export function register(app: FastifyInstance, s: Services) {
     return s.media.createPanorama(actor.id, files);
   });
   app.post("/api/media/sessions/:id/prewarm", async (request) => {
-    const actor = requireActor(request);
     const params = z.object({ id: z.string().min(1) }).parse(request.params);
     const input = mediaPrewarmSchema.parse(request.body);
-    return s.media.prewarm(actor.id, params.id, input);
+    return s.media.prewarm(request.actor.id, params.id, input);
   });
   app.get("/api/media/sessions/:id/:file", async (request, reply) => {
-    const actor = requireActor(request);
+    const { actor } = request;
     const params = z.object({ id: z.string().min(1), file: z.string().regex(/^(index\.m3u8|init\.mp4|\d{1,9}\.(ts|m4s))$/) }).parse(request.params);
     reply.header("Cache-Control", "no-store");
     if (params.file === "index.m3u8") {
@@ -187,12 +176,12 @@ export function register(app: FastifyInstance, s: Services) {
     return reply.send(fs.createReadStream(segment));
   });
   app.delete("/api/media/sessions/:id", async (request) => {
-    const actor = requireActor(request);
     const params = z.object({ id: z.string().min(1) }).parse(request.params);
-    s.media.close(actor.id, params.id);
+    s.media.close(request.actor.id, params.id);
     return { ok: true };
   });
-}
+});
+
 
 /** What the player calls each kind of picture subtitle. */
 const PICTURE_FORMATS: Record<string, string> = { hdmv_pgs_subtitle: "pgs", dvd_subtitle: "vobsub", dvb_subtitle: "dvb" };

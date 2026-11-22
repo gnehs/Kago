@@ -10,25 +10,23 @@ import { SHARE_ACCESS_SECONDS, SHARE_VISIT_SECONDS, shareSchema, type ShareVisit
 import { isPlayable, sendUserFile } from "./respond.js";
 import { idParams } from "./schemas.js";
 import type { Services } from "./services.js";
-import { guards } from "./guards.js";
+import { signedIn } from "./guards.js";
 
-export function register(app: FastifyInstance, s: Services) {
-  const { requireActor } = guards(s);
-
-  app.get("/api/shares", async (request) => s.shares.list(requireActor(request)));
-  app.post("/api/shares", async (request) => s.shares.create(requireActor(request), shareSchema.parse(request.body)));
+const userRoutes = signedIn((app, s) => {
+  app.get("/api/shares", async (request) => s.shares.list(request.actor));
+  app.post("/api/shares", async (request) => s.shares.create(request.actor, shareSchema.parse(request.body)));
   app.patch("/api/shares/:id", async (request) => {
-    const actor = requireActor(request);
     const params = idParams.parse(request.params);
     const body = z.object({ disabled: z.boolean().optional() }).parse(request.body);
-    return s.shares.patch(actor, params.id, body);
+    return s.shares.patch(request.actor, params.id, body);
   });
   app.delete("/api/shares/:id", async (request) => {
-    const actor = requireActor(request);
-    s.shares.delete(actor, idParams.parse(request.params).id);
+    s.shares.delete(request.actor, idParams.parse(request.params).id);
     return { ok: true };
   });
+});
 
+export function register(app: FastifyInstance, s: Services) {
   app.get("/s/:token", async (request, reply) => {
     const params = z.object({ token: z.string().min(1) }).parse(request.params);
     if (wantsHtml(request)) {
@@ -96,7 +94,9 @@ export function register(app: FastifyInstance, s: Services) {
     }
     return { items: uploaded };
   });
+  userRoutes(app, s);
 }
+
 
 function shareAccessCookie(request: FastifyRequest, token: string): string | undefined {
   return request.cookies[shareAccessCookieName(token)];

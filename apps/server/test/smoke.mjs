@@ -823,6 +823,10 @@ test("download archives stay out of the data dir and running tasks can be cancel
     }
     assert.deepEqual((await firstSession.get("/api/admins")).json, [{ displayName: "Smoke Admin", email: "admin@example.test" }]);
     assert.equal((await client(app).get("/api/admins")).statusCode, 401);
+    // Who is asking is settled before the request is read, so a bad query from a signed-out caller is a 401, not a 400.
+    assert.equal((await client(app).get("/api/fs/sqlite")).statusCode, 401);
+    assert.equal((await firstSession.get("/api/fs/sqlite")).statusCode, 400);
+    assert.equal((await firstSession.get("/api/users")).statusCode, 403);
     assert.equal((await firstSession.post("/api/auth/password", { currentPassword: "not-the-password", newPassword: "fake-member-password-2" })).statusCode, 403);
     assert.equal((await firstSession.post("/api/auth/password", { currentPassword: "fake-member-password-1", newPassword: "short" })).statusCode, 400);
     assert.equal((await firstSession.post("/api/auth/password", { currentPassword: "fake-member-password-1", newPassword: "fake-member-password-2" })).statusCode, 200);
