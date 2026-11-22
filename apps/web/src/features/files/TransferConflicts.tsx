@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { Combine, CopyPlus, Replace, SkipForward } from "lucide-react";
-import { create } from "zustand";
 import { useShallow } from "zustand/react/shallow";
 import { api } from "@/api/client";
 import { KagoChoice } from "@/components/kago/choice";
@@ -11,6 +10,7 @@ import { Checkbox, Field, Select } from "@/components/ui/input";
 import { formatDate, formatSize } from "@/lib/format";
 import { t } from "@/lib/i18n";
 import type { FileRef } from "@/stores/clipboard";
+import { createScopedPrompt } from "@/stores/prompt";
 import { folderTitle } from "@/stores/workspace";
 
 /** What becomes of one of two that cannot both have the name. */
@@ -26,24 +26,13 @@ type Details = { kind: "file" | "folder"; size: number; mtime: number };
 type Arrival = "copy" | "move" | "upload";
 export type Conflict = Details & { rootSlug: string; path: string; name: string; /** The one the destination has. */ existing: Details; /** It is where it would be put already. */ same: boolean };
 type Answer = { action: ConflictAction; /** The same goes for every conflict still to come. */ all: boolean };
-type ConflictRequest = { window: string | null; type: Arrival; conflict: Conflict; folder: string; remaining: number; resolve: (answer: Answer | null) => void };
+type ConflictRequest = { window: string | null; type: Arrival; conflict: Conflict; folder: string; remaining: number };
 
 /** The conflict each window is asked about, by window id; the page's is under "". Each window's copy or move waits on its own. */
-const useConflictStore = create<{ requests: Record<string, ConflictRequest> }>(() => ({ requests: {} }));
-
-function ask(request: Omit<ConflictRequest, "resolve">) {
-  const scope = request.window ?? "";
-  return new Promise<Answer | null>((resolve) => {
-    useConflictStore.getState().requests[scope]?.resolve(null);
-    useConflictStore.setState(({ requests }) => ({ requests: { ...requests, [scope]: { ...request, resolve } } }));
-  });
-}
-
-function settle(scope: string, answer: Answer | null) {
-  const { [scope]: request, ...rest } = useConflictStore.getState().requests;
-  request?.resolve(answer);
-  useConflictStore.setState({ requests: rest });
-}
+const conflictPrompt = createScopedPrompt<ConflictRequest, Answer>();
+const useConflictStore = conflictPrompt.useStore;
+const settle = conflictPrompt.settle;
+const ask = (request: ConflictRequest) => conflictPrompt.ask(request.window, request);
 
 const mergeable = (conflict: Conflict) => conflict.kind === "folder" && conflict.existing.kind === "folder";
 /** An upload arrives file by file, so a folder already there can be gone into or kept beside, but not replaced whole. */

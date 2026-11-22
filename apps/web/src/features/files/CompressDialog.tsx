@@ -1,31 +1,21 @@
 import { useEffect, useRef, useState } from "react";
-import { create } from "zustand";
 import { KagoDialog, KagoDialogActions } from "@/components/kago/dialog";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/input";
 import { KagoPasswordInput } from "@/components/kago/password-input";
 import { t } from "@/lib/i18n";
+import { createPrompt } from "@/stores/prompt";
 
 export type CompressLevel = "store" | "fast" | "normal" | "best";
 export type CompressEncryption = "aes256" | "zipcrypto";
 export type CompressChoice = { name: string; options: { level: CompressLevel; password?: string; encryption?: CompressEncryption } };
 
-type CompressRequest = { window?: string | null; title: string; defaultName: string; resolve: (choice: CompressChoice | null) => void };
-
-const useCompressStore = create<{ request: CompressRequest | null }>(() => ({ request: null }));
+const compress = createPrompt<{ window?: string | null; title: string; defaultName: string }, CompressChoice>();
+const useCompressStore = compress.useStore;
+const settle = compress.settle;
 
 /** Asks what to call the archive, how hard to squeeze it and whether to lock it. */
-export function promptCompress(options: { window?: string | null; title: string; defaultName: string }) {
-  return new Promise<CompressChoice | null>((resolve) => {
-    useCompressStore.getState().request?.resolve(null);
-    useCompressStore.setState({ request: { ...options, resolve } });
-  });
-}
-
-function settle(choice: CompressChoice | null) {
-  useCompressStore.getState().request?.resolve(choice);
-  useCompressStore.setState({ request: null });
-}
+export const promptCompress = compress.ask;
 
 export function CompressDialogHost() {
   const pending = useCompressStore((state) => state.request);

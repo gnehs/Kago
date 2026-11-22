@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { create } from "zustand";
 import { useConvertSupport } from "@/api/hooks";
 import { KagoDialog, KagoDialogActions } from "@/components/kago/dialog";
 import { Button } from "@/components/ui/button";
@@ -7,23 +6,14 @@ import type { ConvertSpec } from "@/types/kago";
 import { ConvertFields, specIsValid } from "./ConvertFields";
 import { specFor, supportedFormats, targetFormats, type MediaKind } from "./convertSpec";
 import { t } from "@/lib/i18n";
+import { createPrompt } from "@/stores/prompt";
 
-type ConvertRequest = { window?: string | null; kind: MediaKind; names: string[]; resolve: (spec: ConvertSpec | null) => void };
-
-const useConvertStore = create<{ request: ConvertRequest | null }>(() => ({ request: null }));
+const convert = createPrompt<{ window?: string | null; kind: MediaKind; names: string[] }, ConvertSpec>();
+const useConvertStore = convert.useStore;
+const settle = convert.settle;
 
 /** Asks what to make of some files of one kind. Resolves to nothing when the dialog is closed. */
-export function promptConvert(options: { window?: string | null; kind: MediaKind; names: string[] }) {
-  return new Promise<ConvertSpec | null>((resolve) => {
-    useConvertStore.getState().request?.resolve(null);
-    useConvertStore.setState({ request: { ...options, resolve } });
-  });
-}
-
-function settle(spec: ConvertSpec | null) {
-  useConvertStore.getState().request?.resolve(spec);
-  useConvertStore.setState({ request: null });
-}
+export const promptConvert = convert.ask;
 
 /** What a file of a kind is most often wanted as, other than what it is already. */
 function firstChoice(kind: MediaKind, names: string[], offered: string[]): string {

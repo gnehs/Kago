@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import type { QueryClient } from "@tanstack/react-query";
-import { create } from "zustand";
 import { api } from "@/api/client";
 import { KagoDialog, KagoDialogActions } from "@/components/kago/dialog";
 import { Button } from "@/components/ui/button";
@@ -10,11 +9,11 @@ import { followTask } from "@/features/tasks/taskToast";
 import { t } from "@/lib/i18n";
 import { run } from "@/lib/run";
 import type { FileRef } from "@/stores/clipboard";
+import { createPrompt } from "@/stores/prompt";
 import type { FileTask } from "@/types/kago";
 
 type ExtractRequest = { sources: FileRef[]; destination: FileRef };
 type PasswordChoice = { password: string; remember: boolean };
-type PasswordPrompt = { window: string | null; name: string; wrong: boolean; resolve: (choice: PasswordChoice | null) => void };
 
 /** What the server says when none of the passwords it has opens an archive. */
 const passwordErrors = ["Archive password required", "Wrong archive password"];
@@ -24,19 +23,10 @@ export const pendingExtracts = new Map<string, ExtractRequest>();
 /** The window each of them was started from, where its password is asked for. */
 const extractWindows = new Map<string, string | null>();
 
-const usePromptStore = create<{ prompt: PasswordPrompt | null }>(() => ({ prompt: null }));
-
-function settle(choice: PasswordChoice | null) {
-  usePromptStore.getState().prompt?.resolve(choice);
-  usePromptStore.setState({ prompt: null });
-}
-
-function promptArchivePassword(options: { window: string | null; name: string; wrong: boolean }) {
-  return new Promise<PasswordChoice | null>((resolve) => {
-    usePromptStore.getState().prompt?.resolve(null);
-    usePromptStore.setState({ prompt: { ...options, resolve } });
-  });
-}
+const passwordPrompt = createPrompt<{ window: string | null; name: string; wrong: boolean }, PasswordChoice>();
+const usePromptStore = passwordPrompt.useStore;
+const settle = passwordPrompt.settle;
+const promptArchivePassword = passwordPrompt.ask;
 
 /** The extraction a failed task was, if what it failed on was the password. */
 export function lockedExtract(task: FileTask): ExtractRequest | null {
@@ -78,7 +68,7 @@ export function askForArchivePassword(queryClient: QueryClient, taskId: string, 
 }
 
 export function ArchivePasswordDialogHost() {
-  const pending = usePromptStore((state) => state.prompt);
+  const pending = usePromptStore((state) => state.request);
   // The last request stays on show while its dialog fades out.
   const [prompt, setPrompt] = useState(pending);
   const [password, setPassword] = useState("");

@@ -9,6 +9,7 @@ import { KagoVirtualList } from "@/components/kago/virtual-list";
 import { Button } from "@/components/ui/button";
 import { Checkbox, Field, Input, Select } from "@/components/ui/input";
 import { t } from "@/lib/i18n";
+import { createPrompt } from "@/stores/prompt";
 import { isInteractiveTarget } from "@/lib/usePointerDrag";
 import { cn } from "@/lib/utils";
 import type { FileItem, ImageMetadata, MediaInfo } from "@/types/kago";
@@ -20,27 +21,23 @@ export const MAX_BATCH_RENAME = 1000;
 
 export type BatchRenameChoice = Array<{ path: string; name: string }>;
 
-type BatchRenameRequest = { id: number; /** The window it was asked from. */ window: string | null; rootSlug: string; items: FileItem[]; /** Every path listed beside them, whose names are taken. */ existing: string[]; resolve: (choice: BatchRenameChoice | null) => void };
+type BatchRenameRequest = { id: number; /** The window it was asked from. */ window: string | null; rootSlug: string; items: FileItem[]; /** Every path listed beside them, whose names are taken. */ existing: string[] };
 
 // The pattern stays as it was left, for the next lot of files.
-const useBatchRenameStore = create<{ request: BatchRenameRequest | null; parts: RenamePart[] }>(() => ({ request: null, parts: [makePart("original")] }));
+const usePartsStore = create<{ parts: RenamePart[] }>(() => ({ parts: [makePart("original")] }));
+
+const batchRename = createPrompt<BatchRenameRequest, BatchRenameChoice>();
+const useBatchRenameStore = batchRename.useStore;
+const settle = batchRename.settle;
 
 let requests = 0;
 
 /** Asks how to name several items, and resolves to the new name of each one that gets another. */
-export function promptBatchRename(options: Omit<BatchRenameRequest, "id" | "resolve">) {
-  return new Promise<BatchRenameChoice | null>((resolve) => {
-    useBatchRenameStore.getState().request?.resolve(null);
-    useBatchRenameStore.setState({ request: { ...options, id: ++requests, resolve } });
-  });
+export function promptBatchRename(options: Omit<BatchRenameRequest, "id">) {
+  return batchRename.ask({ ...options, id: ++requests });
 }
 
-function settle(choice: BatchRenameChoice | null) {
-  useBatchRenameStore.getState().request?.resolve(choice);
-  useBatchRenameStore.setState({ request: null });
-}
-
-const setParts = (parts: RenamePart[]) => useBatchRenameStore.setState({ parts });
+const setParts = (parts: RenamePart[]) => usePartsStore.setState({ parts });
 
 /** How many files are asked about at once. */
 const INFO_WINDOW = 4;
@@ -131,7 +128,7 @@ function PreviewRow({ row }: { row: RenameRow }) {
 }
 
 function BatchRenameForm({ request }: { request: BatchRenameRequest }) {
-  const parts = useBatchRenameStore((state) => state.parts);
+  const parts = usePartsStore((state) => state.parts);
   const sourceList = sourcesOf(parts).join(" ");
   const sources = useMemo(() => (sourceList ? (sourceList.split(" ") as PartSource[]) : []), [sourceList]);
   const { info, settled, total } = useRenameInfo(request.rootSlug, request.items, sources);
