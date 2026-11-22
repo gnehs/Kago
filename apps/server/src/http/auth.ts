@@ -3,17 +3,18 @@ import { z } from "zod";
 import { AppError } from "../lib/errors.js";
 import { logger } from "../lib/logger.js";
 import { changePasswordSchema, loginSchema, setupAdminSchema } from "../services/auth.service.js";
+import { idParams } from "./schemas.js";
 import type { Services } from "./services.js";
 import { guards } from "./guards.js";
 
 export function register(app: FastifyInstance, s: Services) {
-  const { requireActor } = guards(s);
+  const { requireActor, auditAs } = guards(s);
 
   // `oidc` is what the sign-in page needs to offer single sign-on: nothing of how it is set up.
   app.get("/api/auth/setup", async () => ({ needsSetup: s.auth.needsSetup(), oidc: s.oidc.publicInfo() }));
   app.post("/api/auth/setup", async (request, reply) => {
     const actor = await s.auth.setupAdmin(request, reply, setupAdminSchema.parse(request.body));
-    s.audit.write({ actorType: "user", actorId: actor.id, action: "setup_admin", result: "success" });
+    auditAs(actor, "setup_admin");
     return { user: actor };
   });
 
@@ -21,7 +22,7 @@ export function register(app: FastifyInstance, s: Services) {
     const input = loginSchema.parse(request.body);
     try {
       const actor = await s.auth.login(request, reply, input.email, input.password);
-      s.audit.write({ actorType: "user", actorId: actor.id, action: "login_success", result: "success" });
+      auditAs(actor, "login_success");
       return { user: actor };
     } catch (error) {
       s.audit.write({ actorType: "system", action: "login_failed", target: { email: input.email }, result: "failure", ip: request.ip, userAgent: request.headers["user-agent"] });
@@ -32,7 +33,7 @@ export function register(app: FastifyInstance, s: Services) {
   app.post("/api/auth/logout", async (request, reply) => {
     const actor = s.auth.actorFromRequest(request);
     s.auth.logout(request, reply);
-    if (actor) s.audit.write({ actorType: "user", actorId: actor.id, action: "logout", result: "success" });
+    if (actor) auditAs(actor, "logout");
     return { ok: true };
   });
 
@@ -83,9 +84,9 @@ export function register(app: FastifyInstance, s: Services) {
   });
   app.delete("/api/auth/identities/:id", async (request) => {
     const actor = requireActor(request);
-    const params = z.object({ id: z.string() }).parse(request.params);
+    const params = idParams.parse(request.params);
     s.oidc.unlink(actor.id, params.id, { keepWayIn: true, request });
-    s.audit.write({ actorType: "user", actorId: actor.id, action: "sso_unlink", target: { userId: actor.id }, result: "success" });
+    auditAs(actor, "sso_unlink", { userId: actor.id });
     return { ok: true };
   });
 
@@ -93,7 +94,7 @@ export function register(app: FastifyInstance, s: Services) {
   app.post("/api/auth/password", async (request) => {
     const actor = requireActor(request);
     await s.auth.changePassword(request, actor, changePasswordSchema.parse(request.body));
-    s.audit.write({ actorType: "user", actorId: actor.id, action: "password_change", result: "success" });
+    auditAs(actor, "password_change");
     return { ok: true };
   });
 

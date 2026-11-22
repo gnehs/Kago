@@ -6,11 +6,12 @@ import { ensureSshKey } from "../lib/ssh-key.js";
 import { remoteRootPatchSchema, remoteRootSchema, rootPatchSchema } from "../services/root.service.js";
 import { normalizeRemoteConfig, providers, remoteConfigSchema } from "../storage/providers.js";
 import { isRemote } from "../storage/remote-storage.js";
+import { idParams } from "./schemas.js";
 import type { Services } from "./services.js";
 import { guards } from "./guards.js";
 
 export function register(app: FastifyInstance, s: Services) {
-  const { requireActor, requireAdmin } = guards(s);
+  const { requireActor, requireAdmin, auditAs } = guards(s);
 
   app.get("/api/roots", async (request) => {
     const actor = requireActor(request);
@@ -21,9 +22,9 @@ export function register(app: FastifyInstance, s: Services) {
   });
   app.patch("/api/roots/:id", async (request) => {
     const actor = requireAdmin(request);
-    const params = z.object({ id: z.string() }).parse(request.params);
+    const params = idParams.parse(request.params);
     const root = s.roots.patch(params.id, rootPatchSchema.parse(request.body));
-    s.audit.write({ actorType: "user", actorId: actor.id, action: "root_update", rootId: root.id, result: "success" });
+    auditAs(actor, "root_update", undefined, root.id);
     s.events.publish({ type: "roots.updated" });
     return s.roots.publicRoot(root);
   });
@@ -55,25 +56,25 @@ export function register(app: FastifyInstance, s: Services) {
     const actor = requireAdmin(request);
     const root = s.roots.createRemote(remoteRootSchema.parse(request.body));
     await s.remotes.configure(root);
-    s.audit.write({ actorType: "user", actorId: actor.id, action: "root_create", rootId: root.id, target: { provider: root.provider }, result: "success" });
+    auditAs(actor, "root_create", { provider: root.provider }, root.id);
     s.events.publish({ type: "roots.updated" });
     return s.roots.publicRoot(root, true);
   });
   app.put("/api/roots/:id/remote", async (request) => {
     const actor = requireAdmin(request);
-    const params = z.object({ id: z.string() }).parse(request.params);
+    const params = idParams.parse(request.params);
     const root = s.roots.updateRemote(params.id, remoteRootPatchSchema.parse(request.body));
     await s.remotes.configure(root);
-    s.audit.write({ actorType: "user", actorId: actor.id, action: "root_update", rootId: root.id, target: { provider: root.provider }, result: "success" });
+    auditAs(actor, "root_update", { provider: root.provider }, root.id);
     s.events.publish({ type: "roots.updated" });
     return s.roots.publicRoot(root, true);
   });
   app.delete("/api/roots/:id", async (request) => {
     const actor = requireAdmin(request);
-    const params = z.object({ id: z.string() }).parse(request.params);
+    const params = idParams.parse(request.params);
     const root = s.roots.deleteRemote(params.id);
     await s.remotes.forget(root);
-    s.audit.write({ actorType: "user", actorId: actor.id, action: "root_delete", target: { rootId: root.id, slug: root.slug, provider: root.provider }, result: "success" });
+    auditAs(actor, "root_delete", { rootId: root.id, slug: root.slug, provider: root.provider });
     s.events.publish({ type: "roots.updated" });
     return { ok: true };
   });

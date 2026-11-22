@@ -1,5 +1,6 @@
 import type { FastifyRequest } from "fastify";
 import { AppError } from "../lib/errors.js";
+import type { Actor } from "../services/types.js";
 import type { Services } from "./services.js";
 
 export function guards(s: Services) {
@@ -20,5 +21,7 @@ export function guards(s: Services) {
     }
     return actor;
   };
-  return { requireActor, requireAdmin };
+  const auditAs = (actor: Actor, action: string, target?: unknown, rootId?: string) =>
+    s.audit.write({ actorType: "user", actorId: actor.id, action, rootId, target, result: "success" });
+  return { requireActor, requireAdmin, auditAs };
 }

@@ -8,6 +8,7 @@ import { MAX_PASSWORD } from "../services/auth.service.js";
 import { maxUploadFiles } from "../services/fs.service.js";
 import { SHARE_ACCESS_SECONDS, SHARE_VISIT_SECONDS, shareSchema, type ShareVisitor } from "../services/share.service.js";
 import { isPlayable, sendUserFile } from "./respond.js";
+import { idParams } from "./schemas.js";
 import type { Services } from "./services.js";
 import { guards } from "./guards.js";
 
@@ -18,13 +19,13 @@ export function register(app: FastifyInstance, s: Services) {
   app.post("/api/shares", async (request) => s.shares.create(requireActor(request), shareSchema.parse(request.body)));
   app.patch("/api/shares/:id", async (request) => {
     const actor = requireActor(request);
-    const params = z.object({ id: z.string() }).parse(request.params);
+    const params = idParams.parse(request.params);
     const body = z.object({ disabled: z.boolean().optional() }).parse(request.body);
     return s.shares.patch(actor, params.id, body);
   });
   app.delete("/api/shares/:id", async (request) => {
     const actor = requireActor(request);
-    s.shares.delete(actor, z.object({ id: z.string() }).parse(request.params).id);
+    s.shares.delete(actor, idParams.parse(request.params).id);
     return { ok: true };
   });
 

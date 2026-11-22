@@ -3,6 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { taskInputSchema, transferCheckSchema } from "../services/task.service.js";
 import { contentDisposition } from "./respond.js";
+import { idParams } from "./schemas.js";
 import type { Services } from "./services.js";
 import { guards } from "./guards.js";
 
@@ -15,11 +16,11 @@ export function register(app: FastifyInstance, s: Services) {
   app.delete("/api/tasks", async (request) => s.tasks.clearFinished(requireActor(request)));
   app.get("/api/tasks/:id", async (request) => {
     const actor = requireActor(request);
-    return s.tasks.getForActor(actor, z.object({ id: z.string() }).parse(request.params).id);
+    return s.tasks.getForActor(actor, idParams.parse(request.params).id);
   });
   app.get("/api/tasks/:id/download", async (request, reply) => {
     const actor = requireActor(request);
-    const file = await s.tasks.openDownload(actor, z.object({ id: z.string() }).parse(request.params).id);
+    const file = await s.tasks.openDownload(actor, idParams.parse(request.params).id);
     reply.header("Content-Type", "application/zip");
     reply.header("Content-Length", String(file.size));
     reply.header("Content-Disposition", contentDisposition("attachment", file.fileName));
@@ -27,20 +28,20 @@ export function register(app: FastifyInstance, s: Services) {
   });
   app.post("/api/tasks/:id/cancel", async (request) => {
     const actor = requireActor(request);
-    return s.tasks.cancel(actor, z.object({ id: z.string() }).parse(request.params).id);
+    return s.tasks.cancel(actor, idParams.parse(request.params).id);
   });
   app.post("/api/tasks/:id/retry", async (request) => {
     const actor = requireActor(request);
-    const task = s.tasks.retryable(actor, z.object({ id: z.string() }).parse(request.params).id);
+    const task = s.tasks.retryable(actor, idParams.parse(request.params).id);
     return (await s.sync.retryRun(actor, task)) ?? (await s.convertJobs.retryRun(actor, task)) ?? s.tasks.retry(actor, task.id);
   });
   app.post("/api/tasks/:id/pause", async (request) => {
     const actor = requireActor(request);
-    return s.tasks.pause(actor, z.object({ id: z.string() }).parse(request.params).id);
+    return s.tasks.pause(actor, idParams.parse(request.params).id);
   });
   app.post("/api/tasks/:id/resume", async (request) => {
     const actor = requireActor(request);
-    return s.tasks.resume(actor, z.object({ id: z.string() }).parse(request.params).id);
+    return s.tasks.resume(actor, idParams.parse(request.params).id);
   });
 
   app.get("/api/trash", async (request) => s.tasks.listTrash(requireActor(request)));
@@ -48,7 +49,7 @@ export function register(app: FastifyInstance, s: Services) {
   app.post("/api/trash/cost", async (request) => s.tasks.trashCost(requireActor(request), z.object({ sources: z.array(z.object({ rootSlug: z.string().min(1), path: z.string().min(1) })) }).parse(request.body).sources));
   app.post("/api/trash/:id/restore", async (request) => {
     const actor = requireActor(request);
-    const params = z.object({ id: z.string() }).parse(request.params);
+    const params = idParams.parse(request.params);
     return s.tasks.createRestoreTrash(actor, params.id);
   });
 
@@ -60,7 +61,7 @@ export function register(app: FastifyInstance, s: Services) {
   });
   app.post("/api/shelves/:id/items", async (request) => {
     const actor = requireActor(request);
-    const params = z.object({ id: z.string() }).parse(request.params);
+    const params = idParams.parse(request.params);
     const body = z.object({ rootSlug: z.string(), path: z.string() }).parse(request.body);
     return s.shelves.addItem(actor, params.id, body.rootSlug, body.path);
   });
@@ -72,7 +73,7 @@ export function register(app: FastifyInstance, s: Services) {
   });
   app.post("/api/shelves/:id/tasks", async (request) => {
     const actor = requireActor(request);
-    const params = z.object({ id: z.string() }).parse(request.params);
+    const params = idParams.parse(request.params);
     const body = z.object({
       type: z.enum(["copy", "move", "compress"]),
       destination: z.object({ rootSlug: z.string(), path: z.string() }),

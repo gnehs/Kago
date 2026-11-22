@@ -8,6 +8,7 @@ import { ICON_TYPES } from "../lib/icon-image.js";
 import { appUrl, externalAppOrderSchema, externalAppSchema } from "../services/external-app.service.js";
 import { framingHost, PLUGIN_PREFIX, pluginPolicy } from "../services/plugin.service.js";
 import { FRAME_POLICY, framePage, sandboxContent } from "./respond.js";
+import { idParams } from "./schemas.js";
 import type { Services } from "./services.js";
 import { guards } from "./guards.js";
 
@@ -19,15 +20,15 @@ export function register(app: FastifyInstance, s: Services) {
   app.post("/api/external-apps", async (request) => s.apps.create(requireActor(request), externalAppSchema.parse(request.body)));
   app.put("/api/external-apps/order", async (request) => s.apps.arrange(requireActor(request), externalAppOrderSchema.parse(request.body).ids));
   app.put("/api/external-apps/:id", async (request) => {
-    const params = z.object({ id: z.string() }).parse(request.params);
+    const params = idParams.parse(request.params);
     return s.apps.update(requireActor(request), params.id, externalAppSchema.parse(request.body));
   });
   app.delete("/api/external-apps/:id", async (request) => {
-    await s.apps.remove(requireActor(request), z.object({ id: z.string() }).parse(request.params).id);
+    await s.apps.remove(requireActor(request), idParams.parse(request.params).id);
     return { ok: true };
   });
   app.get("/api/external-apps/:id/icon", async (request, reply) => {
-    const icon = s.apps.iconFile(requireActor(request), z.object({ id: z.string() }).parse(request.params).id);
+    const icon = s.apps.iconFile(requireActor(request), idParams.parse(request.params).id);
     const stat = await fs.promises.stat(icon.file).catch(() => null);
     if (!stat) throw new AppError(404, "Icon not found", "ICON_NOT_FOUND");
     reply.header("Cache-Control", "private, max-age=31536000, immutable");
@@ -37,7 +38,7 @@ export function register(app: FastifyInstance, s: Services) {
   });
   // Opening a shortcut that has a sign-in goes through here: the browser is sent on to the address with the sign-in in it.
   app.get("/api/external-apps/:id/open", async (request, reply) => {
-    const target = s.apps.openTarget(requireActor(request), z.object({ id: z.string() }).parse(request.params).id);
+    const target = s.apps.openTarget(requireActor(request), idParams.parse(request.params).id);
     reply.header("Cache-Control", "no-store");
     reply.header("Referrer-Policy", "no-referrer");
     return reply.redirect(target);
@@ -51,7 +52,7 @@ export function register(app: FastifyInstance, s: Services) {
   });
   // A shortcut that is shown inside Kago is shown through this page: a frame around the service and nothing else.
   app.get("/api/external-apps/:id/frame", async (request, reply) => {
-    const target = s.apps.frameTarget(requireActor(request), z.object({ id: z.string() }).parse(request.params).id);
+    const target = s.apps.frameTarget(requireActor(request), idParams.parse(request.params).id);
     reply.header("Content-Type", "text/html; charset=utf-8");
     reply.header("Cache-Control", "no-store");
     reply.header("Content-Security-Policy", FRAME_POLICY);

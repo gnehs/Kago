@@ -8,11 +8,12 @@ import { favoriteSchema, folderViewQuerySchema, folderViewSchema, settingsSchema
 import { archivePasswordSchema } from "../services/archive-password.service.js";
 import { workspaceSchema } from "../services/workspace.service.js";
 import { sandboxContent } from "./respond.js";
+import { idParams } from "./schemas.js";
 import type { Services } from "./services.js";
 import { guards } from "./guards.js";
 
 export function register(app: FastifyInstance, s: Services) {
-  const { requireActor } = guards(s);
+  const { requireActor, auditAs } = guards(s);
 
   app.get("/api/workspace", async (request) => {
     const actor = requireActor(request);
@@ -21,7 +22,7 @@ export function register(app: FastifyInstance, s: Services) {
   app.put("/api/workspace", async (request) => {
     const actor = requireActor(request);
     const saved = s.workspace.save(actor.id, workspaceSchema.parse(request.body));
-    s.audit.write({ actorType: "user", actorId: actor.id, action: "workspace_update", result: "success" });
+    auditAs(actor, "workspace_update");
     s.events.publish({ type: "workspace.updated", userId: actor.id });
     return saved;
   });
@@ -31,7 +32,7 @@ export function register(app: FastifyInstance, s: Services) {
   app.get("/api/archive-passwords", async (request) => s.tasks.archivePasswords.list(requireActor(request).id));
   app.post("/api/archive-passwords", async (request) => s.tasks.archivePasswords.add(requireActor(request).id, archivePasswordSchema.parse(request.body)));
   app.delete("/api/archive-passwords/:id", async (request) => {
-    const params = z.object({ id: z.string() }).parse(request.params);
+    const params = idParams.parse(request.params);
     return s.tasks.archivePasswords.remove(requireActor(request).id, params.id);
   });
   app.put("/api/folder-views", async (request) => s.preferences.setFolderView(requireActor(request).id, folderViewSchema.parse(request.body)));
