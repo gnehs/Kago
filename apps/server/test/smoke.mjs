@@ -1288,6 +1288,29 @@ test("what is thrown away on its own disk, or put back there, is renamed without
   assert.equal(await readFile(path.join(fixture.dataDir, "photos", "src", "file.txt"), "utf8"), "demo");
 });
 
+test("what is moved within one disk is renamed without being read through", { skip: process.getuid?.() === 0 && "running as root" }, async (t) => {
+  const fixture = await createFixture("kago-smoke-move-rename.");
+  const app = await buildApp(testEnv(fixture));
+  const admin = client(app);
+  // Nobody can list it, so anything that walks the folder it is in fails.
+  const sealed = path.join(fixture.dataDir, "photos", "src", "child");
+  await chmod(sealed, 0o000);
+  t.after(async () => {
+    await app.close();
+    await chmod(path.join(fixture.dataDir, "photos", "2026", "src", "child"), 0o755).catch(() => undefined);
+    await chmod(sealed, 0o755).catch(() => undefined);
+    await rm(fixture.baseDir, { recursive: true, force: true });
+  });
+  await app.ready();
+  assert.equal((await admin.post("/api/auth/setup", { email: "admin@example.test", password: "fake-admin-password-123", displayName: "Admin" })).statusCode, 200);
+  const created = await admin.post("/api/tasks", { type: "move", sources: [{ rootSlug: "photos", path: "/src" }], destination: { rootSlug: "photos", path: "/2026" } });
+  const task = await waitTask(admin, created.json.id);
+  // One thing was asked for, and it is one thing done: what it holds was never counted.
+  assert.deepEqual([task.status, task.processed_files, task.total_files, task.total_bytes], ["done", 1, 1, 0]);
+  await assert.rejects(access(path.join(fixture.dataDir, "photos", "src")));
+  assert.equal(await readFile(path.join(fixture.dataDir, "photos", "2026", "src", "file.txt"), "utf8"), "demo");
+});
+
 test("a delete for good counts every file and folder it removes", async (t) => {
   const fixture = await createFixture("kago-smoke-delete-count.");
   const app = await buildApp(testEnv(fixture));
