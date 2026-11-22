@@ -629,7 +629,6 @@ export const ja: Dictionary = {
   "Remove tag {name}": "タグ {name} を削除",
   "Pause": "一時停止",
   "Resume": "再開",
-  "Copying, moving, compressing and the like run on the server in the background, and carry on after you close the browser. Finished tasks are cleared after 7 days.": "コピー、移動、圧縮などはサーバーのバックグラウンドで実行され、ブラウザを閉じても続きます。終了したタスクは 7 日後に消去されます。",
   "Clear finished": "終了したタスクを消去",
   "Finished tasks cleared": "終了したタスクを消去しました",
   "Couldn’t clear the tasks": "タスクを消去できませんでした",

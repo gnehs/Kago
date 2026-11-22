@@ -629,7 +629,6 @@ export const zhTW: Dictionary = {
   "Remove tag {name}": "移除標籤 {name}",
   "Pause": "暫停",
   "Resume": "繼續",
-  "Copying, moving, compressing and the like run on the server in the background, and carry on after you close the browser. Finished tasks are cleared after 7 days.": "複製、搬移、壓縮等工作都在伺服器背景執行，關掉瀏覽器也會繼續。已結束的任務會在 7 天後清除。",
   "Clear finished": "清除已結束的任務",
   "Finished tasks cleared": "已清除結束的任務",
   "Couldn’t clear the tasks": "清除任務失敗",

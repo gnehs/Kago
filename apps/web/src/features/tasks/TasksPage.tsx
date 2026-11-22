@@ -17,7 +17,6 @@ export function TasksPage() {
 
   return (
     <Page
-      description={t("Copying, moving, compressing and the like run on the server in the background, and carry on after you close the browser. Finished tasks are cleared after 7 days.")}
       actions={tasks.data?.some(isFinishedTask) ? <Button onClick={() => void clear()}>{t("Clear finished")}</Button> : null}
     >
       {tasks.isLoading ? <KagoLoading /> : null}
