@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { byName } from "@/lib/sort";
 import { Archive, ArchiveRestore, Ban, CircleUserRound, ClipboardPaste, Copy, Download, ExternalLink, FileOutput, FileVideo, Folder, FolderInput, FolderOpen, FolderPlus, FolderUp, Inbox, Info, ListVideo, PanelTop, Pencil, Play, Plus, RefreshCw, Scissors, SquareArrowOutUpRight, Star, StarOff, Trash2, Upload, Wallpaper, X } from "lucide-react";
 import { useFileList, useFolderContents, useFolderSearch } from "@/api/hooks";
 import { KagoBadge } from "@/components/kago/badge";
@@ -37,13 +38,11 @@ import { videoPageUrl } from "./VideoPage";
 import { classifyFileWindowError, WindowErrorState } from "./WindowErrorState";
 import { t } from "@/lib/i18n";
 
-// A shared collator sorts a folder of tens of thousands of names far faster than localeCompare does.
 /** The icon of a window showing a folder. */
 const FOLDER = { kind: "folder", type: "", name: "" } as const;
 const NOTHING_OPEN: ReadonlySet<string> = new Set();
 
-const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
-const compare = (a: string, b: string) => collator.compare(a, b);
+const compare = (a: string, b: string) => byName.compare(a, b);
 
 function sortItems(items: FileItem[], sortBy: FolderView["sortBy"], direction: FolderView["sortDirection"]) {
   const sign = direction === "asc" ? 1 : -1;

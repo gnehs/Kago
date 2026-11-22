@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { byName } from "@/lib/sort";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { ChevronRight, ClipboardPaste, Copy, Download, ExternalLink, FolderOpen, FolderPlus, HardDrive, PanelTop, Pencil, Scissors, Server, Star, StarOff, Trash2 } from "lucide-react";
 import { useFileList } from "@/api/hooks";
@@ -25,7 +26,6 @@ const MAX_WIDTH = 420;
 /** How long a drag rests on a closed folder before it opens, to let the drop go further in. */
 const SPRING_MS = 700;
 
-const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 
 type Tree = {
   window: FileWindow;
@@ -379,7 +379,7 @@ function Node({ tree, rootSlug, path, label, depth, locked }: { tree: Tree; root
 /** The folders inside one that is open in the tree. They are only asked for once it is opened. */
 function Children({ tree, rootSlug, path, depth }: { tree: Tree; rootSlug: string; path: string; depth: number }) {
   const list = useFileList(rootSlug, path);
-  const folders = useMemo(() => list.data?.items.filter((item) => item.kind === "folder").sort((a, b) => collator.compare(a.name, b.name)), [list.data]);
+  const folders = useMemo(() => list.data?.items.filter((item) => item.kind === "folder").sort((a, b) => byName.compare(a.name, b.name)), [list.data]);
   const showLoading = useAfter(list.isPending, 300);
   const note = (text: string) => (
     <span className="truncate py-1 text-xs text-muted" style={{ paddingLeft: 24 + depth * INDENT }}>{text}</span>

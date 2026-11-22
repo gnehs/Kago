@@ -1,4 +1,5 @@
 import { AudioLines, FileWarning, ListMusic, MicVocal, Volume2 } from "lucide-react";
+import { byName } from "@/lib/sort";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { audioStreamUrl, embeddedCoverUrl, previewUrl } from "@/api/client";
 import { useFileList, useMediaInfo, useMediaInfos, useTextFile } from "@/api/hooks";
@@ -27,7 +28,6 @@ const RESTART_AFTER = 3;
 /** The room the control bar takes at the bottom of the screen, in pixels. */
 const CONTROLS_HEIGHT = 78;
 // Numbered tracks sort as numbers, the way the file list shows them.
-const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 const NO_FILES: FileItem[] = [];
 /** A folder with more music than this is listed by file name past it, rather than read file by file. */
 const MAX_TAGGED_FILES = 500;
@@ -93,7 +93,7 @@ function cueTracks(sheet: CueSheet, sheetItem: FileItem, files: FileItem[], open
 
 /** Without a cue sheet, the album is the folder: every file in it that plays, in the order the file list has them. */
 function folderTracks(files: FileItem[], opened: FileItem): Track[] {
-  const playable = files.filter(isPlayable).sort((a, b) => collator.compare(a.name, b.name));
+  const playable = files.filter(isPlayable).sort((a, b) => byName.compare(a.name, b.name));
   // The folder may not have been listed yet, and the file may have left it since.
   const list = playable.some((file) => file.path === opened.path) ? playable : [opened];
   return list.map((file, index) => ({ key: file.path, number: index + 1, title: nfc(withoutExtension(file.name)), performer: "", file, start: 0, end: null }));

@@ -1,4 +1,5 @@
 import { AudioLines, Captions, CaptionsOff, FileWarning, Info, ListVideo, X } from "lucide-react";
+import { byName } from "@/lib/sort";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { api, downloadUrl, previewUrl, thumbnailUrl } from "@/api/client";
 import { useFileList, useMediaInfo, useStoryboard, useSubtitles } from "@/api/hooks";
@@ -29,7 +30,6 @@ const BITRATE_HINT: Record<number, string> = { 2160: "16 Mbps", 1440: "10 Mbps",
 const ENCODER_LABEL: Record<string, string> = { nvenc: "NVIDIA GPU", vaapi: "Intel / AMD GPU", "vaapi-cqp": "Intel / AMD GPU", videotoolbox: "Apple GPU", software: "CPU" };
 const SUBTITLE_FORMAT_LABEL: Record<SubtitleTrack["format"], string> = { ass: "ASS", srt: "SRT", pgs: "PGS", vobsub: "VobSub", dvb: "DVB", picture: "" };
 // Numbered episodes sort as numbers, the way the file list shows them.
-const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 
 /**
  * A video preview. The original file is played as-is when the browser can decode it; otherwise,
@@ -80,7 +80,7 @@ export function VideoPreview({
     for (const url of sheets) new Image().src = url;
   }, [sheets]);
   const folder = useFileList(rootSlug, parentPath(path), Boolean(onNavigate));
-  const videos = useMemo(() => (folder.data?.items ?? []).filter((item) => item.kind === "file" && isVideoType(item.type)).sort((a, b) => collator.compare(a.name, b.name)), [folder.data]);
+  const videos = useMemo(() => (folder.data?.items ?? []).filter((item) => item.kind === "file" && isVideoType(item.type)).sort((a, b) => byName.compare(a.name, b.name)), [folder.data]);
   const position = videos.findIndex((item) => item.path === path);
   const neighbour = (item: FileItem | undefined) => (item && onNavigate ? { label: item.name, go: () => onNavigate(item) } : null);
   const mediaKey = `${rootSlug}\0${path}\0${mtime}`;

@@ -1,4 +1,5 @@
 import { ChevronLeft, ChevronRight, ImageOff, Info, Scan, ZoomIn, ZoomOut } from "lucide-react";
+import { byName } from "@/lib/sort";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { imageUrl, previewUrl, thumbnailUrl } from "@/api/client";
 import { useFileList, useImageMetadata } from "@/api/hooks";
@@ -20,7 +21,6 @@ import { t } from "@/lib/i18n";
 export const isViewableImage = (item: FileItem) => item.kind === "file" && (isImageType(item.type) || isConvertedImage(item));
 
 // Numbered pictures sort as numbers, the way the file list shows them.
-const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 
 type View = { z: number; x: number; y: number };
 type Size = { w: number; h: number };
@@ -86,7 +86,7 @@ export function ImagePreviewWindow({ window }: { window: PreviewWindow }) {
   const { rootSlug, item, download } = usePreviewFile(window);
   const store = useWorkspaceStore.getState;
   const folder = useFileList(rootSlug, parentPath(item.path)).data;
-  const pictures = useMemo(() => (folder?.items ?? []).filter(isViewableImage).sort((a, b) => collator.compare(a.name, b.name)), [folder]);
+  const pictures = useMemo(() => (folder?.items ?? []).filter(isViewableImage).sort((a, b) => byName.compare(a.name, b.name)), [folder]);
   const position = pictures.findIndex((entry) => entry.path === item.path);
   const previous = position > 0 ? pictures[position - 1] : undefined;
   const next = position >= 0 ? pictures[position + 1] : undefined;

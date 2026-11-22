@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { byName } from "@/lib/sort";
 import { keys } from "@/api/keys";
 import { useQueryClient } from "@tanstack/react-query";
 import { ChevronRight, FolderPlus, HardDrive, Server } from "lucide-react";
@@ -22,7 +23,6 @@ const FOLDER = { kind: "folder", type: "", name: "" } as const;
 const INDENT = 14;
 /** A folder of thousands of folders is not drawn whole; the ones past this are reached by typing the path. */
 const MAX_CHILDREN = 300;
-const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 const keyOf = (folder: FolderRef) => `${folder.rootSlug}\n${folder.path}`;
 
 /** The folder and every folder it lies in, outermost first. */
@@ -190,7 +190,7 @@ function Node({ tree, folder, label, depth, root }: { tree: Tree; folder: Folder
 /** The folders inside one that is open in the tree. They are only asked for once it is opened. */
 function Children({ tree, folder, depth }: { tree: Tree; folder: FolderRef; depth: number }) {
   const list = useFileList(folder.rootSlug, folder.path);
-  const folders = useMemo(() => list.data?.items.filter((item) => item.kind === "folder" && !(tree.writable && item.readonly)).sort((a, b) => collator.compare(a.name, b.name)), [list.data, tree.writable]);
+  const folders = useMemo(() => list.data?.items.filter((item) => item.kind === "folder" && !(tree.writable && item.readonly)).sort((a, b) => byName.compare(a.name, b.name)), [list.data, tree.writable]);
   const note = (text: string) => <span className="block truncate py-1 text-xs text-faint" style={{ paddingLeft: 24 + depth * INDENT }}>{text}</span>;
 
   if (!folders) return list.isError ? note(t("Couldn’t load")) : note(t("Loading"));
