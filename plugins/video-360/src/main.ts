@@ -3,6 +3,8 @@ import "@kago/plugin-sdk/kago.css";
 import "./style.css";
 import { parseMovie, readMoov, type Movie, type Track } from "./mp4";
 import { PanoramaPlayer } from "./panorama";
+import { chooseBackend, lensMime, type BackendId, type Browser } from "./backends";
+import { LensVideosPlayer } from "./lenses";
 import { audioConfig, Player, videoConfig, type Playback, type StreamSource } from "./player";
 import type { FileReader } from "./reads";
 import { opticsFor, planRecording, type Recording } from "./source";
@@ -246,40 +248,32 @@ if (!plan) {
 const trackOf = (file: number, id: number) => movies[file]!.tracks.find((track) => track.id === id)!;
 const sources: StreamSource[] = plan.streams.map(({ file, trackId }) => ({ file, track: trackOf(file, trackId) }));
 
-/** The first lens's codec this browser can't decode, or null when it can decode them all. */
-async function undecodable() {
+const browser: Browser = {
   // WebCodecs exist only in a secure context, so Kago opened at a plain http:// address other than localhost has none.
-  if (typeof VideoDecoder === "undefined") return "WebCodecs";
-  for (const { track } of sources) {
-    const support = await VideoDecoder.isConfigSupported(videoConfig(track)).catch(() => ({ supported: false }));
-    if (!support.supported) return track.codec ?? track.format;
-  }
-  return null;
+  decodes: typeof VideoDecoder === "undefined" ? null : async (track) => (await VideoDecoder.isConfigSupported(videoConfig(track)).catch(() => ({ supported: false }))).supported === true,
+  plays: typeof MediaSource === "undefined" ? null : (mime) => MediaSource.isTypeSupported(mime)
+};
+const backend = await chooseBackend(browser, sources.map((source) => source.track));
+const lensCodec = sources[0]!.track.codec ?? sources[0]!.track.format;
+if (backend === null) {
+  fail("unsupported", isSecureContext ? text.unsupported.replace("{codec}", lensCodec) : text.insecure);
+  throw new Error(`${lensCodec} is not supported`);
 }
+stitchedByServer = backend === "panorama";
 
-// What this browser can't decode, Kago's server stitches into one picture the browser plays as any video.
-const missing = await undecodable();
-if (missing !== null && typeof MediaSource === "undefined") {
-  fail("unsupported", isSecureContext ? text.unsupported.replace("{codec}", missing) : text.insecure);
-  throw new Error(`${missing} is not supported`);
-}
-stitchedByServer = missing !== null;
-
-/** The sound, from the file of the front lens if it has some, else from any other. */
-async function findAudio(): Promise<StreamSource | null> {
-  // Safari decodes video with WebCodecs before it decodes sound with them; such a browser plays the video silent.
-  if (typeof AudioDecoder === "undefined") return null;
+/** The sound, from the file of the front lens if it has some, else from any other, if this browser plays it. */
+async function findAudio(plays: (track: Track) => Promise<boolean>): Promise<StreamSource | null> {
   const order = [...new Set([...sources.map((source) => source.file), ...files.keys()])];
   for (const file of order) {
     const track: Track | undefined = movies[file]?.tracks.find((candidate) => candidate.kind === "audio" && candidate.codec);
-    if (track && (await AudioDecoder.isConfigSupported(audioConfig(track)).catch(() => ({ supported: false }))).supported) return { file, track };
+    if (track && (await plays(track))) return { file, track };
   }
   return null;
 }
 
 const extension = kago.file.name.split(".").at(-1)?.toLowerCase() ?? "";
 try {
-  stitcher = new Stitcher(canvas, missing === null ? { kind: "fisheye", lenses: plan.lenses, optics: opticsFor(extension) } : { kind: "equirect" });
+  stitcher = new Stitcher(canvas, stitchedByServer ? { kind: "equirect" } : { kind: "fisheye", lenses: plan.lenses, optics: opticsFor(extension) });
 } catch {
   fail("unsupported");
   throw new Error("WebGL 2 is not available");
@@ -303,16 +297,23 @@ const present = (stream: number, picture: VideoFrame | HTMLVideoElement) => {
   stitcher?.upload(stream, picture);
   dirty = true;
 };
-if (missing === null) {
-  player = new Player(sources, await findAudio(), read, present, () => fail("unreadable"));
-} else {
-  try {
-    player = await PanoramaPlayer.open(kago.panorama, viewer, (video) => present(0, video), (reason) => fail(reason, reason === "unsupported" ? text.unsupported.replace("{codec}", missing) : undefined));
-  } catch {
-    fail("unsupported", text.noPanorama);
-    throw new Error("Kago could not stitch the recording");
+const open: Record<BackendId, () => Promise<Playback>> = {
+  decoders: async () => {
+    // Safari decodes video with WebCodecs before it decodes sound with them; such a browser plays the video silent.
+    const audio = typeof AudioDecoder === "undefined" ? null : await findAudio(async (track) => (await AudioDecoder.isConfigSupported(audioConfig(track)).catch(() => ({ supported: false }))).supported === true);
+    return new Player(sources, audio, read, present, () => fail("unreadable"));
+  },
+  "lens-videos": async () => LensVideosPlayer.open(sources, await findAudio(async (track) => browser.plays!(lensMime(track))), read, viewer, present, () => fail("unreadable")),
+  panorama: async () => {
+    try {
+      return await PanoramaPlayer.open(kago.panorama, viewer, (video) => present(0, video), (reason) => fail(reason, reason === "unsupported" ? text.unsupported.replace("{codec}", lensCodec) : undefined));
+    } catch {
+      fail("unsupported", text.noPanorama);
+      throw new Error("Kago could not stitch the recording");
+    }
   }
-}
+};
+player = await open[backend]();
 player.setMuted(muted);
 // Read by the end-to-end check, which measures how well playback keeps up.
 Object.assign(globalThis, { video360: player.stats });
