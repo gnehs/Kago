@@ -1,17 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
-import { Download, FileWarning } from "lucide-react";
+import { FileWarning } from "lucide-react";
 import { lazy, Suspense, useCallback, useState } from "react";
-import { downloadUrl, previewUrl } from "@/api/client";
-import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
-import { KagoIconButton } from "@/components/kago/icon-button";
-import { Button } from "@/components/ui/button";
-import { KagoWindow } from "@/components/kago/window";
+import { previewUrl } from "@/api/client";
+import { KagoLoading } from "@/components/kago/empty-state";
 import { formatSize, type OfficeKind } from "@/lib/format";
-import { triggerDownload } from "@/lib/paths";
 import { checkZip, MAX_UNPACKED_BYTES, type ZipVerdict } from "@/lib/zipCheck";
 import type { PreviewWindow } from "@/stores/workspace";
-import { FileIcon } from "@/components/kago/file-icon";
 import { t } from "@/lib/i18n";
+import { PreviewFailure, PreviewWindowFrame, usePreviewFile } from "./PreviewWindowFrame";
 
 // Each format's parser is its own download, made by whoever opens a file of that kind.
 const views = {
@@ -25,16 +21,9 @@ const MAX_OFFICE_BYTES = 50 * 1024 * 1024;
 
 /** A Word, Excel or PowerPoint file, read in the browser: nothing is converted on the server. */
 export function OfficePreviewWindow({ window, kind }: { window: PreviewWindow; kind: OfficeKind }) {
-  const { rootSlug, item } = window.preview;
-  const tooLarge = item.size > MAX_OFFICE_BYTES;
   const [unreadable, setUnreadable] = useState(false);
-  // The window stays open when the file is opened again as it is now, which is then read afresh.
-  const version = `${item.path}:${item.mtime}`;
-  const [shown, setShown] = useState(version);
-  if (shown !== version) {
-    setShown(version);
-    setUnreadable(false);
-  }
+  const { rootSlug, item, download } = usePreviewFile(window, () => setUnreadable(false));
+  const tooLarge = item.size > MAX_OFFICE_BYTES;
   const onError = useCallback(() => setUnreadable(true), []);
   const file = useQuery({
     queryKey: ["fs", "bytes", rootSlug, item.path, item.mtime],
@@ -52,27 +41,17 @@ export function OfficePreviewWindow({ window, kind }: { window: PreviewWindow; k
   });
   const View = views[kind];
   const verdict: ZipVerdict = file.data?.verdict ?? "ok";
-  const download = () => triggerDownload(downloadUrl(rootSlug, item.path));
 
   return (
-    <KagoWindow
-      window={window}
-      icon={<FileIcon item={item} />}
-      titleExtra={
-        <KagoIconButton label={t("Download")} className="size-6" onClick={download}>
-          <Download />
-        </KagoIconButton>
-      }
-    >
+    <PreviewWindowFrame window={window}>
       {tooLarge || unreadable || file.error || verdict !== "ok" ? (
-        <KagoEmptyState
+        <PreviewFailure
           className="min-h-0 flex-1"
           icon={<FileWarning />}
           title={t("Couldn’t preview this file")}
           description={tooLarge ? t("Files over {size} have to be downloaded to open.", { size: formatSize(MAX_OFFICE_BYTES) }) : verdict === "too-large" ? t("This file unpacks to more than {size}, which is too much to open here.", { size: formatSize(MAX_UNPACKED_BYTES) }) : file.error ? t("Something went wrong reading the file.") : t("The file may be damaged, password-protected, or in an unsupported format.")}
-        >
-          <Button variant="default" onClick={download}>{t("Download")}</Button>
-        </KagoEmptyState>
+          onDownload={download}
+        />
       ) : !file.data ? (
         <KagoLoading />
       ) : (
@@ -80,6 +59,6 @@ export function OfficePreviewWindow({ window, kind }: { window: PreviewWindow; k
           <View data={file.data.data} onError={onError} />
         </Suspense>
       )}
-    </KagoWindow>
+    </PreviewWindowFrame>
   );
 }

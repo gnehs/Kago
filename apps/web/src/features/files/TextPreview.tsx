@@ -1,20 +1,20 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, Eye, FileWarning, Pencil, Save } from "lucide-react";
+import { Eye, FileWarning, Pencil, Save } from "lucide-react";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
-import { api, ApiError, downloadUrl, previewUrl } from "@/api/client";
+import { api, ApiError, previewUrl } from "@/api/client";
 import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { Button } from "@/components/ui/button";
-import { KagoWindow } from "@/components/kago/window";
 import { errorMessage } from "@/lib/format";
-import { parentPath, triggerDownload } from "@/lib/paths";
+import { parentPath } from "@/lib/paths";
 import { cn } from "@/lib/utils";
 import { confirmAction } from "@/stores/dialogs";
 import { toast } from "@/stores/toast";
 import { guardWindowClose, useWorkspaceStore, type PreviewWindow } from "@/stores/workspace";
 import type { FileMeta } from "@/types/kago";
 import type { CodeEditorHandle } from "./CodeEditor";
-import { FileIcon, FileTile } from "@/components/kago/file-icon";
+import { PreviewWindowFrame, usePreviewFile } from "./PreviewWindowFrame";
+import { FileTile } from "@/components/kago/file-icon";
 import { t } from "@/lib/i18n";
 
 // CodeMirror is only downloaded by someone who opens a text file.
@@ -45,7 +45,8 @@ async function loadText(rootSlug: string, path: string): Promise<LoadedText> {
 
 /** A text file in the code editor: highlighted by its name, saved back with ⌘S. */
 export function TextPreviewWindow({ window }: { window: PreviewWindow }) {
-  const { rootSlug, item } = window.preview;
+  // No reset: saving changes the file's mtime, and the editor holding the text must not be rebuilt for it.
+  const { rootSlug, item, download } = usePreviewFile(window);
   const queryClient = useQueryClient();
   const editor = useRef<CodeEditorHandle>(null);
   const baseMtime = useRef(0);
@@ -124,14 +125,11 @@ export function TextPreviewWindow({ window }: { window: PreviewWindow }) {
     if (!previewing) editor.current?.focus();
   }, [previewing]);
 
-  const download = () => triggerDownload(downloadUrl(rootSlug, item.path));
-
   return (
-    <KagoWindow
+    <PreviewWindowFrame
       window={window}
       keepMounted
-      icon={<FileIcon item={item} />}
-      titleExtra={
+      extra={
         <>
           {isMarkdown && loaded ? (
             <KagoIconButton label={previewing ? t("Edit") : t("Preview")} className="size-6" onClick={togglePreview}>
@@ -143,9 +141,6 @@ export function TextPreviewWindow({ window }: { window: PreviewWindow }) {
               <Save />
             </KagoIconButton>
           )}
-          <KagoIconButton label={t("Download")} className="size-6" onClick={download}>
-            <Download />
-          </KagoIconButton>
         </>
       }
     >
@@ -193,6 +188,6 @@ export function TextPreviewWindow({ window }: { window: PreviewWindow }) {
           <span className="ml-auto">{loaded.lossy ? t("Not UTF-8, view only") : item.readonly ? t("Read-only") : saving ? t("Saving…") : dirty ? t("Unsaved") : ""}</span>
         </footer>
       ) : null}
-    </KagoWindow>
+    </PreviewWindowFrame>
   );
 }

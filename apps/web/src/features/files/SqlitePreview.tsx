@@ -1,19 +1,15 @@
-import { ChevronLeft, ChevronRight, Database, Download, Eye, KeyRound, Table2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Database, Eye, KeyRound, Table2 } from "lucide-react";
 import { useState } from "react";
-import { downloadUrl } from "@/api/client";
 import { useSqliteOverview, useSqliteRows, type FileVersion } from "@/api/hooks";
 import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
-import { Button } from "@/components/ui/button";
-import { KagoWindow } from "@/components/kago/window";
 import { errorMessage, formatSize } from "@/lib/format";
-import { triggerDownload } from "@/lib/paths";
 import { cn } from "@/lib/utils";
 import type { PreviewWindow } from "@/stores/workspace";
 import type { SqliteCell, SqliteTable } from "@/types/kago";
-import { FileIcon } from "@/components/kago/file-icon";
 import { KagoStatusBar } from "@/components/kago/status-bar";
 import { locale, t } from "@/lib/i18n";
+import { PreviewFailure, PreviewWindowFrame, usePreviewFile } from "./PreviewWindowFrame";
 
 const PAGE_SIZE = 100;
 const count = new Intl.NumberFormat(locale);
@@ -28,37 +24,19 @@ function rangeLabel(page: { offset: number; rows: unknown[]; total: number | nul
 
 /** A SQLite database, read on the server: its tables on the left, the rows of one of them on the right. */
 export function SqlitePreviewWindow({ window }: { window: PreviewWindow }) {
-  const { rootSlug, item } = window.preview;
+  const [selected, setSelected] = useState<{ table: string; offset: number } | null>(null);
+  const { rootSlug, item, version, download } = usePreviewFile(window, () => setSelected(null));
   const overview = useSqliteOverview(rootSlug, item);
   const tables = overview.data?.tables ?? [];
-  const [selected, setSelected] = useState<{ table: string; offset: number } | null>(null);
-  // The window stays open when the file is opened again as it is now; the table and page picked in the last one do not carry over.
-  const version = `${item.path}:${item.mtime}`;
-  const [shown, setShown] = useState(version);
-  if (shown !== version) {
-    setShown(version);
-    setSelected(null);
-  }
   const table = tables.find((entry) => entry.name === selected?.table) ?? tables[0];
   const offset = table && table.name === selected?.table ? selected.offset : 0;
-  const download = () => triggerDownload(downloadUrl(rootSlug, item.path));
 
   return (
-    <KagoWindow
-      window={window}
-      icon={<FileIcon item={item} />}
-      titleExtra={
-        <KagoIconButton label={t("Download")} className="size-6" onClick={download}>
-          <Download />
-        </KagoIconButton>
-      }
-    >
+    <PreviewWindowFrame window={window}>
       {overview.isPending ? (
         <KagoLoading />
       ) : overview.error ? (
-        <KagoEmptyState className="min-h-0 flex-1" icon={<Database />} title={t("Couldn’t open the database")} description={errorMessage(overview.error, t("Please try again later."))}>
-          <Button variant="default" onClick={download}>{t("Download")}</Button>
-        </KagoEmptyState>
+        <PreviewFailure className="min-h-0 flex-1" icon={<Database />} title={t("Couldn’t open the database")} description={errorMessage(overview.error, t("Please try again later."))} onDownload={download} />
       ) : !table ? (
         <KagoEmptyState className="min-h-0 flex-1" icon={<Database />} title={t("This database has no tables")} />
       ) : (
@@ -83,7 +61,7 @@ export function SqlitePreviewWindow({ window }: { window: PreviewWindow }) {
           <SqliteRows key={`${version}:${table.name}`} rootSlug={rootSlug} file={item} table={table} offset={offset} onOffset={(next) => setSelected({ table: table.name, offset: next })} />
         </div>
       )}
-    </KagoWindow>
+    </PreviewWindowFrame>
   );
 }
 

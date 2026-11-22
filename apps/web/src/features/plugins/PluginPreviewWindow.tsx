@@ -1,17 +1,15 @@
 import { useEffect, useReducer, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Download, FileWarning, PlugZap } from "lucide-react";
+import { FileWarning, PlugZap } from "lucide-react";
 import { API_VERSION, MAX_READ_BYTES, parsePluginMessage, THEME_TOKENS, type FailReason, type FileInfo, type HostMessage, type PanoramaInfo, type PanoramaSegment, type PluginMessage, type Theme } from "@kago/plugin-sdk/protocol";
-import { api, downloadUrl, previewUrl } from "@/api/client";
+import { api, previewUrl } from "@/api/client";
 import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
-import { FileIcon } from "@/components/kago/file-icon";
-import { KagoIconButton } from "@/components/kago/icon-button";
-import { KagoWindow } from "@/components/kago/window";
 import { Button } from "@/components/ui/button";
 import { locale, t } from "@/lib/i18n";
-import { parentPath, triggerDownload } from "@/lib/paths";
+import { parentPath } from "@/lib/paths";
 import { useWorkspaceStore, type PreviewWindow } from "@/stores/workspace";
 import type { FileMeta, PluginPreviewer } from "@/types/kago";
+import { PreviewFailure, PreviewWindowFrame, usePreviewFile } from "@/features/files/PreviewWindowFrame";
 import { companionNames } from "./companions";
 
 /** How long a plugin's page has to say hello before the window gives up on it. */
@@ -166,11 +164,10 @@ function writeStorage(pluginId: string, key: string, value: string) {
 
 /** A file shown by a plugin, in a frame that can reach nothing but this window. */
 export function PluginPreviewWindow({ window, previewer }: { window: PreviewWindow; previewer: PluginPreviewer }) {
-  const { rootSlug, item } = window.preview;
+  const { version, download } = usePreviewFile(window);
   const queryClient = useQueryClient();
   // Counted up to load the plugin afresh.
   const [attempt, setAttempt] = useState(0);
-  const download = () => triggerDownload(downloadUrl(rootSlug, item.path));
   const retry = () => {
     // The plugin's address changes when the server restarts, which is one reason a frame stops loading.
     void queryClient.invalidateQueries({ queryKey: ["plugins"] });
@@ -178,19 +175,11 @@ export function PluginPreviewWindow({ window, previewer }: { window: PreviewWind
   };
 
   return (
-    <KagoWindow
-      window={window}
-      icon={<FileIcon item={item} />}
-      titleExtra={
-        <KagoIconButton label={t("Download")} className="size-6" onClick={download}>
-          <Download />
-        </KagoIconButton>
-      }
-    >
+    <PreviewWindowFrame window={window}>
       {/* Keyed by the file as it is now, so one that is replaced on disk is read again, and by the page, so a frame only
           ever loads the one it was given: one that loads another page is taken to have left (see PluginFrame). */}
-      <PluginFrame key={`${item.path}:${item.mtime}:${previewer.src}:${attempt}`} window={window} previewer={previewer} onDownload={download} onRetry={retry} />
-    </KagoWindow>
+      <PluginFrame key={`${version}:${previewer.src}:${attempt}`} window={window} previewer={previewer} onDownload={download} onRetry={retry} />
+    </PreviewWindowFrame>
   );
 }
 
@@ -382,9 +371,7 @@ function PluginFrame({ window, previewer, onDownload, onRetry }: { window: Previ
 
   if (phase.kind === "failed") {
     return (
-      <KagoEmptyState className="min-h-0 flex-1" icon={<FileWarning />} title={t("Couldn’t preview this file")} description={phase.message ?? t("The file may be damaged, or in an unsupported format.")}>
-        <Button variant="default" onClick={onDownload}>{t("Download")}</Button>
-      </KagoEmptyState>
+      <PreviewFailure className="min-h-0 flex-1" icon={<FileWarning />} title={t("Couldn’t preview this file")} description={phase.message ?? t("The file may be damaged, or in an unsupported format.")} onDownload={onDownload} />
     );
   }
   if (phase.kind === "broken") {

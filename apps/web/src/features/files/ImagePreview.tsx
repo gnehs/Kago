@@ -1,21 +1,19 @@
-import { ChevronLeft, ChevronRight, Download, ImageOff, Info, Scan, ZoomIn, ZoomOut } from "lucide-react";
+import { ChevronLeft, ChevronRight, ImageOff, Info, Scan, ZoomIn, ZoomOut } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { downloadUrl, imageUrl, previewUrl, thumbnailUrl } from "@/api/client";
+import { imageUrl, previewUrl, thumbnailUrl } from "@/api/client";
 import { useFileList, useImageMetadata } from "@/api/hooks";
 import { Detail, DetailList, DetailSection } from "@/components/kago/details";
-import { KagoEmptyState, KagoLoading, KagoSpinner } from "@/components/kago/empty-state";
+import { KagoLoading, KagoSpinner } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
-import { Button } from "@/components/ui/button";
-import { KagoWindow } from "@/components/kago/window";
 import { formatDate, formatSize, isConvertedImage, isImageType, kindLabel } from "@/lib/format";
-import { parentPath, triggerDownload } from "@/lib/paths";
+import { parentPath } from "@/lib/paths";
 import { getImageInfoOpen, setImageInfoOpen } from "@/lib/prefs";
 import { isEditableTarget, isInteractiveTarget } from "@/lib/usePointerDrag";
 import { useWorkspaceStore, type PreviewWindow } from "@/stores/workspace";
 import type { FileItem } from "@/types/kago";
-import { FileIcon } from "@/components/kago/file-icon";
 import { KagoStatusBar } from "@/components/kago/status-bar";
 import { PhotoDetails } from "./Inspector";
+import { PreviewFailure, PreviewWindowFrame, previewVersion, usePreviewFile } from "./PreviewWindowFrame";
 import { t } from "@/lib/i18n";
 
 /** Pictures with a viewer: what the browser decodes, and what the server converts for it. */
@@ -47,8 +45,6 @@ const STEP = 1.5;
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 /** Where a picture is read from: the file itself, or the JPEG the server makes of one the browser cannot decode. */
 export const sourceOf = (rootSlug: string, item: FileItem) => (isImageType(item.type) ? previewUrl(rootSlug, item.path) : `${imageUrl(rootSlug, item.path)}&v=${Math.round(item.mtime)}`);
-// Keyed by the file as it is now: one replaced on disk is read, or converted, again.
-const keyOf = (item: FileItem) => `${item.path}:${item.mtime}`;
 
 /** A file smaller than this is there before a thumbnail of it would be. */
 const STAGED_BYTES = 1024 * 1024;
@@ -87,7 +83,7 @@ type GestureEvent = Event & { scale: number; clientX: number; clientY: number };
  * that drags the next picture in. The arrow keys step through the folder too.
  */
 export function ImagePreviewWindow({ window }: { window: PreviewWindow }) {
-  const { rootSlug, item } = window.preview;
+  const { rootSlug, item, download } = usePreviewFile(window);
   const store = useWorkspaceStore.getState;
   const folder = useFileList(rootSlug, parentPath(item.path)).data;
   const pictures = useMemo(() => (folder?.items ?? []).filter(isViewableImage).sort((a, b) => collator.compare(a.name, b.name)), [folder]);
@@ -145,7 +141,7 @@ export function ImagePreviewWindow({ window }: { window: PreviewWindow }) {
     swipe.current.x = 0;
   }
 
-  const natural = sizes[keyOf(item)];
+  const natural = sizes[previewVersion(item)];
   const fit = natural && box.w > 0 ? Math.min(1, box.w / natural.w, box.h / natural.h) : 0;
   const base = natural ? { w: natural.w * fit, h: natural.h * fit } : { w: 0, h: 0 };
   // Up to four screen pixels for each of the picture's, and never less than four times what fits.
@@ -480,24 +476,17 @@ export function ImagePreviewWindow({ window }: { window: PreviewWindow }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [box.w, box.h]);
 
-  const download = () => triggerDownload(downloadUrl(rootSlug, item.path));
   const zoomed = view.z > 1.001;
-  const onShow = stages[keyOf(item)];
+  const onShow = stages[previewVersion(item)];
   const slides = [previous ? { entry: previous, index: -1 } : null, { entry: item, index: 0 }, next ? { entry: next, index: 1 } : null].filter((slide) => slide !== null);
 
   return (
-    <KagoWindow
+    <PreviewWindowFrame
       window={window}
-      icon={<FileIcon item={item} />}
-      titleExtra={
-        <>
-          <KagoIconButton label={t("Photo info (⌘I)")} className="size-6" active={infoOpen} onClick={toggleInfo}>
-            <Info />
-          </KagoIconButton>
-          <KagoIconButton label={t("Download")} className="size-6" onClick={download}>
-            <Download />
-          </KagoIconButton>
-        </>
+      extra={
+        <KagoIconButton label={t("Photo info (⌘I)")} className="size-6" active={infoOpen} onClick={toggleInfo}>
+          <Info />
+        </KagoIconButton>
       }
     >
       <div className="flex min-h-0 flex-1">
@@ -512,20 +501,21 @@ export function ImagePreviewWindow({ window }: { window: PreviewWindow }) {
         >
           {slides.map(({ entry, index }) => (
             <Slide
-              key={keyOf(entry)}
+              // Keyed by the file as it is now: one replaced on disk is read, or converted, again.
+              key={previewVersion(entry)}
               rootSlug={rootSlug}
               entry={entry}
               current={index === 0}
               box={box}
-              natural={sizes[keyOf(entry)]}
+              natural={sizes[previewVersion(entry)]}
               slow={slow}
               // On a fast line the pictures to either side are read whole too, once the one on show has arrived.
-              ahead={!slow && stages[keyOf(item)] === "full"}
+              ahead={!slow && stages[previewVersion(item)] === "full"}
               style={{ transform: `translate3d(${index * span + shift}px, 0, 0)`, transition: animated ? `transform ${slideMs}ms ${EASE}` : undefined }}
               imageStyle={index === 0 ? { transform: `translate3d(${view.x}px, ${view.y}px, 0) scale(${view.z})`, transition: animated ? ZOOM_TRANSITION : undefined } : undefined}
-              onSize={(size) => setSizes((known) => ({ ...known, [keyOf(entry)]: size }))}
+              onSize={(size) => setSizes((known) => ({ ...known, [previewVersion(entry)]: size }))}
               onSlow={() => setSlow(true)}
-              onStage={(stage) => setStages((known) => (known[keyOf(entry)] === stage ? known : { ...known, [keyOf(entry)]: stage }))}
+              onStage={(stage) => setStages((known) => (known[previewVersion(entry)] === stage ? known : { ...known, [previewVersion(entry)]: stage }))}
               onDownload={download}
             />
           ))}
@@ -565,7 +555,7 @@ export function ImagePreviewWindow({ window }: { window: PreviewWindow }) {
           <Scan />
         </KagoIconButton>
       </KagoStatusBar>
-    </KagoWindow>
+    </PreviewWindowFrame>
   );
 }
 
@@ -689,9 +679,7 @@ function Slide({
     <div className="absolute inset-0 flex items-center justify-center" style={style} aria-hidden={!current}>
       {state === "failed" ? (
         current ? (
-          <KagoEmptyState icon={<ImageOff />} title={t("Couldn’t show this image")} description={t("The file may be damaged, or the server couldn’t convert it. Download it and open it in another app.")}>
-            <Button variant="default" onClick={onDownload}>{t("Download")}</Button>
-          </KagoEmptyState>
+          <PreviewFailure icon={<ImageOff />} title={t("Couldn’t show this image")} description={t("The file may be damaged, or the server couldn’t convert it. Download it and open it in another app.")} onDownload={onDownload} />
         ) : null
       ) : (
         <>

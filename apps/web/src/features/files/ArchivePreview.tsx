@@ -1,22 +1,20 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { Archive, ArchiveRestore, ChevronLeft, Download, Lock } from "lucide-react";
+import { Archive, ArchiveRestore, ChevronLeft, Lock } from "lucide-react";
 import { useMemo, useState } from "react";
-import { downloadUrl } from "@/api/client";
 import { useArchiveEntries } from "@/api/hooks";
 import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
 import { FileIcon } from "@/components/kago/file-icon";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { KagoStatusBar } from "@/components/kago/status-bar";
-import { KagoWindow } from "@/components/kago/window";
-import { Button } from "@/components/ui/button";
 import { errorMessage, formatDate, formatSize } from "@/lib/format";
 import { locale, t } from "@/lib/i18n";
-import { parentPath, triggerDownload } from "@/lib/paths";
+import { parentPath } from "@/lib/paths";
 import { run } from "@/lib/run";
 import { cn } from "@/lib/utils";
 import type { PreviewWindow } from "@/stores/workspace";
 import type { ArchiveEntry } from "@/types/kago";
 import { startExtract } from "./ArchivePassword";
+import { PreviewFailure, PreviewWindowFrame, usePreviewFile } from "./PreviewWindowFrame";
 
 /** A file or folder as one folder of the archive shows it. */
 type ArchiveNode = { name: string; path: string; folder: boolean; size: number; mtime: number | null; locked: boolean };
@@ -60,49 +58,34 @@ function folderTree(entries: ArchiveEntry[]) {
 
 /** A zip, listed on the server from its central directory: its folders can be walked through without extracting anything. */
 export function ArchivePreviewWindow({ window }: { window: PreviewWindow }) {
-  const { rootSlug, item } = window.preview;
-  const listing = useArchiveEntries(rootSlug, item);
-  const tree = useMemo(() => folderTree(listing.data?.entries ?? []), [listing.data]);
   const [folder, setFolder] = useState("");
   // The archive opened again as it is now starts at its top again.
-  const version = `${item.path}:${item.mtime}`;
-  const [shown, setShown] = useState(version);
-  if (shown !== version) {
-    setShown(version);
-    setFolder("");
-  }
+  const { rootSlug, item, download } = usePreviewFile(window, () => setFolder(""));
+  const listing = useArchiveEntries(rootSlug, item);
+  const tree = useMemo(() => folderTree(listing.data?.entries ?? []), [listing.data]);
   const here = tree.has(folder) ? folder : "";
   const children = tree.get(here) ?? [];
   const files = listing.data?.entries.filter((entry) => !entry.folder) ?? [];
   const queryClient = useQueryClient();
-  const download = () => triggerDownload(downloadUrl(rootSlug, item.path));
   const extract = () => void run(() => startExtract(queryClient, { sources: [{ rootSlug, path: item.path }], destination: { rootSlug, path: parentPath(item.path) } }, undefined, window.id));
   const crumbs = here ? here.split("/") : [];
   const up = () => setFolder(crumbs.slice(0, -1).join("/"));
 
   return (
-    <KagoWindow
+    <PreviewWindowFrame
       window={window}
-      icon={<FileIcon item={item} />}
-      titleExtra={
-        <>
-          {item.readonly ? null : (
-            <KagoIconButton label={t("Extract here")} className="size-6" disabled={!listing.data} onClick={extract}>
-              <ArchiveRestore />
-            </KagoIconButton>
-          )}
-          <KagoIconButton label={t("Download")} className="size-6" onClick={download}>
-            <Download />
+      extra={
+        item.readonly ? null : (
+          <KagoIconButton label={t("Extract here")} className="size-6" disabled={!listing.data} onClick={extract}>
+            <ArchiveRestore />
           </KagoIconButton>
-        </>
+        )
       }
     >
       {listing.isPending ? (
         <KagoLoading />
       ) : listing.error ? (
-        <KagoEmptyState className="min-h-0 flex-1" icon={<Archive />} title={t("Couldn’t open the archive")} description={errorMessage(listing.error, t("Please try again later."))}>
-          <Button variant="default" onClick={download}>{t("Download")}</Button>
-        </KagoEmptyState>
+        <PreviewFailure className="min-h-0 flex-1" icon={<Archive />} title={t("Couldn’t open the archive")} description={errorMessage(listing.error, t("Please try again later."))} onDownload={download} />
       ) : files.length === 0 && tree.get("")!.length === 0 ? (
         <KagoEmptyState className="min-h-0 flex-1" icon={<Archive />} title={t("This archive is empty")} />
       ) : (
@@ -180,6 +163,6 @@ export function ArchivePreviewWindow({ window }: { window: PreviewWindow }) {
           </KagoStatusBar>
         </div>
       )}
-    </KagoWindow>
+    </PreviewWindowFrame>
   );
 }

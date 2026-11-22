@@ -1,15 +1,12 @@
-import { Download, FileWarning, MoveHorizontal, ZoomIn, ZoomOut } from "lucide-react";
+import { FileWarning, MoveHorizontal, ZoomIn, ZoomOut } from "lucide-react";
 import { lazy, Suspense, useCallback, useRef, useState } from "react";
-import { downloadUrl, previewUrl } from "@/api/client";
-import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
+import { previewUrl } from "@/api/client";
+import { KagoLoading } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
-import { Button } from "@/components/ui/button";
-import { KagoWindow } from "@/components/kago/window";
-import { triggerDownload } from "@/lib/paths";
 import type { PreviewWindow } from "@/stores/workspace";
-import { FileIcon } from "@/components/kago/file-icon";
 import { KagoStatusBar } from "@/components/kago/status-bar";
 import type { PdfViewHandle, PdfViewState } from "./PdfView";
+import { PreviewFailure, PreviewWindowFrame, usePreviewFile } from "./PreviewWindowFrame";
 import { t } from "@/lib/i18n";
 
 // pdf.js is only downloaded by someone who opens a PDF.
@@ -18,36 +15,20 @@ const INITIAL_STATE: PdfViewState = { page: 0, pages: 0, scale: 1, fitted: true 
 
 /** A PDF drawn by pdf.js rather than by whatever the browser has, so it reads the same on a phone as on a desktop. */
 export function PdfPreviewWindow({ window }: { window: PreviewWindow }) {
-  const { rootSlug, item } = window.preview;
   const view = useRef<PdfViewHandle>(null);
   const [state, setState] = useState<PdfViewState>(INITIAL_STATE);
   const [unreadable, setUnreadable] = useState(false);
-  // The window stays open when the file is opened again as it is now; what was told of the last read does not carry over.
-  const version = `${item.path}:${item.mtime}`;
-  const [shown, setShown] = useState(version);
-  if (shown !== version) {
-    setShown(version);
+  const { rootSlug, item, version, download } = usePreviewFile(window, () => {
     setState(INITIAL_STATE);
     setUnreadable(false);
-  }
+  });
   const onState = useCallback((patch: Partial<PdfViewState>) => setState((previous) => ({ ...previous, ...patch })), []);
   const onError = useCallback(() => setUnreadable(true), []);
-  const download = () => triggerDownload(downloadUrl(rootSlug, item.path));
 
   return (
-    <KagoWindow
-      window={window}
-      icon={<FileIcon item={item} />}
-      titleExtra={
-        <KagoIconButton label={t("Download")} className="size-6" onClick={download}>
-          <Download />
-        </KagoIconButton>
-      }
-    >
+    <PreviewWindowFrame window={window}>
       {unreadable ? (
-        <KagoEmptyState className="min-h-0 flex-1" icon={<FileWarning />} title={t("Couldn’t preview this file")} description={t("The file may be damaged or password-protected.")}>
-          <Button variant="default" onClick={download}>{t("Download")}</Button>
-        </KagoEmptyState>
+        <PreviewFailure className="min-h-0 flex-1" icon={<FileWarning />} title={t("Couldn’t preview this file")} description={t("The file may be damaged or password-protected.")} onDownload={download} />
       ) : (
         <Suspense fallback={<KagoLoading />}>
           {/* Keyed by the file as it is now, so one that is replaced on disk is read again. */}
@@ -71,6 +52,6 @@ export function PdfPreviewWindow({ window }: { window: PreviewWindow }) {
           </KagoIconButton>
         </KagoStatusBar>
       ) : null}
-    </KagoWindow>
+    </PreviewWindowFrame>
   );
 }

@@ -1,25 +1,23 @@
-import { AudioLines, Download, FileWarning, ListMusic, MicVocal, Pause, Play, SkipBack, SkipForward, Volume1, Volume2, VolumeX } from "lucide-react";
+import { AudioLines, FileWarning, ListMusic, MicVocal, Pause, Play, SkipBack, SkipForward, Volume1, Volume2, VolumeX } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { audioStreamUrl, downloadUrl, embeddedCoverUrl, previewUrl } from "@/api/client";
+import { audioStreamUrl, embeddedCoverUrl, previewUrl } from "@/api/client";
 import { useFileList, useMediaInfo, useMediaInfos, useTextFile } from "@/api/hooks";
-import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
+import { KagoLoading } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { KagoDropdownMenu, KagoMenuCheckItem, KagoMenuSeparator } from "@/components/kago/menu";
-import { Button } from "@/components/ui/button";
-import { KagoWindow } from "@/components/kago/window";
 import { parseCue, type CueSheet } from "@/lib/cue";
 import { formatClock, isAudioType, isCueSheet, isMusicFile } from "@/lib/format";
 import { t } from "@/lib/i18n";
 import { lyricIndexAt, parseLrc, type LyricLine } from "@/lib/lrc";
-import { nfc, parentPath, triggerDownload } from "@/lib/paths";
+import { nfc, parentPath } from "@/lib/paths";
 import { getAudioPanels, getAudioVisual, getVideoVolume, setAudioPanels, setAudioVisual, setVideoVolume, type AudioVisualPref } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 import { useWorkspaceStore, type PreviewWindow } from "@/stores/workspace";
 import type { FileItem, MediaInfo } from "@/types/kago";
 import { useAudioVisual, VISUAL_STYLES, type VisualStyle } from "./audioVisuals";
 import { useMediaSession } from "./useMediaSession";
-import { FileIcon } from "@/components/kago/file-icon";
 import { isViewableImage, sourceOf } from "./ImagePreview";
+import { PreviewFailure, PreviewWindowFrame, usePreviewFile } from "./PreviewWindowFrame";
 import { extensionOf } from "@/lib/fileKind";
 import { PLAYER_CONTROL_CLASS, PlayerButton, PlayerSlider } from "./VideoPlayer";
 
@@ -151,7 +149,7 @@ function graphOf(audio: HTMLAudioElement): AudioGraph | null {
  * sound as it plays, and shows the lyrics over it when an `.lrc` file is named after the track.
  */
 export function AudioPreviewWindow({ window }: { window: PreviewWindow }) {
-  const { rootSlug, item } = window.preview;
+  const { rootSlug, item, download } = usePreviewFile(window);
   const folder = useFileList(rootSlug, parentPath(item.path));
   const files = folder.data?.items ?? NO_FILES;
   const sheetItem = isCueSheet(item) ? item : files.find((entry) => isCueSheet(entry) && [stem(item.name), nfc(item.name).toLowerCase()].includes(stem(entry.name)));
@@ -436,27 +434,20 @@ export function AudioPreviewWindow({ window }: { window: PreviewWindow }) {
 
   const silent = sound.muted || sound.volume === 0;
   const VolumeIcon = silent ? VolumeX : sound.volume < 0.5 ? Volume1 : Volume2;
-  const download = () => triggerDownload(downloadUrl(rootSlug, item.path));
   const status = failed ? t("Couldn’t play this audio") : loading || (streamed && info.isPending) ? (streamed ? t("Transcoding…") : t("Loading…")) : null;
   const credit = [track?.performer, albumTitle].filter(Boolean).join(" — ");
 
   return (
-    <KagoWindow
+    <PreviewWindowFrame
       window={window}
-      icon={<FileIcon item={item} />}
       // Music goes on playing while its window is put away.
       keepMounted
-      titleExtra={
-        <>
-          {tracks.length > 1 ? (
-            <KagoIconButton label={t("Tracks")} className="size-6" active={panels.tracks} onClick={() => togglePanel("tracks")}>
-              <ListMusic />
-            </KagoIconButton>
-          ) : null}
-          <KagoIconButton label={t("Download")} className="size-6" onClick={download}>
-            <Download />
+      extra={
+        tracks.length > 1 ? (
+          <KagoIconButton label={t("Tracks")} className="size-6" active={panels.tracks} onClick={() => togglePanel("tracks")}>
+            <ListMusic />
           </KagoIconButton>
-        </>
+        ) : null
       }
     >
       {/* The element is there from the start, whatever is on screen, so that what is wired to it is wired once. */}
@@ -508,9 +499,7 @@ export function AudioPreviewWindow({ window }: { window: PreviewWindow }) {
       {resolving ? (
         <KagoLoading />
       ) : tracks.length === 0 ? (
-        <KagoEmptyState className="min-h-0 flex-1" icon={<FileWarning />} title={t("Couldn’t open this cue sheet")} description={t("The audio it points to is not in this folder, or is in a format the browser can’t play.")}>
-          <Button variant="default" onClick={download}>{t("Download")}</Button>
-        </KagoEmptyState>
+        <PreviewFailure className="min-h-0 flex-1" icon={<FileWarning />} title={t("Couldn’t open this cue sheet")} description={t("The audio it points to is not in this folder, or is in a format the browser can’t play.")} onDownload={download} />
       ) : (
         <div className="@container flex min-h-0 flex-1" onKeyDown={onKeyDown}>
           <div ref={stage} tabIndex={-1} className="@container relative min-w-0 flex-1 overflow-hidden bg-black text-white outline-none">
@@ -601,7 +590,7 @@ export function AudioPreviewWindow({ window }: { window: PreviewWindow }) {
           ) : null}
         </div>
       )}
-    </KagoWindow>
+    </PreviewWindowFrame>
   );
 }
 

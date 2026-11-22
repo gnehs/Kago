@@ -1,11 +1,10 @@
-import { AudioLines, Captions, CaptionsOff, Download, FileWarning, Info, ListVideo, X } from "lucide-react";
+import { AudioLines, Captions, CaptionsOff, FileWarning, Info, ListVideo, X } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { api, downloadUrl, previewUrl, thumbnailUrl } from "@/api/client";
 import { useFileList, useMediaInfo, useStoryboard, useSubtitles } from "@/api/hooks";
 import { Button } from "@/components/ui/button";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { KagoDropdownMenu, KagoMenuCheckItem, KagoMenuHeading, KagoMenuNote, KagoMenuSeparator } from "@/components/kago/menu";
-import { KagoWindow } from "@/components/kago/window";
 import { isVideoType } from "@/lib/format";
 import { baseName, parentPath, triggerDownload } from "@/lib/paths";
 import { getSubtitlePref, getVideoHdr, getVideoHdrLift, getVideoPlaylistOpen, getVideoQuality, setSubtitlePref, setVideoHdr, setVideoHdrLift, setVideoPlaylistOpen, setVideoQuality, type VideoQualityPref } from "@/lib/prefs";
@@ -13,7 +12,6 @@ import { languageLabel, pickSubtitle, subtitleLabel } from "@/lib/subtitles";
 import { toast } from "@/stores/toast";
 import { useWorkspaceStore, type PreviewWindow } from "@/stores/workspace";
 import type { FileItem, SubtitleTrack } from "@/types/kago";
-import { FileIcon } from "@/components/kago/file-icon";
 import { useSubtitleRenderer } from "./useSubtitleRenderer";
 import { videoInfoGroups, type VideoInfoGroup } from "./videoInfo";
 import { PLAYER_CONTROL_CLASS, VideoPlayer } from "./VideoPlayer";
@@ -24,6 +22,7 @@ import { canDirectPlay, canPlayHdrStream } from "./videoCapabilities";
 import { createSeekPrewarmer } from "./seekPrewarm";
 import { readyStoryboard, storyboardSheets, timelinePicture } from "./storyboard";
 import { VideoPlaylist } from "./VideoPlaylist";
+import { PreviewWindowFrame } from "./PreviewWindowFrame";
 
 const BITRATE_HINT: Record<number, string> = { 2160: "16 Mbps", 1440: "10 Mbps", 1080: "6 Mbps", 720: "3 Mbps", 480: "1.5 Mbps", 360: "0.8 Mbps" };
 const ENCODER_LABEL: Record<string, string> = { nvenc: "NVIDIA GPU", vaapi: "Intel / AMD GPU", "vaapi-cqp": "Intel / AMD GPU", videotoolbox: "Apple GPU", software: "CPU" };
@@ -41,11 +40,7 @@ const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "bas
 export function VideoPreviewWindow({ window }: { window: PreviewWindow }) {
   const { rootSlug, item } = window.preview;
   return (
-    <KagoWindow
-      window={window}
-      icon={<FileIcon item={item} />}
-      titleExtra={<KagoIconButton label={t("Download")} className="size-6" onClick={() => triggerDownload(downloadUrl(rootSlug, item.path))}><Download /></KagoIconButton>}
-    >
+    <PreviewWindowFrame window={window}>
       <VideoPreview
         rootSlug={rootSlug}
         path={item.path}
@@ -54,7 +49,7 @@ export function VideoPreviewWindow({ window }: { window: PreviewWindow }) {
         onAspect={(aspect) => useWorkspaceStore.getState().setPreviewAspect(window.id, aspect)}
         onNavigate={(target) => useWorkspaceStore.getState().setPreviewItem(window.id, target)}
       />
-    </KagoWindow>
+    </PreviewWindowFrame>
   );
 }
 
