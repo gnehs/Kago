@@ -103,6 +103,10 @@ function fail(reason: "unsupported" | "unreadable", message?: string) {
   kago.fail(reason, message);
 }
 
+// Whatever stops the start short says so, instead of leaving the spinner turning.
+addEventListener("error", () => fail("unreadable"));
+addEventListener("unhandledrejection", () => fail("unreadable"));
+
 function setView(next: View) {
   view = { yaw: next.yaw, pitch: Math.max(-89 * DEGREE, Math.min(89 * DEGREE, next.pitch)), fov: Math.max(MIN_FOV, Math.min(MAX_FOV, next.fov)) };
   dirty = true;
@@ -203,6 +207,11 @@ addEventListener("keydown", (event) => {
 render();
 requestAnimationFrame(frame);
 
+if (typeof VideoDecoder === "undefined") {
+  fail("unsupported", text.unsupported.replace("{codec}", "WebCodecs"));
+  throw new Error("WebCodecs is not available");
+}
+
 const files = [kago.file, ...kago.companions];
 const read: FileReader = (file, start, end) => kago.read(start, end, file);
 let movies: (Movie | null)[];
@@ -239,6 +248,8 @@ for (const { track } of sources) {
 
 /** The sound, from the file of the front lens if it has some, else from any other. */
 async function findAudio(): Promise<StreamSource | null> {
+  // Safari decodes video with WebCodecs before it decodes sound with them; such a browser plays the video silent.
+  if (typeof AudioDecoder === "undefined") return null;
   const order = [...new Set([...sources.map((source) => source.file), ...files.keys()])];
   for (const file of order) {
     const track: Track | undefined = movies[file]?.tracks.find((candidate) => candidate.kind === "audio" && candidate.codec);
