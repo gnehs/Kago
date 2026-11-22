@@ -11,6 +11,7 @@ import { guardedInput, guardedProbe, inputProtocols } from "../lib/ffmpeg-input.
 import { id as createId } from "../lib/ids.js";
 import { idleCores } from "../lib/idle-cores.js";
 import { logger } from "../lib/logger.js";
+import { PANORAMA_HEIGHT, planPanorama, videoStreams, type VideoStream } from "../lib/panorama.js";
 import { sharpAvailable, writeAvif } from "../lib/sharp.js";
 import { Storyboards, type StoryboardState } from "../lib/storyboard.js";
 import { streamLanguage, type PictureSubtitleFormat, type SubtitleFormat } from "../lib/subtitles.js";
@@ -30,6 +31,13 @@ export const mediaSessionSchema = z.object({
   hdr: z.boolean().default(false),
   /** Whether a PQ picture kept as HDR is brightened to sit where other players put it. */
   lift: z.boolean().default(false)
+});
+
+/** A 360° recording to stitch: the opened file, and the other half of it when its camera writes one file per lens. */
+export const mediaPanoramaSchema = z.object({
+  rootSlug: z.string().min(1),
+  path: z.string().min(1),
+  companionPath: z.string().min(1).nullable().default(null)
 });
 
 export const mediaStreamSchema = z.object({
@@ -119,6 +127,8 @@ type Encoder = "software" | "nvenc" | "vaapi" | "vaapi-cqp" | "videotoolbox";
 type Accel = {
   encoder: Encoder;
   input: string[];
+  /** The part of `input` that goes before each file: a second file is decoded on the GPU too. */
+  decode: string[];
   filter: string;
   codec: (maxKbps: number) => string[];
   /** The same two for HDR output, which is 10-bit HEVC. */
@@ -129,10 +139,14 @@ type Accel = {
 /** A filter chain that turns an HDR picture into BT.709 SDR. */
 type Tonemap = { name: string; filter: (hdr: Hdr) => string };
 
+/** A recording of a 360° camera's lenses, stitched by ffmpeg into one picture of the whole sphere. */
+type Panorama = { inputs: string[]; graph: string };
+
 type Session = {
   id: string;
   actorId: string;
   input: string;
+  panorama: Panorama | null;
   dir: string;
   info: MediaInfo;
   height: number;
@@ -141,6 +155,8 @@ type Session = {
   subtitleFile: PictureSubtitleFile | null;
   /** HDR in, HDR out. Such a stream is HEVC in fragmented MP4, the one form of it browsers take over HLS. */
   hdr: boolean;
+  /** Segments in fragmented MP4 behind an init segment, rather than MPEG-TS: for HDR, and for Media Source Extensions. */
+  fragmented: boolean;
   lift: boolean;
   segmentCount: number;
   proc: ChildProcess | null;
@@ -447,28 +463,73 @@ export class MediaService {
     const drawable = subtitleFile ? await this.pictureStreams(subtitleFile) : info.subtitles.filter((item) => item.picture);
     if (subtitleIndex !== null && !drawable.some((item) => item.index === subtitleIndex)) throw new AppError(400, "Unsupported subtitle", "INVALID_INPUT");
 
-    const own = [...this.sessions.values()].filter((session) => session.actorId === actorId).sort((a, b) => a.lastAccess - b.lastAccess);
-    for (const stale of own.slice(0, Math.max(0, own.length - SESSIONS_PER_ACTOR + 1))) this.destroy(stale);
-
     const hdr = options.hdr && this.hdrOutput && Boolean(info.video?.hdr);
-    const id = createId("med");
-    const dir = path.join(this.baseDir, id);
-    await fsp.mkdir(dir, { recursive: true });
-    // A tail shorter than a second is folded into the previous segment, so every listed segment really gets produced.
-    const segmentCount = Math.max(1, Math.floor(info.duration / SEGMENT_SECONDS) + (info.duration % SEGMENT_SECONDS >= 1 ? 1 : 0));
-    this.sessions.set(id, {
-      id,
-      actorId,
-      input: absolutePath,
-      dir,
-      info,
+    const session = await this.addSession(actorId, absolutePath, info, {
+      panorama: null,
       height,
       audioIndex: Math.min(audioIndex, Math.max(0, info.audio.length - 1)),
       subtitleIndex,
       subtitleFile,
       hdr,
+      fragmented: hdr,
       // HLG is relative to the screen already and needs no such correction.
-      lift: hdr && Boolean(options.lift) && info.video?.hdr === "pq",
+      lift: hdr && Boolean(options.lift) && info.video?.hdr === "pq"
+    });
+    return { id: session.id, hdr: session.hdr };
+  }
+
+  /**
+   * A session that stitches a 360° camera's recording into an equirectangular picture, in fragmented MP4 for a
+   * page's Media Source to play. `files` are the opened file and the other half of its recording, if it has one.
+   */
+  async createPanorama(actorId: string, files: Array<{ name: string; absolutePath: string; stat: FileVersion }>) {
+    if (!(await this.available)) throw new AppError(422, "This file cannot be transcoded", "TRANSCODE_UNAVAILABLE");
+    const probed = await Promise.all(files.map(async (file) => ({ ...file, info: await this.info(file.absolutePath, file.stat), videos: await this.probeVideoStreams(file.absolutePath) })));
+    const plan = planPanorama(probed);
+    if (!plan || !probed[0]!.info.transcode) throw new AppError(422, "This file cannot be transcoded", "TRANSCODE_UNAVAILABLE");
+    const inputs = plan.inputs.map((index) => probed[index]!);
+    // The sound, and the clock, are the front lens's; two files of one recording can differ by a frame in length.
+    const front = inputs[0]!;
+    const info = { ...front.info, duration: Math.min(...inputs.map((input) => input.info.duration)) };
+    const session = await this.addSession(actorId, front.absolutePath, info, {
+      panorama: { inputs: inputs.map((input) => input.absolutePath), graph: plan.graph },
+      height: PANORAMA_HEIGHT,
+      audioIndex: 0,
+      subtitleIndex: null,
+      subtitleFile: null,
+      hdr: false,
+      fragmented: true,
+      lift: false
+    });
+    return { id: session.id, duration: info.duration, segmentSeconds: SEGMENT_SECONDS, segmentCount: session.segmentCount };
+  }
+
+  private async probeVideoStreams(absolutePath: string): Promise<VideoStream[]> {
+    try {
+      const result = await this.probeSlots(() =>
+        execFileAsync(this.ffprobe, ["-v", "error", "-print_format", "json", "-show_entries", "stream=index,codec_type,codec_name,width,height:stream_disposition=attached_pic,timed_thumbnails", ...guardedProbe(absolutePath)], { timeout: 20_000, maxBuffer: 1024 * 1024 })
+      );
+      return videoStreams((JSON.parse(result.stdout) as { streams?: Array<Record<string, any>> }).streams ?? []);
+    } catch {
+      throw new AppError(422, "This file is not a playable video", "MEDIA_UNREADABLE");
+    }
+  }
+
+  private async addSession(actorId: string, input: string, info: MediaInfo, options: Pick<Session, "panorama" | "height" | "audioIndex" | "subtitleIndex" | "subtitleFile" | "hdr" | "fragmented" | "lift">): Promise<Session> {
+    const own = [...this.sessions.values()].filter((session) => session.actorId === actorId).sort((a, b) => a.lastAccess - b.lastAccess);
+    for (const stale of own.slice(0, Math.max(0, own.length - SESSIONS_PER_ACTOR + 1))) this.destroy(stale);
+    const id = createId("med");
+    const dir = path.join(this.baseDir, id);
+    await fsp.mkdir(dir, { recursive: true });
+    // A tail shorter than a second is folded into the previous segment, so every listed segment really gets produced.
+    const segmentCount = Math.max(1, Math.floor(info.duration / SEGMENT_SECONDS) + (info.duration % SEGMENT_SECONDS >= 1 ? 1 : 0));
+    const session: Session = {
+      id,
+      actorId,
+      input,
+      dir,
+      info,
+      ...options,
       segmentCount,
       proc: null,
       software: false,
@@ -482,8 +543,9 @@ export class MediaService {
       prewarmRevision: 0,
       prewarmIndex: null,
       warmed: new Map()
-    });
-    return { id, hdr: this.sessions.get(id)!.hdr };
+    };
+    this.sessions.set(id, session);
+    return session;
   }
 
   /** Speculatively encodes up to two segments around a scrub target when foreground work leaves room. */
@@ -517,7 +579,7 @@ export class MediaService {
       return { status: "ready" };
     }
     if (cached) this.removeWarmSegment(session, index);
-    if (session.hdr && !this.readInitBytes(session)) {
+    if (session.fragmented && !this.readInitBytes(session)) {
       session.prewarmIndex = null;
       return { status: "skipped", reason: "init-unavailable" };
     }
@@ -586,8 +648,8 @@ export class MediaService {
 
   playlist(actorId: string, id: string): string {
     const session = this.require(actorId, id);
-    const lines = ["#EXTM3U", `#EXT-X-VERSION:${session.hdr ? 7 : 3}`, `#EXT-X-TARGETDURATION:${SEGMENT_SECONDS + 1}`, "#EXT-X-MEDIA-SEQUENCE:0", "#EXT-X-PLAYLIST-TYPE:VOD"];
-    if (session.hdr) lines.push(`#EXT-X-MAP:URI="${INIT_SEGMENT}"`);
+    const lines = ["#EXTM3U", `#EXT-X-VERSION:${session.fragmented ? 7 : 3}`, `#EXT-X-TARGETDURATION:${SEGMENT_SECONDS + 1}`, "#EXT-X-MEDIA-SEQUENCE:0", "#EXT-X-PLAYLIST-TYPE:VOD"];
+    if (session.fragmented) lines.push(`#EXT-X-MAP:URI="${INIT_SEGMENT}"`);
     for (let index = 0; index < session.segmentCount; index += 1) {
       const last = index === session.segmentCount - 1;
       const length = last ? Math.max(0.1, session.info.duration - index * SEGMENT_SECONDS) : SEGMENT_SECONDS;
@@ -666,7 +728,7 @@ export class MediaService {
    */
   async initSegment(actorId: string, id: string): Promise<string> {
     const session = this.require(actorId, id);
-    if (!session.hdr) throw new AppError(404, "Segment not found", "NOT_FOUND");
+    if (!session.fragmented) throw new AppError(404, "Segment not found", "NOT_FOUND");
     const file = path.join(session.dir, INIT_SEGMENT);
     const deadline = Date.now() + SEGMENT_WAIT_MS;
     let started = false;
@@ -722,7 +784,7 @@ export class MediaService {
   }
 
   private segmentPath(session: Session, index: number): string {
-    return path.join(session.dir, `${index}.${session.hdr ? "m4s" : "ts"}`);
+    return path.join(session.dir, `${index}.${session.fragmented ? "m4s" : "ts"}`);
   }
 
   private advanceHead(session: Session): void {
@@ -804,7 +866,10 @@ export class MediaService {
     ].join(",");
     const upload = session.hdr ? accel.hdrFilter : accel.filter;
     let filters: string[];
-    if (session.subtitleIndex === null) {
+    if (session.panorama) {
+      const tonemap = sourceHdr && this.tonemap ? `,${this.tonemap.filter(sourceHdr)}` : "";
+      filters = ["-filter_complex", `${session.panorama.graph}${tonemap},format=yuv420p${accel.filter}[out]`, "-map", "[out]"];
+    } else if (session.subtitleIndex === null) {
       filters = ["-map", "0:V:0", "-vf", `${picture}${upload}`];
     } else {
       // The subtitle's canvas is fitted to the picture as it comes out, which a cropped film does not fill the box with.
@@ -825,6 +890,8 @@ export class MediaService {
       // Seeking the input, not the output: a run for the middle of the file starts decoding there.
       "-ss", String(seconds),
       ...guardedInput(session.input),
+      // The other lens's file is read from the same moment, so the two pictures stay frame for frame together.
+      ...(session.panorama?.inputs.slice(1).flatMap((other) => [...accel.decode, "-ss", String(seconds), ...guardedInput(other)]) ?? []),
       // A subtitle file keeps its own clock, which `-copyts` lines up with the video's.
       ...(session.subtitleFile && session.subtitleIndex !== null
         ? [...(seconds > SUBTITLE_LEAD_SECONDS ? ["-ss", String(seconds - SUBTITLE_LEAD_SECONDS)] : []), "-protocol_whitelist", inputProtocols(session.subtitleFile.absolutePath), "-f", SUBTITLE_DEMUXER[session.subtitleFile.format], "-i", session.subtitleFile.absolutePath]
@@ -841,11 +908,11 @@ export class MediaService {
       // Keep source timestamps so a run started mid-file lands where the playlist says it does.
       "-copyts", "-avoid_negative_ts", "disabled", "-max_muxing_queue_size", "2048",
       "-f", "hls", "-hls_time", String(SEGMENT_SECONDS),
-      ...(session.hdr ? ["-hls_segment_type", "fmp4", "-hls_fmp4_init_filename", INIT_SEGMENT] : ["-hls_segment_type", "mpegts"]),
+      ...(session.fragmented ? ["-hls_segment_type", "fmp4", "-hls_fmp4_init_filename", INIT_SEGMENT] : ["-hls_segment_type", "mpegts"]),
       // Segments appear under their final name only once complete.
       "-hls_flags", "temp_file",
       "-start_number", String(index),
-      "-hls_segment_filename", path.join(outputDir, `%d.${session.hdr ? "m4s" : "ts"}`),
+      "-hls_segment_filename", path.join(outputDir, `%d.${session.fragmented ? "m4s" : "ts"}`),
       "-hls_playlist_type", "vod", "-hls_list_size", "0",
       // With copyts, a relative -t starts at the source timestamp and can stop before the first sought segment.
       ...(endTime === undefined ? [] : ["-to", String(endTime)]),
@@ -859,12 +926,12 @@ export class MediaService {
   }
 
   private warmCachePath(session: Session, index: number): string {
-    return path.join(this.warmCacheDir(session), `${index}.${session.hdr ? "m4s" : "ts"}`);
+    return path.join(this.warmCacheDir(session), `${index}.${session.fragmented ? "m4s" : "ts"}`);
   }
 
   private warmCompatible(session: Session, cached: { file: string; at: number; initBytes: Buffer | null }): boolean {
     if (!fs.existsSync(cached.file)) return false;
-    if (!session.hdr) return true;
+    if (!session.fragmented) return true;
     if (!cached.initBytes) return false;
     try {
       return fs.readFileSync(path.join(session.dir, INIT_SEGMENT)).equals(cached.initBytes);
@@ -989,8 +1056,8 @@ export class MediaService {
         this.pendingPrewarms.delete(request.sessionId);
         continue;
       }
-      const initBytes = session.hdr ? this.readInitBytes(session) : null;
-      if (session.hdr && !initBytes) {
+      const initBytes = session.fragmented ? this.readInitBytes(session) : null;
+      if (session.fragmented && !initBytes) {
         this.pendingPrewarms.delete(request.sessionId);
         session.prewarmIndex = null;
         continue;
@@ -1050,13 +1117,13 @@ export class MediaService {
   }
 
   private promotePrewarm(job: PrewarmJob, session: Session): void {
-    if (session.hdr) {
+    if (session.fragmented) {
       const expected = job.initBytes;
       const made = this.readInitBytesFrom(path.join(job.dir, INIT_SEGMENT));
       const current = this.readInitBytes(session);
       if (!expected || !made?.equals(expected) || !current?.equals(expected)) return;
     }
-    const extension = session.hdr ? "m4s" : "ts";
+    const extension = session.fragmented ? "m4s" : "ts";
     const end = Math.min(session.segmentCount, job.index + PREWARM_SEGMENTS);
     const found: Array<{ index: number; source: string }> = [];
     for (let index = job.index; index < end; index += 1) {
@@ -1451,6 +1518,7 @@ function accelFor(encoder: Encoder, device = ""): Accel {
       return {
         encoder,
         input: ["-hwaccel", "cuda"],
+        decode: ["-hwaccel", "cuda"],
         filter: "",
         // NVENC only makes forced keyframes seekable (IDR) when asked to.
         codec: (maxKbps) => ["-c:v", "h264_nvenc", ...gop, "-preset", "p4", "-rc", "vbr", "-cq", "24", "-b:v", "0", "-maxrate", `${maxKbps}k`, "-bufsize", `${maxKbps * 2}k`, "-pix_fmt", "yuv420p", "-profile:v", "high", "-forced-idr", "1"],
@@ -1462,6 +1530,7 @@ function accelFor(encoder: Encoder, device = ""): Accel {
       return {
         encoder,
         input: ["-init_hw_device", `vaapi=va:${device}`, "-hwaccel", "vaapi", "-hwaccel_device", "va", "-filter_hw_device", "va"],
+        decode: ["-hwaccel", "vaapi", "-hwaccel_device", "va"],
         filter: ",format=nv12,hwupload",
         // Some Intel generations only do bitrate control with HuC firmware loaded; constant QP always works.
         codec: (maxKbps) => ["-c:v", "h264_vaapi", ...gop, ...(encoder === "vaapi" ? rate(maxKbps) : ["-rc_mode", "CQP", "-qp", "25"]), "-profile:v", "high"],
@@ -1472,6 +1541,7 @@ function accelFor(encoder: Encoder, device = ""): Accel {
       return {
         encoder,
         input: ["-hwaccel", "videotoolbox"],
+        decode: ["-hwaccel", "videotoolbox"],
         filter: "",
         codec: (maxKbps) => ["-c:v", "h264_videotoolbox", ...gop, "-b:v", `${Math.round(maxKbps * 0.7)}k`, "-pix_fmt", "yuv420p", "-profile:v", "high"],
         hdrFilter: "",
@@ -1481,6 +1551,7 @@ function accelFor(encoder: Encoder, device = ""): Accel {
       return {
         encoder: "software",
         input: [],
+        decode: [],
         filter: "",
         codec: (maxKbps) => ["-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-maxrate", `${maxKbps}k`, "-bufsize", `${maxKbps * 2}k`, "-pix_fmt", "yuv420p", "-profile:v", "high"],
         hdrFilter: "",

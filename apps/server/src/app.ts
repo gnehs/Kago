@@ -31,7 +31,7 @@ import { appUrl, externalAppOrderSchema, externalAppSchema, ExternalAppService }
 import { createGroupSchema, GroupService } from "./services/group.service.js";
 import { framingHost, PLUGIN_PREFIX, pluginPolicy, PluginService } from "./services/plugin.service.js";
 import { IconLibraryService } from "./services/icon-library.service.js";
-import { MediaService, mediaAudioSchema, mediaPrewarmSchema, mediaSessionSchema, mediaStreamSchema } from "./services/media.service.js";
+import { MediaService, mediaAudioSchema, mediaPanoramaSchema, mediaPrewarmSchema, mediaSessionSchema, mediaStreamSchema } from "./services/media.service.js";
 import { oidcConfigSchema, OidcService } from "./services/oidc.service.js";
 import { PathService } from "./services/path.service.js";
 import { permissionSetSchema, PermissionService } from "./services/permission.service.js";
@@ -1116,6 +1116,19 @@ function registerApi(app: FastifyInstance, services: Services) {
     if (input.subtitlePath !== null && !subtitleFile) throw new AppError(400, "Unsupported subtitle", "INVALID_INPUT");
     const session = await services.media.createSession(actor.id, file.input, file.stat, { ...input, subtitleFile });
     return { id: session.id, hdr: session.hdr, playlistUrl: `/api/media/sessions/${session.id}/index.m3u8` };
+  });
+  app.post("/api/media/panoramas", async (request) => {
+    const actor = requireActor(request);
+    const input = mediaPanoramaSchema.parse(request.body);
+    // The other half of a recording lies beside the opened file; each is read only by someone who may view it.
+    if (input.companionPath !== null && path.posix.dirname(input.companionPath) !== path.posix.dirname(input.path)) throw new AppError(400, "The other file must be in the same folder", "INVALID_INPUT");
+    const files = await Promise.all(
+      [input.path, ...(input.companionPath === null ? [] : [input.companionPath])].map(async (logicalPath) => {
+        const file = await services.fsService.media(actor, input.rootSlug, logicalPath);
+        return { name: file.name, absolutePath: file.input, stat: file.stat };
+      })
+    );
+    return services.media.createPanorama(actor.id, files);
   });
   app.post("/api/media/sessions/:id/prewarm", async (request) => {
     const actor = requireActor(request);
