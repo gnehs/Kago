@@ -85,3 +85,19 @@ test("each layout's graph makes an equirectangular picture twice as wide as tall
   assert.equal(await stitch(planPanorama([{ name: "a.insv", videos: [video(0, 1280, 640)] }]), [[[1280, 640]]]), expected);
   assert.equal(await stitch(planPanorama([{ name: "a.insv", videos: [video(0, 656, 640)] }]), [[[656, 640]]]), expected);
 });
+
+test("the front lens is the middle of the panorama, the back lens its edges", { skip: !hasFfmpeg && "ffmpeg is not installed" }, async () => {
+  const plan = planPanorama([{ name: "a.osv", videos: [video(0, 640, 640), video(1, 640, 640)] }]);
+  const graph = plan.graph.replace("[0:1]", "[1:0]");
+  const width = PANORAMA_HEIGHT * 2;
+  const { stdout } = await run(
+    ffmpeg,
+    ["-nostdin", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=red:s=640x640", "-f", "lavfi", "-i", "color=c=blue:s=640x640", "-filter_complex", `${graph},format=rgb24[out]`, "-map", "[out]", "-frames:v", "1", "-f", "rawvideo", "-"],
+    { encoding: "buffer", maxBuffer: 64 * 1024 * 1024 }
+  );
+  const pixel = (x, y) => [...stdout.subarray((y * width + x) * 3, (y * width + x) * 3 + 3)];
+  const [red, , blue] = pixel(width / 2, PANORAMA_HEIGHT / 2);
+  assert.ok(red > 200 && blue < 50, `middle is ${pixel(width / 2, PANORAMA_HEIGHT / 2)}`);
+  const [red2, , blue2] = pixel(4, PANORAMA_HEIGHT / 2);
+  assert.ok(blue2 > 200 && red2 < 50, `edge is ${pixel(4, PANORAMA_HEIGHT / 2)}`);
+});

@@ -31,7 +31,8 @@ const isSideBySide = (video: VideoStream) => Math.abs(video.width - 2 * video.he
 const sameSize = (a: VideoStream, b: VideoStream) => a.width === b.width && a.height === b.height;
 /** The square the image circle sits in, centred in a picture a little wider than tall. */
 const lens = (input: number, video: VideoStream, label: string) => `[${input}:${video.stream}]crop=w='min(iw,ih)':h='min(iw,ih)',scale=${LENS_SIZE}:${LENS_SIZE}[${label}]`;
-const project = (input: "dfisheye" | "fisheye") => `v360=input=${input}:output=equirect:ih_fov=${FOV}:iv_fov=${FOV}:w=${PANORAMA_HEIGHT * 2}:h=${PANORAMA_HEIGHT}:interp=linear`;
+// v360 faces the right half of a dual fisheye picture; turned round, the left half, the front lens, is the middle.
+const project = (input: "dfisheye" | "fisheye") => `v360=input=${input}:output=equirect:ih_fov=${FOV}:iv_fov=${FOV}:w=${PANORAMA_HEIGHT * 2}:h=${PANORAMA_HEIGHT}${input === "dfisheye" ? ":yaw=180" : ""}:interp=linear`;
 const stitchTwo = (front: [number, VideoStream], back: [number, VideoStream]) => `${lens(...front, "front")};${lens(...back, "back")};[front][back]hstack=shortest=1,${project("dfisheye")}`;
 
 type Layout = { id: PanoramaLayout; plan(files: PanoramaFile[]): Omit<PanoramaPlan, "layout"> | null };
