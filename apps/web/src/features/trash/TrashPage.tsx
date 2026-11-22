@@ -1,4 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
+import { invalidateKeys } from "@/api/invalidations";
 import { keys } from "@/api/keys";
 import { useWindowScope } from "@/components/kago/window-scope";
 import { Trash2 } from "lucide-react";
@@ -29,7 +30,7 @@ export function TrashPage() {
     await run(async () => {
       followTask(await api<FileTask>(`/api/trash/${itemId}/restore`, { method: "POST" }));
       // Nothing is back in its folder until the task has put it there, which the server tells of then.
-      await Promise.all([keys.trash(), keys.tasks()].map((queryKey) => queryClient.invalidateQueries({ queryKey })));
+      await invalidateKeys(queryClient, [keys.trash(), keys.tasks()]);
     }, t("Couldn’t restore"));
   }
 

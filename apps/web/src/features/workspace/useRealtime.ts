@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { api, taskDownloadUrl } from "@/api/client";
 import { dropLeft, foldersChanged, type FolderChange } from "@/api/hooks";
+import { invalidateEvent, invalidateKeys, isServerEventType } from "@/api/invalidations";
 import { isListingKey, keys } from "@/api/keys";
 import { askForArchivePassword, pendingExtracts } from "@/features/files/ArchivePassword";
 import { pendingDownloads } from "@/features/files/useFileActions";
@@ -23,7 +24,6 @@ export function useRealtime(userId: string, onRemoteWorkspaceChange: () => void)
 
   useEffect(() => {
     const protocol = location.protocol === "https:" ? "wss" : "ws";
-    const invalidate = (...keys: string[]) => keys.forEach((key) => void queryClient.invalidateQueries({ queryKey: [key] }));
     let closed = false;
     let retryCount = 0;
     let reconnectTimer: number | undefined;
@@ -96,31 +96,22 @@ export function useRealtime(userId: string, onRemoteWorkspaceChange: () => void)
     function handleMessage(event: MessageEvent) {
       const message = JSON.parse(event.data) as { type?: string; userId?: string; taskId?: string; error?: string; patch?: { status?: string } };
       const type = String(message.type);
+      const own = message.userId === userId;
+      if (type === "workspace.updated") {
+        if (!own) return;
+        onRemoteWorkspaceChange();
+      }
+      if (isServerEventType(type)) void invalidateEvent(queryClient, type);
       if (type.startsWith("task.")) {
         // Admins also receive other people's task events; only announce your own.
-        if ((type === "task.done" || type === "task.failed") && message.userId === userId && message.taskId) announceTask(type, message.taskId, message.error);
-        invalidate("tasks");
-        if (type === "task.done") invalidate("trash");
-        if (type === "task.done" || type === "task.failed") invalidate("sync-jobs", "convert-jobs");
+        if ((type === "task.done" || type === "task.failed") && own && message.taskId) announceTask(type, message.taskId, message.error);
         if (message.taskId && (type === "task.done" || type === "task.failed" || message.patch?.status === "cancelled")) void settle(message.taskId, type === "task.done");
       }
       // Whoever can see a location hears what changed in it, by anyone; the folders it names are read again.
       if (type === "fs.changed") void foldersChanged(queryClient, message as unknown as FolderChange);
-      if (type === "shelf.updated") invalidate("shelves");
-      if (type === "share.updated") invalidate("shares");
-      if (type === "apps.updated") invalidate("external-apps");
-      if (type === "permission.updated") invalidate("permissions", "roots", "fs");
-      if (type === "roots.updated") invalidate("roots", "storage", "fs");
-      if (type === "settings.updated" && message.userId === userId) void loadSettings();
+      if (type === "settings.updated" && own) void loadSettings();
       // Someone has a new picture: one's own is on the bar, and an administrator's lists show everyone's.
-      if (type === "account.updated") {
-        if (message.userId === userId) void queryClient.invalidateQueries({ queryKey: keys.auth.me() });
-        invalidate("users", "groups");
-      }
-      if (type === "workspace.updated" && message.userId === userId) {
-        onRemoteWorkspaceChange();
-        invalidate("workspace");
-      }
+      if (type === "account.updated" && own) void queryClient.invalidateQueries({ queryKey: keys.auth.me() });
     }
 
     function connect() {
@@ -130,7 +121,7 @@ export function useRealtime(userId: string, onRemoteWorkspaceChange: () => void)
       ws.onopen = () => {
         if (retryCount > 0) {
           onRemoteWorkspaceChange();
-          invalidate("workspace");
+          void invalidateKeys(queryClient, [keys.workspace()]);
           void loadSettings();
         }
         // Whatever changed while the socket was away went unheard. Only listings are read again, and none is started
@@ -141,7 +132,7 @@ export function useRealtime(userId: string, onRemoteWorkspaceChange: () => void)
             : Promise.resolve();
         if (retryCount > 0) void queryClient.invalidateQueries({ queryKey: keys.fs.all(), refetchType: "none" });
         retryCount = 0;
-        invalidate("tasks", "shelves", "shares", "permissions", "roots", "external-apps");
+        void invalidateKeys(queryClient, [keys.tasks(), keys.shelves(), keys.shares(), keys.permissions.all(), keys.roots(), keys.externalApps()]);
         void settleUnheard(listings).catch(() => undefined);
       };
       ws.onmessage = handleMessage;

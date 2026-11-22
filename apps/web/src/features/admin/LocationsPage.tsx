@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useWindowScope } from "@/components/kago/window-scope";
 import { useQueryClient } from "@tanstack/react-query";
-import { keys } from "@/api/keys";
+import { invalidateEvent } from "@/api/invalidations";
 import { ArrowDownUp, Globe, HardDrive, Lock, Network, Plus, Server, SquareTerminal, TriangleAlert } from "lucide-react";
 import { api } from "@/api/client";
 import { useStorage } from "@/api/hooks";
@@ -44,7 +44,7 @@ export function LocationsPage({ roots }: { roots: Root[] }) {
   const storage = useStorage();
   // `true` is a new location; a root is one being edited.
   const [editing, setEditing] = useState<RemoteRoot | true | null>(null);
-  const refresh = () => Promise.all([keys.roots(), keys.storage(), keys.fs.all()].map((queryKey) => queryClient.invalidateQueries({ queryKey })));
+  const refresh = () => invalidateEvent(queryClient, "roots.updated");
   const providers = storage.data?.providers ?? [];
   const providerLabel = (type: string) => providers.find((provider) => provider.type === type)?.label ?? type;
   const canAdd = Boolean(storage.data?.available) && providers.length > 0;

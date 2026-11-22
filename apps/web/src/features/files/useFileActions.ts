@@ -1,4 +1,5 @@
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { invalidateKeys } from "@/api/invalidations";
 import { keys, isListingKey } from "@/api/keys";
 import { api, ApiError, apiLines, downloadUrl, serverMessage } from "@/api/client";
 import { dropLeft } from "@/api/hooks";
@@ -198,7 +199,7 @@ async function undoTrash(queryClient: QueryClient, sources: FileRef[], task: Fil
   }
   if (found.length === 0) throw new Error(t("Nothing to put back"));
   for (const item of found) followTask(await api<FileTask>(`/api/trash/${item.id}/restore`, { method: "POST" }));
-  await Promise.all([keys.trash(), keys.tasks()].map((queryKey) => queryClient.invalidateQueries({ queryKey })));
+  await invalidateKeys(queryClient, [keys.trash(), keys.tasks()]);
 }
 
 /** Resolves to the task moving them, or to nothing when it could not be started. */
