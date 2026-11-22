@@ -14,6 +14,7 @@
     "test:security": "node --test scripts/test-vite-security.mjs",
     "test:store": "node --test scripts/test-workspace-store.mjs",
     "test:prompt": "node --test scripts/test-prompt.mjs",
+    "test:keys": "node --test scripts/test-query-keys.mjs",
     "test:plugins": "node --test scripts/test-plugin-companions.mjs",
     "preview": "vite preview"
   },
