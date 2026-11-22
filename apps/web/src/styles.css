@@ -872,6 +872,15 @@
     box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--kago-danger) 70%, #000000), inset 0 0.5px 0 rgb(255 255 255 / 0.45);
   }
 
+  /*
+   * Under the pointer a key already looks pressed, so holding it down takes it further: darker, and a little smaller,
+   * since in the dark theme the hovered key is already too dark for shading alone to show.
+   */
+  .kago-window-control:active {
+    filter: brightness(0.88);
+    scale: 0.9;
+  }
+
   .kago-window[data-inactive] .kago-window-control:not(:hover) {
     color: var(--kago-text-faint);
     background: none;
