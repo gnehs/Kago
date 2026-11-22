@@ -11,6 +11,7 @@ export const ja: Dictionary = {
   "{duration} left": "残り {duration}",
   "Uploading {name}": "{name} をアップロード中",
   "Cancel upload": "アップロードをキャンセル",
+  "This computer is uploading it. Keep this page open until it finishes.": "このコンピューターでアップロード中です。完了するまでこのページを閉じないでください。",
   "Success": "成功",
   "Failed": "失敗",
   "Denied": "拒否",

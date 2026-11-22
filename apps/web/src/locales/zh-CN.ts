@@ -11,6 +11,7 @@ export const zhCN: Dictionary = {
   "{duration} left": "剩余 {duration}",
   "Uploading {name}": "正在上传 {name}",
   "Cancel upload": "取消上传",
+  "This computer is uploading it. Keep this page open until it finishes.": "由这台电脑上传，完成前请勿关闭",
   "Success": "成功",
   "Failed": "失败",
   "Denied": "拒绝",

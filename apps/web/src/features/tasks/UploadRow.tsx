@@ -1,9 +1,10 @@
+import { Laptop } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatDuration, formatPercent, formatSize, formatWholeSize } from "@/lib/format";
 import type { Upload } from "@/stores/uploads";
 import { t } from "@/lib/i18n";
 
-/** An upload from this tab, laid out as a task is: it has no server task to follow until the files have all gone. */
+/** An upload from this tab, laid out as a task is: it has no server task to follow until the files have all gone. Only this page carries it, so the row says to keep it open. */
 export function UploadRow({ upload }: { upload: Upload }) {
   const sent = upload.total > 0 && upload.loaded >= upload.total;
   const detail = sent
@@ -24,6 +25,10 @@ export function UploadRow({ upload }: { upload: Upload }) {
         </div>
         <progress value={upload.loaded} max={Math.max(upload.total, 1)} />
         <span className="truncate text-xs text-muted tabular-nums">{detail}</span>
+        <span className="flex items-start gap-1.5 text-xs text-muted">
+          <Laptop className="mt-px size-3.5 shrink-0" />
+          {t("This computer is uploading it. Keep this page open until it finishes.")}
+        </span>
         <div className="flex gap-1.5">
           <Button onClick={upload.cancel}>{t("Cancel upload")}</Button>
         </div>

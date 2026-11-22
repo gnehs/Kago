@@ -11,6 +11,7 @@ export const zhTW: Dictionary = {
   "{duration} left": "剩餘 {duration}",
   "Uploading {name}": "正在上傳 {name}",
   "Cancel upload": "取消上傳",
+  "This computer is uploading it. Keep this page open until it finishes.": "由這台電腦上傳，完成前請勿關閉",
   "Success": "成功",
   "Failed": "失敗",
   "Denied": "拒絕",
