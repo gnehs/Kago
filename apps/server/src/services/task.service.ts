@@ -1,4 +1,4 @@
-import { constants as fsConstants, createReadStream, createWriteStream, type Dirent, type Stats } from "node:fs";
+import { constants as fsConstants, createWriteStream } from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { PassThrough, Readable, Transform } from "node:stream";
@@ -9,10 +9,10 @@ import type { Db } from "../db/db.js";
 import { row, rows } from "../db/db.js";
 import { ConvertStopped } from "../lib/convert.js";
 import { AppError, errnoIs, fileSystemRefusal } from "../lib/errors.js";
-import { readFileTags, writeFileTags, type FileTag } from "../lib/file-tags.js";
-import { isSafeLogicalSegment, nfc, safeRelativeZipPath, sameName } from "../lib/filename.js";
+import { isSafeLogicalSegment, nfc, safeRelativeZipPath } from "../lib/filename.js";
 import { id, now } from "../lib/ids.js";
 import { logger } from "../lib/logger.js";
+import { bytesToCarry, collectPathStats, copyTree, countEntries, freeName, limiter, mergeTree, movePath, nearestFolder, recoverRemoteReplaced, recoverReplaced, removeTree, replacePath, StoredNames, swapIn, swapInRemote, treeConcurrency, assertTargetOutsideSource, type Clash, type Found, type FolderEntry, type PathStats } from "../lib/tree-ops.js";
 import { isZipDirectory, isZipSymlink, openZipArchive, zipEntryName } from "../lib/zip-archive.js";
 import { openEncryptedZipEntry, readZipCipherHead, zipCipherOf, zipPasswordFits, ZipPasswordError, type ZipCipher } from "../lib/zip-crypto.js";
 import { SecretBox } from "../lib/secret-box.js";
@@ -20,7 +20,7 @@ import { zipStream, type ZipEntry, type ZipOptions } from "../lib/zip-stream.js"
 import { RcloneJobStopped, refusedForPermission, type RcloneItem, type RcloneStats } from "../storage/rclone-client.js";
 import { runRclone } from "../storage/rclone-daemon.js";
 import { isReservedName, REPLACE_PARTIAL, TRASH_FOLDER } from "../lib/system-files.js";
-import { isRemote, joinFs, transferProgress, type RemoteEntry, type RemoteStorage } from "../storage/remote-storage.js";
+import { isRemote, joinFs, transferProgress } from "../storage/remote-storage.js";
 import type { EventPublisher } from "../ws/events.js";
 import { ArchivePasswordService } from "./archive-password.service.js";
 import type { AuditService } from "./audit.service.js";
@@ -39,10 +39,6 @@ const maxExtractBytes = 1024 * 1024 * 1024 * 2;
 const progressFlushIntervalMs = 500;
 const progressFlushBytes = 1024 * 1024 * 16;
 const cancelCheckIntervalMs = 300;
-/** How many entries of a tree are read or copied at a time. More than this gains nothing on a disk, and less is slow where each one is a round trip. */
-const treeConcurrency = 8;
-/** A file up to this size is copied in one piece; a larger one is streamed, so that it counts and can be stopped on the way. */
-const wholeFileBytes = 1024 * 1024 * 4;
 /** How many files rclone carries at a time. */
 const transferConcurrency = 8;
 const downloadMaxAgeMs = 24 * 60 * 60 * 1000;
@@ -63,8 +59,6 @@ const fileRefSchema = z.object({
  */
 const conflictActions = ["skip", "replace", "keep", "merge_skip", "merge_replace", "merge_keep"] as const;
 type ConflictAction = (typeof conflictActions)[number];
-/** What becomes of one of two that cannot both have the name. */
-type Clash = "skip" | "replace" | "keep";
 type Conflicts = Record<string, ConflictAction>;
 
 export const transferCheckSchema = z.object({
@@ -619,9 +613,9 @@ export class TaskService {
     if (isRemote(folder.root)) {
       const listed = await this.storage.remote.list(folder.root, folder.logicalPath);
       // Each listing is a round trip, so the folder is listed again only when a replacement had to be put right.
-      found = (await recoverRemoteReplaced(this.storage.remote, folder, listed)) ? await this.storage.remote.list(folder.root, folder.logicalPath) : listed;
+      found = (await recoverRemoteReplaced(this.storage.remote, folder, listed, LOADED_AT)) ? await this.storage.remote.list(folder.root, folder.logicalPath) : listed;
     } else {
-      await recoverReplaced(folder.absolutePath);
+      await recoverReplaced(folder.absolutePath, LOADED_AT);
       found = (await fsp.readdir(folder.absolutePath, { withFileTypes: true })).map((entry) => ({ name: entry.name, directory: entry.isDirectory() }));
     }
     return new Map(found.map((entry) => [nfc(entry.name), { name: entry.name, directory: entry.directory }]));
@@ -731,7 +725,7 @@ export class TaskService {
     nameKept(operations.map((operation) => operation.landing), there);
     await this.updateTotals(task.id, totalFiles, totalBytes);
 
-    const stored = new StoredNames();
+    const stored = new StoredNames(LOADED_AT);
     // The first thing a move cannot rename tells that the rest of it is to be copied too, and all of that is added
     // up then, in one go: each thing still to be moved stops standing for one and counts for the files it holds.
     let addedUp = !move;
@@ -1513,7 +1507,7 @@ export class TaskService {
     }
     await this.updateTotals(task.id, Math.max(totalFiles, 1), totalBytes);
 
-    const storedNames = new StoredNames();
+    const storedNames = new StoredNames(LOADED_AT);
     let remainingBytes = maxExtractBytes;
     for (const archive of archives) {
       const zip = await openZipArchive(archive.path);
@@ -2110,25 +2104,11 @@ type RestorableTrashItem = {
   deleted_by: string;
 };
 
-type FolderEntry = { name: string; directory: boolean };
-
 /** Where a source of a copy or move ends up: `occupant` is what has its name there, when that makes way or takes it in. */
 type Landing = { mode: "new" | "skip" | "keep" | "replace" | "merge"; name: string; directory: boolean; clash?: Clash; occupant?: FolderEntry };
 
 /** Sizes are of files only, and a time is 0 where the location keeps none. */
 export type TransferConflict = { rootSlug: string; path: string; name: string; kind: "file" | "folder"; size: number; mtime: number; existing: { kind: "file" | "folder"; size: number; mtime: number }; same: boolean };
-
-/** Called when a move could not rename something and is about to copy it instead, which is when there is something to add up. */
-type BeforeCopy = () => Promise<void>;
-
-/** Hears of what a count comes upon as it goes: so many more files, and bytes. */
-type Found = (files: number, bytes: number) => void;
-
-type PathStats = {
-  bytes: number;
-  /** The files in it, folders not counted. */
-  files: number;
-};
 
 /** How many frames a second a conversion is making its video at, and how tall that comes out. */
 type Pace = { fps: number; height: number | null };
@@ -2155,48 +2135,6 @@ function transferFailure(error: unknown): unknown {
   // Either end may have refused, and rclone does not say which: the disk here, or the account of a remote location.
   if (refusedForPermission(reason)) return new AppError(502, "The transfer was refused for lack of permission at one end. An administrator needs to check the account Kago runs as, or the one a remote location signs in with.", "TRANSFER_PERMISSION_DENIED");
   return new AppError(502, "The transfer failed", "TRANSFER_FAILED");
-}
-
-/** Per-folder index of on-disk names by their NFC form, kept current while one task writes into those folders. */
-class StoredNames {
-  private readonly folders = new Map<string, Map<string, string>>();
-
-  async find(folder: string, name: string): Promise<string | undefined> {
-    return (await this.load(folder)).get(nfc(name));
-  }
-
-  async add(folder: string, name: string): Promise<void> {
-    (await this.load(folder)).set(nfc(name), name);
-  }
-
-  /** A name the folder does not have yet, as close to `name` as there is; see `freeName`. */
-  async free(folder: string, name: string, directory: boolean): Promise<string> {
-    const names = await this.load(folder);
-    return freeName((candidate) => names.has(nfc(candidate)), name, directory);
-  }
-
-  private async load(folder: string): Promise<Map<string, string>> {
-    let names = this.folders.get(folder);
-    if (!names) {
-      await recoverReplaced(folder);
-      const entries = await fsp.readdir(folder).catch((error: unknown) => {
-        if (errnoIs(error, "ENOENT")) return [] as string[];
-        throw error;
-      });
-      names = new Map(entries.map((entry) => [nfc(entry), entry]));
-      this.folders.set(folder, names);
-    }
-    return names;
-  }
-}
-
-/** The name with a number after it, before the extension of a file: the first one nothing has yet. */
-function freeName(isTaken: (name: string) => boolean, name: string, directory: boolean): string {
-  const { name: stem, ext } = directory ? { name, ext: "" } : path.parse(name);
-  for (let copy = 2; ; copy += 1) {
-    const candidate = `${stem} ${copy}${ext}`;
-    if (!isTaken(candidate)) return candidate;
-  }
 }
 
 /** Gives each source that is to be kept beside its namesake a name neither the folder nor another source has. */
@@ -2252,496 +2190,6 @@ async function assertRealPathInside(rootPath: string, targetPath: string): Promi
   if (relative.startsWith("..") || path.isAbsolute(relative)) {
     throw new AppError(403, "Extract target escapes destination", "ZIP_TARGET_ESCAPES_DESTINATION");
   }
-}
-
-/** Lets through at most `max` pieces of work at a time; the rest wait their turn. */
-function limiter(max: number): <T>(work: () => Promise<T>) => Promise<T> {
-  let active = 0;
-  const waiting: Array<() => void> = [];
-  return async (work) => {
-    if (active >= max) await new Promise<void>((resolve) => waiting.push(resolve));
-    else active += 1;
-    try {
-      return await work();
-    } finally {
-      // A waiting piece takes the place over as it is, so nothing that arrives meanwhile can slip in before it.
-      const next = waiting.shift();
-      if (next) next();
-      else active -= 1;
-    }
-  };
-}
-
-function assertFileOrFolder(entry: { isSymbolicLink(): boolean; isFile(): boolean; isDirectory(): boolean }): void {
-  if (entry.isSymbolicLink()) {
-    throw new AppError(403, "Symlink paths are not allowed", "SYMLINK_FORBIDDEN");
-  }
-  if (!entry.isFile() && !entry.isDirectory()) {
-    throw new AppError(403, "Only files and folders are supported", "UNSUPPORTED_FILE_TYPE");
-  }
-}
-
-/** Adds up a file or a whole folder, several entries at a time, and refuses one that holds a symlink or anything else that is neither. */
-async function collectPathStats(targetPath: string, found?: Found): Promise<PathStats> {
-  const limit = limiter(treeConcurrency);
-  const visit = async (current: string, known?: Dirent): Promise<PathStats> => {
-    if (known) assertFileOrFolder(known);
-    // A folder's listing has already said what each entry is; only a file is asked again, for its size.
-    if (!known?.isDirectory()) {
-      const stat = await limit(() => fsp.lstat(current));
-      assertFileOrFolder(stat);
-      if (stat.isFile()) {
-        found?.(1, stat.size);
-        return { bytes: stat.size, files: 1 };
-      }
-    }
-    const entries = await limit(() => fsp.readdir(current, { withFileTypes: true }));
-    const children = await Promise.all(entries.map((entry) => visit(path.join(current, entry.name), entry)));
-    return children.reduce((sum, child) => ({ bytes: sum.bytes + child.bytes, files: sum.files + child.files }), { bytes: 0, files: 0 });
-  };
-  return visit(targetPath);
-}
-
-/**
- * How much has to be copied to get a file or folder into `folder`: all of it when that is on another disk, and
- * nothing on its own, where it is renamed however much it holds. Only what is copied is added up, as reading a
- * whole folder through takes minutes on a hard disk.
- */
-async function bytesToCarry(sourcePath: string, folder: string, found?: Found): Promise<number> {
-  const [item, there] = await Promise.all([fsp.lstat(sourcePath), fsp.stat(folder)]);
-  return item.dev === there.dev ? 0 : (await collectPathStats(sourcePath, found)).bytes;
-}
-
-/** How many files and folders there are to remove, the one given among them, or none if it has gone. Only names are read, not what each one holds. */
-async function countEntries(targetPath: string, found?: Found): Promise<number> {
-  const limit = limiter(treeConcurrency);
-  const visit = async (current: string, directory: boolean): Promise<number> => {
-    found?.(1, 0);
-    if (!directory) return 1;
-    const entries = await limit(() => fsp.readdir(current, { withFileTypes: true }));
-    const counts = await Promise.all(entries.map((entry) => visit(path.join(current, entry.name), entry.isDirectory())));
-    return counts.reduce((sum, count) => sum + count, 1);
-  };
-  const stat = await fsp.lstat(targetPath).catch((error: unknown) => {
-    if (!errnoIs(error, "ENOENT")) throw error;
-    return null;
-  });
-  return stat ? visit(targetPath, stat.isDirectory()) : 0;
-}
-
-/**
- * Removes a file or a whole folder, several entries at a time, saying so of each one as it goes: `removed` may
- * throw to stop it. A symlink is removed, never followed. What has gone meanwhile is not missed.
- */
-async function removeTree(targetPath: string, removed: () => void): Promise<void> {
-  const limit = limiter(treeConcurrency);
-  const gone = (error: unknown) => {
-    if (!errnoIs(error, "ENOENT")) throw error;
-  };
-  const visit = async (current: string, directory: boolean): Promise<void> => {
-    if (directory) {
-      const entries = await limit(() => fsp.readdir(current, { withFileTypes: true }).catch((error: unknown) => (gone(error), [])));
-      await Promise.all(entries.map((entry) => visit(path.join(current, entry.name), entry.isDirectory())));
-      await limit(() => fsp.rmdir(current).catch(gone));
-    } else await limit(() => fsp.unlink(current).catch(gone));
-    removed();
-  };
-  const stat = await fsp.lstat(targetPath).catch((error: unknown) => (gone(error), null));
-  if (stat) await visit(targetPath, stat.isDirectory());
-}
-
-/** The folder, or the nearest one above it that is still there. */
-async function nearestFolder(folder: string): Promise<string> {
-  const parent = path.dirname(folder);
-  return parent === folder || (await fsp.stat(folder).catch(() => null))?.isDirectory() ? folder : nearestFolder(parent);
-}
-
-/**
- * Refuses to put a folder into itself, which a copy would fill with copies of itself until the disk is full. The
- * folder it would land in is compared with the source by what it is, as one location may be another's folder
- * mounted a second time.
- */
-async function assertTargetOutsideSource(sourcePath: string, targetPath: string): Promise<void> {
-  const stat = await fsp.lstat(sourcePath);
-  if (!stat.isDirectory()) return;
-  // Landing where it already is, a folder is not inside itself: it has its own name against it, and that is asked about.
-  if (await liesWithin(path.dirname(targetPath), sourcePath)) {
-    throw new AppError(409, "Cannot copy or move a folder into itself", "TARGET_INSIDE_SOURCE");
-  }
-}
-
-/**
- * Copies one file to a name that is not taken. A small one goes in one piece; a large one is streamed, counted and
- * stoppable on the way. A copy that does not get to the end is removed again, unless the name was taken after all.
- */
-async function copyFile(sourcePath: string, targetPath: string, stat: Stats, tags: FileTag[], onBytes: (bytes: number) => void, signal: AbortSignal): Promise<void> {
-  try {
-    await copyFileContent(sourcePath, targetPath, stat, onBytes, signal);
-  } catch (error) {
-    if (!errnoIs(error, "EEXIST")) await fsp.rm(targetPath, { force: true }).catch(() => undefined);
-    throw error;
-  }
-  await giveTags(targetPath, tags);
-  await preservePathMetadata(targetPath, stat);
-}
-
-/** Puts a source's tags on its copy, before a mode that may not be written to is. A volume that keeps none leaves the copy without. */
-async function giveTags(targetPath: string, tags: FileTag[]): Promise<void> {
-  if (tags.length > 0) await writeFileTags(path.dirname(targetPath), path.basename(targetPath), tags).catch(() => undefined);
-}
-
-async function copyFileContent(sourcePath: string, targetPath: string, stat: Stats, onBytes: (bytes: number) => void, signal: AbortSignal): Promise<void> {
-  if (stat.size <= wholeFileBytes) {
-    await fsp.copyFile(sourcePath, targetPath, fsConstants.COPYFILE_EXCL | fsConstants.COPYFILE_FICLONE);
-    onBytes(stat.size);
-  } else {
-    const byteCounter = new Transform({
-      transform(chunk, _encoding, callback) {
-        // onBytes is also the cancellation checkpoint; route its throw through the pipeline.
-        try {
-          onBytes(Buffer.byteLength(chunk));
-          callback(null, chunk);
-        } catch (error) {
-          callback(error as Error);
-        }
-      }
-    });
-    await pipeline(createReadStream(sourcePath), byteCounter, createWriteStream(targetPath, { flags: "wx", mode: Number(stat.mode) }), { signal });
-  }
-}
-
-/** A file or folder of a source that a copy carried, as it was when it was read. */
-type Copied = { path: string; stat: Stats };
-
-/**
- * Copies a file or folder to a target that did not exist before, several files at a time.
- * The first thing to go wrong stops the rest, and the copy fails once all of them have stopped. A failed copy
- * removes what it made of the target, and never a target that was there before it, as one merged into is.
- * Each file and folder carried is told to `copied`, for a move to take away only those.
- */
-async function copyTree(sourcePath: string, targetPath: string, onBytes: (bytes: number) => void, onFile?: () => void, copied?: Copied[]): Promise<void> {
-  const limit = limiter(treeConcurrency);
-  const stop = new AbortController();
-  let failure: unknown;
-  // A file copies itself or nothing; only a folder of the target can be left half made.
-  let made = false;
-  const turn = <T>(work: () => Promise<T>) =>
-    limit(async () => {
-      stop.signal.throwIfAborted();
-      return work();
-    });
-  const visit = async (from: string, to: string, tags: FileTag[]): Promise<void> => {
-    try {
-      const stat = await turn(() => fsp.lstat(from));
-      assertFileOrFolder(stat);
-      if (stat.isFile()) {
-        await turn(() => copyFile(from, to, stat, tags, onBytes, stop.signal));
-        copied?.push({ path: from, stat });
-        onFile?.();
-        return;
-      }
-      const entries = await turn(async () => {
-        // Made writable, as it has yet to be filled: a folder that may not be written to gets its mode once it is.
-        await fsp.mkdir(to);
-        if (to === targetPath) made = true;
-        const names = await fsp.readdir(from);
-        return { names, tags: await readFileTags(from, names) };
-      });
-      copied?.push({ path: from, stat });
-      await Promise.all(entries.names.map((entry) => visit(path.join(from, entry), path.join(to, entry), entries.tags.get(entry) ?? [])));
-      if (stop.signal.aborted) return;
-      await giveTags(to, tags);
-      await preservePathMetadata(to, stat);
-    } catch (error) {
-      if (stop.signal.aborted) return;
-      failure = error;
-      stop.abort();
-    }
-  };
-  await fsp.mkdir(path.dirname(targetPath), { recursive: true });
-  const name = path.basename(sourcePath);
-  await visit(sourcePath, targetPath, (await readFileTags(path.dirname(sourcePath), [name])).get(name) ?? []);
-  if (!stop.signal.aborted) return;
-  if (made) await fsp.rm(targetPath, { recursive: true, force: true }).catch(() => undefined);
-  throw failure;
-}
-
-/**
- * Puts a file or folder in the place of what is at `occupant`. Nothing there is touched before what replaces it is
- * whole: a move within one disk is a rename, and anything else is first copied to a name of its own. What was there
- * is then set aside, the new one renamed into place, and the old one deleted last, which on a slow disk is what
- * takes long. A moved source that had to be copied goes after that.
- *
- * Both wait in a folder of their own beside the target, what was set aside under its own name, so that should the
- * server stop between the two renames, `recoverReplaced` can put it back.
- */
-async function replacePath(
-  sourcePath: string,
-  occupant: string,
-  targetPath: string,
-  move: boolean,
-  onBytes: (bytes: number) => void,
-  onFile?: () => void,
-  beforeCopy?: BeforeCopy
-): Promise<void> {
-  const staging = path.join(path.dirname(targetPath), `${REPLACE_PARTIAL}${Date.now()}-${id("temp")}`);
-  const aside = path.join(staging, "old", path.basename(occupant));
-  const arriving = path.join(staging, "new");
-  await fsp.mkdir(path.dirname(aside), { recursive: true });
-  try {
-    const renamed =
-      move &&
-      (await swapIn(sourcePath, occupant, aside, targetPath).then(
-        () => true,
-        (error: unknown) => {
-          if (errnoIs(error, "EXDEV")) return false;
-          throw error;
-        }
-      ));
-    if (!renamed) {
-      const copied: Copied[] = [];
-      if (move) await beforeCopy?.();
-      await copyTree(sourcePath, arriving, onBytes, onFile, copied);
-      await swapIn(arriving, occupant, aside, targetPath);
-      await fsp.rm(staging, { recursive: true, force: true });
-      if (move) await removeCopied(copied);
-      return;
-    }
-  } catch (error) {
-    // What was there is back in its place unless that failed too, and then it stays where it can be found again.
-    await fsp.rm(arriving, { recursive: true, force: true }).catch(() => undefined);
-    await fsp
-      .rmdir(path.dirname(aside))
-      .then(() => fsp.rmdir(staging))
-      .catch(() => undefined);
-    throw error;
-  }
-  await fsp.rm(staging, { recursive: true, force: true });
-}
-
-/** Sets what is at `occupant` aside and renames `incoming` into `target`; should that fail, what was set aside goes back. */
-async function swapIn(incoming: string, occupant: string, aside: string, target: string): Promise<void> {
-  // What has gone meanwhile leaves nothing to set aside.
-  const setAside = await fsp.rename(occupant, aside).then(
-    () => true,
-    (error: unknown) => {
-      if (errnoIs(error, "ENOENT")) return false;
-      throw error;
-    }
-  );
-  try {
-    await renameFree(incoming, target);
-  } catch (error) {
-    if (setAside) await fsp.rename(aside, occupant);
-    throw error;
-  }
-}
-
-/**
- * Puts right what a replacement cut short left in a folder: its folder beside the target, with what had been set
- * aside in it. That goes back to its name unless something has taken it since, and the rest of it goes. Only what
- * an earlier run left is touched, as this one may be in the middle of a replacement of its own. What an older Kago
- * left under such a name, a half-made copy or the source it had already renamed there, is given a name that is seen.
- */
-async function recoverReplaced(folder: string): Promise<void> {
-  const names = await fsp.readdir(folder).catch(() => [] as string[]);
-  for (const name of names) {
-    if (!name.startsWith(REPLACE_PARTIAL)) continue;
-    const staging = path.join(folder, name);
-    const started = /^(\d+)-/.exec(name.slice(REPLACE_PARTIAL.length));
-    try {
-      if (!started) {
-        const directory = (await fsp.lstat(staging)).isDirectory();
-        const taken = (candidate: string) => names.some((other) => sameName(other, candidate));
-        const visible = taken("Recovered") ? freeName(taken, "Recovered", directory) : "Recovered";
-        await renameFree(staging, path.join(folder, visible));
-        names.push(visible);
-        continue;
-      }
-      if (Number(started[1]) >= LOADED_AT) continue;
-      const aside = path.join(staging, "old");
-      for (const held of await fsp.readdir(aside).catch(() => [] as string[])) {
-        const back = path.join(folder, held);
-        if (!(await fsp.lstat(back).catch(() => null))) await fsp.rename(path.join(aside, held), back);
-      }
-      await fsp.rm(staging, { recursive: true, force: true });
-    } catch (error) {
-      logger.warn("could not recover an interrupted replacement", { path: staging, error: error instanceof Error ? error.message : String(error) });
-    }
-  }
-}
-
-/**
- * `swapIn` on a remote location, in the folder `staging` beside the target that the replacement was copied into as
- * `new`: what is in the way is set aside in it under `old`, the replacement moved into place, and the folder removed.
- */
-async function swapInRemote(remote: RemoteStorage, folder: SafePath, staging: string, occupant: FolderEntry, name: string, directory: boolean): Promise<void> {
-  const at = (...names: string[]) => path.posix.join(folder.logicalPath, ...names);
-  const aside = at(staging, "old", occupant.name);
-  const setAside = await remote.move(folder.root, at(occupant.name), aside, occupant.directory).then(
-    () => true,
-    (error: unknown) => {
-      if (error instanceof AppError && error.code === "PATH_NOT_FOUND") return false;
-      throw error;
-    }
-  );
-  try {
-    await remote.move(folder.root, at(staging, "new"), at(name), directory);
-  } catch (error) {
-    if (setAside) await remote.move(folder.root, aside, at(occupant.name), occupant.directory);
-    throw error;
-  }
-  await remote.remove(folder.root, at(staging), true);
-}
-
-/**
- * `recoverReplaced` on a remote location, by the same rules, given what the folder holds. An older Kago copied a
- * replacement to the staging name itself and removed what it replaced before moving it in, so whatever such a name
- * holds besides `old` and `new` is that copy, which may be all that is left of either, and is given a name that is
- * seen. Says whether anything was put right.
- */
-async function recoverRemoteReplaced(remote: RemoteStorage, folder: SafePath, found: RemoteEntry[]): Promise<boolean> {
-  const at = (...names: string[]) => path.posix.join(folder.logicalPath, ...names);
-  const names = found.map((entry) => entry.name);
-  let changed = false;
-  for (const entry of found) {
-    if (!entry.name.startsWith(REPLACE_PARTIAL)) continue;
-    const started = /^(\d+)-/.exec(entry.name.slice(REPLACE_PARTIAL.length));
-    try {
-      if (started && Number(started[1]) >= LOADED_AT) continue;
-      const held = started && entry.directory ? await remote.list(folder.root, at(entry.name)) : null;
-      if (!held || held.some((item) => item.name !== "old" && item.name !== "new")) {
-        const taken = (candidate: string) => names.some((other) => sameName(other, candidate));
-        const visible = taken("Recovered") ? freeName(taken, "Recovered", entry.directory) : "Recovered";
-        await remote.move(folder.root, at(entry.name), at(visible), entry.directory);
-        names.push(visible);
-        changed = true;
-        continue;
-      }
-      if (held.some((item) => item.name === "old")) {
-        for (const kept of await remote.list(folder.root, at(entry.name, "old"))) {
-          if (!names.some((other) => sameName(other, kept.name))) {
-            await remote.move(folder.root, at(entry.name, "old", kept.name), at(kept.name), kept.directory);
-            names.push(kept.name);
-          }
-        }
-      }
-      await remote.remove(folder.root, at(entry.name), true);
-      changed = true;
-    } catch (error) {
-      logger.warn("could not recover an interrupted replacement", { path: at(entry.name), error: error instanceof Error ? error.message : String(error) });
-    }
-  }
-  return changed;
-}
-
-/**
- * Puts what a folder holds into one that is already there. What the target does not have is carried whole, a
- * folder it has is merged in turn, and `clash` says what becomes of anything else the two both have.
- * A moved folder goes once it is empty, which it is not when something of it was skipped.
- */
-async function mergeTree(
-  sourcePath: string,
-  targetPath: string,
-  clash: Clash,
-  move: boolean,
-  names: StoredNames,
-  onBytes: (bytes: number) => void,
-  onFile?: () => void,
-  beforeCopy?: BeforeCopy
-): Promise<void> {
-  for (const entry of await fsp.readdir(sourcePath, { withFileTypes: true })) {
-    assertFileOrFolder(entry);
-    const from = path.join(sourcePath, entry.name);
-    const carry = (to: string) => (move ? movePath(from, to, onBytes, onFile, beforeCopy) : copyTree(from, to, onBytes, onFile));
-    const existing = await names.find(targetPath, entry.name);
-    if (existing === undefined) {
-      await carry(path.join(targetPath, entry.name));
-      await names.add(targetPath, entry.name);
-      continue;
-    }
-    const occupant = path.join(targetPath, existing);
-    // A link there is something in the way like any file, and never a folder to put things in.
-    const folderThere = (await fsp.lstat(occupant)).isDirectory();
-    if (entry.isDirectory() && folderThere) await mergeTree(from, occupant, clash, move, names, onBytes, onFile, beforeCopy);
-    else if (clash === "replace" && entry.isDirectory() === folderThere) await replacePath(from, occupant, occupant, move, onBytes, onFile, beforeCopy);
-    // Nobody was asked about a file and a folder that share a name deep inside a merge, so neither takes the other's place.
-    else if (clash === "keep" || clash === "replace") {
-      const kept = await names.free(targetPath, nfc(entry.name), entry.isDirectory());
-      await carry(path.join(targetPath, kept));
-      await names.add(targetPath, kept);
-    }
-  }
-  if (move) {
-    await fsp.rmdir(sourcePath).catch((error: unknown) => {
-      if (!errnoIs(error, "ENOTEMPTY") && !errnoIs(error, "EEXIST")) throw error;
-    });
-  }
-}
-
-async function preservePathMetadata(targetPath: string, stat: Stats): Promise<void> {
-  await fsp.chmod(targetPath, Number(stat.mode)).catch(() => undefined);
-  await fsp.utimes(targetPath, stat.atime, stat.mtime).catch(() => undefined);
-}
-
-/**
- * Moves a file or folder to a name that is not taken. Within one disk it is renamed; to another it is copied, and
- * then only what was copied leaves the source. Whatever arrived in the source, or changed, while it was being
- * copied stays there, rather than going with the rest without ever having reached the target.
- */
-async function movePath(sourcePath: string, targetPath: string, onBytes: (bytes: number) => void, onFile?: () => void, beforeCopy?: BeforeCopy): Promise<boolean> {
-  try {
-    await renameFree(sourcePath, targetPath);
-    return false;
-  } catch (error) {
-    if (!errnoIs(error, "EXDEV")) throw error;
-  }
-  const copied: Copied[] = [];
-  await beforeCopy?.();
-  await copyTree(sourcePath, targetPath, onBytes, onFile, copied);
-  await removeCopied(copied);
-  return true;
-}
-
-/**
- * Renames, but never over something else. A rename takes the place of a file that is in the way without a word, and
- * a volume that does not mind the case, or a name that was free when the task started, can put one there. Only the
- * entry itself may answer to the new name, as it does when no more than its spelling changes.
- */
-async function renameFree(from: string, to: string): Promise<void> {
-  const [moving, there] = await Promise.all([fsp.lstat(from), fsp.lstat(to).catch(() => null)]);
-  if (there && (there.dev !== moving.dev || there.ino !== moving.ino)) throw new AppError(409, "Target already exists", "TARGET_EXISTS");
-  await fsp.rename(from, to);
-}
-
-/**
- * Takes away what a copy carried off: each file that is still the one that was read, then each folder that is
- * left empty. A file that is new, or was changed while it was being copied, stays where it is, and so does its folder.
- */
-async function removeCopied(copied: Copied[]): Promise<void> {
-  const limit = limiter(treeConcurrency);
-  const kept: string[] = [];
-  await Promise.all(
-    copied
-      .filter((item) => !item.stat.isDirectory())
-      .map((item) =>
-        limit(async () => {
-          const now = await fsp.lstat(item.path).catch(() => null);
-          if (!now) return;
-          if (now.ino === item.stat.ino && now.size === item.stat.size && now.mtimeMs === item.stat.mtimeMs) await fsp.unlink(item.path);
-          else kept.push(item.path);
-        })
-      )
-  );
-  // Deepest first: a folder is longer by name than the one it is in.
-  const folders = copied.filter((item) => item.stat.isDirectory()).map((item) => item.path).sort((a, b) => b.length - a.length);
-  for (const folder of folders) {
-    await fsp.rmdir(folder).catch((error: unknown) => {
-      if (errnoIs(error, "ENOTEMPTY") || errnoIs(error, "EEXIST")) kept.push(folder);
-      else if (!errnoIs(error, "ENOENT")) throw error;
-    });
-  }
-  if (kept.length > 0) logger.warn("a move left behind what changed in its source while it was copied", { paths: kept.slice(0, 20), count: kept.length });
 }
 
 async function assertNoExistingSymlinkSegments(rootPath: string, targetPath: string): Promise<void> {
