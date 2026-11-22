@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { keys } from "@/api/keys";
 import type { QueryClient } from "@tanstack/react-query";
 import { api } from "@/api/client";
 import { KagoDialog, KagoDialogActions } from "@/components/kago/dialog";
@@ -45,7 +46,7 @@ export async function startExtract(queryClient: QueryClient, request: ExtractReq
   pendingExtracts.set(task.id, request);
   extractWindows.set(task.id, scope);
   followTask(task);
-  await queryClient.invalidateQueries({ queryKey: ["tasks"] });
+  await queryClient.invalidateQueries({ queryKey: keys.tasks() });
   return task;
 }
 

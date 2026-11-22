@@ -1,4 +1,5 @@
 import { useEffect, useReducer, useRef, useState } from "react";
+import { keys } from "@/api/keys";
 import { useQueryClient } from "@tanstack/react-query";
 import { FileWarning, PlugZap } from "lucide-react";
 import { API_VERSION, MAX_READ_BYTES, parsePluginMessage, THEME_TOKENS, type FailReason, type FileInfo, type HostMessage, type PanoramaInfo, type PanoramaSegment, type PluginMessage, type Theme } from "@kago/plugin-sdk/protocol";
@@ -170,7 +171,7 @@ export function PluginPreviewWindow({ window, previewer }: { window: PreviewWind
   const [attempt, setAttempt] = useState(0);
   const retry = () => {
     // The plugin's address changes when the server restarts, which is one reason a frame stops loading.
-    void queryClient.invalidateQueries({ queryKey: ["plugins"] });
+    void queryClient.invalidateQueries({ queryKey: keys.plugins() });
     setAttempt((count) => count + 1);
   };
 

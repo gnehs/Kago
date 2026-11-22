@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { keys } from "@/api/keys";
 import { useQueryClient } from "@tanstack/react-query";
 import { ChevronRight, FolderPlus, HardDrive, Server } from "lucide-react";
 import { api } from "@/api/client";
@@ -77,7 +78,7 @@ function Picker({ roots, initial, writable, onCancel, onChoose }: { roots: Root[
     const made = await run(() => api<{ path: string }>("/api/fs/mkdir", { method: "POST", body: JSON.stringify({ rootSlug: selected.rootSlug, path: selected.path, name }) }), t("Couldn’t create the folder"));
     setCreating(false);
     if (!made) return;
-    await queryClient.invalidateQueries({ queryKey: ["fs", "list", selected.rootSlug, selected.path] });
+    await queryClient.invalidateQueries({ queryKey: keys.fs.list(selected.rootSlug, selected.path) });
     expand(selected);
     setSelected({ rootSlug: selected.rootSlug, path: made.path });
     setNaming(null);

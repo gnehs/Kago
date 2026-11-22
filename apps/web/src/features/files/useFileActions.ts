@@ -250,7 +250,7 @@ export function downloadFiles(queryClient: QueryClient, rootSlug: string, picked
 
 /** What a folder holds: its listing when one has been read whole, or else what the server says of it now. */
 async function folderItems(queryClient: QueryClient, rootSlug: string, path: string): Promise<FileItem[]> {
-  const listed = queryClient.getQueryData<FileList>(["fs", "list", rootSlug, path]);
+  const listed = queryClient.getQueryData<FileList>(keys.fs.list(rootSlug, path));
   if (listed && !listed.partial) return listed.items;
   const items: FileItem[] = [];
   for await (const line of apiLines<{ items?: FileItem[]; error?: string; code?: string }>(`/api/fs/list?${new URLSearchParams({ rootSlug, path }).toString()}`)) {

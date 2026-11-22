@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { keys } from "@/api/keys";
 import { useQueries, type UseQueryResult } from "@tanstack/react-query";
 import { ArrowRight, GripVertical, X } from "lucide-react";
 import { create } from "zustand";
@@ -54,7 +55,7 @@ function useRenameInfo(rootSlug: string, items: FileItem[], sources: PartSource[
   const { data, settled } = useQueries({
     // The same keys the inspector and the players ask under, so a file already read is not read again.
     queries: wanted.map(({ source, path, mtime }, index) => ({
-      queryKey: source === "photo" ? ["fs", "exif", rootSlug, path] : ["media", "info", rootSlug, path, mtime],
+      queryKey: source === "photo" ? keys.fs.exif(rootSlug, path) : keys.media.info(rootSlug, path, mtime),
       queryFn: () => api<ImageMetadata | MediaInfo>(`${source === "photo" ? "/api/fs/exif" : "/api/media/info"}?${new URLSearchParams({ rootSlug, path }).toString()}`),
       enabled: index < reach,
       retry: false,

@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { keys } from "@/api/keys";
 import { FileWarning } from "lucide-react";
 import { lazy, Suspense, useCallback, useState } from "react";
 import { previewUrl } from "@/api/client";
@@ -26,7 +27,7 @@ export function OfficePreviewWindow({ window, kind }: { window: PreviewWindow; k
   const tooLarge = item.size > MAX_OFFICE_BYTES;
   const onError = useCallback(() => setUnreadable(true), []);
   const file = useQuery({
-    queryKey: ["fs", "bytes", rootSlug, item.path, item.mtime],
+    queryKey: keys.fs.bytes(rootSlug, item.path, item.mtime),
     queryFn: async () => {
       const response = await fetch(previewUrl(rootSlug, item.path), { credentials: "include" });
       if (!response.ok) throw new Error(t("Couldn’t read the file"));

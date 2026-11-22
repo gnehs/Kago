@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { keys } from "@/api/keys";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, AudioLines, Captions, Film, X } from "lucide-react";
 import { create } from "zustand";
@@ -176,7 +177,7 @@ function TrackEditor({ request, onClose }: { request: EditorRequest; onClose: ()
     const task = await run(() => api<FileTask>("/api/remux", { method: "POST", body: JSON.stringify(body) }), t("Couldn’t start repacking"));
     setBusy(false);
     if (!task) return;
-    await queryClient.invalidateQueries({ queryKey: ["tasks"] });
+    await queryClient.invalidateQueries({ queryKey: keys.tasks() });
     followTask(task);
     onClose();
   }

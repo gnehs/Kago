@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { keys } from "@/api/keys";
 import { Eye, FileWarning, Pencil, Save } from "lucide-react";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { api, ApiError, previewUrl } from "@/api/client";
@@ -62,7 +63,7 @@ export function TextPreviewWindow({ window }: { window: PreviewWindow }) {
 
   // Fetched once: a refetch behind the user's back would replace what they are typing.
   const file = useQuery({
-    queryKey: ["fs", "content", rootSlug, item.path],
+    queryKey: keys.fs.content(rootSlug, item.path),
     queryFn: () => loadText(rootSlug, item.path),
     staleTime: Infinity,
     gcTime: 0,
@@ -107,8 +108,8 @@ export function TextPreviewWindow({ window }: { window: PreviewWindow }) {
       baseMtime.current = meta.mtime;
       snapshot.commit();
       useWorkspaceStore.getState().setPreviewItem(window.id, { ...item, size: meta.size, mtime: meta.mtime });
-      void queryClient.invalidateQueries({ queryKey: ["fs", "list", rootSlug, parentPath(item.path)] });
-      void queryClient.invalidateQueries({ queryKey: ["fs", "meta", rootSlug, item.path] });
+      void queryClient.invalidateQueries({ queryKey: keys.fs.list(rootSlug, parentPath(item.path)) });
+      void queryClient.invalidateQueries({ queryKey: keys.fs.meta(rootSlug, item.path) });
     } catch (error) {
       toast(errorMessage(error, t("Couldn’t save")), "error");
     } finally {
