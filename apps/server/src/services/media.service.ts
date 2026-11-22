@@ -909,6 +909,9 @@ export class MediaService {
       "-copyts", "-avoid_negative_ts", "disabled", "-max_muxing_queue_size", "2048",
       "-f", "hls", "-hls_time", String(SEGMENT_SECONDS),
       ...(session.fragmented ? ["-hls_segment_type", "fmp4", "-hls_fmp4_init_filename", INIT_SEGMENT] : ["-hls_segment_type", "mpegts"]),
+      // Every run's segments count their time from 0 and the page places them by segment number, as a playlist would;
+      // the edit list ffmpeg adds to a run started mid-file must not move them again.
+      ...(session.panorama ? ["-hls_segment_options", "use_editlist=0"] : []),
       // Segments appear under their final name only once complete.
       "-hls_flags", "temp_file",
       "-start_number", String(index),
