@@ -1,12 +1,12 @@
 import fs from "node:fs";
 import { Readable } from "node:stream";
 import type { FastifyInstance } from "fastify";
-import { AppError, publicError } from "../lib/errors.js";
+import { z } from "zod";
+import { AppError } from "../lib/errors.js";
 import { sendFile } from "../lib/send-file.js";
 import { zipStream } from "../lib/zip-stream.js";
 import { fileTagsSchema, fsQuerySchema, mkdirSchema, renameManySchema, renameSchema, searchQuerySchema, sqliteRowsSchema, thumbnailQuerySchema, uploadConflictSchema, writeTextSchema, zipQuerySchema } from "../services/fs.service.js";
-import { contentDisposition, isPlayable, sandboxContent, sendUserFile } from "./respond.js";
-import { z } from "zod";
+import { abortOnClose, contentDisposition, isPlayable, sandboxContent, sendNdjson, sendUserFile } from "./respond.js";
 import type { Services } from "./services.js";
 import { guards } from "./guards.js";
 
@@ -18,52 +18,17 @@ export function register(app: FastifyInstance, s: Services) {
     const query = fsQuerySchema.parse(request.query);
     if (!request.headers.accept?.includes("application/x-ndjson")) return s.fsService.list(actor, query.rootSlug, query.path);
     // Asked for line by line, a folder is sent as it is read: what it is, then its entries a few at a time, then that it is whole.
-    const gone = new AbortController();
-    reply.raw.on("close", () => gone.abort());
+    const gone = abortOnClose(reply);
     const { batches, ...folder } = await s.fsService.listStream(actor, query.rootSlug, query.path, gone.signal);
-    const line = (value: unknown) => Buffer.from(`${JSON.stringify(value)}\n`);
-    reply.header("Content-Type", "application/x-ndjson; charset=utf-8");
-    reply.header("X-Accel-Buffering", "no");
-    return reply.send(
-      Readable.from(
-        (async function* () {
-          yield line(folder);
-          try {
-            for await (const items of batches) yield line({ items });
-            yield line({ done: true });
-          } catch (error) {
-            if (gone.signal.aborted) return;
-            // The answer has begun and can no longer be turned into a refusal; its last line says what went wrong.
-            yield line(publicError(error).body);
-          }
-        })()
-      )
-    );
+    return sendNdjson(reply, gone.signal, folder, batches, () => ({ done: true }));
   });
   // A search is always sent line by line: what was searched, the matches a folder at a time, then whether it went through everything.
   app.get("/api/fs/search", async (request, reply) => {
     const actor = requireActor(request);
     const query = searchQuerySchema.parse(request.query);
-    const gone = new AbortController();
-    reply.raw.on("close", () => gone.abort());
+    const gone = abortOnClose(reply);
     const { batches, state, ...folder } = await s.fsService.search(actor, query.rootSlug, query.path, query.q, gone.signal);
-    const line = (value: unknown) => Buffer.from(`${JSON.stringify(value)}\n`);
-    reply.header("Content-Type", "application/x-ndjson; charset=utf-8");
-    reply.header("X-Accel-Buffering", "no");
-    return reply.send(
-      Readable.from(
-        (async function* () {
-          yield line(folder);
-          try {
-            for await (const items of batches) yield line({ items });
-            yield line({ done: true, truncated: state.truncated });
-          } catch (error) {
-            if (gone.signal.aborted) return;
-            yield line(publicError(error).body);
-          }
-        })()
-      )
-    );
+    return sendNdjson(reply, gone.signal, folder, batches, () => ({ done: true, truncated: state.truncated }));
   });
   app.get("/api/fs/meta", async (request) => {
     const actor = requireActor(request);
@@ -74,8 +39,7 @@ export function register(app: FastifyInstance, s: Services) {
     const actor = requireActor(request);
     const query = fsQuerySchema.parse(request.query);
     // A large folder takes a while to read through; whoever looks elsewhere meanwhile drops the connection, and the count with it.
-    const gone = new AbortController();
-    reply.raw.on("close", () => gone.abort());
+    const gone = abortOnClose(reply);
     try {
       return await s.fsService.size(actor, query.rootSlug, query.path, gone.signal);
     } catch (error) {

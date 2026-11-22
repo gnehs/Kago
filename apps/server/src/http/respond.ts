@@ -1,4 +1,6 @@
+import { Readable } from "node:stream";
 import type { FastifyReply, FastifyRequest } from "fastify";
+import { publicError } from "../lib/errors.js";
 import { nfc } from "../lib/filename.js";
 import { sendSource } from "../lib/send-file.js";
 import { isBrowserViewable } from "../lib/viewable.js";
@@ -52,3 +54,32 @@ export function sendUserFile(request: FastifyRequest, reply: FastifyReply, sourc
 }
 
 export const isPlayable = (contentType: string) => /^(video|audio)\//.test(contentType);
+
+/** Aborts when the client drops the connection, so work done for an answer nobody will read can stop. */
+export function abortOnClose(reply: FastifyReply): AbortController {
+  const gone = new AbortController();
+  reply.raw.on("close", () => gone.abort());
+  return gone;
+}
+
+/** Sends `head`, then each batch as `{ items }`, then `end()`, one JSON value per line, as the batches are produced. */
+export function sendNdjson(reply: FastifyReply, gone: AbortSignal, head: unknown, batches: AsyncIterable<unknown>, end: () => unknown) {
+  const line = (value: unknown) => Buffer.from(`${JSON.stringify(value)}\n`);
+  reply.header("Content-Type", "application/x-ndjson; charset=utf-8");
+  reply.header("X-Accel-Buffering", "no");
+  return reply.send(
+    Readable.from(
+      (async function* () {
+        yield line(head);
+        try {
+          for await (const items of batches) yield line({ items });
+          yield line(end());
+        } catch (error) {
+          if (gone.aborted) return;
+          // The answer has begun and can no longer be turned into a refusal; its last line says what went wrong.
+          yield line(publicError(error).body);
+        }
+      })()
+    )
+  );
+}
