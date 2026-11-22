@@ -735,7 +735,7 @@ export class TaskService {
     // Anything with a remote end is carried by rclone, which reaches both sides itself.
     if (isRemote(dest.root) || resolved.some((source) => isRemote(source.root))) return this.runTransfer(task, actor, resolved, dest, move, conflicts);
 
-    const operations = [];
+    const operations: Array<{ safeSource: SafePath; landing: Landing; bytes: number; files: number }> = [];
     const targetPaths = new Set<string>();
     // Read once for all of them: what is there already.
     const there = await this.entries(dest);
@@ -748,7 +748,9 @@ export class TaskService {
       if (move) this.assertNotFixed(safeSource);
       else if (safeSource.logicalPath === "/") throw new AppError(400, "Invalid path", "INVALID_PATH");
       this.assertNotFixed(dest, this.storage.name(safeSource));
-      const stats = await collectPathStats(safeSource.absolutePath, found);
+      // A move is a rename wherever one is to be had, and what is renamed is one thing however much it holds: only
+      // what turns out to need copying is added up, when it does. A copy reads everything, and is added up here.
+      const stats = move ? { files: 1, bytes: 0 } : await collectPathStats(safeSource.absolutePath, found);
       // A folder with no file in it still counts as one thing to carry.
       const files = Math.max(stats.files, 1);
       totalBytes += stats.bytes;
@@ -765,10 +767,29 @@ export class TaskService {
     await this.updateTotals(task.id, totalFiles, totalBytes);
 
     const stored = new StoredNames();
-    for (const { safeSource, landing, bytes, files } of operations) {
+    // The first thing a move cannot rename tells that the rest of it is to be copied too, and all of that is added
+    // up then, in one go: each thing still to be moved stops standing for one and counts for the files it holds.
+    let addedUp = !move;
+    const addUpFrom = async (first: number) => {
+      if (addedUp) return;
+      addedUp = true;
+      const found = this.counter(task.id);
+      for (const operation of operations.slice(first)) {
+        const stats = await collectPathStats(operation.safeSource.absolutePath, found);
+        const files = Math.max(stats.files, 1);
+        totalFiles += files - operation.files;
+        totalBytes += stats.bytes - operation.bytes;
+        operation.files = files;
+        operation.bytes = stats.bytes;
+      }
+      await this.updateTotals(task.id, totalFiles, totalBytes);
+    };
+    for (const [index, operation] of operations.entries()) {
+      const { safeSource, landing } = operation;
       await this.progress(task.id, safeSource.logicalPath);
       let countedFiles = 0;
       let countedBytes = 0;
+      const beforeCopy = () => addUpFrom(index);
       const onFile = () => {
         countedFiles += 1;
         this.countFiles(task.id, 1);
@@ -780,9 +801,9 @@ export class TaskService {
       if (landing.mode !== "skip") {
         const target = path.join(dest.absolutePath, landing.name);
         const occupant = landing.occupant ? path.join(dest.absolutePath, landing.occupant.name) : target;
-        if (landing.mode === "merge") await mergeTree(safeSource.absolutePath, occupant, landing.clash ?? "keep", move, stored, onBytes, onFile);
-        else if (landing.mode === "replace") await replacePath(safeSource.absolutePath, occupant, target, move, onBytes, onFile);
-        else if (move) await movePath(safeSource.absolutePath, target, onBytes, onFile);
+        if (landing.mode === "merge") await mergeTree(safeSource.absolutePath, occupant, landing.clash ?? "keep", move, stored, onBytes, onFile, beforeCopy);
+        else if (landing.mode === "replace") await replacePath(safeSource.absolutePath, occupant, target, move, onBytes, onFile, beforeCopy);
+        else if (move) await movePath(safeSource.absolutePath, target, onBytes, onFile, beforeCopy);
         else await copyTree(safeSource.absolutePath, target, onBytes, onFile);
         const movedTo = path.posix.join(dest.logicalPath, landing.name);
         if (move) this.preferences.moved(safeSource.root.id, safeSource.logicalPath, dest.root.id, movedTo);
@@ -797,8 +818,8 @@ export class TaskService {
         });
       }
       // Whatever was not counted on the way: a folder renamed into place, the one an empty folder stands for, what was skipped.
-      this.bumpProcessedBytes(task.id, bytes - countedBytes);
-      await this.bumpProcessed(task.id, files - countedFiles);
+      this.bumpProcessedBytes(task.id, operation.bytes - countedBytes);
+      await this.bumpProcessed(task.id, operation.files - countedFiles);
     }
   }
 
@@ -2157,6 +2178,9 @@ type Landing = { mode: "new" | "skip" | "keep" | "replace" | "merge"; name: stri
 /** Sizes are of files only, and a time is 0 where the location keeps none. */
 export type TransferConflict = { rootSlug: string; path: string; name: string; kind: "file" | "folder"; size: number; mtime: number; existing: { kind: "file" | "folder"; size: number; mtime: number }; same: boolean };
 
+/** Called when a move could not rename something and is about to copy it instead, which is when there is something to add up. */
+type BeforeCopy = () => Promise<void>;
+
 /** Hears of what a count comes upon as it goes: so many more files, and bytes. */
 type Found = (files: number, bytes: number) => void;
 
@@ -2511,7 +2535,15 @@ async function copyTree(sourcePath: string, targetPath: string, onBytes: (bytes:
  * Both wait in a folder of their own beside the target, what was set aside under its own name, so that should the
  * server stop between the two renames, `recoverReplaced` can put it back.
  */
-async function replacePath(sourcePath: string, occupant: string, targetPath: string, move: boolean, onBytes: (bytes: number) => void, onFile?: () => void): Promise<void> {
+async function replacePath(
+  sourcePath: string,
+  occupant: string,
+  targetPath: string,
+  move: boolean,
+  onBytes: (bytes: number) => void,
+  onFile?: () => void,
+  beforeCopy?: BeforeCopy
+): Promise<void> {
   const staging = path.join(path.dirname(targetPath), `${REPLACE_PARTIAL}${Date.now()}-${id("temp")}`);
   const aside = path.join(staging, "old", path.basename(occupant));
   const arriving = path.join(staging, "new");
@@ -2528,6 +2560,7 @@ async function replacePath(sourcePath: string, occupant: string, targetPath: str
       ));
     if (!renamed) {
       const copied: Copied[] = [];
+      if (move) await beforeCopy?.();
       await copyTree(sourcePath, arriving, onBytes, onFile, copied);
       await swapIn(arriving, occupant, aside, targetPath);
       await fsp.rm(staging, { recursive: true, force: true });
@@ -2667,11 +2700,20 @@ async function recoverRemoteReplaced(remote: RemoteStorage, folder: SafePath, fo
  * folder it has is merged in turn, and `clash` says what becomes of anything else the two both have.
  * A moved folder goes once it is empty, which it is not when something of it was skipped.
  */
-async function mergeTree(sourcePath: string, targetPath: string, clash: Clash, move: boolean, names: StoredNames, onBytes: (bytes: number) => void, onFile?: () => void): Promise<void> {
+async function mergeTree(
+  sourcePath: string,
+  targetPath: string,
+  clash: Clash,
+  move: boolean,
+  names: StoredNames,
+  onBytes: (bytes: number) => void,
+  onFile?: () => void,
+  beforeCopy?: BeforeCopy
+): Promise<void> {
   for (const entry of await fsp.readdir(sourcePath, { withFileTypes: true })) {
     assertFileOrFolder(entry);
     const from = path.join(sourcePath, entry.name);
-    const carry = (to: string) => (move ? movePath(from, to, onBytes, onFile) : copyTree(from, to, onBytes, onFile));
+    const carry = (to: string) => (move ? movePath(from, to, onBytes, onFile, beforeCopy) : copyTree(from, to, onBytes, onFile));
     const existing = await names.find(targetPath, entry.name);
     if (existing === undefined) {
       await carry(path.join(targetPath, entry.name));
@@ -2681,8 +2723,8 @@ async function mergeTree(sourcePath: string, targetPath: string, clash: Clash, m
     const occupant = path.join(targetPath, existing);
     // A link there is something in the way like any file, and never a folder to put things in.
     const folderThere = (await fsp.lstat(occupant)).isDirectory();
-    if (entry.isDirectory() && folderThere) await mergeTree(from, occupant, clash, move, names, onBytes, onFile);
-    else if (clash === "replace" && entry.isDirectory() === folderThere) await replacePath(from, occupant, occupant, move, onBytes, onFile);
+    if (entry.isDirectory() && folderThere) await mergeTree(from, occupant, clash, move, names, onBytes, onFile, beforeCopy);
+    else if (clash === "replace" && entry.isDirectory() === folderThere) await replacePath(from, occupant, occupant, move, onBytes, onFile, beforeCopy);
     // Nobody was asked about a file and a folder that share a name deep inside a merge, so neither takes the other's place.
     else if (clash === "keep" || clash === "replace") {
       const kept = await names.free(targetPath, nfc(entry.name), entry.isDirectory());
@@ -2707,7 +2749,7 @@ async function preservePathMetadata(targetPath: string, stat: Stats): Promise<vo
  * then only what was copied leaves the source. Whatever arrived in the source, or changed, while it was being
  * copied stays there, rather than going with the rest without ever having reached the target.
  */
-async function movePath(sourcePath: string, targetPath: string, onBytes: (bytes: number) => void, onFile?: () => void): Promise<boolean> {
+async function movePath(sourcePath: string, targetPath: string, onBytes: (bytes: number) => void, onFile?: () => void, beforeCopy?: BeforeCopy): Promise<boolean> {
   try {
     await renameFree(sourcePath, targetPath);
     return false;
@@ -2715,6 +2757,7 @@ async function movePath(sourcePath: string, targetPath: string, onBytes: (bytes:
     if (!errnoIs(error, "EXDEV")) throw error;
   }
   const copied: Copied[] = [];
+  await beforeCopy?.();
   await copyTree(sourcePath, targetPath, onBytes, onFile, copied);
   await removeCopied(copied);
   return true;

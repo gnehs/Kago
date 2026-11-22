@@ -120,7 +120,7 @@ test("minimum file-manager demo flow", async () => {
     assert.deepEqual(Object.keys(byPath(afterReset.json.folderViews)).sort(), ["/views-kept", "/views-kept/views-renamed/inner"]);
     await rm(path.join(fixture.dataDir, "photos", "views-kept"), { recursive: true });
 
-    // A folder is counted by the files in it, whether they are copied one by one or it is renamed into place in one go.
+    // A folder that is copied is counted by the files in it; one that is renamed into place is one thing, and never read.
     await mkdir(path.join(fixture.dataDir, "photos", "counted", "inner", "empty"), { recursive: true });
     await mkdir(path.join(fixture.dataDir, "photos", "counted-to", "hollow"), { recursive: true });
     for (const name of ["a.txt", "b.txt", "inner/c.txt"]) await writeFile(path.join(fixture.dataDir, "photos", "counted", name), name);
@@ -130,7 +130,7 @@ test("minimum file-manager demo flow", async () => {
       return { status, total_files, processed_files };
     };
     assert.deepEqual(await counted("copy", "/counted", "/counted-to"), { status: "done", total_files: 3, processed_files: 3 });
-    assert.deepEqual(await counted("move", "/counted-to/counted", "/counted-to/hollow"), { status: "done", total_files: 3, processed_files: 3 });
+    assert.deepEqual(await counted("move", "/counted-to/counted", "/counted-to/hollow"), { status: "done", total_files: 1, processed_files: 1 });
     // One with no file in it is still one thing to carry.
     assert.deepEqual(await counted("copy", "/counted/inner/empty", "/counted-to"), { status: "done", total_files: 1, processed_files: 1 });
     await rm(path.join(fixture.dataDir, "photos", "counted"), { recursive: true });
@@ -194,7 +194,7 @@ test("minimum file-manager demo flow", async () => {
     assert.deepEqual(await tree(path.join(clashDir, "to", "box")), { "deep/": "", "deep/x 2.txt": "new x", "deep/x.txt": "old x", "old.txt": "old", "one 2.txt": "new one", "one.txt": "old one", "two.txt": "new two" });
     // Moved, the source folder goes once it is empty, and stays with whatever was skipped.
     await relay();
-    assert.deepEqual(await clashing("move", ["a.txt", "box"], { "a.txt": "replace", box: "merge_replace" }).then((task) => [task.status, task.total_files, task.processed_files]), ["done", 4, 4]);
+    assert.deepEqual(await clashing("move", ["a.txt", "box"], { "a.txt": "replace", box: "merge_replace" }).then((task) => [task.status, task.total_files, task.processed_files]), ["done", 2, 2]);
     assert.deepEqual(await tree(path.join(clashDir, "from")), { "b.txt": "new b" });
     assert.deepEqual(await tree(path.join(clashDir, "to")), { "a 2.txt": "old a 2", "a.txt": "new a", "box/": "", "box/deep/": "", "box/deep/x.txt": "new x", "box/old.txt": "old", "box/one.txt": "new one", "box/two.txt": "new two" });
     await relay();
