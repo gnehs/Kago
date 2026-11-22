@@ -1,24 +1,12 @@
 import type { Kago, PanoramaInfo } from "@kago/plugin-sdk";
 import { fragmentTime, parseMovie, readMoov, type Track } from "./mp4";
-import { Signal, type Playback } from "./player";
+import { settle, Signal, type Playback } from "./player";
 import { keepFrom, nextSegment, placement, seekInto, type Run } from "./segments";
 
 /** Times a segment is asked for again before playback gives up. The server waits most of a minute on each. */
 const RETRIES = 3;
 
 export type PanoramaStats = { mode: "panorama"; decoded: number; presented: number; dropped: number; firstFrame: number | null; stalls: number; stalled: number };
-
-const settle = (target: EventTarget, success: string) =>
-  new Promise<void>((resolve, reject) => {
-    const done = (event: Event) => {
-      target.removeEventListener(success, done);
-      target.removeEventListener("error", done);
-      if (event.type === success) resolve();
-      else reject(new Error(`${success} failed`));
-    };
-    target.addEventListener(success, done);
-    target.addEventListener("error", done);
-  });
 
 /** What an init segment holds: the type a SourceBuffer is made for, out of its tracks' codecs, and its video track. */
 async function readInit(init: Uint8Array) {

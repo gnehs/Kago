@@ -1,9 +1,6 @@
 import { MAX_READ_BYTES } from "@kago/plugin-sdk";
 import type { Track } from "./mp4";
-import { planReads, type Span } from "./reads";
-
-/** Reads bytes of one of the recording's files: 0 the opened one, `i` its `i - 1`th companion. */
-export type FileReader = (file: number, start: number, end: number) => Promise<Uint8Array>;
+import { sampleReader, type FileReader, type SampleFetch, type Span } from "./reads";
 
 export type StreamSource = { file: number; track: Track };
 
@@ -13,10 +10,10 @@ const READ_AHEAD = 2;
 const BATCH = 0.5;
 /** Batches being fetched at once, so the next is on its way while one is decoded. */
 const BATCHES_AT_ONCE = 3;
-/** Reads asked of Kago at once: what it makes at a time for a frame. It turns away a frame that queues many more. */
-const READS_AT_ONCE = 3;
+/** Reads asked of Kago at once: what it makes at a time for a frame. */
+export const READS_AT_ONCE = 3;
 /** Bytes between two samples that are read through rather than skipped with a second read. */
-const MAX_GAP = 512 * 1024;
+export const MAX_GAP = 512 * 1024;
 /** Decoded frames held per stream. A hardware decoder has only so many, and stops when they are all held. */
 const MAX_FRAMES = 6;
 /** Frames a stream has decoded ahead before a stalled playhead moves again. */
@@ -112,6 +109,19 @@ export class Signal {
   }
 }
 
+/** Resolves when `target` fires `success`, and rejects when it fires `error` first. */
+export const settle = (target: EventTarget, success: string) =>
+  new Promise<void>((resolve, reject) => {
+    const done = (event: Event) => {
+      target.removeEventListener(success, done);
+      target.removeEventListener("error", done);
+      if (event.type === success) resolve();
+      else reject(new Error(`${success} failed`));
+    };
+    target.addEventListener(success, done);
+    target.addEventListener("error", done);
+  });
+
 export const videoConfig = (track: Track): VideoDecoderConfig => ({
   codec: track.codec ?? "",
   codedWidth: track.width,
@@ -152,18 +162,18 @@ export class Player implements Playback {
   private seekTarget: number | null = null;
   private seekStarted = 0;
   private nextSeek: number | null = null;
-  private reading = 0;
-  private readers: (() => void)[] = [];
+  private readonly fetch: SampleFetch;
   private starved = false;
   private destroyed = false;
 
   constructor(
     sources: StreamSource[],
     audio: StreamSource | null,
-    private readonly read: FileReader,
+    read: FileReader,
     private readonly present: (stream: number, frame: VideoFrame) => void,
     private readonly fail: (error: unknown) => void
   ) {
+    this.fetch = sampleReader(read, MAX_READ_BYTES, MAX_GAP, READS_AT_ONCE);
     const first = sources[0]!.track;
     this.frameDuration = first.samples.durations[0] || 1 / 30;
     this.duration = Math.min(...sources.map((source) => source.track.duration));
@@ -409,39 +419,7 @@ export class Player implements Playback {
       const source = stream >= 0 ? this.streams[stream]! : this.audio!;
       return { file: source.file, offset: source.track.samples.offsets[index]!, size: source.track.samples.sizes[index]! };
     });
-    const data: Uint8Array[] = [];
-    await Promise.all(
-      planReads(spans, MAX_READ_BYTES, MAX_GAP).map(async (read) => {
-        const bytes = await this.readAll(read.file, read.start, read.end);
-        for (const index of read.spans) {
-          const at = spans[index]!.offset - read.start;
-          data[index] = bytes.subarray(at, at + spans[index]!.size);
-        }
-      })
-    );
-    return { picks, data };
-  }
-
-  private async readAll(file: number, start: number, end: number) {
-    const bytes = new Uint8Array(end - start);
-    for (let at = start; at < end; ) {
-      const chunk = await this.limited(() => this.read(file, at, end));
-      if (chunk.byteLength === 0) throw new Error("the file ended early");
-      bytes.set(chunk, at - start);
-      at += chunk.byteLength;
-    }
-    return bytes;
-  }
-
-  private async limited<T>(run: () => Promise<T>) {
-    while (this.reading >= READS_AT_ONCE) await new Promise<void>((resolve) => this.readers.push(resolve));
-    this.reading++;
-    try {
-      return await run();
-    } finally {
-      this.reading--;
-      this.readers.shift()?.();
-    }
+    return { picks, data: await this.fetch(spans) };
   }
 
   private decodeAudio(index: number, data: Uint8Array) {
