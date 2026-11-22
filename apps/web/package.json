@@ -13,6 +13,7 @@
     "test:compatibility": "node --test scripts/test-server-compatibility-groups.mjs",
     "test:security": "node --test scripts/test-vite-security.mjs",
     "test:store": "node --test scripts/test-workspace-store.mjs",
+    "test:prompt": "node --test scripts/test-prompt.mjs",
     "test:plugins": "node --test scripts/test-plugin-companions.mjs",
     "preview": "vite preview"
   },
