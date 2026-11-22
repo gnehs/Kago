@@ -15,7 +15,8 @@ import { logger } from "../lib/logger.js";
 import { PANORAMA_HEIGHT, planPanorama, videoStreams, type VideoStream } from "../lib/panorama.js";
 import { sharpAvailable, writeAvif } from "../lib/sharp.js";
 import { Storyboards, type StoryboardState } from "../lib/storyboard.js";
-import { streamLanguage, TEXT_SUBTITLES, type PictureSubtitleFormat, type SubtitleFormat } from "../lib/subtitles.js";
+import { isPictureFormat, streamLanguage, TEXT_SUBTITLES, type PictureSubtitleFormat, type SubtitleFormat } from "../lib/subtitles.js";
+import type { FsService } from "./fs.service.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -120,6 +121,8 @@ type Hdr = "pq" | "hlg";
 /** Only what tells one version of a file from the next is read from `stat`. */
 type FileVersion = { size: number; mtimeMs: number };
 
+/** A sidecar subtitle file as `FsService.subtitles` lists it. */
+type Sidecar = Awaited<ReturnType<FsService["subtitles"]>>[number];
 export type PictureSubtitleFile = { absolutePath: string; stat: FileVersion; format: PictureSubtitleFormat };
 
 type Encoder = "software" | "nvenc" | "vaapi" | "vaapi-cqp" | "videotoolbox";
@@ -218,6 +221,8 @@ const INIT_SEGMENT = "init.mp4";
 const LIFT_GAIN = 2.03;
 /** The mastering peak assumed for a picture that does not give one. */
 const DEFAULT_PEAK_NITS = 1000;
+/** What the player calls each kind of picture subtitle. */
+const PICTURE_FORMAT_NAMES: Record<string, string> = { hdmv_pgs_subtitle: "pgs", dvd_subtitle: "vobsub", dvb_subtitle: "dvb" };
 /** The demuxer each kind of subtitle file is read with. It is named outright, so what is in the file cannot pick another. */
 const SUBTITLE_DEMUXER: Record<PictureSubtitleFormat, string> = { pgs: "sup", vobsub: "vobsub" };
 /** How far before the video a subtitle file starts being read, so a line already on screen at that point is there. */
@@ -370,6 +375,73 @@ export class MediaService {
       this.subtitleProbes.set(key, streams);
     }
     return streams;
+  }
+
+  /**
+   * Every subtitle track of a video the player can offer: the files lying next to it, then the streams inside it,
+   * with the picture ones last, and the fonts its container carries.
+   */
+  async subtitleTracks(rootSlug: string, logicalPath: string, file: { input: string; stat: FileVersion }, sidecars: Sidecar[]) {
+    // Something ffprobe cannot read simply has no streams of its own to offer.
+    const info = await this.info(file.input, file.stat).catch(() => null);
+    const own = new URLSearchParams({ rootSlug, path: logicalPath }).toString();
+    const embedded = info?.subtitles ?? [];
+    // A DVD index holds a stream for each language; they are listed apart, and say their own language where the name does not.
+    const pictureFiles = info?.transcode
+      ? (
+          await Promise.all(
+            sidecars.map(async ({ path: sidecarPath, name, absolutePath, stat, ...track }) => {
+              if (!isPictureFormat(track.format) || !absolutePath || !stat) return [];
+              const streams = await this.pictureStreams({ absolutePath, stat, format: track.format });
+              return streams.map((stream) => ({
+                ...track,
+                language: track.language || stream.language,
+                id: streams.length > 1 ? `file:${sidecarPath}#${stream.index}` : `file:${sidecarPath}`,
+                embedded: false,
+                url: "",
+                file: sidecarPath,
+                stream: stream.index
+              }));
+            })
+          )
+        ).flat()
+      : [];
+    return {
+      tracks: [
+        ...sidecars
+          .filter((sidecar) => !isPictureFormat(sidecar.format))
+          .map(({ path: sidecarPath, name, absolutePath, stat, ...track }) => ({
+            ...track,
+            id: `file:${sidecarPath}`,
+            embedded: false,
+            url: `/api/fs/preview?${new URLSearchParams({ rootSlug, path: sidecarPath }).toString()}`
+          })),
+        ...embedded
+          .filter((stream) => stream.text)
+          .map(({ index, codec, text, picture, ...track }) => ({
+            ...track,
+            format: codec === "ass" || codec === "ssa" ? "ass" : "srt",
+            id: `stream:${index}`,
+            embedded: true,
+            url: `/api/media/subtitle?${own}&index=${index}`
+          })),
+        // Picture subtitles (Blu-ray, DVD) come after the text ones: showing one means transcoding, as it is drawn into the frames.
+        ...pictureFiles,
+        ...embedded
+          .filter((stream) => stream.picture && info?.transcode)
+          .map(({ index, codec, text, picture, ...track }) => ({
+            ...track,
+            format: PICTURE_FORMAT_NAMES[codec] ?? "picture",
+            id: `stream:${index}`,
+            embedded: true,
+            url: "",
+            stream: index
+          }))
+      ],
+      fonts: (info?.fonts ?? []).map((font) => `/api/media/attachment?${own}&index=${font.index}`),
+      /** Subtitles in a form that can be neither handed to the browser nor drawn into the picture. */
+      unsupported: embedded.filter((stream) => !stream.text && !(stream.picture && info?.transcode)).length
+    };
   }
 
   /** A font attached to the file, e.g. the ones a Matroska release carries for its styled subtitles. */
