@@ -109,7 +109,7 @@ export function CommandPalette({ open, roots, isAdmin, onClose }: { open: boolea
     <Dialog.Root open={open} onOpenChange={(next) => !next && onClose()}>
       <Dialog.Portal>
         <Dialog.Backdrop className="kago-pop fixed inset-0 z-[900] bg-overlay" />
-        <Dialog.Popup aria-label={t("Quick open")} className="kago-pop fixed top-[18vh] left-1/2 z-[900] flex max-h-[calc(82vh-16px)] w-[min(560px,calc(100vw-32px))] -translate-x-1/2 flex-col kago-glass overflow-hidden rounded-lg outline-none">
+        <Dialog.Popup aria-label={t("Quick open")} className="kago-pop fixed top-[15vh] left-1/2 z-[900] flex max-h-[min(460px,calc(85vh-16px))] w-[min(560px,calc(100vw-32px))] -translate-x-1/2 flex-col kago-glass overflow-hidden rounded-lg outline-none">
           {/* What was typed belongs to one opening: the next one starts empty. */}
           <Palette roots={roots} isAdmin={isAdmin} onClose={onClose} />
         </Dialog.Popup>
