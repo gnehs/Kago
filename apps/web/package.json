@@ -16,6 +16,7 @@
     "test:prompt": "node --test scripts/test-prompt.mjs",
     "test:keys": "node --test scripts/test-query-keys.mjs",
     "test:plugins": "node --test scripts/test-plugin-companions.mjs",
+    "test:player": "node --test scripts/test-player-keys.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

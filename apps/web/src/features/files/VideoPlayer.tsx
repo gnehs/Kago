@@ -1,8 +1,9 @@
-import { Maximize, Minimize, Pause, PictureInPicture2, Play, SkipBack, SkipForward, Volume1, Volume2, VolumeX } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState, type ComponentProps, type ReactNode, type RefObject } from "react";
+import { Maximize, Minimize, PictureInPicture2, Play } from "lucide-react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
-import { KagoIconButton } from "@/components/kago/icon-button";
+import { PlayerButton, PlayerSlider, PlayerTransport } from "@/components/kago/player";
+import { playerKeyAction } from "@/components/kago/player-keys";
 import { formatClock } from "@/lib/format";
 import { getVideoVolume, setVideoVolume } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
@@ -14,13 +15,8 @@ import { isMediaFailure } from "./directPlayback";
 import type { TimelinePicture } from "./storyboard";
 
 const IDLE_MS = 2500;
-const SEEK_STEP = 5;
-const VOLUME_STEP = 0.1;
 /** The room the control bar takes at the bottom of the picture, in pixels. */
 const CONTROLS_HEIGHT = 74;
-
-/** Classes that put a ghost control on the player's dark bar, whatever the app theme is. */
-export const PLAYER_CONTROL_CLASS = "text-[#d4d6d9] hover:text-white data-[popup-open]:text-white";
 
 /** Chromium's Document Picture-in-Picture: a floating window that holds page content, not just a video's frames. */
 const documentPip = (globalThis as { documentPictureInPicture?: { requestWindow: (options: { width: number; height: number }) => Promise<Window> } }).documentPictureInPicture;
@@ -307,39 +303,28 @@ export function VideoPlayer({
   };
 
   const onKeyDown = (event: React.KeyboardEvent) => {
-    // The same keys as the info panel of a picture, and the bare letter the other shortcuts here use.
-    if (onInfo && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "i" && !(event.target as Element).closest("[role=menu]")) {
-      event.preventDefault();
-      onInfo();
-      return;
-    }
-    if (event.metaKey || event.ctrlKey || event.altKey) return;
-    const target = event.target as Element;
-    if (target.closest("[role=menu]")) return;
-    if (event.key === "Escape") {
+    const action = playerKeyAction(event, { buttonsKeepArrows: true, info: Boolean(onInfo), fullscreen: true, next: Boolean(next), previous: Boolean(previous) });
+    if (!action) return;
+    if (action.kind === "escape") {
       // Leaving fullscreen must not also close the window.
       if (fullscreen) event.stopPropagation();
       return;
     }
-    // A focused button keeps the keys it answers to itself.
-    if (target.closest("button") && [" ", "Enter", "ArrowUp", "ArrowDown"].includes(event.key)) return;
-    const key = event.key.toLowerCase();
-    if (key === " " || key === "k") togglePlay();
-    else if (key === "arrowleft") seekTo(time - SEEK_STEP);
-    else if (key === "arrowright") seekTo(time + SEEK_STEP);
-    else if (key === "arrowup") changeSound(sound.volume + VOLUME_STEP, false);
-    else if (key === "arrowdown") changeSound(sound.volume - VOLUME_STEP, false);
-    else if (key === "m") changeSound(sound.volume, !sound.muted);
-    else if (key === "f") toggleFullscreen();
-    else if (key === "n" && event.shiftKey && next) next.go();
-    else if (key === "p" && event.shiftKey && previous) previous.go();
-    else return;
+    if (action.kind === "info") {
+      event.preventDefault();
+      onInfo?.();
+      return;
+    }
+    if (action.kind === "toggle") togglePlay();
+    else if (action.kind === "seek") seekTo(time + action.by);
+    else if (action.kind === "volume") changeSound(sound.volume + action.by, false);
+    else if (action.kind === "mute") changeSound(sound.volume, !sound.muted);
+    else if (action.kind === "fullscreen") toggleFullscreen();
+    else if (action.kind === "next") next?.go();
+    else if (action.kind === "previous") previous?.go();
     event.preventDefault();
     wake();
   };
-
-  const silent = sound.muted || sound.volume === 0;
-  const VolumeIcon = silent ? VolumeX : sound.volume < 0.5 ? Volume1 : Volume2;
 
   const player = (
     <div
@@ -440,35 +425,16 @@ export function VideoPlayer({
           onPreview={onSeekPreview}
           picture={seekPicture}
         />
-        <div className="flex items-center gap-1">
-          {previous !== undefined ? (
-            <PlayerButton label={previous ? t("Previous: {label} (⇧P)", { label: previous.label }) : t("No previous video")} disabled={!previous} onClick={() => previous?.go()}>
-              <SkipBack className="fill-current" />
-            </PlayerButton>
-          ) : null}
-          <PlayerButton label={playing ? t("Pause (Space)") : t("Play (Space)")} className="kago-player-key mx-1 size-8 rounded-full" onClick={togglePlay}>
-            {playing ? <Pause className="fill-current" /> : <Play className="fill-current" />}
-          </PlayerButton>
-          {next !== undefined ? (
-            <PlayerButton label={next ? t("Next: {label} (⇧N)", { label: next.label }) : t("No next video")} disabled={!next} onClick={() => next?.go()}>
-              <SkipForward className="fill-current" />
-            </PlayerButton>
-          ) : null}
-          <PlayerButton label={silent ? t("Unmute (M)") : t("Mute (M)")} onClick={() => changeSound(sound.volume || 1, !silent)}>
-            <VolumeIcon />
-          </PlayerButton>
-          <PlayerSlider
-            label={t("Volume")}
-            className="hidden w-16 @sm:block"
-            value={silent ? 0 : sound.volume}
-            max={1}
-            format={(volume) => `${Math.round(volume * 100)}%`}
-            onChange={(volume) => changeSound(volume, false)}
-          />
-          <span className="min-w-0 truncate px-1.5 text-xs text-white/80 tabular-nums">
-            {formatClock(time, long)} / {formatClock(duration, long)}
-          </span>
-          <div className="flex-1" />
+        <PlayerTransport
+          playing={playing}
+          onTogglePlay={togglePlay}
+          previous={previous === undefined ? undefined : { label: previous ? t("Previous: {label} (⇧P)", { label: previous.label }) : t("No previous video"), disabled: !previous, onClick: () => previous?.go() }}
+          next={next === undefined ? undefined : { label: next ? t("Next: {label} (⇧N)", { label: next.label }) : t("No next video"), disabled: !next, onClick: () => next?.go() }}
+          sound={sound}
+          onSound={changeSound}
+          time={time}
+          duration={duration}
+        >
           {renderSettings?.({ container: fullscreen || floating ? container : null, onOpenChange: setMenuOpen })}
           {documentPip || document.pictureInPictureEnabled ? (
             <PlayerButton label={pip || floating ? t("Exit picture in picture") : t("Picture in picture")} className={floating ? undefined : "hidden @sm:inline-flex"} onClick={togglePip}>
@@ -480,7 +446,7 @@ export function VideoPlayer({
               {fullscreen ? <Minimize /> : <Maximize />}
             </PlayerButton>
           )}
-        </div>
+        </PlayerTransport>
       </div>
     </div>
   );
@@ -511,10 +477,6 @@ function subtitleScale(frame: { width: number; height: number }, aspect: number)
   return covered > 0 && picture > CONTROLS_HEIGHT * 2 ? (picture - covered) / picture : 1;
 }
 
-export function PlayerButton({ className, ...props }: ComponentProps<typeof KagoIconButton>) {
-  return <KagoIconButton className={cn("size-7", PLAYER_CONTROL_CLASS, className)} {...props} />;
-}
-
 /** How far the stretch of loaded video around the playhead reaches. */
 function bufferedEnd(video: HTMLVideoElement) {
   const ranges = video.buffered;
@@ -522,123 +484,4 @@ function bufferedEnd(video: HTMLVideoElement) {
     if (ranges.start(index) <= video.currentTime + 0.5 && video.currentTime <= ranges.end(index)) return ranges.end(index);
   }
   return 0;
-}
-
-/**
- * A thin track for the playhead and the volume. `onChange` follows the drag; `onCommit` fires once
- * on release. The keyboard reaches both through the player's own shortcuts, so it takes no focus.
- */
-export function PlayerSlider({
-  label,
-  value,
-  max,
-  loaded = 0,
-  format,
-  className,
-  onChange,
-  onCommit,
-  onPreview,
-  picture,
-  onDragging
-}: {
-  label: string;
-  value: number;
-  max: number;
-  loaded?: number;
-  format: (value: number) => string;
-  className?: string;
-  onChange?: (value: number) => void;
-  onCommit?: (value: number) => void;
-  onPreview?: (value: number | null) => void;
-  /** What stands at a value, shown over the hint of it. */
-  picture?: (value: number) => TimelinePicture | null;
-  onDragging?: (dragging: boolean) => void;
-}) {
-  const [drag, setDrag] = useState<number | null>(null);
-  const [hover, setHover] = useState<number | null>(null);
-  const enabled = max > 0;
-  const shown = drag ?? value;
-  const percent = (amount: number) => `${enabled ? Math.min(100, Math.max(0, (amount / max) * 100)) : 0}%`;
-  const valueAt = (event: React.PointerEvent<HTMLElement>) => {
-    const rect = event.currentTarget.getBoundingClientRect();
-    return Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)) * max;
-  };
-  const end = (event: React.PointerEvent<HTMLElement>, commit: boolean) => {
-    onPreview?.(null);
-    if (drag === null) return;
-    if (commit) onCommit?.(valueAt(event));
-    setDrag(null);
-    onDragging?.(false);
-  };
-  const hint = drag ?? hover;
-  const shownPicture = hint === null ? null : (picture?.(hint) ?? null);
-
-  return (
-    <div
-      role="slider"
-      aria-label={label}
-      aria-valuemin={0}
-      aria-valuemax={max}
-      aria-valuenow={shown}
-      aria-valuetext={format(shown)}
-      aria-disabled={!enabled}
-      className={cn("group/slider relative h-4 touch-none", className)}
-      onPointerDown={(event) => {
-        if (!enabled || !event.isPrimary || event.button !== 0) return;
-        event.currentTarget.setPointerCapture(event.pointerId);
-        const next = valueAt(event);
-        setDrag(next);
-        onDragging?.(true);
-        onChange?.(next);
-        onPreview?.(next);
-      }}
-      onPointerMove={(event) => {
-        if (!enabled) return;
-        const next = valueAt(event);
-        setHover(next);
-        if (event.pointerType !== "touch" || drag !== null) onPreview?.(next);
-        if (drag === null) return;
-        setDrag(next);
-        onChange?.(next);
-      }}
-      onPointerLeave={() => {
-        setHover(null);
-        onPreview?.(null);
-      }}
-      onPointerUp={(event) => end(event, true)}
-      onPointerCancel={(event) => end(event, false)}
-    >
-      <div className="kago-player-track absolute inset-x-0 top-1/2 h-1.5 -translate-y-1/2 overflow-hidden rounded-full">
-        <div className="absolute inset-y-0 left-0 rounded-full bg-white/25" style={{ width: percent(loaded) }} />
-        <div className="kago-player-fill absolute inset-y-0 left-0 rounded-full" style={{ width: percent(shown) }} />
-      </div>
-      <div
-        className={cn("kago-player-knob absolute top-1/2 size-3.5 -translate-1/2 rounded-full opacity-0 group-hover/slider:opacity-100", drag !== null && "opacity-100")}
-        style={{ left: percent(shown) }}
-      />
-      {hint === null ? null : shownPicture ? (
-        // Kept whole inside the slider: a picture half off the edge of the player is no use at either end.
-        <div
-          className="pointer-events-none absolute bottom-full mb-2 flex -translate-x-1/2 flex-col items-center gap-1.5"
-          style={{ left: `clamp(${shownPicture.width / 2}px, ${percent(hint)}, calc(100% - ${shownPicture.width / 2}px))` }}
-        >
-          <div
-            className="rounded-md bg-black shadow-[0_0_0_1px_rgb(255_255_255/0.28),0_8px_24px_rgb(0_0_0/0.5)]"
-            style={{
-              width: shownPicture.width,
-              height: shownPicture.height,
-              backgroundImage: `url("${shownPicture.url}")`,
-              backgroundPosition: `-${shownPicture.x}px -${shownPicture.y}px`,
-              backgroundSize: `${shownPicture.sheetWidth}px ${shownPicture.sheetHeight}px`
-            }}
-          />
-          <span className="kago-player-glass rounded-sm px-1.5 py-0.5 text-xs whitespace-nowrap tabular-nums">{format(hint)}</span>
-        </div>
-      ) : (
-        <span className="kago-player-glass pointer-events-none absolute bottom-full mb-2 -translate-x-1/2 rounded-sm px-1.5 py-0.5 text-xs whitespace-nowrap tabular-nums" style={{ left: percent(hint) }}>
-          {format(hint)}
-        </span>
-      )}
-    </div>
-  );
 }

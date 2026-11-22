@@ -4,7 +4,7 @@ import { KagoIconButton } from "@/components/kago/icon-button";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { FileItem } from "@/types/kago";
-import { PLAYER_CONTROL_CLASS } from "./VideoPlayer";
+import { PLAYER_CONTROL_CLASS } from "@/components/kago/player";
 
 type VideoPlaylistProps = {
   id: string;

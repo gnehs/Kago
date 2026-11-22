@@ -1,10 +1,12 @@
-import { AudioLines, FileWarning, ListMusic, MicVocal, Pause, Play, SkipBack, SkipForward, Volume1, Volume2, VolumeX } from "lucide-react";
+import { AudioLines, FileWarning, ListMusic, MicVocal, Volume2 } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { audioStreamUrl, embeddedCoverUrl, previewUrl } from "@/api/client";
 import { useFileList, useMediaInfo, useMediaInfos, useTextFile } from "@/api/hooks";
 import { KagoLoading } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { KagoDropdownMenu, KagoMenuCheckItem, KagoMenuSeparator } from "@/components/kago/menu";
+import { PLAYER_CONTROL_CLASS, PlayerButton, PlayerSlider, PlayerTransport } from "@/components/kago/player";
+import { playerKeyAction } from "@/components/kago/player-keys";
 import { parseCue, type CueSheet } from "@/lib/cue";
 import { formatClock, isAudioType, isCueSheet, isMusicFile } from "@/lib/format";
 import { t } from "@/lib/i18n";
@@ -19,10 +21,7 @@ import { useMediaSession } from "./useMediaSession";
 import { isViewableImage, sourceOf } from "./ImagePreview";
 import { PreviewFailure, PreviewWindowFrame, usePreviewFile } from "./PreviewWindowFrame";
 import { extensionOf } from "@/lib/fileKind";
-import { PLAYER_CONTROL_CLASS, PlayerButton, PlayerSlider } from "./VideoPlayer";
 
-const SEEK_STEP = 5;
-const VOLUME_STEP = 0.1;
 /** How far into a track "previous" still means the track before, rather than this one from the top. */
 const RESTART_AFTER = 3;
 /** The room the control bar takes at the bottom of the screen, in pixels. */
@@ -402,22 +401,15 @@ export function AudioPreviewWindow({ window }: { window: PreviewWindow }) {
   );
 
   const onKeyDown = (event: React.KeyboardEvent) => {
-    if (event.metaKey || event.ctrlKey || event.altKey) return;
-    const target = event.target as Element;
-    if (target.closest("[role=menu]")) return;
-    // A focused button keeps the keys it answers to itself.
-    if (target.closest("button") && [" ", "Enter"].includes(event.key)) return;
-    const key = event.key.toLowerCase();
-    if (key === " " || key === "k") togglePlay();
-    else if (key === "arrowleft") seekTo(position - SEEK_STEP);
-    else if (key === "arrowright") seekTo(position + SEEK_STEP);
-    else if (key === "arrowup") changeSound(sound.volume + VOLUME_STEP, false);
-    else if (key === "arrowdown") changeSound(sound.volume - VOLUME_STEP, false);
-    else if (key === "m") changeSound(sound.volume, !sound.muted);
-    else if (key === "n" && event.shiftKey && index < tracks.length - 1) next();
-    else if (key === "p" && event.shiftKey) previous();
-    else if (key === "l" && lyrics.length > 0) togglePanel("lyrics");
-    else return;
+    const action = playerKeyAction(event, { lyrics: lyrics.length > 0, next: index < tracks.length - 1, previous: true });
+    if (!action || action.kind === "escape") return;
+    if (action.kind === "toggle") togglePlay();
+    else if (action.kind === "seek") seekTo(position + action.by);
+    else if (action.kind === "volume") changeSound(sound.volume + action.by, false);
+    else if (action.kind === "mute") changeSound(sound.volume, !sound.muted);
+    else if (action.kind === "next") next();
+    else if (action.kind === "previous") previous();
+    else if (action.kind === "lyrics") togglePanel("lyrics");
     event.preventDefault();
   };
 
@@ -432,8 +424,6 @@ export function AudioPreviewWindow({ window }: { window: PreviewWindow }) {
     setAudioVisual(choice);
   };
 
-  const silent = sound.muted || sound.volume === 0;
-  const VolumeIcon = silent ? VolumeX : sound.volume < 0.5 ? Volume1 : Volume2;
   const status = failed ? t("Couldn’t play this audio") : loading || (streamed && info.isPending) ? (streamed ? t("Transcoding…") : t("Loading…")) : null;
   const credit = [track?.performer, albumTitle].filter(Boolean).join(" — ");
 
@@ -526,28 +516,16 @@ export function AudioPreviewWindow({ window }: { window: PreviewWindow }) {
 
             <div className="kago-player-glass absolute inset-x-2 bottom-2 flex flex-col gap-0.5 rounded-lg px-2.5 pt-1.5 pb-1.5">
               <PlayerSlider label={t("Playback position")} value={position} max={length} format={(seconds) => formatClock(seconds, long)} onCommit={seekTo} />
-              <div className="flex items-center gap-1">
-                {tracks.length > 1 ? (
-                  <PlayerButton label={t("Previous track (⇧P)")} onClick={previous}>
-                    <SkipBack className="fill-current" />
-                  </PlayerButton>
-                ) : null}
-                <PlayerButton label={playing ? t("Pause (Space)") : t("Play (Space)")} className="kago-player-key mx-1 size-8 rounded-full" onClick={togglePlay}>
-                  {playing ? <Pause className="fill-current" /> : <Play className="fill-current" />}
-                </PlayerButton>
-                {tracks.length > 1 ? (
-                  <PlayerButton label={t("Next track (⇧N)")} disabled={index >= tracks.length - 1} onClick={next}>
-                    <SkipForward className="fill-current" />
-                  </PlayerButton>
-                ) : null}
-                <PlayerButton label={silent ? t("Unmute (M)") : t("Mute (M)")} onClick={() => changeSound(sound.volume || 1, !silent)}>
-                  <VolumeIcon />
-                </PlayerButton>
-                <PlayerSlider label={t("Volume")} className="hidden w-16 @sm:block" value={silent ? 0 : sound.volume} max={1} format={(volume) => `${Math.round(volume * 100)}%`} onChange={(volume) => changeSound(volume, false)} />
-                <span className="min-w-0 truncate px-1.5 text-xs text-white/80 tabular-nums">
-                  {formatClock(position, long)} / {formatClock(length, long)}
-                </span>
-                <div className="flex-1" />
+              <PlayerTransport
+                playing={playing}
+                onTogglePlay={togglePlay}
+                previous={tracks.length > 1 ? { label: t("Previous track (⇧P)"), onClick: previous } : undefined}
+                next={tracks.length > 1 ? { label: t("Next track (⇧N)"), disabled: index >= tracks.length - 1, onClick: next } : undefined}
+                sound={sound}
+                onSound={changeSound}
+                time={position}
+                duration={length}
+              >
                 {lyrics.length > 0 ? (
                   <PlayerButton label={t("Lyrics (L)")} active={panels.lyrics} onClick={() => togglePanel("lyrics")}>
                     <MicVocal />
@@ -573,7 +551,7 @@ export function AudioPreviewWindow({ window }: { window: PreviewWindow }) {
                 >
                   <AudioLines />
                 </KagoDropdownMenu>
-              </div>
+              </PlayerTransport>
             </div>
           </div>
           {tracksShown ? (
