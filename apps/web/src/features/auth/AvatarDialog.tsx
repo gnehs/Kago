@@ -167,7 +167,7 @@ function AvatarCropper({ request }: { request: AvatarRequest }) {
             role="group"
             aria-label={t("Drag the picture to place it in the circle.")}
             tabIndex={0}
-            className={cn("relative mx-auto aspect-square w-full touch-none overflow-hidden rounded-md bg-neutral-900 outline-none select-none focus-visible:ring-2 focus-visible:ring-accent/50", dragging ? "cursor-grabbing" : "cursor-grab")}
+            className={cn("relative mx-auto aspect-square w-full touch-none overflow-hidden rounded-md bg-neutral-900 outline-none select-none focus-ring", dragging ? "cursor-grabbing" : "cursor-grab")}
             style={{ maxWidth: STAGE }}
             onPointerDown={(event) => {
               // A third finger has nothing to add.

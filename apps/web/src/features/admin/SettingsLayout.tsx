@@ -75,7 +75,7 @@ export function SettingsLayout({ section, isAdmin, onSection, children }: { sect
                       ref={section === item.section ? reveal : undefined}
                       aria-current={section === item.section ? "page" : undefined}
                       className={cn(
-                        "flex h-7 shrink-0 items-center gap-2 rounded-md px-2 text-left whitespace-nowrap outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-accent/50 [&>.lucide]:text-muted",
+                        "flex h-7 shrink-0 items-center gap-2 rounded-md px-2 text-left whitespace-nowrap outline-none hover:bg-hover focus-ring [&>.lucide]:text-muted",
                         section === item.section && "kago-selection kago-selection-raised font-medium hover:bg-transparent [&>.lucide]:text-inherit"
                       )}
                       onClick={() => onSection(item.section)}

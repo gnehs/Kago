@@ -62,7 +62,7 @@ export function TopBar({ user, onOpenPalette }: { user: Actor; onOpenPalette: ()
   return (
     <header className="kago-topbar z-[1] flex h-10 shrink-0 items-center gap-1 border-b border-line-strong px-2">
       <KagoTooltip label={anyVisible ? t("Show desktop") : t("Restore all windows")}>
-        <button className="flex h-7 shrink-0 items-center gap-2 rounded-md pr-2.5 pl-1.5 font-semibold outline-none kago-flat focus-visible:ring-2 focus-visible:ring-accent/50" onClick={toggleDesktop}>
+        <button className="flex h-7 shrink-0 items-center gap-2 rounded-md pr-2.5 pl-1.5 font-semibold outline-none kago-flat focus-ring" onClick={toggleDesktop}>
           <BrandMark className="size-5" />
           Kago
         </button>
@@ -75,7 +75,7 @@ export function TopBar({ user, onOpenPalette }: { user: Actor; onOpenPalette: ()
               data-dock={window.id}
               aria-pressed={window.focused && !window.minimized}
               className={cn(
-                "flex h-7 max-w-40 min-w-0 items-center gap-1.5 rounded-md px-2 outline-none focus-visible:ring-2 focus-visible:ring-accent/50",
+                "flex h-7 max-w-40 min-w-0 items-center gap-1.5 rounded-md px-2 outline-none focus-ring",
                 window.focused && !window.minimized ? "kago-raised" : "kago-flat text-muted",
                 window.minimized && "text-muted [&_svg]:grayscale [&_img]:grayscale"
               )}
@@ -89,7 +89,7 @@ export function TopBar({ user, onOpenPalette }: { user: Actor; onOpenPalette: ()
       </nav>
 
       <button
-        className="kago-well flex h-7 shrink-0 items-center gap-2 rounded-full pr-2.5 pl-2.5 text-muted outline-none hover:text-ink focus-visible:ring-2 focus-visible:ring-accent/50"
+        className="kago-well flex h-7 shrink-0 items-center gap-2 rounded-full pr-2.5 pl-2.5 text-muted outline-none hover:text-ink focus-ring"
         onClick={onOpenPalette}
       >
         <Search className="size-3.5" />

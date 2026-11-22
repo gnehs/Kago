@@ -108,7 +108,7 @@ export function Breadcrumb({ window, rootName, onNavigate }: { window: FileWindo
               </>
             ) : null}
             <button
-              className={cn("max-w-40 shrink truncate rounded-sm px-1.5 py-0.5 outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-accent/50", isLast ? "min-w-0 [flex-shrink:0.001] font-medium text-ink" : "hidden text-muted @sm:block")}
+              className={cn("max-w-40 shrink truncate rounded-sm px-1.5 py-0.5 outline-none hover:bg-hover focus-ring", isLast ? "min-w-0 [flex-shrink:0.001] font-medium text-ink" : "hidden text-muted @sm:block")}
               aria-current={isLast ? "location" : undefined}
               onClick={() => !isLast && onNavigate(crumb.path)}
             >

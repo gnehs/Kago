@@ -36,7 +36,7 @@ export function KagoPopover({
       <KagoTooltip label={label} disabled={open}>
         <Popover.Trigger
           aria-label={label}
-          className={cn("flex size-(--kago-control-h) shrink-0 items-center justify-center kago-flat rounded-md text-muted outline-none hover:text-ink focus-visible:ring-2 focus-visible:ring-accent/50", className)}
+          className={cn("flex size-(--kago-control-h) shrink-0 items-center justify-center kago-flat rounded-md text-muted outline-none hover:text-ink focus-ring", className)}
         >
           {children}
         </Popover.Trigger>

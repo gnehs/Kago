@@ -93,7 +93,7 @@ export function ConvertRunsDialog({ job, onClose }: { job: ConvertJob | null; on
                     {files ? <span className="text-xs text-muted">{files}</span> : null}
                     {run.converted + run.copied + run.failed > 0 && shown ? (
                       <>
-                        <button type="button" aria-expanded={open === run.task_id} className="flex items-center gap-1 self-start rounded-md text-xs font-medium text-muted outline-none hover:text-ink focus-visible:ring-2 focus-visible:ring-accent/50" onClick={() => setOpen(open === run.task_id ? null : run.task_id)}>
+                        <button type="button" aria-expanded={open === run.task_id} className="flex items-center gap-1 self-start rounded-md text-xs font-medium text-muted outline-none hover:text-ink focus-ring" onClick={() => setOpen(open === run.task_id ? null : run.task_id)}>
                           <ChevronRight className={cn("size-3.5 transition-transform", open === run.task_id && "rotate-90")} />
                           {t("Files")}
                         </button>

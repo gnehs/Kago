@@ -114,7 +114,7 @@ export function KagoWindow({
 function WindowControl({ label, closes, icon: Icon, onClick }: { label: string; closes?: boolean; icon: LucideIcon; onClick: () => void }) {
   return (
     <KagoTooltip label={label}>
-      <button type="button" aria-label={label} data-closes={closes ? "" : undefined} className="kago-window-control outline-none focus-visible:ring-2 focus-visible:ring-accent/50" onClick={onClick}>
+      <button type="button" aria-label={label} data-closes={closes ? "" : undefined} className="kago-window-control outline-none focus-ring" onClick={onClick}>
         <Icon aria-hidden className="size-3" strokeWidth={2.2} />
       </button>
     </KagoTooltip>

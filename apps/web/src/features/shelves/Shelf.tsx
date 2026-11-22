@@ -214,7 +214,7 @@ export function Shelf() {
             tabIndex={0}
             draggable
             aria-label={t("Expand Shelf")}
-            className="relative flex size-20 items-center justify-center rounded-md outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
+            className="relative flex size-20 items-center justify-center rounded-md outline-none focus-ring"
             onClick={() => store().updateShelf({ collapsed: false })}
             onKeyDown={(event) => (event.key === "Enter" || event.key === " ") && store().updateShelf({ collapsed: false })}
             onDragStart={(event) => dragOut(event, items)}

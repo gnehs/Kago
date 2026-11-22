@@ -63,7 +63,7 @@ export function KagoDropdownMenu({
       // Shown fullscreen, the element holds its own menu but not the tooltips, which are drawn on the page behind it.
       title={container ? label : undefined}
       className={cn(
-        "flex size-(--kago-control-h) shrink-0 items-center justify-center rounded-md outline-none focus-visible:ring-2 focus-visible:ring-accent/50",
+        "flex size-(--kago-control-h) shrink-0 items-center justify-center rounded-md outline-none focus-ring",
         raised ? "kago-raised text-ink" : "kago-flat text-muted hover:text-ink data-[popup-open]:text-ink",
         className
       )}

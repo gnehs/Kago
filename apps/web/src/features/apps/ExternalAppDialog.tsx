@@ -213,7 +213,7 @@ function AppForm({ app, isAdmin }: { app: ExternalApp | null; isAdmin: boolean }
                         type="button"
                         aria-label={item.label}
                         aria-pressed={selected}
-                        className={cn("rounded-lg p-1.5 outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-accent/50", selected && "kago-pressed hover:bg-transparent")}
+                        className={cn("rounded-lg p-1.5 outline-none hover:bg-hover focus-ring", selected && "kago-pressed hover:bg-transparent")}
                         onClick={() => choose({ kind: "library", icon: item })}
                       >
                         <ExternalAppIcon name={item.label} icon={libraryIconUrl(item.source, item.name)} className="size-9" />
@@ -248,7 +248,7 @@ function AppForm({ app, isAdmin }: { app: ExternalApp | null; isAdmin: boolean }
         <button
           type="button"
           aria-expanded={advanced}
-          className="flex items-center gap-1 self-start rounded-md text-xs font-medium text-muted outline-none hover:text-ink focus-visible:ring-2 focus-visible:ring-accent/50"
+          className="flex items-center gap-1 self-start rounded-md text-xs font-medium text-muted outline-none hover:text-ink focus-ring"
           onClick={() => setAdvanced((open) => !open)}
         >
           <ChevronRight className={cn("size-3.5", advanced && "rotate-90")} />

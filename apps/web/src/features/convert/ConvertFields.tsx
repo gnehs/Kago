@@ -73,7 +73,7 @@ export function ConvertFields({ spec, formats, support, onChange }: { spec: Conv
       ) : null}
       {hasAdvanced ? (
         <div className="flex flex-col gap-3">
-          <button type="button" aria-expanded={advanced} className="flex items-center gap-1 self-start rounded-md text-xs font-medium text-muted outline-none hover:text-ink focus-visible:ring-2 focus-visible:ring-accent/50" onClick={() => setAdvanced(!advanced)}>
+          <button type="button" aria-expanded={advanced} className="flex items-center gap-1 self-start rounded-md text-xs font-medium text-muted outline-none hover:text-ink focus-ring" onClick={() => setAdvanced(!advanced)}>
             <ChevronRight className={cn("size-3.5 transition-transform", advanced && "rotate-90")} />
             {t("Advanced")}
           </button>

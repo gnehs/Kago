@@ -56,7 +56,7 @@ export function TabStrip({ window, roots }: { window: FileWindow; roots: Root[] 
             tabIndex={active ? 0 : -1}
             title={displayPath(roots.find((root) => root.slug === tab.rootSlug)?.name ?? tab.rootSlug, tab.logicalPath)}
             className={cn(
-              "group flex h-6 max-w-52 min-w-0 flex-1 basis-0 items-center gap-1.5 rounded-md pr-1 pl-2 outline-none focus-visible:ring-2 focus-visible:ring-accent/50",
+              "group flex h-6 max-w-52 min-w-0 flex-1 basis-0 items-center gap-1.5 rounded-md pr-1 pl-2 outline-none focus-ring",
               active ? cn("kago-pressed font-medium", window.focused ? "text-ink" : "text-muted") : "text-muted hover:bg-hover hover:text-ink"
             )}
             onClick={() => store().activateTab(window.id, tab.id)}

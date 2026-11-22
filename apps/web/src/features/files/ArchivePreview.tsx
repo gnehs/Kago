@@ -105,7 +105,7 @@ export function ArchivePreviewWindow({ window }: { window: PreviewWindow }) {
                       type="button"
                       aria-current={current ? "location" : undefined}
                       title={name}
-                      className={cn("truncate rounded-sm px-1.5 py-0.5 outline-none focus-visible:ring-2 focus-visible:ring-accent/50", current ? "font-medium" : "text-muted hover:bg-hover")}
+                      className={cn("truncate rounded-sm px-1.5 py-0.5 outline-none focus-ring", current ? "font-medium" : "text-muted hover:bg-hover")}
                       onClick={() => setFolder(target)}
                     >
                       {name}
@@ -133,7 +133,7 @@ export function ArchivePreviewWindow({ window }: { window: PreviewWindow }) {
                   >
                     <td className="h-(--kago-row-h) max-w-0 border-b border-line px-3">
                       {node.folder ? (
-                        <button type="button" className="flex w-full min-w-0 items-center gap-2 rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-accent/50" title={node.name} onClick={() => setFolder(node.path)}>
+                        <button type="button" className="flex w-full min-w-0 items-center gap-2 rounded-sm text-left outline-none focus-ring" title={node.name} onClick={() => setFolder(node.path)}>
                           <FileIcon item={{ kind: "folder", type: "", name: node.name }} className="size-4 shrink-0" />
                           <span className="truncate">{node.name}</span>
                         </button>

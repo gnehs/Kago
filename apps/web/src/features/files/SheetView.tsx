@@ -83,7 +83,7 @@ export default function SheetView({ data, onError }: { data: ArrayBuffer; onErro
               type="button"
               role="tab"
               aria-selected={sheet === name}
-              className={cn("h-6 shrink-0 rounded-sm px-2.5 outline-none focus-visible:ring-2 focus-visible:ring-accent/50", sheet === name ? "bg-accent-soft text-ink" : "hover:bg-hover hover:text-ink")}
+              className={cn("h-6 shrink-0 rounded-sm px-2.5 outline-none focus-ring", sheet === name ? "bg-accent-soft text-ink" : "hover:bg-hover hover:text-ink")}
               onClick={() => setSelected(index)}
             >
               {sheet}

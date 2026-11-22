@@ -253,7 +253,7 @@ function Favorite({ tree, rootSlug, path, label }: { tree: Tree; rootSlug: strin
         aria-current={current ? "location" : undefined}
         onFocus={(event) => event.target === event.currentTarget && tree.setTabStop(key)}
         onKeyDown={(event) => navigate(event, () => tree.onNavigate(here))}
-        className={cn("flex h-7 items-center gap-1.5 outline-none focus-visible:ring-2 focus-visible:ring-accent/50 rounded-md pr-2 pl-2 hover:bg-hover", current && "bg-accent-soft font-medium hover:bg-accent-soft", tree.dropTarget === key && "ring-2 ring-accent ring-inset")}
+        className={cn("flex h-7 items-center gap-1.5 outline-none focus-ring rounded-md pr-2 pl-2 hover:bg-hover", current && "bg-accent-soft font-medium hover:bg-accent-soft", tree.dropTarget === key && "ring-2 ring-accent ring-inset")}
         onClick={(event) => (event.metaKey || event.ctrlKey ? openTab() : tree.onNavigate(here))}
         onAuxClick={(event) => event.button === 1 && openTab()}
         onDragOver={(event) => {
@@ -333,7 +333,7 @@ function Node({ tree, rootSlug, path, label, depth, locked }: { tree: Tree; root
           aria-current={current ? "location" : undefined}
           onFocus={(event) => event.target === event.currentTarget && tree.setTabStop(key)}
           onKeyDown={(event) => navigate(event, () => (event.metaKey || event.ctrlKey ? openTab() : tree.onNavigate(here)), { open, setOpen: (next) => (next ? tree.expand(key) : open && tree.toggle(key)) })}
-          className={cn("flex h-7 items-center gap-1.5 outline-none focus-visible:ring-2 focus-visible:ring-accent/50 rounded-md pr-2 hover:bg-hover", current && "bg-accent-soft font-medium hover:bg-accent-soft", tree.dropTarget === key && "ring-2 ring-accent ring-inset")}
+          className={cn("flex h-7 items-center gap-1.5 outline-none focus-ring rounded-md pr-2 hover:bg-hover", current && "bg-accent-soft font-medium hover:bg-accent-soft", tree.dropTarget === key && "ring-2 ring-accent ring-inset")}
           style={{ paddingLeft: 4 + depth * INDENT }}
           onClick={(event) => (event.metaKey || event.ctrlKey ? openTab() : tree.onNavigate(here))}
           onAuxClick={(event) => event.button === 1 && openTab()}

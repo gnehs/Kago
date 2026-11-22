@@ -1418,6 +1418,13 @@
   }
 }
 
+/* The ring a keyboard-focused control draws. */
+@utility focus-ring {
+  &:focus-visible {
+    @apply ring-2 ring-accent/50;
+  }
+}
+
 @utility scroll-fade {
   @supports (animation-timeline: scroll()) {
     mask-image: var(--scroll-fade-mask, linear-gradient(to bottom, transparent, #000 var(--scroll-fade-start), #000 calc(100% - var(--scroll-fade-end)), transparent));

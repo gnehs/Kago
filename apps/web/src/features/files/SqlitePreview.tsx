@@ -49,7 +49,7 @@ export function SqlitePreviewWindow({ window }: { window: PreviewWindow }) {
                   type="button"
                   aria-current={entry.name === table.name}
                   title={entry.name}
-                  className={cn("flex h-(--kago-row-h) shrink-0 items-center gap-2 rounded-sm px-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-accent/50", entry.name === table.name ? "bg-accent-soft" : "hover:bg-hover")}
+                  className={cn("flex h-(--kago-row-h) shrink-0 items-center gap-2 rounded-sm px-2 text-left outline-none focus-ring", entry.name === table.name ? "bg-accent-soft" : "hover:bg-hover")}
                   onClick={() => setSelected({ table: entry.name, offset: 0 })}
                 >
                   {entry.type === "view" ? <Eye className="text-muted" /> : <Table2 className="text-muted" />}

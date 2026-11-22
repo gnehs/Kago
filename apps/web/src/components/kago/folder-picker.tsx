@@ -148,7 +148,7 @@ function Node({ tree, folder, label, depth, root }: { tree: Tree; folder: Folder
         tabIndex={current ? 0 : -1}
         aria-expanded={open}
         aria-selected={current}
-        className={cn("flex h-7 cursor-default items-center gap-1.5 rounded-md pr-2 outline-none select-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-accent/50", current && "kago-selection hover:bg-transparent")}
+        className={cn("flex h-7 cursor-default items-center gap-1.5 rounded-md pr-2 outline-none select-none hover:bg-hover focus-ring", current && "kago-selection hover:bg-transparent")}
         style={{ paddingLeft: 4 + depth * INDENT }}
         onClick={() => tree.select(folder)}
         onDoubleClick={() => tree.choose(folder)}

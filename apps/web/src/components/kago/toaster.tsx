@@ -33,7 +33,7 @@ export function KagoToaster() {
               <span className="min-w-0 wrap-anywhere">{toast.message}</span>
               {toast.action ? (
                 <button
-                  className="shrink-0 rounded-sm px-1.5 py-0.5 font-medium text-accent outline-none kago-flat focus-visible:ring-2 focus-visible:ring-accent/50"
+                  className="shrink-0 rounded-sm px-1.5 py-0.5 font-medium text-accent outline-none kago-flat focus-ring"
                   onClick={() => {
                     toast.action!.run();
                     dismiss(toast.id);
@@ -53,7 +53,7 @@ export function KagoToaster() {
 
 function Close({ label, onClick }: { label: string; onClick: () => void }) {
   return (
-    <button className="shrink-0 rounded-sm p-1 text-muted outline-none kago-flat focus-visible:ring-2 focus-visible:ring-accent/50" aria-label={label} onClick={onClick}>
+    <button className="shrink-0 rounded-sm p-1 text-muted outline-none kago-flat focus-ring" aria-label={label} onClick={onClick}>
       <X className="size-3.5" />
     </button>
   );

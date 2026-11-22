@@ -48,7 +48,7 @@ export function KagoPasswordInput({ className, onKeyDown, onKeyUp, onBlur, ...pr
           aria-label={shown ? t("Hide password") : t("Show password")}
           aria-pressed={shown}
           disabled={props.disabled}
-          className="mr-0.5 flex size-6.5 shrink-0 items-center justify-center kago-flat rounded-[calc(var(--kago-radius-md)-2px)] text-faint outline-none hover:text-ink focus-visible:text-ink focus-visible:ring-2 focus-visible:ring-accent/50"
+          className="mr-0.5 flex size-6.5 shrink-0 items-center justify-center kago-flat rounded-[calc(var(--kago-radius-md)-2px)] text-faint outline-none hover:text-ink focus-visible:text-ink focus-ring"
           // Pressed with the pointer it leaves the caret where it was, so that Return still sends the form.
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => setShown((current) => !current)}

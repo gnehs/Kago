@@ -76,7 +76,7 @@ export function VideoPlaylist({ id, videos, currentPath, loading, error, onSelec
                 type="button"
                 aria-current={current ? "true" : undefined}
                 className={cn(
-                  "flex h-8 w-full items-center gap-2 rounded-md px-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-accent/50",
+                  "flex h-8 w-full items-center gap-2 rounded-md px-2 text-left outline-none focus-ring",
                   current ? "bg-white/20" : "hover:bg-white/10"
                 )}
                 onClick={(event) => {

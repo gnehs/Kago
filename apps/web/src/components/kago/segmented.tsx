@@ -33,7 +33,7 @@ export function KagoSegmented<T extends string>({
             aria-checked={value === item.value}
             aria-label={iconOnly ? item.label : undefined}
             className={cn(
-              "flex items-center justify-center outline-none focus-visible:ring-2 focus-visible:ring-accent/50 focus-visible:ring-inset",
+              "flex items-center justify-center outline-none focus-ring focus-visible:ring-inset",
               iconOnly ? "h-6 w-7.5" : "h-[calc(var(--kago-control-h)-4px)] gap-1.5 px-2.5"
             )}
             onClick={() => onChange(item.value)}
