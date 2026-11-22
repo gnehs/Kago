@@ -80,13 +80,15 @@ export function startUpload({ label, files, total, done = 0, loaded = 0 }: { lab
         reject(new ApiError(t("Upload cancelled"), UPLOAD_CANCELLED, 0));
         return;
       }
+      /** Where each file ends within the request's files: they go across in order, so the bytes sent say how many have. */
+      const ends: number[] = [];
       let bytes = 0;
-      let count = 0;
       for (const value of form.values()) {
         if (!(value instanceof File)) continue;
         bytes += value.size;
-        count += 1;
+        ends.push(bytes);
       }
+      const count = ends.length;
       const xhr = new XMLHttpRequest();
       current = xhr;
       const fail = (error: ApiError) => {
@@ -105,7 +107,9 @@ export function startUpload({ label, files, total, done = 0, loaded = 0 }: { lab
         lastUpdate = now;
         const first = samples[0]!;
         const elapsed = (now - first.time) / 1000;
-        patch(id, { loaded: sent, speed: elapsed > 0 ? (sent - first.loaded) / elapsed : 0 });
+        let across = 0;
+        while (across < count && ends[across]! <= sent - base) across += 1;
+        patch(id, { loaded: sent, done: sentFiles + across, speed: elapsed > 0 ? (sent - first.loaded) / elapsed : 0 });
       };
       xhr.onload = () => {
         let body: { error?: string; code?: string } | undefined;
