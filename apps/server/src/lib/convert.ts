@@ -5,6 +5,7 @@ import { hardwareEncoder, type ConvertAccel, type HardwareCodec } from "./conver
 import { AppError, errnoIs } from "./errors.js";
 import { guardedInput, guardedProbe, MEDIA_FORMATS, PICTURE_FORMATS } from "./ffmpeg-input.js";
 import { logger } from "./logger.js";
+import { TEXT_SUBTITLES } from "./subtitles.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -145,7 +146,6 @@ export async function probeMedia(ffprobe: string, input: string, formats = CONVE
 /** What each container takes as it is, without encoding again. Matroska takes anything. */
 const KEPT_VIDEO: Record<VideoFormat, string[] | null> = { mp4: ["h264", "hevc", "av1", "mpeg4", "vp9"], mov: ["h264", "hevc", "mpeg4", "prores", "mjpeg"], mkv: null, webm: ["vp8", "vp9", "av1"] };
 const KEPT_AUDIO: Record<VideoFormat, string[] | null> = { mp4: ["aac", "mp3", "ac3", "eac3", "alac"], mov: ["aac", "mp3", "ac3", "eac3", "alac", "pcm_s16le", "pcm_s24le"], mkv: null, webm: ["opus", "vorbis"] };
-const TEXT_SUBTITLES = new Set(["ass", "ssa", "subrip", "srt", "mov_text", "webvtt", "text"]);
 const MUXERS: Record<string, string> = { mp4: "mp4", mkv: "matroska", mov: "mov", webm: "webm", mp3: "mp3", m4a: "ipod", flac: "flac", opus: "opus", ogg: "ogg", wav: "wav", gif: "gif", webp: "webp", avif: "avif", jpg: "image2", png: "image2" };
 
 const even = (value: number) => Math.max(2, Math.floor(value / 2) * 2);

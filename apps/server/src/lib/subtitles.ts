@@ -1,5 +1,8 @@
 import { nfc } from "./filename.js";
 
+/** Subtitle codecs that are text and can be rewritten as ASS or SubRip; the rest are pictures. */
+export const TEXT_SUBTITLES = new Set(["ass", "ssa", "subrip", "srt", "mov_text", "webvtt", "text"]);
+
 export type SubtitleFormat = "ass" | "srt";
 /** Picture subtitles kept in files of their own: a Blu-ray stream, or a DVD one as an index beside its `.sub`. */
 export type PictureSubtitleFormat = "pgs" | "vobsub";

@@ -1,8 +1,9 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, readdir, realpath, rm, stat } from "node:fs/promises";
+import { mkdtemp, realpath, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import { readRenderNodes } from "../lib/hw-accel.js";
 
 const execFileAsync = promisify(execFile) as (
   file: string,
@@ -454,8 +455,7 @@ export class CompatibilityService {
       }
     } else if (this.platform === "linux") {
       try {
-        const entries = await readdir("/dev/dri");
-        paths = entries.filter((name) => /^renderD\d+$/.test(name)).map((name) => path.join("/dev/dri", name));
+        paths = await readRenderNodes(/^renderD\d+$/);
         state = "ready";
       } catch (error) {
         const code = error && typeof error === "object" && "code" in error ? error.code : undefined;

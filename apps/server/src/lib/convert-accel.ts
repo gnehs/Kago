@@ -1,9 +1,5 @@
-import { execFile } from "node:child_process";
-import fsp from "node:fs/promises";
-import { promisify } from "node:util";
+import { hwAccelPreference, renderNodes, softwareOnly, testEncode } from "./hw-accel.js";
 import { logger } from "./logger.js";
-
-const execFileAsync = promisify(execFile);
 
 export type HardwareCodec = "h264" | "hevc" | "av1";
 type Device = "nvenc" | "vaapi" | "videotoolbox";
@@ -64,22 +60,15 @@ function candidate(device: Device, node = ""): ConvertAccel {
  * is skipped. `TRANSCODE_HWACCEL` picks the kind, or `none` to do without, as it does for playback.
  */
 export async function detectConvertAccel(ffmpeg: string): Promise<ConvertAccel | null> {
-  const wanted = (process.env.TRANSCODE_HWACCEL ?? "auto").toLowerCase();
-  if (wanted === "none" || wanted === "software") return null;
-  const nodes = process.env.TRANSCODE_VAAPI_DEVICE
-    ? [process.env.TRANSCODE_VAAPI_DEVICE]
-    : await fsp.readdir("/dev/dri").then((names) => names.filter((name) => name.startsWith("renderD")).sort().map((name) => `/dev/dri/${name}`), () => []);
-  const candidates = [candidate("nvenc"), ...nodes.map((node) => candidate("vaapi", node)), candidate("videotoolbox")].filter((item) => wanted === "auto" || item.device.startsWith(wanted));
+  const wanted = hwAccelPreference();
+  if (softwareOnly(wanted)) return null;
+  const candidates = [candidate("nvenc"), ...(await renderNodes()).map((node) => candidate("vaapi", node)), candidate("videotoolbox")].filter((item) => wanted === "auto" || item.device.startsWith(wanted));
   for (const accel of candidates) {
     for (const [codec, tenBit] of [["h264", false], ["hevc", false], ["av1", false], ["hevc", true], ["av1", true]] as const) {
       if (tenBit && !accel.codecs.includes(codec)) continue;
       const { filter, args } = hardwareEncoder(accel, codec, null, tenBit, "mkv");
       try {
-        await execFileAsync(
-          ffmpeg,
-          ["-nostdin", "-hide_banner", "-loglevel", "error", ...accel.input, "-f", "lavfi", "-i", "testsrc2=size=1280x720:rate=30", "-frames:v", "30", "-vf", ["scale=640:360", ...filter].join(","), ...args, "-f", "null", "-"],
-          { timeout: 20_000 }
-        );
+        await testEncode(ffmpeg, accel.input, ["scale=640:360", ...filter].join(","), args);
         (tenBit ? accel.deep : accel.codecs).push(codec);
       } catch {
         // Not something this device does.

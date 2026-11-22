@@ -9,12 +9,13 @@ import { z } from "zod";
 import { AppError } from "../lib/errors.js";
 import { guardedInput, guardedProbe, inputProtocols } from "../lib/ffmpeg-input.js";
 import { id as createId } from "../lib/ids.js";
+import { hwAccelPreference, renderNodes, softwareOnly, testEncode } from "../lib/hw-accel.js";
 import { idleCores } from "../lib/idle-cores.js";
 import { logger } from "../lib/logger.js";
 import { PANORAMA_HEIGHT, planPanorama, videoStreams, type VideoStream } from "../lib/panorama.js";
 import { sharpAvailable, writeAvif } from "../lib/sharp.js";
 import { Storyboards, type StoryboardState } from "../lib/storyboard.js";
-import { streamLanguage, type PictureSubtitleFormat, type SubtitleFormat } from "../lib/subtitles.js";
+import { streamLanguage, TEXT_SUBTITLES, type PictureSubtitleFormat, type SubtitleFormat } from "../lib/subtitles.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -200,8 +201,6 @@ const PREWARM_QUEUE_LIMIT = 8;
 const THROTTLE_AHEAD = 20;
 const KEEP_BEHIND = 10;
 const SEGMENT_WAIT_MS = 55_000;
-/** Subtitle codecs that are text and can be rewritten as ASS or SubRip; the rest are pictures. */
-const TEXT_SUBTITLES = new Set(["ass", "ssa", "subrip", "srt", "mov_text", "webvtt", "text"]);
 /** Picture subtitles ffmpeg can decode and lay over the video: Blu-ray, DVD, broadcast and DivX. */
 const PICTURE_SUBTITLES = new Set(["hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle", "xsub"]);
 const TRANSFER: Record<Hdr, string> = { pq: "smpte2084", hlg: "arib-std-b67" };
@@ -1266,33 +1265,19 @@ export class MediaService {
 
   /** Picks the first encoder that survives a real test encode, so a GPU that is present but unusable is skipped. */
   private async detectAccel(): Promise<Accel> {
-    const wanted = (process.env.TRANSCODE_HWACCEL ?? "auto").toLowerCase();
-    if (wanted === "none" || wanted === "software") return accelFor("software");
-    const renderNodes = process.env.TRANSCODE_VAAPI_DEVICE
-      ? [process.env.TRANSCODE_VAAPI_DEVICE]
-      : await fsp.readdir("/dev/dri").then((names) => names.filter((name) => name.startsWith("renderD")).sort().map((name) => `/dev/dri/${name}`), () => []);
+    const wanted = hwAccelPreference();
+    if (softwareOnly(wanted)) return accelFor("software");
+    const nodes = await renderNodes();
     const candidates: Accel[] = [
       accelFor("nvenc"),
       // With several GPUs the Intel/AMD one is not necessarily the first render node.
-      ...renderNodes.map((node) => accelFor("vaapi", node)),
-      ...renderNodes.map((node) => accelFor("vaapi-cqp", node)),
+      ...nodes.map((node) => accelFor("vaapi", node)),
+      ...nodes.map((node) => accelFor("vaapi-cqp", node)),
       accelFor("videotoolbox")
     ].filter((candidate) => wanted === "auto" || candidate.encoder.startsWith(wanted));
     for (const candidate of candidates) {
       try {
-        await execFileAsync(
-          this.ffmpeg,
-          [
-            "-nostdin", "-hide_banner", "-loglevel", "error",
-            ...candidate.input,
-            "-f", "lavfi", "-i", "testsrc2=size=1280x720:rate=30",
-            "-frames:v", "30",
-            "-vf", `scale=w=640:h=360${candidate.filter}`,
-            ...candidate.codec(800),
-            "-f", "null", "-"
-          ],
-          { timeout: 20_000 }
-        );
+        await testEncode(this.ffmpeg, candidate.input, `scale=w=640:h=360${candidate.filter}`, candidate.codec(800));
         return candidate;
       } catch {
         // Not available here; try the next one.
@@ -1305,19 +1290,7 @@ export class MediaService {
   /** Whether this encoder also makes 10-bit HEVC, which is what HDR is sent as. */
   private async detectHdrOutput(accel: Accel): Promise<boolean> {
     try {
-      await execFileAsync(
-        this.ffmpeg,
-        [
-          "-nostdin", "-hide_banner", "-loglevel", "error",
-          ...accel.input,
-          "-f", "lavfi", "-i", "testsrc2=size=1280x720:rate=30",
-          "-frames:v", "30",
-          "-vf", `scale=w=640:h=360,format=yuv420p10le${accel.hdrFilter}`,
-          ...accel.hevc(800),
-          "-f", "null", "-"
-        ],
-        { timeout: 20_000 }
-      );
+      await testEncode(this.ffmpeg, accel.input, `scale=w=640:h=360,format=yuv420p10le${accel.hdrFilter}`, accel.hevc(800));
       return true;
     } catch {
       return false;
