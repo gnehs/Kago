@@ -4,12 +4,8 @@ body {
 }
 
 .viewer {
-  position: relative;
   display: flex;
-  flex: 1;
-  min-height: 0;
   flex-direction: column;
-  background: #000000;
 }
 
 .stage {
@@ -25,6 +21,10 @@ body {
   cursor: grabbing;
 }
 
+.viewer:not([data-controls]) .stage {
+  cursor: none;
+}
+
 /* The panorama's video is drawn on the stage; the element itself only has to be in the page for its frames to come. */
 .panorama-source {
   position: absolute;
@@ -34,32 +34,9 @@ body {
   pointer-events: none;
 }
 
-/* A spinner only shows once the wait is long enough to be one; a quick answer never flashes it. */
-.waiting {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-direction: column;
-  gap: 12px;
-  color: #b3b3b3;
-  pointer-events: none;
+/* A wait only shows once it is long enough to be one; a quick answer never flashes it. */
+.late {
   animation: fade-in 200ms ease-out 200ms both;
-}
-
-.waiting[hidden],
-.waiting-note[hidden] {
-  display: none;
-}
-
-.waiting-note {
-  max-width: 80%;
-  padding: 4px 10px;
-  border-radius: 999px;
-  background: rgb(0 0 0 / 0.5);
-  font-size: 12px;
-  text-align: center;
 }
 
 @keyframes fade-in {
@@ -68,73 +45,17 @@ body {
   }
 }
 
-.time {
-  padding: 0 4px;
-  white-space: nowrap;
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-}
-
-.scrubber {
-  flex: 1 1 120px;
-  min-width: 60px;
-  height: 24px;
-  margin: 0 4px;
-  background: none;
-  appearance: none;
-  outline: none;
-}
-
-.scrubber::-webkit-slider-runnable-track {
-  height: 4px;
-  border-radius: 2px;
-  background: linear-gradient(to right, var(--kago-accent) var(--progress, 0%), var(--kago-border-strong) var(--progress, 0%));
-}
-
-.scrubber::-moz-range-track {
-  height: 4px;
-  border-radius: 2px;
-  background: linear-gradient(to right, var(--kago-accent) var(--progress, 0%), var(--kago-border-strong) var(--progress, 0%));
-}
-
-.scrubber::-webkit-slider-thumb {
-  width: 12px;
-  height: 12px;
-  margin-top: -4px;
-  border: 0;
-  border-radius: 50%;
-  background: var(--kago-surface);
-  box-shadow: 0 0 0 0.5px var(--kago-border-strong), 0 1px 2px rgb(0 0 0 / 0.3);
-  appearance: none;
-}
-
-.scrubber::-moz-range-thumb {
-  width: 12px;
-  height: 12px;
-  border: 0;
-  border-radius: 50%;
-  background: var(--kago-surface);
-  box-shadow: 0 0 0 0.5px var(--kago-border-strong), 0 1px 2px rgb(0 0 0 / 0.3);
-}
-
-.scrubber:focus-visible::-webkit-slider-thumb {
-  outline: 2px solid color-mix(in srgb, var(--kago-accent) 60%, transparent);
-  outline-offset: 2px;
-}
-
-.scrubber:disabled {
-  visibility: hidden;
-}
-
+/* What is wrong with the recording, kept at the top of the picture so it does not stand in the way. */
 .notice {
-  flex: 0 1 auto;
-  max-width: 40%;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  position: absolute;
+  top: 8px;
+  right: 0;
+  left: 0;
+  width: fit-content;
+  margin: 0 auto;
+  pointer-events: none;
 }
 
-.last {
-  margin-right: -6px;
+.notice[hidden] {
+  display: none;
 }

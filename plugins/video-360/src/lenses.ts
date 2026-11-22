@@ -2,7 +2,7 @@ import { MAX_READ_BYTES } from "@kago/plugin-sdk";
 import { lensMime } from "./backends";
 import { initSegment, mediaSegment, timing, type Timing } from "./fmp4";
 import { AHEAD, BEHIND, correction, cutFragments, fragmentAt, nextBatch, type Fragment } from "./lanes";
-import { MAX_GAP, READS_AT_ONCE, settle, Signal, type Playback, type StreamSource } from "./player";
+import { bufferedEnd, MAX_GAP, READS_AT_ONCE, settle, Signal, type Playback, type StreamSource } from "./player";
 import { sampleReader, type FileReader, type SampleFetch, type Span } from "./reads";
 
 /** Batches of fragments being fetched at once, so the next is on its way while one is appended. */
@@ -130,6 +130,10 @@ export class LensVideosPlayer implements Playback {
     return this.videos[0]!;
   }
 
+  buffered() {
+    return bufferedEnd(this.master);
+  }
+
   time() {
     return this.target ?? this.master.currentTime;
   }
@@ -145,7 +149,8 @@ export class LensVideosPlayer implements Playback {
     this.tick();
   }
 
-  setMuted(muted: boolean) {
+  setSound(volume: number, muted: boolean) {
+    this.master.volume = volume;
     this.muted = muted;
     this.master.muted = muted || !this.gestured;
   }

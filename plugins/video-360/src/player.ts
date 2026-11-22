@@ -54,10 +54,12 @@ export interface Playback {
   /** Playing, but waiting on what to show. */
   readonly waiting: boolean;
   time(): number;
+  /** How far the picture is loaded past the playhead, in seconds of the recording. */
+  buffered(): number;
   play(): void;
   pause(): void;
   seek(time: number): void;
-  setMuted(muted: boolean): void;
+  setSound(volume: number, muted: boolean): void;
   /** Lets sound play. It may only start inside a user's gesture in the frame. */
   resumeAudio(): void;
   /** Called once per animation frame. */
@@ -107,6 +109,15 @@ export class Signal {
   notify() {
     for (const waiter of this.waiters.splice(0)) waiter();
   }
+}
+
+/** How far the stretch of a video that is loaded around its playhead reaches. */
+export function bufferedEnd(video: HTMLVideoElement) {
+  const { buffered, currentTime } = video;
+  for (let index = 0; index < buffered.length; index += 1) {
+    if (buffered.start(index) <= currentTime + 0.5 && currentTime <= buffered.end(index)) return buffered.end(index);
+  }
+  return 0;
 }
 
 /** Resolves when `target` fires `success`, and rejects when it fires `error` first. */
@@ -225,6 +236,10 @@ export class Player implements Playback {
     return this.seekTarget ?? this.clock.time();
   }
 
+  buffered() {
+    return Math.min(this.duration, Math.max(this.time(), this.fetchedUntil));
+  }
+
   play() {
     if (this.clock.time() >= this.duration - this.frameDuration) this.seek(0);
     this.playing = true;
@@ -240,8 +255,8 @@ export class Player implements Playback {
     if (this.context.state === "suspended") void this.context.resume().catch(() => undefined);
   }
 
-  setMuted(muted: boolean) {
-    this.gain.gain.value = muted ? 0 : 1;
+  setSound(volume: number, muted: boolean) {
+    this.gain.gain.value = muted ? 0 : volume;
   }
 
   seek(time: number) {

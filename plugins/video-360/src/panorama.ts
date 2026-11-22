@@ -1,6 +1,6 @@
 import type { Kago, PanoramaInfo } from "@kago/plugin-sdk";
 import { fragmentTime, parseMovie, readMoov, type Track } from "./mp4";
-import { settle, Signal, type Playback } from "./player";
+import { bufferedEnd, settle, Signal, type Playback } from "./player";
 import { keepFrom, nextSegment, placement, seekInto, type Run } from "./segments";
 
 /** Times a segment is asked for again before playback gives up. The server waits most of a minute on each. */
@@ -101,6 +101,10 @@ export class PanoramaPlayer implements Playback {
     return this.target !== null || this.video.seeking || (this.playing && this.video.readyState < HTMLMediaElement.HAVE_FUTURE_DATA);
   }
 
+  buffered() {
+    return bufferedEnd(this.video);
+  }
+
   time() {
     return this.target ?? this.video.currentTime;
   }
@@ -126,7 +130,8 @@ export class PanoramaPlayer implements Playback {
     this.wake.notify();
   }
 
-  setMuted(muted: boolean) {
+  setSound(volume: number, muted: boolean) {
+    this.video.volume = volume;
     this.muted = muted;
     this.video.muted = muted || !this.gestured;
   }

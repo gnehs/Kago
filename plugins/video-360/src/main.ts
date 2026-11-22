@@ -1,6 +1,7 @@
 import { connect } from "@kago/plugin-sdk";
 import "@kago/plugin-sdk/kago.css";
 import "./style.css";
+import { controlsShown, createSlider, element, formatClock, IDLE_MS, playerButton, setGlyph, setLabel } from "./controls";
 import { parseMovie, readMoov, type Movie, type Track } from "./mp4";
 import { PanoramaPlayer } from "./panorama";
 import { chooseBackend, lensMime, type BackendId, type Browser } from "./backends";
@@ -12,6 +13,10 @@ import { Stitcher, type View } from "./stitch";
 import { stringsFor } from "./strings";
 
 const MUTED_KEY = "muted";
+const VOLUME_KEY = "volume";
+const VOLUME_STEP = 0.1;
+/** How long the hint to drag and zoom stays up once the picture is there. */
+const HINT_MS = 4500;
 const DEGREE = Math.PI / 180;
 const HOME: View = { yaw: 0, pitch: 0, fov: 80 * DEGREE };
 const MIN_FOV = 20 * DEGREE;
@@ -21,83 +26,36 @@ const STEP = 5;
 /** How long a wait on Kago's server goes before the viewer says what it is waiting for. */
 const SAY_WAIT = 4000;
 
-// Lucide's glyphs, as Kago draws them elsewhere: Play, Pause, Volume2, VolumeX, RotateCcw and LoaderCircle.
-const SPEAKER = "M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z";
-const GLYPHS = {
-  play: ["M6 3 20 12 6 21Z"],
-  pause: ["M15 4h2a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z", "M7 4h2a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"],
-  sound: [SPEAKER, "M16 9a5 5 0 0 1 0 6", "M19.364 18.364a9 9 0 0 0 0-12.728"],
-  muted: [SPEAKER, "M22 9 16 15", "M16 9 22 15"],
-  reset: ["M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8", "M3 3v5h5"],
-  spinner: ["M21 12a9 9 0 1 1-6.219-8.56"]
-};
-
-function glyph(name: keyof typeof GLYPHS, className = "kago-glyph") {
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("viewBox", "0 0 24 24");
-  svg.setAttribute("aria-hidden", "true");
-  svg.setAttribute("class", className);
-  for (const d of GLYPHS[name]) {
-    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    path.setAttribute("d", d);
-    svg.append(path);
-  }
-  return svg;
-}
-
-function element<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, ...children: (Node | string)[]) {
-  const node = document.createElement(tag);
-  node.className = className;
-  node.append(...children);
-  return node;
-}
-
-function iconButton(onClick: () => void) {
-  const button = element("button", "kago-button");
-  button.type = "button";
-  button.addEventListener("click", onClick);
-  return button;
-}
-
-function setIcon(button: HTMLButtonElement, name: keyof typeof GLYPHS, label: string) {
-  if (button.dataset.glyph !== name) {
-    button.replaceChildren(glyph(name));
-    button.dataset.glyph = name;
-  }
-  button.ariaLabel = label;
-  button.dataset.tip = label;
-}
-
-function clock(seconds: number, total: number) {
-  const whole = Math.max(0, Math.floor(seconds));
-  const pad = (value: number) => String(value).padStart(2, "0");
-  const minutes = Math.floor(whole / 60);
-  return total >= 3600 ? `${Math.floor(minutes / 60)}:${pad(minutes % 60)}:${pad(whole % 60)}` : `${minutes}:${pad(whole % 60)}`;
-}
-
 const kago = await connect();
 const text = stringsFor(kago.locale);
 let muted = (await kago.storage.get(MUTED_KEY)) === "true";
+const storedVolume = await kago.storage.get(VOLUME_KEY);
+let volume = storedVolume !== null && Number.isFinite(Number(storedVolume)) && Number(storedVolume) >= 0 && Number(storedVolume) <= 1 ? Number(storedVolume) : 1;
 
 const canvas = element("canvas", "stage");
-const waitingNote = element("span", "waiting-note", text.preparing);
-const waiting = element("div", "waiting", glyph("spinner", "kago-glyph kago-spinner"), waitingNote);
-waiting.role = "status";
-waiting.ariaLabel = text.loading;
-const playButton = iconButton(() => (player?.playing ? player.pause() : player?.play()));
-const time = element("span", "time");
-const scrubber = element("input", "scrubber");
-scrubber.type = "range";
-scrubber.min = "0";
-scrubber.step = "any";
-scrubber.ariaLabel = text.position;
-const notice = element("span", "notice");
-const muteButton = iconButton(() => setMuted(!muted));
-const resetButton = iconButton(() => setView(HOME));
-setIcon(resetButton, "reset", text.reset);
-resetButton.classList.add("last");
-const viewer = element("main", "viewer", canvas, waiting);
-document.body.append(viewer, element("footer", "kago-status-bar", playButton, time, scrubber, notice, muteButton, resetButton));
+const centre = element("div", "kago-player-centre");
+const notice = element("span", "notice kago-player-glass kago-player-pill");
+notice.hidden = true;
+const playKey = playerButton(() => (player?.playing ? player.pause() : player?.play()), "kago-player-key");
+const muteButton = playerButton(() => setSound(volume || 1, !silent()));
+const resetButton = playerButton(() => setView(HOME));
+setGlyph(resetButton, "reset");
+setLabel(resetButton, text.reset);
+const fullscreenButton = playerButton(() => toggleFullscreen());
+const time = element("span", "kago-player-time");
+const scrubber = createSlider(text.position, "", (seconds) => formatClock(seconds, (player?.duration ?? 0) >= 3600), {
+  // Committed on release: every seek may have the decoders start over.
+  onCommit: (seconds) => player?.seek(seconds)
+});
+const volumeSlider = createSlider(text.volume, "kago-player-volume", (level) => `${Math.round(level * 100)}%`, {
+  onChange: (level) => setSound(level, false, false),
+  onCommit: () => saveSound()
+});
+const row = element("div", "kago-player-row", playKey, muteButton, volumeSlider.element, time, element("div", "kago-player-spacer"), resetButton, fullscreenButton);
+const bar = element("div", "kago-player-bar kago-player-glass", scrubber.element, row);
+const viewer = element("main", "kago-player viewer", canvas, centre, notice, bar);
+viewer.tabIndex = -1;
+document.body.append(viewer);
 
 let player: Playback | null = null;
 let stitcher: Stitcher | null = null;
@@ -106,6 +64,7 @@ let dirty = true;
 let failed = false;
 /** Whether Kago's server stitches the picture, which can keep the viewer waiting a while. */
 let stitchedByServer = false;
+const hint = matchMedia("(pointer: coarse)").matches ? text.touchHint : text.hint;
 let waitingSince: number | null = null;
 
 function fail(reason: "unsupported" | "unreadable", message?: string) {
@@ -123,28 +82,87 @@ function setView(next: View) {
   dirty = true;
 }
 
-function setMuted(next: boolean) {
-  muted = next;
-  kago.storage.set(MUTED_KEY, String(next));
-  player?.setMuted(next);
+const silent = () => muted || volume === 0;
+
+// A held arrow key or a dragged slider changes the sound many times a second; only where it comes to rest is kept.
+let saveTimer: ReturnType<typeof setTimeout> | undefined;
+function saveSound() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    kago.storage.set(MUTED_KEY, String(muted));
+    kago.storage.set(VOLUME_KEY, String(volume));
+  }, 300);
+}
+
+function setSound(nextVolume: number, nextMuted: boolean, save = true) {
+  volume = Math.min(1, Math.max(0, nextVolume));
+  muted = nextMuted;
+  player?.setSound(volume, muted);
+  if (save) saveSound();
   render();
 }
 
-let scrubbing = false;
+// The controls fade out while the video plays and come back with the pointer.
+let active = true;
+let idleTimer: ReturnType<typeof setTimeout> | undefined;
+function wake() {
+  active = true;
+  clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => (active = false), IDLE_MS);
+}
+viewer.addEventListener("pointermove", wake);
+viewer.addEventListener("pointerleave", () => (active = false));
+viewer.addEventListener("focusin", wake);
+
+function toggleFullscreen() {
+  if (document.fullscreenElement) void document.exitFullscreen();
+  else void viewer.requestFullscreen().catch(() => undefined);
+}
+
+/** When the hint to drag and zoom goes: it is said once, as the picture first appears. */
+let hintUntil: number | null = null;
+let showing: string | null = null;
+function say(kind: string, message: string | null) {
+  if (showing === `${kind}:${message}`) return;
+  showing = `${kind}:${message}`;
+  centre.replaceChildren();
+  if (kind === "badge") {
+    const badge = element("span", "kago-player-badge kago-player-glass");
+    setGlyph(badge, "play");
+    centre.append(badge);
+  } else if (message !== null) {
+    // A wait that is over before it is noticed never flashes the words.
+    centre.append(element("span", `kago-player-pill kago-player-glass${kind === "waiting" ? " late" : ""}`, message));
+  }
+}
+
 function render() {
   const playing = player?.playing ?? false;
-  setIcon(playButton, playing ? "pause" : "play", playing ? text.pause : text.play);
-  setIcon(muteButton, muted ? "muted" : "sound", muted ? text.unmute : text.mute);
   const duration = player?.duration ?? 0;
   const now = player?.time() ?? 0;
-  time.textContent = `${clock(now, duration)} / ${clock(duration, duration)}`;
-  scrubber.max = String(duration);
-  if (!scrubbing) scrubber.value = String(now);
-  scrubber.style.setProperty("--progress", `${duration ? (Number(scrubber.value) / duration) * 100 : 0}%`);
-  for (const control of [playButton, scrubber, muteButton, resetButton]) control.disabled = !player;
-  waiting.hidden = Boolean(stitcher?.ready) && !player?.waiting;
-  waitingSince = waiting.hidden ? null : (waitingSince ?? performance.now());
-  waitingNote.hidden = !stitchedByServer || waitingSince === null || performance.now() - waitingSince < SAY_WAIT;
+  const long = duration >= 3600;
+  const quiet = silent();
+  setGlyph(playKey, playing ? "pause" : "play");
+  setLabel(playKey, playing ? text.pause : text.play);
+  setGlyph(muteButton, quiet ? "muted" : volume < 0.5 ? "quiet" : "loud");
+  setLabel(muteButton, quiet ? text.unmute : text.mute);
+  const fullscreen = document.fullscreenElement === viewer;
+  setGlyph(fullscreenButton, fullscreen ? "minimize" : "maximize");
+  setLabel(fullscreenButton, fullscreen ? text.exitFullscreen : text.fullscreen);
+  time.textContent = `${formatClock(now, long)} / ${formatClock(duration, long)}`;
+  scrubber.show(now, duration, player?.buffered() ?? 0);
+  volumeSlider.show(quiet ? 0 : volume, 1);
+  for (const control of [playKey, muteButton, resetButton]) control.disabled = !player;
+
+  const waiting = !stitcher?.ready || Boolean(player?.waiting);
+  waitingSince = waiting ? (waitingSince ?? performance.now()) : null;
+  if (!waiting && player && hintUntil === null) hintUntil = performance.now() + HINT_MS;
+  if (waiting) say("waiting", stitchedByServer && waitingSince !== null && performance.now() - waitingSince >= SAY_WAIT ? text.preparing : text.loading);
+  else if (hintUntil !== null && performance.now() < hintUntil && playing && !failed) say("hint", hint);
+  else say(playing || !player ? "none" : "badge", null);
+
+  const shown = controlsShown({ playing, active, dragging: scrubber.dragging() || volumeSlider.dragging() });
+  viewer.toggleAttribute("data-controls", shown);
 }
 
 function frame() {
@@ -167,8 +185,11 @@ const spread = () => {
 };
 // Sound may start with any click in the frame, the controls' included.
 addEventListener("pointerdown", () => player?.resumeAudio(), { capture: true });
+/** Where and when a press began: one that barely moves is a click, which plays or pauses as it does in Kago's own player. */
+let press: { x: number; y: number; at: number; wasShown: boolean } | null = null;
 canvas.addEventListener("pointerdown", (event) => {
   canvas.setPointerCapture(event.pointerId);
+  press = pointers.size === 0 ? { x: event.clientX, y: event.clientY, at: performance.now(), wasShown: viewer.hasAttribute("data-controls") } : null;
   pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
   pinch = spread();
 });
@@ -188,10 +209,15 @@ canvas.addEventListener("pointermove", (event) => {
 });
 for (const type of ["pointerup", "pointercancel"] as const) {
   canvas.addEventListener(type, (event) => {
+    const click = type === "pointerup" && press && Math.hypot(event.clientX - press.x, event.clientY - press.y) < 4 && performance.now() - press.at < 500;
+    // A tap first brings the controls back; there is no hover to do that on a touch screen.
+    if (click && !(event.pointerType === "touch" && !press!.wasShown)) (player?.playing ? player.pause() : player?.play());
+    press = null;
     pointers.delete(event.pointerId);
     pinch = spread();
   });
 }
+canvas.addEventListener("dblclick", toggleFullscreen);
 canvas.addEventListener(
   "wheel",
   (event) => {
@@ -201,21 +227,23 @@ canvas.addEventListener(
   { passive: false }
 );
 
-scrubber.addEventListener("pointerdown", () => (scrubbing = true));
-scrubber.addEventListener("change", () => (scrubbing = false));
-scrubber.addEventListener("input", () => player?.seek(Number(scrubber.value)));
-
 addEventListener("keydown", (event) => {
   player?.resumeAudio();
   if (event.metaKey || event.ctrlKey || event.altKey || !player) return;
-  if (event.target === scrubber && event.key.startsWith("Arrow")) return;
-  if (event.key === " ") player.playing ? player.pause() : player.play();
-  else if (event.key === "m" || event.key === "M") setMuted(!muted);
-  else if (event.key === "r" || event.key === "R") setView(HOME);
-  else if (event.key === "ArrowLeft") player.seek(player.time() - STEP);
-  else if (event.key === "ArrowRight") player.seek(player.time() + STEP);
+  // A focused button keeps the keys it answers to itself.
+  if ((event.target as Element).closest("button") && [" ", "Enter"].includes(event.key)) return;
+  const key = event.key.toLowerCase();
+  if (key === " " || key === "k") player.playing ? player.pause() : player.play();
+  else if (key === "m") setSound(volume || 1, !silent());
+  else if (key === "f") toggleFullscreen();
+  else if (key === "r") setView(HOME);
+  else if (key === "arrowleft") player.seek(player.time() - STEP);
+  else if (key === "arrowright") player.seek(player.time() + STEP);
+  else if (key === "arrowup") setSound(volume + VOLUME_STEP, false);
+  else if (key === "arrowdown") setSound(volume - VOLUME_STEP, false);
   else return;
   event.preventDefault();
+  wake();
 });
 
 render();
@@ -278,8 +306,10 @@ try {
   fail("unsupported");
   throw new Error("WebGL 2 is not available");
 }
-notice.textContent = plan.missingLens ? text.oneLens : matchMedia("(pointer: coarse)").matches ? text.touchHint : text.hint;
-notice.title = notice.textContent;
+if (plan.missingLens) {
+  notice.textContent = text.oneLens;
+  notice.hidden = false;
+}
 
 const cover = movies[0]?.cover;
 if (cover) {
@@ -314,7 +344,7 @@ const open: Record<BackendId, () => Promise<Playback>> = {
   }
 };
 player = await open[backend]();
-player.setMuted(muted);
+player.setSound(volume, muted);
 // Read by the end-to-end check, which measures how well playback keeps up.
 Object.assign(globalThis, { video360: player.stats });
 player.seek(0);
