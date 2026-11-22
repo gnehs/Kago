@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { keys } from "@/api/keys";
 import { KeyRound, UserRound, UsersRound } from "lucide-react";
 import { api } from "@/api/client";
 import { useGroups, usePermissions, useUsers } from "@/api/hooks";
@@ -43,7 +44,7 @@ export function PermissionsPage({ roots }: { roots: Root[] }) {
     setSaving(key);
     await run(async () => {
       await api("/api/permissions", { method: "PUT", body: JSON.stringify({ principalType: principal.type, principalId: principal.id, rootId, level }) });
-      await Promise.all(["permissions", "roots", "fs"].map((queryKey) => queryClient.invalidateQueries({ queryKey: [queryKey] })));
+      await Promise.all([keys.permissions.all(), keys.roots(), keys.fs.all()].map((queryKey) => queryClient.invalidateQueries({ queryKey })));
     }, t("Couldn’t change the permission"));
     setSaving((current) => (current === key ? "" : current));
   }

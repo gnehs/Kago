@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useWindowScope } from "@/components/kago/window-scope";
 import { useQueryClient } from "@tanstack/react-query";
+import { keys } from "@/api/keys";
 import { Plus, X } from "lucide-react";
 import { api } from "@/api/client";
 import { useUsers } from "@/api/hooks";
@@ -34,7 +35,7 @@ export function UsersPage({ currentUserId }: { currentUserId: string }) {
   const [editName, setEditName] = useState("");
   const [editRole, setEditRole] = useState<Role>("USER");
   const canCreate = Boolean(email) && password.length >= 8;
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ["users"] });
+  const refresh = () => queryClient.invalidateQueries({ queryKey: keys.users() });
 
   async function create(event: React.FormEvent) {
     event.preventDefault();

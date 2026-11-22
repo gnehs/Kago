@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { keys } from "./api/keys";
 import { Navigate, Route, Routes, useParams } from "react-router";
 import { SESSION_ENDED_EVENT } from "./api/client";
 import { useMe, useSetupStatus } from "./api/hooks";
@@ -65,7 +66,7 @@ function AppGate({ children }: { children?: ReactNode }) {
     if (user) setLast(user);
   }, [user]);
   useEffect(() => {
-    const ended = () => void queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
+    const ended = () => void queryClient.invalidateQueries({ queryKey: keys.auth.me() });
     window.addEventListener(SESSION_ENDED_EVENT, ended);
     return () => window.removeEventListener(SESSION_ENDED_EVENT, ended);
   }, [queryClient]);

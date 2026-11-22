@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useWindowScope } from "@/components/kago/window-scope";
 import { useQueryClient } from "@tanstack/react-query";
+import { keys } from "@/api/keys";
 import { Ban, Check, Clock, Ellipsis, FileDiff, History, Pause, Pencil, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import { api } from "@/api/client";
 import { useSyncJobs } from "@/api/hooks";
@@ -54,7 +55,7 @@ export function SyncPage({ roots, user }: { roots: Root[]; user: Actor }) {
   const [runsOf, setRunsOf] = useState<string | null>(null);
   // The jobs asked to run that have not answered yet, each on its own: one answering does not end another's wait.
   const [starting, setStarting] = useState<ReadonlySet<string>>(new Set());
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ["sync-jobs"] });
+  const refresh = () => queryClient.invalidateQueries({ queryKey: keys.syncJobs() });
   const describeEndpoint = (endpoint: SyncEndpoint) => displayPath(roots.find((root) => root.slug === endpoint.rootSlug)?.name ?? endpoint.rootSlug, endpoint.path);
 
   async function start(job: SyncJob) {
@@ -64,7 +65,7 @@ export function SyncPage({ roots, user }: { roots: Root[]; user: Actor }) {
     await run(async () => {
       await api<FileTask>(`/api/sync-jobs/${job.id}/run`, { method: "POST" });
       toast(t("{name} started", { name: job.name }));
-      await Promise.all([refresh(), queryClient.invalidateQueries({ queryKey: ["tasks"] })]);
+      await Promise.all([refresh(), queryClient.invalidateQueries({ queryKey: keys.tasks() })]);
     }, t("Couldn’t start the sync"));
     setStarting((current) => {
       const next = new Set(current);

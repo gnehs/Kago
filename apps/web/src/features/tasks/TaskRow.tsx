@@ -1,4 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
+import { keys } from "@/api/keys";
 import { Ban, Calculator, Check, Clock, Pause, X } from "lucide-react";
 import { api, downloadUrl, taskDownloadUrl } from "@/api/client";
 import { Button } from "@/components/ui/button";
@@ -38,7 +39,7 @@ export function TaskRow({ task }: { task: FileTask }) {
   async function act(verb: "cancel" | "pause" | "resume" | "retry") {
     await run(async () => {
       await api(`/api/tasks/${task.id}/${verb}`, { method: "POST" });
-      await queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      await queryClient.invalidateQueries({ queryKey: keys.tasks() });
     });
   }
 

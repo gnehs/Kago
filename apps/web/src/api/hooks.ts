@@ -5,95 +5,96 @@ import { decodeSubtitle } from "../lib/subtitles";
 import { withSpeeds } from "../lib/taskSpeed";
 import { parentPath } from "../lib/paths";
 import type { FileRef } from "../stores/clipboard";
+import { keys } from "./keys";
 import { isLeaving, useLeavingStore } from "../stores/leaving";
 import type { Actor, ArchiveListing, AuditLog, ConvertJob, ConvertRun, ConvertRunFile, ConvertSupport, ExternalApp, FileItem, FileList, FileMeta, FileTask, FolderSize, FrameVerdict, Group, ImageMetadata, LibraryIcon, MediaInfo, PermissionRule, PluginPreviewer, Root, ShareLink, Shelf, SqlitePage, Storyboard, SsoConfig, SsoIdentity, SsoInfo, SqliteTable, StorageInfo, SubtitleList, SyncJob, SyncRun, SyncTrial, TrashItem, UserAccount, WorkspaceState } from "../types/kago";
 
 export function useSetupStatus() {
-  return useQuery({ queryKey: ["auth", "setup"], queryFn: () => api<{ needsSetup: boolean; oidc: SsoInfo | null }>("/api/auth/setup") });
+  return useQuery({ queryKey: keys.auth.setup(), queryFn: () => api<{ needsSetup: boolean; oidc: SsoInfo | null }>("/api/auth/setup") });
 }
 
 export function useMe() {
-  return useQuery({ queryKey: ["auth", "me"], queryFn: () => api<{ user: Actor | null }>("/api/auth/me") });
+  return useQuery({ queryKey: keys.auth.me(), queryFn: () => api<{ user: Actor | null }>("/api/auth/me") });
 }
 
 /** The identities linked to the account signed in, and whether it can also sign in with a password. */
 export function useIdentities() {
-  return useQuery({ queryKey: ["auth", "identities"], queryFn: () => api<{ sso: SsoInfo | null; hasPassword: boolean; identities: SsoIdentity[] }>("/api/auth/identities") });
+  return useQuery({ queryKey: keys.auth.identities(), queryFn: () => api<{ sso: SsoInfo | null; hasPassword: boolean; identities: SsoIdentity[] }>("/api/auth/identities") });
 }
 
 export function useSsoConfig() {
-  return useQuery({ queryKey: ["sso"], queryFn: () => api<SsoConfig>("/api/sso"), retry: false });
+  return useQuery({ queryKey: keys.sso(), queryFn: () => api<SsoConfig>("/api/sso"), retry: false });
 }
 
 export function useUsers() {
-  return useQuery({ queryKey: ["users"], queryFn: () => api<UserAccount[]>("/api/users"), retry: false });
+  return useQuery({ queryKey: keys.users(), queryFn: () => api<UserAccount[]>("/api/users"), retry: false });
 }
 
 export function useAdminContacts(enabled = true) {
-  return useQuery({ queryKey: ["admins"], queryFn: () => api<Array<{ displayName: string; email: string }>>("/api/admins"), enabled });
+  return useQuery({ queryKey: keys.admins(), queryFn: () => api<Array<{ displayName: string; email: string }>>("/api/admins"), enabled });
 }
 
 export function useGroups() {
-  return useQuery({ queryKey: ["groups"], queryFn: () => api<Group[]>("/api/groups"), retry: false });
+  return useQuery({ queryKey: keys.groups(), queryFn: () => api<Group[]>("/api/groups"), retry: false });
 }
 
 export function useRoots() {
-  return useQuery({ queryKey: ["roots"], queryFn: () => api<Root[]>("/api/roots") });
+  return useQuery({ queryKey: keys.roots(), queryFn: () => api<Root[]>("/api/roots") });
 }
 
 /** The kinds of remote location, the ones set up, whether the server can reach any at all, and what its disk allows in the local ones. Administrators only. */
 export function useStorage() {
-  return useQuery({ queryKey: ["storage"], queryFn: () => api<StorageInfo>("/api/storage"), retry: false });
+  return useQuery({ queryKey: keys.storage(), queryFn: () => api<StorageInfo>("/api/storage"), retry: false });
 }
 
 export function useConvertJobs() {
   // A run changes a job's last result without any event of its own.
-  return useQuery({ queryKey: ["convert-jobs"], queryFn: () => api<ConvertJob[]>("/api/convert-jobs"), refetchInterval: 10_000 });
+  return useQuery({ queryKey: keys.convertJobs(), queryFn: () => api<ConvertJob[]>("/api/convert-jobs"), refetchInterval: 10_000 });
 }
 
 /** What the server can convert to. It does not change while the server runs. */
 export function useConvertSupport(enabled = true) {
-  return useQuery({ queryKey: ["convert-support"], queryFn: () => api<ConvertSupport>("/api/convert/support"), staleTime: Infinity, enabled });
+  return useQuery({ queryKey: keys.convertSupport(), queryFn: () => api<ConvertSupport>("/api/convert/support"), staleTime: Infinity, enabled });
 }
 
 export function useSyncJobs() {
   // A run changes a job's last result without any event of its own.
-  return useQuery({ queryKey: ["sync-jobs"], queryFn: () => api<SyncJob[]>("/api/sync-jobs"), refetchInterval: 10_000 });
+  return useQuery({ queryKey: keys.syncJobs(), queryFn: () => api<SyncJob[]>("/api/sync-jobs"), refetchInterval: 10_000 });
 }
 
 /** What a job's last trial run would have changed; asked for again whenever that run is another one. What was fetched stays while `enabled` is off. */
 export function useSyncTrial(job: SyncJob | null, enabled = true) {
-  return useQuery({ queryKey: ["sync-trial", job?.id, job?.last_run_at], queryFn: () => api<SyncTrial>(`/api/sync-jobs/${job!.id}/trial`), enabled: enabled && job !== null });
+  return useQuery({ queryKey: keys.syncTrial(job?.id, job?.last_run_at), queryFn: () => api<SyncTrial>(`/api/sync-jobs/${job!.id}/trial`), enabled: enabled && job !== null });
 }
 
 /** A job's last runs, asked for again when another one starts and while one is still going. What was fetched stays while `enabled` is off. */
 export function useSyncRuns(job: SyncJob | null, enabled = true) {
-  return useQuery({ queryKey: ["sync-runs", job?.id, job?.last_run_at, job?.last_status], queryFn: () => api<SyncRun[]>(`/api/sync-jobs/${job!.id}/runs`), enabled: enabled && job !== null });
+  return useQuery({ queryKey: keys.syncRuns(job?.id, job?.last_run_at, job?.last_status), queryFn: () => api<SyncRun[]>(`/api/sync-jobs/${job!.id}/runs`), enabled: enabled && job !== null });
 }
 
 /** An auto-convert's last runs, asked for again as `useSyncRuns` does. */
 export function useConvertRuns(job: ConvertJob | null, enabled = true) {
-  return useQuery({ queryKey: ["convert-runs", job?.id, job?.last_run_at, job?.last_status], queryFn: () => api<ConvertRun[]>(`/api/convert-jobs/${job!.id}/runs`), enabled: enabled && job !== null });
+  return useQuery({ queryKey: keys.convertRuns(job?.id, job?.last_run_at, job?.last_status), queryFn: () => api<ConvertRun[]>(`/api/convert-jobs/${job!.id}/runs`), enabled: enabled && job !== null });
 }
 
 /** The files a run dealt with, asked for again while it is still going. */
 export function useConvertRunFiles(jobId: string, run: ConvertRun, enabled = true) {
-  return useQuery({ queryKey: ["convert-run-files", jobId, run.task_id, run.status, run.bytes], queryFn: () => api<ConvertRunFile[]>(`/api/convert-jobs/${jobId}/runs/${run.task_id}/files`), enabled });
+  return useQuery({ queryKey: keys.convertRunFiles(jobId, run.task_id, run.status, run.bytes), queryFn: () => api<ConvertRunFile[]>(`/api/convert-jobs/${jobId}/runs/${run.task_id}/files`), enabled });
 }
 
 export function useSshKey(enabled = true) {
-  return useQuery({ queryKey: ["ssh-key"], queryFn: () => api<{ publicKey: string }>("/api/storage/ssh-key"), enabled, retry: false, staleTime: Infinity });
+  return useQuery({ queryKey: keys.sshKey(), queryFn: () => api<{ publicKey: string }>("/api/storage/ssh-key"), enabled, retry: false, staleTime: Infinity });
 }
 
 export function useWorkspace() {
-  return useQuery({ queryKey: ["workspace"], queryFn: () => api<WorkspaceState>("/api/workspace") });
+  return useQuery({ queryKey: keys.workspace(), queryFn: () => api<WorkspaceState>("/api/workspace") });
 }
 
 export function useSaveWorkspace() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (workspace: WorkspaceState) => api<WorkspaceState>("/api/workspace", { method: "PUT", body: JSON.stringify(workspace), quiet: true }),
-    onSuccess: (workspace) => queryClient.setQueryData(["workspace"], workspace)
+    onSuccess: (workspace) => queryClient.setQueryData(keys.workspace(), workspace)
   });
 }
 
@@ -112,7 +113,7 @@ function useWithoutLeaving() {
 export function dropLeft(client: QueryClient, left: FileRef[]) {
   if (left.length === 0) return;
   const gone = (rootSlug: string, path: string) => left.some((ref) => ref.rootSlug === rootSlug && (path === ref.path || path.startsWith(`${ref.path}/`)));
-  client.setQueriesData<FileList>({ queryKey: ["fs", "list"] }, (list) =>
+  client.setQueriesData<FileList>({ queryKey: keys.fs.lists() }, (list) =>
     // A listing that holds none of them is left as it is, rather than made to look newly read.
     list?.items?.some((item) => gone(list.rootSlug, item.path)) ? { ...list, items: list.items.filter((item) => !gone(list.rootSlug, item.path)) } : undefined
   );
@@ -154,7 +155,7 @@ export function foldersChanged(client: QueryClient, { rootSlug, paths, gone = []
   const stale = (path: string) => paths.includes(path) || wholly.some((folder) => under(path, folder));
   const holds = (path: string) => [...paths, ...trees].some((changed) => under(changed, path));
   const work: Array<Promise<unknown>> = [];
-  for (const query of client.getQueryCache().findAll({ queryKey: ["fs"] })) {
+  for (const query of client.getQueryCache().findAll({ queryKey: keys.fs.all() })) {
     const [, kind, slug, path, search] = query.queryKey as [string, string, unknown, unknown, unknown];
     if (slug !== rootSlug || typeof path !== "string") continue;
     if (kind === "list" && search === "search") {
@@ -188,7 +189,7 @@ type FileListLine =Omit<FileList, "items"> | { items: FileItem[] } | { done: tru
  * first of a very large folder is there long before the last; one already shown stays as it is until its new listing is whole.
  */
 function fileListQuery(client: QueryClient, rootSlug: string, path: string) {
-  const queryKey = ["fs", "list", rootSlug, path];
+  const queryKey = keys.fs.list(rootSlug, path);
   return {
     queryKey,
     queryFn: async ({ signal }: { signal: AbortSignal }): Promise<FileList> => {
@@ -234,7 +235,7 @@ type FolderSearchLine = Omit<FileList, "items" | "partial"> | { items: FileItem[
 export function useFolderSearch(rootSlug: string, path: string, query: string) {
   const select = useWithoutLeaving();
   const client = useQueryClient();
-  const queryKey = ["fs", "list", rootSlug, path, "search", query];
+  const queryKey = keys.fs.search(rootSlug, path, query);
   return useQuery({
     queryKey,
     queryFn: async ({ signal }): Promise<FolderSearch> => {
@@ -284,7 +285,7 @@ export function useFolderContents(rootSlug: string, paths: string[]) {
 
 export function useFileMeta(rootSlug: string, path: string, enabled = true) {
   return useQuery({
-    queryKey: ["fs", "meta", rootSlug, path],
+    queryKey: keys.fs.meta(rootSlug, path),
     queryFn: () => api<FileMeta>(`/api/fs/meta?${new URLSearchParams({ rootSlug, path }).toString()}`),
     enabled
   });
@@ -293,7 +294,7 @@ export function useFileMeta(rootSlug: string, path: string, enabled = true) {
 /** How much a folder holds, which the server reads the whole folder to tell: asked only where it is shown, and given up when that goes away. */
 export function useFolderSize(rootSlug: string, path: string, enabled = true) {
   return useQuery({
-    queryKey: ["fs", "size", rootSlug, path],
+    queryKey: keys.fs.size(rootSlug, path),
     queryFn: ({ signal }) => api<FolderSize>(`/api/fs/size?${new URLSearchParams({ rootSlug, path }).toString()}`, { signal }),
     enabled,
     // Coming back to a folder just measured does not measure it again.
@@ -310,7 +311,7 @@ export type FileVersion = { path: string; mtime: number | undefined };
 
 export function useSqliteOverview(rootSlug: string, { path, mtime }: FileVersion) {
   return useQuery({
-    queryKey: ["fs", "sqlite", rootSlug, path, mtime],
+    queryKey: keys.fs.sqlite(rootSlug, path, mtime),
     queryFn: () => api<{ tables: SqliteTable[] }>(`/api/fs/sqlite?${new URLSearchParams({ rootSlug, path }).toString()}`),
     retry: false
   });
@@ -318,7 +319,7 @@ export function useSqliteOverview(rootSlug: string, { path, mtime }: FileVersion
 
 export function useArchiveEntries(rootSlug: string, { path, mtime }: FileVersion) {
   return useQuery({
-    queryKey: ["fs", "archive", rootSlug, path, mtime],
+    queryKey: keys.fs.archive(rootSlug, path, mtime),
     queryFn: () => api<ArchiveListing>(`/api/fs/archive?${new URLSearchParams({ rootSlug, path }).toString()}`),
     retry: false
   });
@@ -326,7 +327,7 @@ export function useArchiveEntries(rootSlug: string, { path, mtime }: FileVersion
 
 export function useSqliteRows(rootSlug: string, { path, mtime }: FileVersion, table: string | undefined, offset: number, limit: number) {
   return useQuery({
-    queryKey: ["fs", "sqlite", rootSlug, path, mtime, table, offset, limit],
+    queryKey: keys.fs.sqliteRows(rootSlug, path, mtime, table, offset, limit),
     queryFn: () => api<SqlitePage>(`/api/fs/sqlite/rows?${new URLSearchParams({ rootSlug, path, table: table!, offset: String(offset), limit: String(limit) }).toString()}`),
     enabled: table !== undefined,
     retry: false,
@@ -337,7 +338,7 @@ export function useSqliteRows(rootSlug: string, { path, mtime }: FileVersion, ta
 
 export function useImageMetadata(rootSlug: string, path: string, enabled = true) {
   return useQuery({
-    queryKey: ["fs", "exif", rootSlug, path],
+    queryKey: keys.fs.exif(rootSlug, path),
     queryFn: () => api<ImageMetadata>(`/api/fs/exif?${new URLSearchParams({ rootSlug, path }).toString()}`),
     enabled,
     retry: false,
@@ -347,7 +348,7 @@ export function useImageMetadata(rootSlug: string, path: string, enabled = true)
 
 export function useMediaInfo(rootSlug: string, { path, mtime }: FileVersion, enabled = true) {
   return useQuery({
-    queryKey: ["media", "info", rootSlug, path, mtime],
+    queryKey: keys.media.info(rootSlug, path, mtime),
     queryFn: () => api<MediaInfo>(`/api/media/info?${new URLSearchParams({ rootSlug, path }).toString()}`),
     enabled,
     retry: false,
@@ -358,7 +359,7 @@ export function useMediaInfo(rootSlug: string, { path, mtime }: FileVersion, ena
 /** The pictures for a video's timeline. Asking is what has them made, so it is asked again until they are. */
 export function useStoryboard(rootSlug: string, { path, mtime }: FileVersion, enabled = true) {
   return useQuery({
-    queryKey: ["media", "storyboard", rootSlug, path, mtime],
+    queryKey: keys.media.storyboard(rootSlug, path, mtime),
     queryFn: () => api<Storyboard>(`/api/media/storyboard?${new URLSearchParams({ rootSlug, path }).toString()}`),
     enabled,
     retry: false,
@@ -380,7 +381,7 @@ export function useMediaInfos(rootSlug: string, files: FileVersion[]) {
   const { data, settled } = useQueries({
     // Same keys as `useMediaInfo`, so a file asked about either way is asked about once.
     queries: files.map(({ path, mtime }, index) => ({
-      queryKey: ["media", "info", rootSlug, path, mtime],
+      queryKey: keys.media.info(rootSlug, path, mtime),
       queryFn: () => api<MediaInfo>(`/api/media/info?${new URLSearchParams({ rootSlug, path }).toString()}`),
       enabled: index < reach,
       retry: false,
@@ -396,7 +397,7 @@ export function useMediaInfos(rootSlug: string, files: FileVersion[]) {
 
 export function useSubtitles(rootSlug: string, { path, mtime }: FileVersion) {
   return useQuery({
-    queryKey: ["media", "subtitles", rootSlug, path, mtime],
+    queryKey: keys.media.subtitles(rootSlug, path, mtime),
     queryFn: () => api<SubtitleList>(`/api/media/subtitles?${new URLSearchParams({ rootSlug, path }).toString()}`),
     retry: false,
     staleTime: 60_000
@@ -410,7 +411,7 @@ export function useTextFile(rootSlug: string, file: Pick<FileItem, "path" | "mti
   // It is read whole, into memory. Something far larger than any cue sheet or lyrics is not one, whatever its name says.
   const item = file && file.size <= MAX_SIDECAR_BYTES ? file : undefined;
   return useQuery({
-    queryKey: ["fs", "text", rootSlug, item?.path, item?.mtime],
+    queryKey: keys.fs.text(rootSlug, item?.path, item?.mtime),
     queryFn: async () => {
       const response = await fetch(previewUrl(rootSlug, item!.path), { credentials: "include" });
       if (!response.ok) throw new Error(`Request failed: ${response.status}`);
@@ -423,29 +424,29 @@ export function useTextFile(rootSlug: string, file: Pick<FileItem, "path" | "mti
 }
 
 export function useShares() {
-  return useQuery({ queryKey: ["shares"], queryFn: () => api<ShareLink[]>("/api/shares") });
+  return useQuery({ queryKey: keys.shares(), queryFn: () => api<ShareLink[]>("/api/shares") });
 }
 
 export function usePermissions(rootId?: string, enabled = true) {
   return useQuery({
-    queryKey: ["permissions", rootId ?? "all"],
+    queryKey: keys.permissions.forRoot(rootId),
     queryFn: () => api<PermissionRule[]>(`/api/permissions${rootId ? `?${new URLSearchParams({ rootId }).toString()}` : ""}`),
     enabled
   });
 }
 
 export function useTasks() {
-  return useQuery({ queryKey: ["tasks"], queryFn: async () => withSpeeds(await api<FileTask[]>("/api/tasks")), refetchInterval: 4000 });
+  return useQuery({ queryKey: keys.tasks(), queryFn: async () => withSpeeds(await api<FileTask[]>("/api/tasks")), refetchInterval: 4000 });
 }
 
 export function useExternalApps() {
-  return useQuery({ queryKey: ["external-apps"], queryFn: () => api<ExternalApp[]>("/api/external-apps") });
+  return useQuery({ queryKey: keys.externalApps(), queryFn: () => api<ExternalApp[]>("/api/external-apps") });
 }
 
 /** The library icons that answer to a name. `available` is false when the server could reach no library. */
 export function useIconSuggestions(name: string) {
   return useQuery({
-    queryKey: ["app-icons", name],
+    queryKey: keys.appIcons(name),
     queryFn: () => api<{ available: boolean; items: LibraryIcon[] }>(`/api/app-icons?${new URLSearchParams({ q: name }).toString()}`),
     enabled: name.length > 0,
     retry: false,
@@ -458,7 +459,7 @@ export function useIconSuggestions(name: string) {
 /** Whether the service at an address lets itself be shown inside Kago. The server asks the service; this only says what it heard. */
 export function useFrameProbe(url: string, enabled = true) {
   return useQuery({
-    queryKey: ["frame-probe", url],
+    queryKey: keys.frameProbe(url),
     queryFn: () => api<{ verdict: FrameVerdict }>("/api/external-apps/probe", { method: "POST", body: JSON.stringify({ url }) }),
     enabled: enabled && /^https?:\/\/[^/]/i.test(url),
     retry: false,
@@ -467,11 +468,11 @@ export function useFrameProbe(url: string, enabled = true) {
 }
 
 export function useShelves() {
-  return useQuery({ queryKey: ["shelves"], queryFn: () => api<Shelf[]>("/api/shelves") });
+  return useQuery({ queryKey: keys.shelves(), queryFn: () => api<Shelf[]>("/api/shelves") });
 }
 
 export function useTrash(enabled = true) {
-  return useQuery({ queryKey: ["trash"], queryFn: () => api<TrashItem[]>("/api/trash"), enabled });
+  return useQuery({ queryKey: keys.trash(), queryFn: () => api<TrashItem[]>("/api/trash"), enabled });
 }
 
 export type AuditEntry = AuditLog & { actor_name: string | null; actor_email: string | null };
@@ -481,7 +482,7 @@ const AUDIT_PAGE = 100;
 /** The log newest first, a page at a time; each page continues after the last row of the one before. */
 export function useAudit(filter: AuditFilter = {}, enabled = true) {
   return useInfiniteQuery({
-    queryKey: ["audit", filter],
+    queryKey: keys.audit(filter),
     initialPageParam: "",
     queryFn: ({ pageParam }) => {
       const query = new URLSearchParams({ limit: String(AUDIT_PAGE) });
@@ -502,7 +503,7 @@ export function useAudit(filter: AuditFilter = {}, enabled = true) {
  */
 export function usePluginPreviewers() {
   return useQuery({
-    queryKey: ["plugins"],
+    queryKey: keys.plugins(),
     queryFn: () => api<{ previewers: PluginPreviewer[] }>("/api/plugins"),
     select: (data) => new Map(data.previewers.flatMap((previewer) => previewer.extensions.map((extension) => [extension, previewer] as const))),
     staleTime: Infinity

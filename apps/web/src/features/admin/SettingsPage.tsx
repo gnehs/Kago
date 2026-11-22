@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { keys } from "@/api/keys";
 import { Columns3, KeyRound, LayoutGrid, List, Sparkles, ZapOff } from "lucide-react";
 import { api } from "@/api/client";
 import { Button } from "@/components/ui/button";
@@ -140,10 +141,10 @@ type ArchivePassword = { id: string; note: string; createdAt: number };
 /** The passwords tried on a locked archive before its own is asked for. What is saved is not shown again, so each goes by its note. */
 function ArchivePasswords() {
   const queryClient = useQueryClient();
-  const saved = useQuery({ queryKey: ["archive-passwords"], queryFn: () => api<ArchivePassword[]>("/api/archive-passwords") });
+  const saved = useQuery({ queryKey: keys.archivePasswords(), queryFn: () => api<ArchivePassword[]>("/api/archive-passwords") });
   const [password, setPassword] = useState("");
   const [note, setNote] = useState("");
-  const adopt = (list: ArchivePassword[]) => queryClient.setQueryData(["archive-passwords"], list);
+  const adopt = (list: ArchivePassword[]) => queryClient.setQueryData(keys.archivePasswords(), list);
 
   async function add(event: React.FormEvent) {
     event.preventDefault();

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { keys } from "@/api/keys";
 import { Ellipsis, Pencil, Plus, Trash2, UsersRound, X } from "lucide-react";
 import { api } from "@/api/client";
 import { useGroups, useUsers } from "@/api/hooks";
@@ -23,7 +24,7 @@ export function GroupsPage() {
   const users = useUsers();
   const [name, setName] = useState("");
   const [creating, setCreating] = useState(false);
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ["groups"] });
+  const refresh = () => queryClient.invalidateQueries({ queryKey: keys.groups() });
 
   async function createGroup(event: React.FormEvent) {
     event.preventDefault();
@@ -98,7 +99,7 @@ function GroupCard({ group, users, onChange }: { group: Group; users: UserAccoun
     if (!(await confirmAction({ window: scope, title: t("Delete this group?"), subject: { icon: <KagoStatusIcon large><UsersRound /></KagoStatusIcon>, name: group.name, detail: t("{count} member | {count} members", { count: group.members.length }) }, description: t("Its members stay as users but lose the access this group gave them: the permission rules that name it are removed."), confirmLabel: t("Delete"), destructive: true }))) return;
     await run(async () => {
       await api(`/api/groups/${group.id}`, { method: "DELETE" });
-      await Promise.all([onChange(), queryClient.invalidateQueries({ queryKey: ["permissions"] })]);
+      await Promise.all([onChange(), queryClient.invalidateQueries({ queryKey: keys.permissions.all() })]);
     }, t("Couldn’t delete the group"));
   }
 

@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { keys } from "@/api/keys";
 import { fileViews } from "@/features/files/fileLayout";
 import { pasteClipboard, renameFile, setClipboard, trashFiles } from "@/features/files/useFileActions";
 import { baseName, nfc, parentPath } from "@/lib/paths";
@@ -71,7 +72,7 @@ export function useShortcuts({ enabled, onOpenPalette }: { enabled: boolean; onO
         store.openWindow({ rootSlug: active.rootSlug, logicalPath: active.logicalPath, title: active.title });
       } else if (mod && key === "r") {
         event.preventDefault();
-        void queryClient.invalidateQueries({ queryKey: ["fs", "list", active.rootSlug, active.logicalPath] });
+        void queryClient.invalidateQueries({ queryKey: keys.fs.list(active.rootSlug, active.logicalPath) });
       } else if (mod && key === "l") {
         event.preventDefault();
         window.dispatchEvent(new CustomEvent(EDIT_ADDRESS_EVENT, { detail: active.id }));

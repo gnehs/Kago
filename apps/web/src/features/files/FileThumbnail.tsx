@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { keys } from "@/api/keys";
 import { thumbnailUrl } from "@/api/client";
 import type { FileItem } from "@/types/kago";
 import { cn } from "@/lib/utils";
@@ -16,7 +17,7 @@ export function FileThumbnail({ rootSlug, item, size }: { rootSlug: string; item
   // The address carries the mtime, so a file that changes is drawn again instead of coming from the browser's cache.
   const source = `${thumbnailUrl(rootSlug, item.path)}&v=${Math.round(item.mtime)}`;
   const excerpt = useQuery({
-    queryKey: ["thumbnail-text", source],
+    queryKey: keys.thumbnailText(source),
     enabled: shows === "text",
     staleTime: Infinity,
     retry: false,

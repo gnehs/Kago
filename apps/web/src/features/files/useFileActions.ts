@@ -1,4 +1,5 @@
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { keys, isListingKey } from "@/api/keys";
 import { api, ApiError, apiLines, downloadUrl, serverMessage } from "@/api/client";
 import { dropLeft } from "@/api/hooks";
 import { errorMessage, formatSize } from "@/lib/format";
@@ -58,7 +59,7 @@ async function createTask(queryClient: QueryClient, body: Record<string, unknown
   // Its end may have been heard before this answer: finished, what it carried is taken out of the listings that kept it.
   if (leaving && leavingSettled(task.id)) dropLeft(queryClient, leaving);
   if (leaving) hideLeaving(task.id, leaving);
-  await queryClient.invalidateQueries({ queryKey: ["tasks"] });
+  await queryClient.invalidateQueries({ queryKey: keys.tasks() });
   return task;
 }
 
@@ -152,7 +153,7 @@ export function newFolderIn(queryClient: QueryClient, folder: FileRef, scope: st
     const name = nfc((await promptText({ window: scope, title: t("New folder"), defaultValue: t("untitled folder"), confirmLabel: t("Create") })) ?? "");
     if (!name) return false;
     await api("/api/fs/mkdir", { method: "POST", body: JSON.stringify({ rootSlug: folder.rootSlug, path: folder.path, name }) });
-    await queryClient.invalidateQueries({ queryKey: ["fs", "list", folder.rootSlug, folder.path] });
+    await queryClient.invalidateQueries({ queryKey: keys.fs.list(folder.rootSlug, folder.path) });
     return true;
   }, t("Couldn’t create the folder"));
 }
@@ -171,7 +172,7 @@ export function renameFile(queryClient: QueryClient, item: FileRef & { name: str
     useWorkspaceStore.getState().followFolder(item, { rootSlug: item.rootSlug, path: renamed.path });
     onRenamed?.(renamed.path);
     // The item may sit in a folder opened in place rather than in the window's own.
-    await queryClient.invalidateQueries({ queryKey: ["fs", "list", item.rootSlug, parentPath(item.path)], exact: true }, { cancelRefetch: false });
+    await queryClient.invalidateQueries({ queryKey: keys.fs.list(item.rootSlug, parentPath(item.path)), exact: true }, { cancelRefetch: false });
   }, t("Couldn’t rename"));
 }
 
@@ -197,7 +198,7 @@ async function undoTrash(queryClient: QueryClient, sources: FileRef[], task: Fil
   }
   if (found.length === 0) throw new Error(t("Nothing to put back"));
   for (const item of found) followTask(await api<FileTask>(`/api/trash/${item.id}/restore`, { method: "POST" }));
-  await Promise.all(["trash", "tasks"].map((key) => queryClient.invalidateQueries({ queryKey: [key] })));
+  await Promise.all([keys.trash(), keys.tasks()].map((queryKey) => queryClient.invalidateQueries({ queryKey })));
 }
 
 /** Resolves to the task moving them, or to nothing when it could not be started. */
@@ -279,9 +280,9 @@ export function useFileActions(window: FileWindow) {
   const queryClient = useQueryClient();
   const refs = (paths: string[]): FileRef[] => paths.map((path) => ({ rootSlug: window.rootSlug, path }));
   const here = (path = window.logicalPath): FileRef => ({ rootSlug: window.rootSlug, path });
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ["fs", "list", window.rootSlug, window.logicalPath] });
+  const refresh = () => queryClient.invalidateQueries({ queryKey: keys.fs.list(window.rootSlug, window.logicalPath) });
   /** An upload can land in folders other windows are showing, so every listing of the root is refetched; searches are not. */
-  const refreshRoot = (rootSlug = window.rootSlug) => queryClient.invalidateQueries({ queryKey: ["fs", "list", rootSlug], predicate: (query) => query.queryKey.length === 4 }, { cancelRefetch: false });
+  const refreshRoot = (rootSlug = window.rootSlug) => queryClient.invalidateQueries({ queryKey: keys.fs.rootLists(rootSlug), predicate: (query) => isListingKey(query.queryKey) }, { cancelRefetch: false });
   const clearSelection = () => useWorkspaceStore.getState().selectItems(window.id, []);
 
   return {
@@ -449,7 +450,7 @@ export function useFileActions(window: FileWindow) {
         const spec = await promptConvert({ window: window.id, kind, names: items.map((item) => nfc(item.name)) });
         if (!spec) return;
         const task = await api<FileTask>("/api/convert", { method: "POST", body: JSON.stringify({ sources: refs(items.map((item) => item.path)), destination: here(commonFolder(items.map((item) => item.path))), spec }) });
-        await queryClient.invalidateQueries({ queryKey: ["tasks"] });
+        await queryClient.invalidateQueries({ queryKey: keys.tasks() });
         followTask(task);
       }, t("Couldn’t start the conversion")),
     extract: (paths: string[]) => run(() => startExtract(queryClient, { sources: refs(paths), destination: here(commonFolder(paths)) }, undefined, window.id)),
@@ -460,7 +461,7 @@ export function useFileActions(window: FileWindow) {
         // The server keeps one shelf for every account, so none is only a listing that came back empty; make the one the shelf starts with.
         const shelfId = shelves[0]?.id ?? (await api<{ id: string }>("/api/shelves", { method: "POST", body: JSON.stringify({ name: "Default" }) })).id;
         await Promise.all(refs(paths).map((ref) => api(`/api/shelves/${shelfId}/items`, { method: "POST", body: JSON.stringify(ref) })));
-        await queryClient.invalidateQueries({ queryKey: ["shelves"] });
+        await queryClient.invalidateQueries({ queryKey: keys.shelves() });
         toast(t("Added to Shelf ({count})", { count: paths.length }));
       }, t("Couldn’t add to Shelf")),
     transfer: (type: "copy" | "move", sources: FileRef[], destination: FileRef = here()) => transferFiles(queryClient, type, sources, destination, window.id),

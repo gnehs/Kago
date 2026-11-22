@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { keys } from "@/api/keys";
 import { api } from "@/api/client";
 import { KagoSpinner } from "@/components/kago/empty-state";
 import { KagoPasswordInput } from "@/components/kago/password-input";
@@ -26,7 +27,7 @@ export function SetupAdmin() {
         method: "POST",
         body: JSON.stringify({ email, displayName: displayName || email.split("@")[0] || "Admin", password })
       });
-      await queryClient.invalidateQueries({ queryKey: ["auth"] });
+      await queryClient.invalidateQueries({ queryKey: keys.auth.all() });
     } catch (err) {
       setError(errorMessage(err, t("Setup failed")));
     } finally {

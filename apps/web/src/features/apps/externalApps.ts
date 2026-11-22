@@ -1,5 +1,6 @@
 import { createElement } from "react";
 import type { QueryClient } from "@tanstack/react-query";
+import { keys } from "@/api/keys";
 import { api } from "@/api/client";
 import { ExternalAppIcon } from "@/components/kago/external-app-icon";
 import { t } from "@/lib/i18n";
@@ -55,6 +56,6 @@ export async function removeExternalApp(queryClient: QueryClient, app: ExternalA
   if (!confirmed) return;
   await run(async () => {
     await api(`/api/external-apps/${app.id}`, { method: "DELETE" });
-    await queryClient.invalidateQueries({ queryKey: ["external-apps"] });
+    await queryClient.invalidateQueries({ queryKey: keys.externalApps() });
   });
 }

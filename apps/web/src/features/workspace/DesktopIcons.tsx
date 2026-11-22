@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { keys } from "@/api/keys";
 import { AppWindow, Copy, ExternalLink, HardDrive, Pencil, Plus, Server, Trash2 } from "lucide-react";
 import { api } from "@/api/client";
 import { useExternalApps } from "@/api/hooks";
@@ -30,7 +31,7 @@ export function DesktopIcons({ roots, isAdmin }: { roots: Root[]; isAdmin: boole
     apps.map((app) => app.id),
     (ids) => {
       queryClient.setQueryData<ExternalApp[]>(["external-apps"], (current) => current && ids.flatMap((id) => current.find((app) => app.id === id) ?? []));
-      void run(() => api("/api/external-apps/order", { method: "PUT", body: JSON.stringify({ ids }) }), t("Couldn’t save the order")).finally(() => queryClient.invalidateQueries({ queryKey: ["external-apps"] }));
+      void run(() => api("/api/external-apps/order", { method: "PUT", body: JSON.stringify({ ids }) }), t("Couldn’t save the order")).finally(() => queryClient.invalidateQueries({ queryKey: keys.externalApps() }));
     }
   );
   const shown = reorder.order.flatMap((id) => apps.find((app) => app.id === id) ?? []);

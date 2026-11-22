@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useWindowScope } from "@/components/kago/window-scope";
 import { useQueryClient } from "@tanstack/react-query";
+import { keys } from "@/api/keys";
 import { Fingerprint } from "lucide-react";
 import { api, ApiError } from "@/api/client";
 import { useIdentities } from "@/api/hooks";
@@ -49,7 +50,7 @@ export function AccountPage({ user }: { user: Actor }) {
     if (!(await confirmAction({ window: scope, title: t("Unlink this identity?"), subject: { icon: <KagoStatusIcon large><Fingerprint /></KagoStatusIcon>, name: issuerName(identity.issuer), detail: identity.email ?? identity.displayName ?? identity.subject }, description: t("Other devices signed in through it are signed out. Signing in through it again links it back if its email address is this account’s."), confirmLabel: t("Unlink"), destructive: true }))) return;
     await run(async () => {
       await api(`/api/auth/identities/${identity.id}`, { method: "DELETE" });
-      await queryClient.invalidateQueries({ queryKey: ["auth", "identities"] });
+      await queryClient.invalidateQueries({ queryKey: keys.auth.identities() });
     }, t("Couldn’t unlink the identity"));
   }
 
@@ -61,7 +62,7 @@ export function AccountPage({ user }: { user: Actor }) {
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
-      await queryClient.invalidateQueries({ queryKey: ["auth", "identities"] });
+      await queryClient.invalidateQueries({ queryKey: keys.auth.identities() });
       toast(t("Password updated. Other devices have been signed out"));
     } catch (error) {
       toast(error instanceof ApiError && error.code === "INVALID_CURRENT_PASSWORD" ? t("The current password is incorrect") : t("Couldn’t change the password"), "error");

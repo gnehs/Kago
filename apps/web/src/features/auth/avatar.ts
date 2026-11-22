@@ -1,4 +1,5 @@
 import type { QueryClient } from "@tanstack/react-query";
+import { keys } from "@/api/keys";
 import { api } from "@/api/client";
 import type { Actor } from "@/types/kago";
 
@@ -15,5 +16,5 @@ export type AvatarCrop = { x: number; y: number; size: number };
  */
 export async function setAvatar(queryClient: QueryClient, picture: { rootSlug: string; path: string; crop?: AvatarCrop } | null) {
   const answer = await api<{ user: Actor }>("/api/avatar", picture ? { method: "POST", body: JSON.stringify(picture) } : { method: "DELETE" });
-  queryClient.setQueryData(["auth", "me"], answer);
+  queryClient.setQueryData(keys.auth.me(), answer);
 }

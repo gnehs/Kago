@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useWindowScope } from "@/components/kago/window-scope";
 import { useQueryClient } from "@tanstack/react-query";
+import { keys } from "@/api/keys";
 import { Plus, Share2, X } from "lucide-react";
 import { api } from "@/api/client";
 import { useShares } from "@/api/hooks";
@@ -35,7 +36,7 @@ export function SharesPage({ roots }: { roots: Root[] }) {
   const shares = useShares();
   const [creating, setCreating] = useState(false);
   const rootName = (rootId: string) => roots.find((root) => root.id === rootId)?.name ?? t("Removed location");
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ["shares"] });
+  const refresh = () => queryClient.invalidateQueries({ queryKey: keys.shares() });
 
   async function setDisabled(share: ShareLink, disabled: boolean) {
     await run(async () => {

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { keys } from "@/api/keys";
 import { Plus, X } from "lucide-react";
 import { api } from "@/api/client";
 import { useGroups, useSsoConfig } from "@/api/hooks";
@@ -66,9 +67,9 @@ export function SsoPage() {
     setBusy(true);
     await run(async () => {
       const next = await api<SsoConfig>("/api/sso", { method: "PUT", body: body() });
-      queryClient.setQueryData(["sso"], next);
+      queryClient.setQueryData(keys.sso(), next);
       // The sign-in page learns of single sign-on from the same answer that says whether Kago is set up.
-      await queryClient.invalidateQueries({ queryKey: ["auth"] });
+      await queryClient.invalidateQueries({ queryKey: keys.auth.all() });
       setForm(formOf(next));
       setSecret("");
       setForgetSecret(false);

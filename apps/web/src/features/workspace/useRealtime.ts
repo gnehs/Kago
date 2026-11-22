@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { api, taskDownloadUrl } from "@/api/client";
 import { dropLeft, foldersChanged, type FolderChange } from "@/api/hooks";
+import { isListingKey, keys } from "@/api/keys";
 import { askForArchivePassword, pendingExtracts } from "@/features/files/ArchivePassword";
 import { pendingDownloads } from "@/features/files/useFileActions";
 import { announcedTypes, settleTask, taskFailed, taskFinished } from "@/features/tasks/taskToast";
@@ -33,7 +34,7 @@ export function useRealtime(userId: string, onRemoteWorkspaceChange: () => void)
      * It is said in the notification that was counting the task, if this tab had one up.
      */
     function announceTask(type: string, taskId: string, error?: string) {
-      const task = queryClient.getQueryData<FileTask[]>(["tasks"])?.find((item) => item.id === taskId);
+      const task = queryClient.getQueryData<FileTask[]>(keys.tasks())?.find((item) => item.id === taskId);
       const label = task ? taskTypeLabel(task) : t("Task");
       if (type === "task.failed") {
         pendingDownloads.delete(taskId);
@@ -63,7 +64,7 @@ export function useRealtime(userId: string, onRemoteWorkspaceChange: () => void)
         return;
       }
       const folders = left.map((ref) => ({ rootSlug: ref.rootSlug, path: parentPath(ref.path) }));
-      const task = queryClient.getQueryData<FileTask[]>(["tasks"])?.find((item) => item.id === taskId);
+      const task = queryClient.getQueryData<FileTask[]>(keys.tasks())?.find((item) => item.id === taskId);
       if (task) {
         const destination = JSON.parse(task.destination ?? "null") as Partial<FileRef> | null;
         // A copy's destination is a folder; an archive's is the file being written, in its folder.
@@ -113,7 +114,7 @@ export function useRealtime(userId: string, onRemoteWorkspaceChange: () => void)
       if (type === "settings.updated" && message.userId === userId) void loadSettings();
       // Someone has a new picture: one's own is on the bar, and an administrator's lists show everyone's.
       if (type === "account.updated") {
-        if (message.userId === userId) void queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
+        if (message.userId === userId) void queryClient.invalidateQueries({ queryKey: keys.auth.me() });
         invalidate("users", "groups");
       }
       if (type === "workspace.updated" && message.userId === userId) {
@@ -136,9 +137,9 @@ export function useRealtime(userId: string, onRemoteWorkspaceChange: () => void)
         // over: sizes and searches take far longer, and are asked for again when next shown.
         const listings =
           retryCount > 0
-            ? queryClient.invalidateQueries({ queryKey: ["fs", "list"], predicate: (query) => query.queryKey.length === 4 }, { cancelRefetch: false })
+            ? queryClient.invalidateQueries({ queryKey: keys.fs.lists(), predicate: (query) => isListingKey(query.queryKey) }, { cancelRefetch: false })
             : Promise.resolve();
-        if (retryCount > 0) void queryClient.invalidateQueries({ queryKey: ["fs"], refetchType: "none" });
+        if (retryCount > 0) void queryClient.invalidateQueries({ queryKey: keys.fs.all(), refetchType: "none" });
         retryCount = 0;
         invalidate("tasks", "shelves", "shares", "permissions", "roots", "external-apps");
         void settleUnheard(listings).catch(() => undefined);

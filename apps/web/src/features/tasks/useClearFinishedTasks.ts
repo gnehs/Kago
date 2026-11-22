@@ -1,4 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
+import { keys } from "@/api/keys";
 import { api } from "@/api/client";
 import { run } from "@/lib/run";
 import { toast } from "@/stores/toast";
@@ -10,7 +11,7 @@ export function useClearFinishedTasks() {
   return () =>
     run(async () => {
       await api("/api/tasks", { method: "DELETE" });
-      await queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      await queryClient.invalidateQueries({ queryKey: keys.tasks() });
       toast(t("Finished tasks cleared"));
     }, t("Couldn’t clear the tasks"));
 }

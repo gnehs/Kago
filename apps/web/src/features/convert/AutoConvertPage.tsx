@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useWindowScope } from "@/components/kago/window-scope";
 import { useQueryClient } from "@tanstack/react-query";
+import { keys } from "@/api/keys";
 import { Ban, Check, Clock, Ellipsis, Eye, FileVideo, FolderTree, History, Pause, Pencil, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import { create } from "zustand";
 import { api } from "@/api/client";
@@ -68,7 +69,7 @@ export function AutoConvertPage({ roots, user }: { roots: Root[]; user: Actor })
       setBusy(({ [job.id]: _, ...rest }) => rest);
     }
   };
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ["convert-jobs"] });
+  const refresh = () => queryClient.invalidateQueries({ queryKey: keys.convertJobs() });
   const describeFolder = (folder: Folder) => displayPath(roots.find((root) => root.slug === folder.rootSlug)?.name ?? folder.rootSlug, folder.path);
 
   // A folder sent here from its window starts a new job, whatever the page was showing.
@@ -83,14 +84,14 @@ export function AutoConvertPage({ roots, user }: { roots: Root[]; user: Actor })
     run(async () => {
       await api<FileTask>(`/api/convert-jobs/${job.id}/run`, { method: "POST" });
       toast(t("{name} started", { name: job.name }));
-      await Promise.all([refresh(), queryClient.invalidateQueries({ queryKey: ["tasks"] })]);
+      await Promise.all([refresh(), queryClient.invalidateQueries({ queryKey: keys.tasks() })]);
     }, t("Couldn’t start the conversion")));
 
   const copyStructure = (job: ConvertJob) => during(job, "structure", () =>
     run(async () => {
       const { created } = await api<{ created: number }>(`/api/convert-jobs/${job.id}/structure`, { method: "POST" });
       toast(created > 0 ? t("Created {count} folder in the input folder | Created {count} folders in the input folder", { count: created }) : t("The input folder already has every folder of the destination"));
-      await queryClient.invalidateQueries({ queryKey: ["fs"] });
+      await queryClient.invalidateQueries({ queryKey: keys.fs.all() });
     }, t("Couldn’t copy the folder structure")));
 
   async function remove(job: ConvertJob) {

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { keys } from "@/api/keys";
 import { AppWindow, ChevronRight, ExternalLink, TriangleAlert, Upload } from "lucide-react";
 import { create } from "zustand";
 import { api, libraryIconUrl } from "@/api/client";
@@ -147,7 +148,7 @@ function AppForm({ app, isAdmin }: { app: ExternalApp | null; isAdmin: boolean }
       // Only an administrator says whose a shortcut is; anyone else's request leaves that as it was.
       const body = JSON.stringify({ name: name.trim(), url: withScheme(url.trim()), embed, auth, shared: isAdmin ? shared : undefined, icon });
       await api(app ? `/api/external-apps/${app.id}` : "/api/external-apps", { method: app ? "PUT" : "POST", body });
-      await queryClient.invalidateQueries({ queryKey: ["external-apps"] });
+      await queryClient.invalidateQueries({ queryKey: keys.externalApps() });
       return true;
     }, t("Couldn’t save the app"));
     setBusy(false);

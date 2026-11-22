@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { keys } from "@/api/keys";
 import { Archive, ArrowDownToLine, ChevronDown, ChevronUp, Copy, Ellipsis, FolderInput, ListX, X } from "lucide-react";
 import { api, thumbnailUrl } from "@/api/client";
 import { useFileList, useRoots, useShelves } from "@/api/hooks";
@@ -113,7 +114,7 @@ export function Shelf() {
     if (dropped.length === 0) return;
     await run(async () => {
       await Promise.all(dropped.map((item) => api(`/api/shelves/${shelfId}/items`, { method: "POST", body: JSON.stringify(item) })));
-      await queryClient.invalidateQueries({ queryKey: ["shelves"] });
+      await queryClient.invalidateQueries({ queryKey: keys.shelves() });
     }, t("Couldn’t add to Shelf"));
   }
 
@@ -138,7 +139,7 @@ export function Shelf() {
         conflicts = chosen;
       }
       followTask(await api<FileTask>(`/api/shelves/${shelfId}/tasks`, { method: "POST", body: JSON.stringify({ type, destination, options: conflicts ? { conflicts } : options }) }));
-      await queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      await queryClient.invalidateQueries({ queryKey: keys.tasks() });
     });
   }
 
@@ -147,7 +148,7 @@ export function Shelf() {
   async function remove(removed: ShelfItem[]) {
     await run(async () => {
       await Promise.all(removed.map((item) => api(`/api/shelves/${shelfId}/items/${item.id}`, { method: "DELETE" })));
-      await queryClient.invalidateQueries({ queryKey: ["shelves"] });
+      await queryClient.invalidateQueries({ queryKey: keys.shelves() });
     });
   }
 

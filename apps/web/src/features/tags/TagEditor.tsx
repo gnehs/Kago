@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { keys } from "@/api/keys";
 import { api } from "@/api/client";
 import { Plus } from "lucide-react";
 import { KagoChip, KagoChips } from "@/components/kago/chip";
@@ -137,13 +138,13 @@ export function TagEditor({ rootSlug, targets, readonly }: { rootSlug: string; t
           const next = change(target.tags);
           if (!next) continue;
           const meta = await api<FileMeta>("/api/fs/tags", { method: "PUT", body: JSON.stringify({ rootSlug, path: target.path, tags: next }) });
-          queryClient.setQueryData(["fs", "meta", rootSlug, target.path], meta);
+          queryClient.setQueryData(keys.fs.meta(rootSlug, target.path), meta);
         }
       } finally {
         // The ones written before a failure are tagged all the same.
         // Only the folders they are in list their tags.
         const folders = new Set(targets.map((target) => parentPath(target.path)));
-        await Promise.all([...folders].map((folder) => queryClient.invalidateQueries({ queryKey: ["fs", "list", rootSlug, folder], exact: true }, { cancelRefetch: false })));
+        await Promise.all([...folders].map((folder) => queryClient.invalidateQueries({ queryKey: keys.fs.list(rootSlug, folder), exact: true }, { cancelRefetch: false })));
       }
     }, fallback);
   const has = (list: FileTag[], name: string) => list.some((item) => item.name === name);

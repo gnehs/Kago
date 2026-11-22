@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { keys } from "@/api/keys";
 import { api } from "@/api/client";
 import { KagoCopyButton } from "@/components/kago/copy-field";
 import { FolderField, type FolderRef } from "@/components/kago/folder-picker";
@@ -56,7 +57,7 @@ export function ShareForm({ target, roots = [], compact }: { target?: { rootSlug
       setShareUrl(url);
       setCopied(await copyShareLink(url));
       setPassword("");
-      await queryClient.invalidateQueries({ queryKey: ["shares"] });
+      await queryClient.invalidateQueries({ queryKey: keys.shares() });
     }, t("Couldn’t create the share"));
   }
 
