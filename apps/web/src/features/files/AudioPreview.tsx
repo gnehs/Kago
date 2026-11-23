@@ -1,6 +1,6 @@
 import { AudioLines, FileWarning, ListMusic, MicVocal, Volume2 } from "lucide-react";
 import { byName } from "@/lib/sort";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { audioStreamUrl, embeddedCoverUrl, previewUrl } from "@/api/client";
 import { useFileList, useMediaInfo, useMediaInfos, useTextFile } from "@/api/hooks";
 import { KagoLoading } from "@/components/kago/empty-state";
@@ -284,6 +284,8 @@ export function AudioPreviewWindow({ window }: { window: PreviewWindow }) {
     applySound(sound);
     void audio.play().catch(() => {});
   };
+  // Metadata arrives after the effect that asked for it, and the volume may have changed in between.
+  const playLoaded = useEffectEvent(play);
 
   const togglePlay = () => {
     const audio = audioRef.current;
@@ -367,11 +369,10 @@ export function AudioPreviewWindow({ window }: { window: PreviewWindow }) {
     const onMetadata = () => {
       if (!streamed && from > 0) audio.currentTime = from;
       settling.current = false;
-      if (autoplay) play();
+      if (autoplay) playLoaded();
     };
     audio.addEventListener("loadedmetadata", onMetadata, { once: true });
     return () => audio.removeEventListener("loadedmetadata", onMetadata);
-    // `play` only reads the element and the volume of the moment.
   }, [rootSlug, filePath, streamed, streamReady, streamable, streamFailed, reload]);
 
   // A stream does not say how long it is; the server has measured the file.
