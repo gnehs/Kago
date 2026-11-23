@@ -32,7 +32,7 @@ import type { Level, PermissionService } from "./permission.service.js";
 import type { PreferenceService } from "./preference.service.js";
 import type { StorageService } from "./storage.service.js";
 import { SyncReport } from "./sync-report.js";
-import { taskChanges } from "./task-changes.js";
+import { mediaTaskTypes, taskChanges, type TaskLane } from "./task-kinds.js";
 import { TrashService, type RestorableTrashItem } from "./trash.service.js";
 import { allowsTransition, endsTask, taskTransitions, transitionTask, type Transition, type TaskTransition } from "./task-status.js";
 import { finishedTaskStatuses, sqlStatuses, type Actor, type FileTask, type Root } from "./types.js";
@@ -105,13 +105,6 @@ type CompressOptions = { level?: keyof typeof zipLevels; encryption?: "aes256" |
 type ExtractOptions = { password?: string; remember?: boolean };
 /** How many locked entries a password is checked against before anything is written. */
 const maxPasswordProbes = 16;
-
-/**
- * Tasks wait in two lines, each with a worker of its own. Converting takes hours where copying takes minutes, so it
- * has a line to itself: `media` for conversions, `files` for everything else.
- */
-export type TaskLane = "files" | "media";
-const mediaTaskTypes = "'convert', 'remux'";
 
 /** One end of a sync: a folder of a location. */
 export const syncEndpointSchema = z.object({ kind: z.literal("location"), rootSlug: z.string().min(1), path: z.string().min(1) });
@@ -519,11 +512,11 @@ export class TaskService {
 
   /** Takes the oldest task that is waiting, of the given lane's when one is named. */
   claimNext(lane?: TaskLane): FileTask | null {
-    const mine = lane ? ` AND type ${lane === "media" ? "IN" : "NOT IN"} (${mediaTaskTypes})` : "";
+    const mine = lane ? ` AND type ${lane === "media" ? "IN" : "NOT IN"} (${mediaTaskTypes.map(() => "?").join(", ")})` : "";
     this.db.exec("BEGIN IMMEDIATE");
     try {
       const task = row<FileTask>(
-        this.db.prepare(`SELECT * FROM tasks WHERE status = 'queued'${mine} ORDER BY created_at ASC LIMIT 1`).get()
+        this.db.prepare(`SELECT * FROM tasks WHERE status = 'queued'${mine} ORDER BY created_at ASC LIMIT 1`).get(...(lane ? mediaTaskTypes : []))
       );
       if (!task) {
         this.db.exec("COMMIT");

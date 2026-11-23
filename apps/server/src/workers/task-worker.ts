@@ -13,7 +13,8 @@ import { PathService } from "../services/path.service.js";
 import { PermissionService } from "../services/permission.service.js";
 import { PreferenceService } from "../services/preference.service.js";
 import { RootService } from "../services/root.service.js";
-import { TaskService, type TaskLane } from "../services/task.service.js";
+import type { TaskLane } from "../services/task-kinds.js";
+import { TaskService } from "../services/task.service.js";
 import type { FileTask } from "../services/types.js";
 import type { EventPublisher, ServerEvent } from "../ws/events.js";
 

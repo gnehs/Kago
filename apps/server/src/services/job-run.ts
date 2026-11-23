@@ -1,18 +1,20 @@
 import type { Db } from "../db/db.js";
 import { AppError } from "../lib/errors.js";
+import { taskKinds, type TaskDestination } from "./task-kinds.js";
 import { activeTaskStatuses, sqlStatuses, type FileTask } from "./types.js";
 
 /** The saved sync or auto-convert job a task is a run of, as its destination names it. */
 export function jobIdOf(task: Pick<FileTask, "type" | "destination">): string | null {
-  if (!task.destination || (task.type !== "sync" && task.type !== "convert")) return null;
-  let destination: { sync?: { jobId?: string }; job?: { id?: string } } | null;
+  const { jobOf } = taskKinds[task.type];
+  if (!task.destination || !jobOf) return null;
+  let destination: TaskDestination | null;
   try {
     destination = JSON.parse(task.destination);
   } catch {
     // Rows written by older versions pass through here when the database is opened, and one bad row must not stop that.
     return null;
   }
-  return (task.type === "sync" ? destination?.sync?.jobId : destination?.job?.id) ?? null;
+  return jobOf(destination ?? {}) ?? null;
 }
 
 /** Thrown by the insert of a job's run while another run of that job is active. */

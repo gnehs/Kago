@@ -1,7 +1,8 @@
 import { Worker } from "node:worker_threads";
 import type { Env } from "../config/env.js";
 import { logger } from "../lib/logger.js";
-import type { TaskLane, TaskService } from "../services/task.service.js";
+import type { TaskLane } from "../services/task-kinds.js";
+import type { TaskService } from "../services/task.service.js";
 import type { EventHub, ServerEvent } from "../ws/events.js";
 
 type WorkerToMainMessage =
