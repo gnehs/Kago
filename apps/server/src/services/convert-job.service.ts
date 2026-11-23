@@ -10,7 +10,8 @@ import type { AuditService } from "./audit.service.js";
 import type { AuthService } from "./auth.service.js";
 import { convertJobOptionsSchema } from "./convert.service.js";
 import type { TaskService } from "./task.service.js";
-import { isActiveTaskStatus, type Actor, type FileRef, type FileTask } from "./types.js";
+import { jobIdOf, jobRunning, startJobRun } from "./job-run.js";
+import { type Actor, type FileRef, type FileTask } from "./types.js";
 
 const folderSchema = z.object({ rootSlug: z.string().min(1), path: z.string().min(1) });
 
@@ -60,8 +61,6 @@ const WATCH_INTERVAL_MS = 30_000;
 export class ConvertJobService {
   private timer: NodeJS.Timeout | null = null;
   private looking = false;
-  /** Jobs whose next run is being queued, which counts as running before its task is there to say so. */
-  private readonly queueing = new Set<string>();
   /** What each waiting file of a job measured at the last look, by job. */
   private readonly seen = new Map<string, Map<string, number>>();
   /** Why each job was last passed over, so that it is said once. */
@@ -115,15 +114,15 @@ export class ConvertJobService {
 
   /** Runs the job now, as whoever asked. Files it gave up on earlier are tried again. */
   async run(actor: Actor, jobId: string) {
-    const job = this.getForActor(actor, jobId);
-    if (this.running(job)) throw new AppError(409, "This conversion is already running", "CONVERT_ALREADY_RUNNING");
-    return this.begin(actor, job, true, false);
+    const task = await this.begin(actor, this.getForActor(actor, jobId), true, false);
+    if (!task) throw new AppError(409, "This conversion is already running", "CONVERT_ALREADY_RUNNING");
+    return task;
   }
 
   /** Runs again the job a failed or stopped task was a run of, while that job is still there. */
   async retryRun(actor: Actor, task: FileTask): Promise<FileTask | null> {
     if (task.type !== "convert") return null;
-    const jobId = (JSON.parse(task.destination ?? "{}") as { job?: { id?: string } }).job?.id;
+    const jobId = jobIdOf(task);
     if (!jobId || !row(this.db.prepare("SELECT id FROM convert_jobs WHERE id = ?").get(jobId))) return null;
     const again = await this.run(actor, jobId);
     this.audit.write({ actorType: "user", actorId: actor.id, action: "task_retry", target: { taskId: task.id, retryTaskId: again.id }, result: "success" });
@@ -168,15 +167,15 @@ export class ConvertJobService {
     this.looking = true;
     try {
       for (const job of rows<ConvertJobRow>(this.db.prepare("SELECT * FROM convert_jobs WHERE watch = 1").all())) {
-        if (this.running(job)) continue;
+        if (jobRunning(this.db, job.id)) continue;
         const owner = this.owner(job);
         try {
           if (!owner || owner.disabled) throw new AppError(403, "The owner of the job can no longer sign in", "CONVERT_OWNER_DISABLED");
           const input = this.inputOf(job);
           let seen = this.seen.get(job.id);
           if (!seen) this.seen.set(job.id, (seen = new Map()));
-          // Read again after the look: someone may have run it meanwhile.
-          if ((await this.tasks.convert.ready({ id: job.id, ...input }, seen)) > 0 && !this.running(this.get(job.id))) await this.begin(owner, this.get(job.id), false, true);
+          // Read again after the look: someone may have run it meanwhile, and then this run is not queued.
+          if ((await this.tasks.convert.ready({ id: job.id, ...input }, seen)) > 0) await this.begin(owner, this.get(job.id), false, true);
         } catch (error) {
           // A folder that is gone, or may no longer be read, is passed over until someone changes the job. Said once, not at every look.
           const reason = error instanceof Error ? error.message : String(error);
@@ -191,15 +190,13 @@ export class ConvertJobService {
     }
   }
 
-  private async begin(actor: Actor, job: ConvertJobRow, retryFailed: boolean, scheduled: boolean) {
+  /** Null when another run of the job is active. */
+  private async begin(actor: Actor, job: ConvertJobRow, retryFailed: boolean, scheduled: boolean): Promise<FileTask | null> {
     const input = this.inputOf(job);
-    this.queueing.add(job.id);
-    let task: FileTask;
-    try {
-      task = await this.tasks.createConvert(actor, { sources: [input.input], destination: input.destination, spec: input.spec }, { id: job.id, input: input.input, options: input.options, retryFailed }, scheduled);
-    } finally {
-      this.queueing.delete(job.id);
-    }
+    const task = await startJobRun(this.db, job.id, () =>
+      this.tasks.createConvert(actor, { sources: [input.input], destination: input.destination, spec: input.spec }, { id: job.id, input: input.input, options: input.options, retryFailed }, scheduled)
+    );
+    if (!task) return null;
     // The task of the run before stays only for as long as the job points at it, so how it ended is written down now.
     if (job.last_task_id) {
       const last = row<ConvertRun>(this.db.prepare(`${RUNS} WHERE r.task_id = ?`).get(job.last_task_id));
@@ -235,12 +232,6 @@ export class ConvertJobService {
   private lastTask(job: ConvertJobRow) {
     if (!job.last_task_id) return null;
     return row<{ status: string; error_message: string | null }>(this.db.prepare("SELECT status, error_message FROM tasks WHERE id = ?").get(job.last_task_id));
-  }
-
-  private running(job: ConvertJobRow): boolean {
-    if (this.queueing.has(job.id)) return true;
-    const task = this.lastTask(job);
-    return Boolean(task && isActiveTaskStatus(task.status));
   }
 
   private get(jobId: string): ConvertJobRow {

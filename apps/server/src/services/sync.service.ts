@@ -10,7 +10,8 @@ import type { AuthService } from "./auth.service.js";
 import type { SyncRun } from "@kago/contract";
 import type { SyncChange, SyncStats, SyncSummary } from "./sync-report.js";
 import { syncEndpointSchema, syncOptionsSchema, type SyncEndpoint, type TaskService } from "./task.service.js";
-import { isActiveTaskStatus, type Actor, type FileTask } from "./types.js";
+import { jobIdOf, jobRunning, startJobRun } from "./job-run.js";
+import { type Actor, type FileTask } from "./types.js";
 
 const timeOfDay = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 
@@ -56,8 +57,6 @@ const KEPT_RUNS = 20;
 /** Syncs that are kept: what to bring where, and when. Each run of one is a task like any other. */
 export class SyncService {
   private timer: NodeJS.Timeout | null = null;
-  /** Jobs whose next run is being queued, which counts as running before its task is there to say so. */
-  private readonly queueing = new Set<string>();
 
   constructor(
     private readonly db: Db,
@@ -134,20 +133,19 @@ export class SyncService {
   /** Runs the job now, as whoever asked. */
   async run(actor: Actor, jobId: string) {
     const job = this.getForActor(actor, jobId);
-    this.assertIdle(job);
-    return this.launch(job, () => this.tasks.createSync(actor, this.spec(this.inputOf(job), job.id)));
+    const task = await this.launch(job, () => this.tasks.createSync(actor, this.spec(this.inputOf(job), job.id)));
+    if (!task) throw new AppError(409, "This sync is already running", "SYNC_ALREADY_RUNNING");
+    return task;
   }
 
-  private async launch(job: SyncJobRow, create: () => Promise<FileTask>): Promise<FileTask> {
-    this.queueing.add(job.id);
-    try {
+  /** Null when another run of the job is active. */
+  private async launch(job: SyncJobRow, create: () => Promise<FileTask>): Promise<FileTask | null> {
+    const task = await startJobRun(this.db, job.id, async () => {
       await this.requireRclone();
-      const task = await create();
-      this.began(job, task.id);
-      return task;
-    } finally {
-      this.queueing.delete(job.id);
-    }
+      return create();
+    });
+    if (task) this.began(job, task.id);
+    return task;
   }
 
   /**
@@ -163,7 +161,7 @@ export class SyncService {
     if (task.type !== "sync") return null;
     // A run whose job is gone is queued again as it was, which needs rclone all the same.
     await this.requireRclone();
-    const jobId = (JSON.parse(task.destination ?? "{}") as { sync?: { jobId?: string } }).sync?.jobId;
+    const jobId = jobIdOf(task);
     if (!jobId || !row(this.db.prepare("SELECT id FROM sync_jobs WHERE id = ?").get(jobId))) return null;
     const again = await this.run(actor, jobId);
     this.audit.write({ actorType: "user", actorId: actor.id, action: "task_retry", target: { taskId: task.id, retryTaskId: again.id }, result: "success" });
@@ -258,11 +256,11 @@ export class SyncService {
       this.db.prepare("UPDATE sync_jobs SET next_run_at = ? WHERE id = ?").run(input.schedule ? nextRun(input.schedule, at) : null, job.id);
       // Read again: someone may have run it while the jobs before it were being queued.
       const current = row<SyncJobRow>(this.db.prepare("SELECT * FROM sync_jobs WHERE id = ?").get(job.id));
-      if (!current || this.running(current)) continue;
+      if (!current || jobRunning(this.db, job.id)) continue;
       const owner = this.owner(job);
       try {
         if (!owner || owner.disabled) throw new AppError(403, "The owner of the job can no longer sign in", "SYNC_OWNER_DISABLED");
-        await this.launch(job, () => this.tasks.createSync(owner, this.spec(input, job.id), true));
+        await this.launch(current, () => this.tasks.createSync(owner, this.spec(input, job.id), true));
       } catch (error) {
         // A job that may no longer run is passed over until someone changes it or its permissions.
         this.audit.write({ actorType: "system", action: "sync_job_skipped", target: { jobId: job.id, reason: error instanceof Error ? error.message : String(error) }, result: "failure" });
@@ -292,17 +290,6 @@ export class SyncService {
     } catch {
       return null;
     }
-  }
-
-  private running(job: SyncJobRow): boolean {
-    if (this.queueing.has(job.id)) return true;
-    if (!job.last_task_id) return false;
-    const task = row<{ status: string }>(this.db.prepare("SELECT status FROM tasks WHERE id = ?").get(job.last_task_id));
-    return Boolean(task && isActiveTaskStatus(task.status));
-  }
-
-  private assertIdle(job: SyncJobRow): void {
-    if (this.running(job)) throw new AppError(409, "This sync is already running", "SYNC_ALREADY_RUNNING");
   }
 
   private get(jobId: string): SyncJobRow {

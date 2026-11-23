@@ -16,6 +16,7 @@
     "test:splat": "node --import tsx --test test/splat.mjs",
     "test:video": "node --import tsx --test test/panorama.mjs",
     "test:tasks": "node --import tsx --test test/task-status.mjs",
+    "test:jobs": "tsc -p tsconfig.json && cp src/db/schema.sql dist/db/schema.sql && node --test test/job-runs.mjs",
     "start": "node dist/main.js",
     "recover": "node dist/recover.js"
   },
