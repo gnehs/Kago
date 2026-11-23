@@ -32,7 +32,7 @@ import type { Level, PermissionService } from "./permission.service.js";
 import type { PreferenceService } from "./preference.service.js";
 import type { StorageService } from "./storage.service.js";
 import { SyncReport } from "./sync-report.js";
-import { mediaTaskTypes, taskChanges, type TaskLane } from "./task-kinds.js";
+import { mediaTaskTypes, taskChanges, taskKinds, type TaskLane } from "./task-kinds.js";
 import { TrashService, type RestorableTrashItem } from "./trash.service.js";
 import { allowsTransition, endsTask, taskTransitions, transitionTask, type Transition, type TaskTransition } from "./task-status.js";
 import { finishedTaskStatuses, sqlStatuses, type Actor, type FileTask, type Root } from "./types.js";
@@ -244,7 +244,7 @@ export class TaskService {
   }
 
   /** Checks again what a conversion was allowed when it was first asked for. */
-  private async assertMediaTask(actor: Actor, task: FileTask): Promise<void> {
+  async assertMediaTask(actor: Actor, task: FileTask): Promise<void> {
     const { convert: spec, job, remux, ...destination } = JSON.parse(task.destination ?? "{}") as { rootSlug: string; path: string; convert?: unknown; job?: ConvertJobRun; remux?: unknown };
     if (task.type === "remux") return this.convert.assertRemux(actor, remuxInputSchema.parse(remux));
     if (job) await this.convert.assertJob(actor, { input: job.input, destination, options: convertJobOptionsSchema.parse(job.options) });
@@ -252,7 +252,7 @@ export class TaskService {
   }
 
   /** What a conversion is given to say how it is getting on. */
-  private handle(taskId: string): TaskHandle {
+  handle(taskId: string): TaskHandle {
     return {
       show: (currentPath) => this.show(taskId, currentPath),
       totals: (files, bytes) => this.updateTotals(taskId, files, bytes),
@@ -353,7 +353,7 @@ export class TaskService {
   }
 
   /** Removes for good the items of the trash a task names. One that has gone since, or is not the actor's, is passed over. */
-  private async runEmptyTrash(task: FileTask, actor: Actor): Promise<void> {
+  async runEmptyTrash(task: FileTask, actor: Actor): Promise<void> {
     const sources = JSON.parse(task.sources_json) as Array<{ rootSlug: string; path: string }>;
     const operations = [];
     let total = 0;
@@ -459,32 +459,18 @@ export class TaskService {
   /** Queues the task again as it was. A run of a saved job is run again through its job instead, which keeps its runs. */
   async retry(actor: Actor, taskId: string): Promise<FileTask> {
     const task = this.retryable(actor, taskId);
+    const asked = await taskKinds[task.type].recheck(this, task, actor);
+    const again = this.cloneTask(actor, task);
+    if (asked) this.audit.write({ actorType: "user", actorId: actor.id, action: "create_task", target: asked, result: "success" });
+    this.audit.write({ actorType: "user", actorId: actor.id, action: "task_retry", target: { taskId, retryTaskId: again.id }, result: "success" });
+    return again;
+  }
 
-    if (task.type === "sync") {
-      const spec = syncSpecOf(task);
-      await this.assertSyncPermissions(actor, spec);
-      const again = this.cloneTask(actor, task);
-      this.audit.write({ actorType: "user", actorId: actor.id, action: "task_retry", target: { taskId, retryTaskId: again.id }, result: "success" });
-      return again;
-    }
-    if (task.type === "convert" || task.type === "remux") {
-      await this.assertMediaTask(actor, task);
-      const again = this.cloneTask(actor, task);
-      this.audit.write({ actorType: "user", actorId: actor.id, action: "task_retry", target: { taskId, retryTaskId: again.id }, result: "success" });
-      return again;
-    }
+  /** Checks again what a task asked for through `create` was allowed, and gives what `create` logged of it. */
+  async assertInputTask(actor: Actor, task: FileTask): Promise<z.infer<typeof taskInputSchema>> {
     const input = this.taskInputFromTask(task);
     await this.assertTaskPermissions(actor, input);
-    const retryTask = this.cloneTask(actor, task);
-    this.audit.write({ actorType: "user", actorId: actor.id, action: "create_task", target: withoutPassword(input), result: "success" });
-    this.audit.write({
-      actorType: "user",
-      actorId: actor.id,
-      action: "task_retry",
-      target: { taskId, retryTaskId: retryTask.id },
-      result: "success"
-    });
-    return retryTask;
+    return withoutPassword(input);
   }
 
   failRunning(taskId: string, errorMessage = "Worker failed before executing task"): void {
@@ -540,19 +526,7 @@ export class TaskService {
         target: { taskId: task.id, type: task.type },
         result: "success"
       });
-      if (task.type === "copy") await this.runCopyLike(task, actor, false);
-      else if (task.type === "move") await this.runCopyLike(task, actor, true);
-      else if (task.type === "delete_to_trash") await this.runTrash(task, actor);
-      else if (task.type === "delete") await this.runDelete(task, actor);
-      else if (task.type === "restore_trash") await this.runRestore(task, actor);
-      else if (task.type === "empty_trash") await this.runEmptyTrash(task, actor);
-      else if (task.type === "compress") await this.runCompress(task, actor);
-      else if (task.type === "download_zip") await this.runDownloadZip(task, actor);
-      else if (task.type === "extract") await this.runExtract(task, actor);
-      else if (task.type === "thumbnail") await this.runThumbnail(task, actor);
-      else if (task.type === "sync") await this.runSync(task, actor);
-      else if (task.type === "convert") await this.convert.run(task, actor, this.handle(task.id));
-      else if (task.type === "remux") await this.convert.runRemux(task, actor, this.handle(task.id));
+      await taskKinds[task.type].run(this, task, actor);
       this.transition(task.id, "done");
       for (const change of taskChanges(this.db, task)) this.events.publish(change);
     } catch (error) {
@@ -648,7 +622,7 @@ export class TaskService {
     return merging && mergeable ? { mode: "merge", name, directory, clash: merging, occupant } : { mode: "replace", name, directory, occupant };
   }
 
-  private async runCopyLike(task: FileTask, actor: Actor, move: boolean): Promise<void> {
+  async runCopyLike(task: FileTask, actor: Actor, move: boolean): Promise<void> {
     const sources = JSON.parse(task.sources_json) as Array<{ rootSlug: string; path: string }>;
     const destination = JSON.parse(task.destination ?? "{}") as { rootSlug: string; path: string; options?: { conflicts?: Conflicts } };
     const conflicts = destination.options?.conflicts ?? {};
@@ -979,7 +953,7 @@ export class TaskService {
     else await fsp.rm(path.join(folder.absolutePath, name), { recursive: true, force: true });
   }
 
-  private async runTrash(task: FileTask, actor: Actor): Promise<void> {
+  async runTrash(task: FileTask, actor: Actor): Promise<void> {
     const sources = JSON.parse(task.sources_json) as Array<{ rootSlug: string; path: string }>;
     const operations = [];
     let totalBytes = 0;
@@ -1038,7 +1012,7 @@ export class TaskService {
     return taken.has(key(name)) ? freeName((candidate) => taken.has(key(candidate)), nfc(name), directory) : name;
   }
 
-  private async runRestore(task: FileTask, actor: Actor): Promise<void> {
+  async runRestore(task: FileTask, actor: Actor): Promise<void> {
     const sources = JSON.parse(task.sources_json) as Array<{ rootSlug: string; path: string }>;
     let totalBytes = 0;
     const found = this.counter(task.id);
@@ -1091,7 +1065,7 @@ export class TaskService {
   }
 
   /** Deletes for good, without the detour through the trash: for what would take long to carry there. */
-  private async runDelete(task: FileTask, actor: Actor): Promise<void> {
+  async runDelete(task: FileTask, actor: Actor): Promise<void> {
     const sources = JSON.parse(task.sources_json) as Array<{ rootSlug: string; path: string }>;
     const operations = [];
     let total = 0;
@@ -1122,7 +1096,7 @@ export class TaskService {
     }
   }
 
-  private async runCompress(task: FileTask, actor: Actor): Promise<void> {
+  async runCompress(task: FileTask, actor: Actor): Promise<void> {
     const sources = JSON.parse(task.sources_json) as Array<{ rootSlug: string; path: string }>;
     const destination = JSON.parse(task.destination ?? "{}") as { rootSlug: string; path: string; options?: CompressOptions };
     const { level, encryption, password } = destination.options ?? {};
@@ -1153,7 +1127,7 @@ export class TaskService {
   }
 
   /** Zips a selection into Kago's own temp dir so a multi-file download leaves nothing behind in the user's folders. */
-  private async runDownloadZip(task: FileTask, actor: Actor): Promise<void> {
+  async runDownloadZip(task: FileTask, actor: Actor): Promise<void> {
     const target = this.downloadPath(task.id);
     await fsp.mkdir(path.dirname(target), { recursive: true });
     const zipped = await this.zipSources(task, actor, "view", target);
@@ -1331,7 +1305,7 @@ export class TaskService {
     return path.join(this.appDataDir, "temp", "downloads", `${taskId}.zip`);
   }
 
-  private async runExtract(task: FileTask, actor: Actor): Promise<void> {
+  async runExtract(task: FileTask, actor: Actor): Promise<void> {
     const sources = JSON.parse(task.sources_json) as Array<{ rootSlug: string; path: string }>;
     const destination = JSON.parse(task.destination ?? "{}") as { rootSlug: string; path: string; options?: ExtractOptions };
     const dest = await this.paths.resolveExisting(destination.rootSlug, destination.path);
@@ -1559,6 +1533,11 @@ export class TaskService {
     await this.assertSyncPermissions(actor, spec);
   }
 
+  /** Checks again what a run of a sync was allowed when it was queued. */
+  async assertSyncTask(actor: Actor, task: FileTask): Promise<void> {
+    await this.assertSyncPermissions(actor, syncSpecOf(task));
+  }
+
   /** Checks both ends of a sync and returns the folders they are. */
   private async assertSyncPermissions(actor: Actor, spec: SyncSpec): Promise<{ source: SafePath; destination: SafePath }> {
     const folder = async (endpoint: SyncEndpoint): Promise<SafePath> => {
@@ -1576,7 +1555,7 @@ export class TaskService {
     return { source, destination };
   }
 
-  private async runSync(task: FileTask, actor: Actor): Promise<void> {
+  async runSync(task: FileTask, actor: Actor): Promise<void> {
     const spec = syncSpecOf(task);
     const { source, destination } = await this.assertSyncPermissions(actor, spec);
     await this.progress(task.id, spec.name);
@@ -1657,7 +1636,7 @@ export class TaskService {
     this.events.publish({ type: "task.progress", userId: this.get(taskId).created_by, taskId, patch: { total_bytes: totalBytes } });
   }
 
-  private async runThumbnail(task: FileTask, actor: Actor): Promise<void> {
+  async runThumbnail(task: FileTask, actor: Actor): Promise<void> {
     const sources = JSON.parse(task.sources_json) as Array<{ rootSlug: string; path: string }>;
     for (const source of sources) {
       await this.progress(task.id, source.path);

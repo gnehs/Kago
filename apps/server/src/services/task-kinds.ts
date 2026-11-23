@@ -2,7 +2,8 @@ import path from "node:path";
 import type { TaskType } from "@kago/contract";
 import type { Db } from "../db/db.js";
 import type { FsChanged } from "../ws/events.js";
-import type { FileRef, FileTask } from "./types.js";
+import type { TaskService } from "./task.service.js";
+import type { Actor, FileRef, FileTask } from "./types.js";
 
 /**
  * Tasks wait in two lines, each with a worker of its own. Converting takes hours where copying takes minutes, so it
@@ -33,29 +34,57 @@ type Announce = {
 
 export type TaskKind = {
   lane: TaskLane;
+  /** Does the task's work, on the worker of its lane. */
+  run(tasks: TaskService, task: FileTask, actor: Actor): Promise<void>;
+  /**
+   * What a retry checks again before it queues the task as it was. A type asked for through `create` gives back what
+   * that logged of it, which the retry logs again.
+   */
+  recheck(tasks: TaskService, task: FileTask, actor: Actor): Promise<object | void>;
   /** What finishing it changed in the locations. Tasks that only read change nothing there. */
   changes(announce: Announce): void;
   /** The saved job it is a run of, as its destination names it. */
   jobOf?(destination: TaskDestination): string | undefined;
 };
 
+const asked: TaskKind["recheck"] = (tasks, task, actor) => tasks.assertInputTask(actor, task);
+const media: TaskKind["recheck"] = (tasks, task, actor) => tasks.assertMediaTask(actor, task);
 const nothing = () => undefined;
 
 /** What every type of task means, by type. */
 export const taskKinds: Record<TaskType, TaskKind> = {
-  copy: { lane: "files", changes: ({ into, folder }) => into && folder(into) },
+  copy: {
+    lane: "files",
+    run: (tasks, task, actor) => tasks.runCopyLike(task, actor, false),
+    recheck: asked,
+    changes: ({ into, folder }) => into && folder(into)
+  },
   move: {
     lane: "files",
+    run: (tasks, task, actor) => tasks.runCopyLike(task, actor, true),
+    recheck: asked,
     changes: ({ into, sources, folder, leaving }) => {
       if (!into) return;
       folder(into);
       sources.forEach(leaving);
     }
   },
-  delete_to_trash: { lane: "files", changes: ({ sources, leaving }) => sources.forEach(leaving) },
-  delete: { lane: "files", changes: ({ sources, leaving }) => sources.forEach(leaving) },
+  delete_to_trash: {
+    lane: "files",
+    run: (tasks, task, actor) => tasks.runTrash(task, actor),
+    recheck: asked,
+    changes: ({ sources, leaving }) => sources.forEach(leaving)
+  },
+  delete: {
+    lane: "files",
+    run: (tasks, task, actor) => tasks.runDelete(task, actor),
+    recheck: asked,
+    changes: ({ sources, leaving }) => sources.forEach(leaving)
+  },
   restore_trash: {
     lane: "files",
+    run: (tasks, task, actor) => tasks.runRestore(task, actor),
+    recheck: asked,
     changes: ({ db, sources, folder }) => {
       // Each source names an item of the Trash, which remembers where it came from.
       for (const source of sources) {
@@ -64,18 +93,32 @@ export const taskKinds: Record<TaskType, TaskKind> = {
       }
     }
   },
-  empty_trash: { lane: "files", changes: nothing },
-  compress: { lane: "files", changes: ({ into, folder }) => into && folder({ rootSlug: into.rootSlug, path: path.posix.dirname(into.path) }) },
-  download_zip: { lane: "files", changes: nothing },
-  extract: { lane: "files", changes: ({ into, tree }) => into && tree(into) },
-  thumbnail: { lane: "files", changes: nothing },
+  empty_trash: { lane: "files", run: (tasks, task, actor) => tasks.runEmptyTrash(task, actor), recheck: asked, changes: nothing },
+  compress: {
+    lane: "files",
+    run: (tasks, task, actor) => tasks.runCompress(task, actor),
+    recheck: asked,
+    changes: ({ into, folder }) => into && folder({ rootSlug: into.rootSlug, path: path.posix.dirname(into.path) })
+  },
+  download_zip: { lane: "files", run: (tasks, task, actor) => tasks.runDownloadZip(task, actor), recheck: asked, changes: nothing },
+  extract: {
+    lane: "files",
+    run: (tasks, task, actor) => tasks.runExtract(task, actor),
+    recheck: asked,
+    changes: ({ into, tree }) => into && tree(into)
+  },
+  thumbnail: { lane: "files", run: (tasks, task, actor) => tasks.runThumbnail(task, actor), recheck: asked, changes: nothing },
   sync: {
     lane: "files",
+    run: (tasks, task, actor) => tasks.runSync(task, actor),
+    recheck: (tasks, task, actor) => tasks.assertSyncTask(actor, task),
     changes: ({ destination: { sync }, tree }) => sync?.destination && !sync.options?.dryRun && tree(sync.destination),
     jobOf: (destination) => destination.sync?.jobId
   },
   convert: {
     lane: "media",
+    run: (tasks, task, actor) => tasks.convert.run(task, actor, tasks.handle(task.id)),
+    recheck: media,
     changes: ({ into, destination: { job }, folder, tree }) => {
       if (!into) return;
       // A saved job keeps the folders it finds things in, and may clear out its input folder as it goes.
@@ -86,7 +129,12 @@ export const taskKinds: Record<TaskType, TaskKind> = {
     },
     jobOf: (destination) => destination.job?.id
   },
-  remux: { lane: "media", changes: ({ into, folder }) => into && folder(into) }
+  remux: {
+    lane: "media",
+    run: (tasks, task, actor) => tasks.convert.runRemux(task, actor, tasks.handle(task.id)),
+    recheck: media,
+    changes: ({ into, folder }) => into && folder(into)
+  }
 };
 
 /** The types whose tasks wait in the `media` lane. */
