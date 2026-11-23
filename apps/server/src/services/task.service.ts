@@ -33,7 +33,7 @@ import type { StorageService } from "./storage.service.js";
 import { SyncReport } from "./sync-report.js";
 import { taskChanges } from "./task-changes.js";
 import { TrashService, type RestorableTrashItem } from "./trash.service.js";
-import { endsTask, taskTransitions, transitionTask, type Transition, type TaskTransition } from "./task-status.js";
+import { allowsTransition, endsTask, taskTransitions, transitionTask, type Transition, type TaskTransition } from "./task-status.js";
 import { finishedTaskStatuses, sqlStatuses, type Actor, type FileTask, type Root } from "./types.js";
 
 const maxExtractEntries = 10_000;
@@ -45,6 +45,8 @@ const cancelCheckIntervalMs = 300;
 const transferConcurrency = 8;
 const downloadMaxAgeMs = 24 * 60 * 60 * 1000;
 const finishedStatuses = sqlStatuses(finishedTaskStatuses);
+/** A worker still holds these, and may write what it has counted. */
+const heldStatuses = sqlStatuses(["running", "cancelling"]);
 /** A replacement begun before this was loaded belongs to a run that stopped; see `recoverReplaced`. */
 const LOADED_AT = Date.now();
 const finishedTaskMaxAgeSeconds = 7 * 24 * 60 * 60;
@@ -408,55 +410,37 @@ export class TaskService {
     const task = this.get(taskId);
     this.requireTaskAccess(actor, task);
     if (task.status === "cancelled" || task.status === "cancelling") return task;
-    if (!["queued", "paused", "running"].includes(task.status)) {
+    if (!allowsTransition(task.status, "cancel") && !allowsTransition(task.status, "stop")) {
       throw new AppError(409, "Only queued, paused, or running tasks can be cancelled", "TASK_CANCEL_NOT_ALLOWED");
     }
-    // A running task belongs to the worker, which sees this at its next checkpoint and lets go; only then has it stopped.
-    this.db
-      .prepare(
-        `UPDATE tasks SET status = CASE status WHEN 'running' THEN 'cancelling' ELSE 'cancelled' END, updated_at = ?,
-          finished_at = CASE status WHEN 'running' THEN NULL ELSE ? END
-        WHERE id = ? AND status IN ('queued', 'paused', 'running')`
-      )
-      .run(now(), now(), taskId);
+    // In this order, a task that starts running in between is still stopped.
+    if (!this.transition(taskId, "cancel")) this.transition(taskId, "stop");
     this.audit.write({ actorType: "user", actorId: actor.id, action: "task_cancel", target: { taskId }, result: "success" });
-    const cancelled = this.get(taskId);
-    this.events.publish({ type: "task.progress", userId: cancelled.created_by, taskId, patch: { status: cancelled.status, finished_at: cancelled.finished_at } });
-    return cancelled;
+    return this.get(taskId);
   }
 
   pause(actor: Actor, taskId: string): FileTask {
     const task = this.get(taskId);
     this.requireTaskAccess(actor, task);
     if (task.status === "paused") return task;
-    if (task.status !== "queued") {
+    if (!allowsTransition(task.status, "pause")) {
       throw new AppError(409, "Only queued tasks can be paused", "TASK_PAUSE_NOT_ALLOWED");
     }
-    this.db
-      .prepare("UPDATE tasks SET status = 'paused', updated_at = ? WHERE id = ? AND status = 'queued'")
-      .run(now(), taskId);
-    const paused = this.get(taskId);
-    if (paused.status !== "paused") throw new AppError(409, "Task can no longer be paused", "TASK_PAUSE_NOT_ALLOWED");
+    if (!this.transition(taskId, "pause") && this.get(taskId).status !== "paused") throw new AppError(409, "Task can no longer be paused", "TASK_PAUSE_NOT_ALLOWED");
     this.audit.write({ actorType: "user", actorId: actor.id, action: "task_pause", target: { taskId }, result: "success" });
-    this.events.publish({ type: "task.progress", userId: paused.created_by, taskId, patch: { status: paused.status } });
-    return paused;
+    return this.get(taskId);
   }
 
   resume(actor: Actor, taskId: string): FileTask {
     const task = this.get(taskId);
     this.requireTaskAccess(actor, task);
     if (task.status === "queued") return task;
-    if (task.status !== "paused") {
+    if (!allowsTransition(task.status, "resume")) {
       throw new AppError(409, "Only paused tasks can be resumed", "TASK_RESUME_NOT_ALLOWED");
     }
-    this.db
-      .prepare("UPDATE tasks SET status = 'queued', updated_at = ? WHERE id = ? AND status = 'paused'")
-      .run(now(), taskId);
-    const resumed = this.get(taskId);
-    if (resumed.status !== "queued") throw new AppError(409, "Task can no longer be resumed", "TASK_RESUME_NOT_ALLOWED");
+    if (!this.transition(taskId, "resume") && this.get(taskId).status !== "queued") throw new AppError(409, "Task can no longer be resumed", "TASK_RESUME_NOT_ALLOWED");
     this.audit.write({ actorType: "user", actorId: actor.id, action: "task_resume", target: { taskId }, result: "success" });
-    this.events.publish({ type: "task.progress", userId: resumed.created_by, taskId, patch: { status: resumed.status } });
-    return resumed;
+    return this.get(taskId);
   }
 
   /** The task, when the actor may run it again. */
@@ -503,14 +487,16 @@ export class TaskService {
   failRunning(taskId: string, errorMessage = "Worker failed before executing task"): void {
     const task = this.get(taskId);
     // Not running any more, or asked to stop since it was read: a task asked to stop has stopped now.
-    if (!this.finish(taskId, "failed", errorMessage)) return this.settleCancelling(taskId);
+    if (!this.transition(taskId, "fail", errorMessage)) {
+      this.transition(taskId, "settle");
+      return;
+    }
     this.audit.write({
       actorType: "system",
       action: "task_failed",
       target: { taskId, type: task.type },
       result: "failure"
     });
-    this.events.publish({ type: "task.failed", userId: task.created_by, taskId, error: errorMessage });
   }
 
   async createRestoreTrash(actor: Actor, trashItemId: string): Promise<FileTask> {
@@ -533,10 +519,7 @@ export class TaskService {
         this.db.exec("COMMIT");
         return null;
       }
-      const ts = now();
-      this.db
-        .prepare("UPDATE tasks SET status = 'running', started_at = ?, updated_at = ? WHERE id = ? AND status = 'queued'")
-        .run(ts, ts, task.id);
+      this.transition(task.id, "start");
       this.db.exec("COMMIT");
       return this.get(task.id);
     } catch (error) {
@@ -567,15 +550,11 @@ export class TaskService {
       else if (task.type === "sync") await this.runSync(task, actor);
       else if (task.type === "convert") await this.convert.run(task, actor, this.handle(task.id));
       else if (task.type === "remux") await this.convert.runRemux(task, actor, this.handle(task.id));
-      if (this.finish(task.id, "done")) this.events.publish({ type: "task.done", userId: task.created_by, taskId: task.id });
+      this.transition(task.id, "done");
       for (const change of taskChanges(this.db, task)) this.events.publish(change);
     } catch (error) {
-      if (error instanceof TaskCancelledError || error instanceof RcloneJobStopped || error instanceof ConvertStopped) {
-        this.flushProgress(task.id, true);
-        return;
-      }
-      const message = taskFailureMessage(error);
-      if (!this.finish(task.id, "failed", message)) return;
+      if (error instanceof TaskCancelledError || error instanceof RcloneJobStopped || error instanceof ConvertStopped) return;
+      if (!this.transition(task.id, "fail", taskFailureMessage(error))) return;
       this.audit.write({
         actorType: "user",
         actorId: actor.id,
@@ -583,21 +562,11 @@ export class TaskService {
         target: { taskId: task.id, type: task.type },
         result: "failure"
       });
-      this.events.publish({ type: "task.failed", userId: task.created_by, taskId: task.id, error: message });
     } finally {
-      this.settleCancelling(task.id);
+      this.transition(task.id, "settle");
       this.cancelChecks.delete(task.id);
       this.db.prepare("UPDATE tasks SET pace_fps = NULL, pace_height = NULL WHERE id = ? AND pace_fps IS NOT NULL").run(task.id);
     }
-  }
-
-  /** A task asked to stop while it ran has stopped once its worker lets go of it. */
-  private settleCancelling(taskId: string): void {
-    const ts = now();
-    const result = this.db.prepare("UPDATE tasks SET status = 'cancelled', updated_at = ?, finished_at = ? WHERE id = ? AND status = 'cancelling'").run(ts, ts, taskId);
-    if (Number(result.changes) === 0) return;
-    const task = this.get(taskId);
-    this.events.publish({ type: "task.progress", userId: task.created_by, taskId, patch: { status: task.status, finished_at: task.finished_at } });
   }
 
   /** What is in a folder, by its names in NFC: the way `assertNameAvailable` compares them. */
@@ -1872,18 +1841,9 @@ export class TaskService {
 
   private setTotals(taskId: string, totalFiles: number, totalBytes: number, phase: "counting" | "preparing" | null): void {
     this.db
-      .prepare("UPDATE tasks SET total_files = ?, total_bytes = ?, phase = ?, updated_at = ? WHERE id = ? AND status IN ('running', 'cancelling')")
+      .prepare(`UPDATE tasks SET total_files = ?, total_bytes = ?, phase = ?, updated_at = ? WHERE id = ? AND status IN (${heldStatuses})`)
       .run(totalFiles, totalBytes, phase, now(), taskId);
     this.events.publish({ type: "task.progress", userId: this.get(taskId).created_by, taskId, patch: { total_files: totalFiles, total_bytes: totalBytes, phase } });
-  }
-
-  /** Returns false when the task was asked to stop in the meantime, in which case its row is left alone. */
-  private finish(taskId: string, status: "done" | "failed", error?: string): boolean {
-    this.flushProgress(taskId, true);
-    const result = this.db
-      .prepare("UPDATE tasks SET status = ?, error_message = ?, phase = NULL, updated_at = ?, finished_at = ? WHERE id = ? AND status = 'running'")
-      .run(status, error ?? null, now(), now(), taskId);
-    return Number(result.changes) > 0;
   }
 
   private progressBuffer(taskId: string): ProgressBuffer {
@@ -1915,7 +1875,7 @@ export class TaskService {
             pace_fps = COALESCE(?, pace_fps),
             pace_height = CASE WHEN ? IS NULL THEN pace_height ELSE ? END,
             updated_at = ?
-        WHERE id = ? AND status IN ('running', 'cancelling')`
+        WHERE id = ? AND status IN (${heldStatuses})`
       )
       .run(buffer.currentPath ?? null, buffer.processedFiles, buffer.processedBytes, buffer.pace?.fps ?? null, buffer.pace?.fps ?? null, buffer.pace?.height ?? null, now(), taskId);
 
