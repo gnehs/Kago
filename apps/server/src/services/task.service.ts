@@ -36,6 +36,7 @@ import { taskChanges } from "./task-changes.js";
 import { TrashService, type RestorableTrashItem } from "./trash.service.js";
 import { allowsTransition, endsTask, taskTransitions, transitionTask, type Transition, type TaskTransition } from "./task-status.js";
 import { finishedTaskStatuses, sqlStatuses, type Actor, type FileTask, type Root } from "./types.js";
+import { jobBusy, jobIdOf } from "./job-run.js";
 
 const maxExtractEntries = 10_000;
 const maxExtractBytes = 1024 * 1024 * 1024 * 2;
@@ -270,41 +271,47 @@ export class TaskService {
   }
 
   private insertTask(task: FileTask): void {
-    this.db
-      .prepare(
-        `INSERT INTO tasks
-        (id, type, status, created_by, sources_json, destination, total_files, processed_files, total_bytes,
-         processed_bytes, current_path, error_message, auth_snapshot_json, created_at, updated_at, started_at, finished_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      )
-      .run(
-        task.id,
-        task.type,
-        task.status,
-        task.created_by,
-        task.sources_json,
-        task.destination,
-        task.total_files,
-        task.processed_files,
-        task.total_bytes,
-        task.processed_bytes,
-        task.current_path,
-        task.error_message,
-        task.auth_snapshot_json,
-        task.created_at,
-        task.updated_at,
-        task.started_at,
-        task.finished_at
-      );
+    try {
+      this.db
+        .prepare(
+          `INSERT INTO tasks
+          (id, type, status, created_by, sources_json, destination, total_files, processed_files, total_bytes,
+           processed_bytes, current_path, error_message, auth_snapshot_json, created_at, updated_at, started_at, finished_at, job_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(
+          task.id,
+          task.type,
+          task.status,
+          task.created_by,
+          task.sources_json,
+          task.destination,
+          task.total_files,
+          task.processed_files,
+          task.total_bytes,
+          task.processed_bytes,
+          task.current_path,
+          task.error_message,
+          task.auth_snapshot_json,
+          task.created_at,
+          task.updated_at,
+          task.started_at,
+          task.finished_at,
+          jobIdOf(task)
+        );
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("UNIQUE constraint failed: tasks.job_id")) throw jobBusy();
+      throw error;
+    }
   }
 
   list(actor: Actor): Array<FileTask & { pace?: Pace }> {
-    type TaskRow = FileTask & { pace_fps: number | null; pace_height: number | null };
+    type TaskRow = FileTask & { pace_fps: number | null; pace_height: number | null; job_id: string | null };
     const tasks =
       actor.role === "ADMIN"
         ? rows<TaskRow>(this.db.prepare("SELECT * FROM tasks WHERE cleared = 0 ORDER BY created_at DESC LIMIT 200").all())
         : rows<TaskRow>(this.db.prepare("SELECT * FROM tasks WHERE cleared = 0 AND created_by = ? ORDER BY created_at DESC LIMIT 200").all(actor.id));
-    return tasks.map(({ pace_fps, pace_height, ...task }) =>
+    return tasks.map(({ pace_fps, pace_height, job_id, ...task }) =>
       task.status === "running" && pace_fps !== null ? { ...task, pace: { fps: pace_fps, height: pace_height } } : task
     );
   }
@@ -380,8 +387,10 @@ export class TaskService {
   }
 
   get(taskId: string): FileTask {
-    const task = row<FileTask>(this.db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId));
-    if (!task) throw new AppError(404, "Task not found", "TASK_NOT_FOUND");
+    const found = row<FileTask & { job_id: string | null }>(this.db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId));
+    if (!found) throw new AppError(404, "Task not found", "TASK_NOT_FOUND");
+    // The job is named in the destination too; the column is only there to hold a job to one active run.
+    const { job_id, ...task } = found;
     return task;
   }
 

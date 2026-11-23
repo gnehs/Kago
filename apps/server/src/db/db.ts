@@ -3,7 +3,9 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { Env } from "../config/env.js";
 import { id, now } from "../lib/ids.js";
+import { jobIdOf } from "../services/job-run.js";
 import { transitionAll } from "../services/task-status.js";
+import { activeTaskStatuses, isActiveTaskStatus, sqlStatuses, type FileTask } from "../services/types.js";
 
 export type Db = DatabaseSync;
 
@@ -24,7 +26,8 @@ export function openDb(env: Env, options: { interruptRunningTasks?: boolean } = 
   addMissingColumns(db, "external_apps", { embed: "INTEGER NOT NULL DEFAULT 0", auth_user: "TEXT", auth_secret: "TEXT" });
   addMissingColumns(db, "sessions", { identity_id: "TEXT", oidc_refresh: "TEXT", oidc_checked_at: "INTEGER" });
   addMissingColumns(db, "group_members", { source: "TEXT" });
-  addMissingColumns(db, "tasks", { cleared: "INTEGER NOT NULL DEFAULT 0", pace_fps: "REAL", pace_height: "INTEGER", phase: "TEXT" });
+  addMissingColumns(db, "tasks", { cleared: "INTEGER NOT NULL DEFAULT 0", pace_fps: "REAL", pace_height: "INTEGER", phase: "TEXT", job_id: "TEXT" });
+  holdJobsToOneActiveRun(db);
   migratePermissionLevels(db);
   migratePermissionLocations(db);
   // There was once a guest role, which was allowed exactly what a standard user is.
@@ -60,6 +63,44 @@ function addMissingColumns(db: Db, table: string, columns: Record<string, string
       // The task worker opens the database at the same moment and may have added it first.
       if (!(error instanceof Error && error.message.includes("duplicate column"))) throw error;
     }
+  }
+}
+
+/**
+ * Makes the index that lets a job have one active run at a time, and before it names the job of each task that was a
+ * run of one. Where a job already had more than one active run, the one the job points at keeps the name, or else the
+ * newest; the others run on as tasks of no job, since stopping them would undo work nobody asked to undo.
+ */
+function holdJobsToOneActiveRun(db: Db): void {
+  const indexed = () => Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'idx_tasks_active_job'").get());
+  if (indexed()) return;
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    // The task worker opens the database at the same moment and may have made it while this waited for the lock.
+    if (!indexed()) {
+      const pointedAt = new Set(
+        (db.prepare("SELECT last_task_id AS id FROM sync_jobs UNION SELECT last_task_id FROM convert_jobs").all() as Array<{ id: string | null }>).map((job) => job.id)
+      );
+      const runs = db.prepare("SELECT id, type, status, destination FROM tasks WHERE type IN ('sync', 'convert') AND job_id IS NULL ORDER BY created_at DESC, rowid DESC").all() as Array<
+        Pick<FileTask, "id" | "type" | "status" | "destination">
+      >;
+      const active = new Map<string, string>();
+      for (const run of runs) {
+        const jobId = jobIdOf(run);
+        if (!jobId || !isActiveTaskStatus(run.status)) continue;
+        if (!active.has(jobId) || pointedAt.has(run.id)) active.set(jobId, run.id);
+      }
+      const name = db.prepare("UPDATE tasks SET job_id = ? WHERE id = ?");
+      for (const run of runs) {
+        const jobId = jobIdOf(run);
+        if (jobId && (!isActiveTaskStatus(run.status) || active.get(jobId) === run.id)) name.run(jobId, run.id);
+      }
+      db.exec(`CREATE UNIQUE INDEX idx_tasks_active_job ON tasks(job_id) WHERE status IN (${sqlStatuses(activeTaskStatuses)})`);
+    }
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
   }
 }
 

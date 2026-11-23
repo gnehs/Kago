@@ -25,10 +25,10 @@ async function fixture(t) {
   let count = 0;
   const insert = (status, fields = {}) => {
     const id = `task_${(count += 1)}`;
-    const row = { status, error_message: null, phase: null, started_at: status === "queued" || status === "paused" ? null : 100, finished_at: finished.includes(status) ? 200 : null, ...fields };
+    const row = { status, error_message: null, phase: null, started_at: status === "queued" || status === "paused" ? null : 100, finished_at: finished.includes(status) ? 200 : null, job_id: null, ...fields };
     db.prepare(
-      "INSERT INTO tasks (id, type, status, created_by, sources_json, error_message, phase, created_at, updated_at, started_at, finished_at) VALUES (?, 'copy', ?, ?, '[]', ?, ?, 50, 50, ?, ?)"
-    ).run(id, row.status, admin.id, row.error_message, row.phase, row.started_at, row.finished_at);
+      "INSERT INTO tasks (id, type, status, created_by, sources_json, error_message, phase, created_at, updated_at, started_at, finished_at, job_id) VALUES (?, 'copy', ?, ?, '[]', ?, ?, 50, 50, ?, ?, ?)"
+    ).run(id, row.status, admin.id, row.error_message, row.phase, row.started_at, row.finished_at, row.job_id);
     return id;
   };
   const read = (id) => ({ ...db.prepare("SELECT status, error_message, phase, updated_at, started_at, finished_at FROM tasks WHERE id = ?").get(id) });
@@ -189,4 +189,82 @@ test("opening the database ends what the last run left running", async (t) => {
   const kept = openDb({ appDataDir }, { interruptRunningTasks: false });
   assert.equal(kept.prepare("SELECT COUNT(*) AS n FROM tasks WHERE status = 'running'").get().n, 1, "recovery tooling leaves a live server's tasks alone");
   kept.close();
+});
+
+test("a job has one active run at a time, and other tasks are not held to that", async (t) => {
+  const { tasks, insert } = await fixture(t);
+  const run = (status, jobId) => insert(status, { job_id: jobId });
+  run("done", "sync_a");
+  const going = run("running", "sync_a");
+  for (const status of ["queued", "paused", "running", "cancelling"]) {
+    assert.throws(() => run(status, "sync_a"), /UNIQUE constraint failed: tasks\.job_id/, `a ${status} run beside a running one is refused`);
+  }
+  run("failed", "sync_a");
+  run("queued", "convert_b");
+  run("queued", null);
+  run("queued", null);
+  tasks.transition(going, "done");
+  run("queued", "sync_a");
+  assert.equal(tasks.get(going).job_id, undefined, "the job column is not part of a task as it is sent");
+});
+
+/** A database as Kago left it before tasks named their job: no job_id, no index on it. */
+async function oldDatabase(t, runs) {
+  const appDataDir = await mkdtemp(path.join(tmpdir(), "kago-job-runs-"));
+  t.after(() => rm(appDataDir, { recursive: true, force: true }));
+  const db = openDb({ appDataDir });
+  db.exec("DROP INDEX idx_tasks_active_job; ALTER TABLE tasks DROP COLUMN job_id");
+  db.prepare("INSERT INTO users (id, email, password_hash, display_name, role, created_at, updated_at) VALUES (?, ?, 'x', 'Admin', 'ADMIN', 0, 0)").run(admin.id, admin.email);
+  const lastOf = (jobId) => runs.find((run) => run.job === jobId && run.last)?.id ?? null;
+  db.prepare("INSERT INTO sync_jobs (id, name, source_json, destination_json, created_by, created_at, updated_at, last_task_id) VALUES ('sync_a', 'A', '{}', '{}', ?, 0, 0, ?)").run(admin.id, lastOf("sync_a"));
+  db.prepare("INSERT INTO convert_jobs (id, name, input_json, destination_json, spec_json, created_by, created_at, updated_at, last_task_id) VALUES ('convert_b', 'B', '{}', '{}', '{}', ?, 0, 0, ?)").run(admin.id, lastOf("convert_b"));
+  const destination = (run) =>
+    run.type === "sync" ? JSON.stringify({ sync: { jobId: run.job } }) : run.type === "convert" ? JSON.stringify({ rootSlug: "r", path: "/", convert: {}, ...(run.job ? { job: { id: run.job } } : {}) }) : null;
+  for (const run of runs) {
+    db.prepare("INSERT INTO tasks (id, type, status, created_by, sources_json, destination, created_at, updated_at) VALUES (?, ?, ?, ?, '[]', ?, ?, ?)").run(run.id, run.type, run.status, admin.id, destination(run), run.at, run.at);
+  }
+  db.close();
+  return appDataDir;
+}
+
+const jobsOf = (db) => Object.fromEntries(db.prepare("SELECT id, job_id FROM tasks ORDER BY id").all().map((task) => [task.id, task.job_id]));
+
+test("an older database learns which job each task ran, and holds each job to one active run from then on", async (t) => {
+  const appDataDir = await oldDatabase(t, [
+    { id: "t1", type: "sync", job: "sync_a", status: "done", at: 1 },
+    { id: "t2", type: "sync", job: "sync_a", status: "queued", at: 2, last: true },
+    { id: "t3", type: "convert", job: "convert_b", status: "paused", at: 3, last: true },
+    { id: "t4", type: "convert", status: "queued", at: 4 },
+    { id: "t5", type: "copy", status: "queued", at: 5 }
+  ]);
+  const db = openDb({ appDataDir });
+  const expected = { t1: "sync_a", t2: "sync_a", t3: "convert_b", t4: null, t5: null };
+  assert.deepEqual(jobsOf(db), expected);
+  assert.throws(
+    () => db.prepare("INSERT INTO tasks (id, type, status, created_by, sources_json, created_at, updated_at, job_id) VALUES ('t6', 'sync', 'queued', ?, '[]', 6, 6, 'sync_a')").run(admin.id),
+    /UNIQUE constraint failed: tasks\.job_id/,
+    "a second active run of the job is refused"
+  );
+  db.close();
+  const again = openDb({ appDataDir });
+  assert.deepEqual(jobsOf(again), expected, "opening it again changes nothing");
+  again.close();
+});
+
+test("an older database that already ran a job twice at once keeps the run the job points at, or else the newest", async (t) => {
+  const appDataDir = await oldDatabase(t, [
+    { id: "t1", type: "sync", job: "sync_a", status: "queued", at: 1, last: true },
+    { id: "t2", type: "sync", job: "sync_a", status: "paused", at: 2 },
+    { id: "t3", type: "sync", job: "sync_a", status: "failed", at: 3 },
+    { id: "t4", type: "convert", job: "convert_b", status: "queued", at: 4 },
+    { id: "t5", type: "convert", job: "convert_b", status: "queued", at: 5 }
+  ]);
+  const db = openDb({ appDataDir });
+  const expected = { t1: "sync_a", t2: null, t3: "sync_a", t4: null, t5: "convert_b" };
+  assert.deepEqual(jobsOf(db), expected);
+  assert.deepEqual(db.prepare("SELECT status FROM tasks ORDER BY id").all().map((task) => task.status), ["queued", "paused", "failed", "queued", "queued"], "no run is stopped");
+  db.close();
+  const again = openDb({ appDataDir });
+  assert.deepEqual(jobsOf(again), expected, "opening it again changes nothing");
+  again.close();
 });

@@ -129,6 +129,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   pace_height INTEGER,
   -- What a running task is at before it can count: 'counting' what it has to do, its totals being what it has found so far, or 'preparing'.
   phase TEXT,
+  -- The sync or auto-convert job this is a run of. idx_tasks_active_job, made in db.ts, allows a job one active run.
+  job_id TEXT,
   FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
 );
 
