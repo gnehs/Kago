@@ -5,8 +5,14 @@ import { activeTaskStatuses, sqlStatuses, type FileTask } from "./types.js";
 /** The saved sync or auto-convert job a task is a run of, as its destination names it. */
 export function jobIdOf(task: Pick<FileTask, "type" | "destination">): string | null {
   if (!task.destination || (task.type !== "sync" && task.type !== "convert")) return null;
-  const destination = JSON.parse(task.destination) as { sync?: { jobId?: string }; job?: { id?: string } };
-  return (task.type === "sync" ? destination.sync?.jobId : destination.job?.id) ?? null;
+  let destination: { sync?: { jobId?: string }; job?: { id?: string } } | null;
+  try {
+    destination = JSON.parse(task.destination);
+  } catch {
+    // Rows written by older versions pass through here when the database is opened, and one bad row must not stop that.
+    return null;
+  }
+  return (task.type === "sync" ? destination?.sync?.jobId : destination?.job?.id) ?? null;
 }
 
 /** Thrown by the insert of a job's run while another run of that job is active. */
