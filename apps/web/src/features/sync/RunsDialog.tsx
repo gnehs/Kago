@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { taskErrorLabel, taskStatus } from "@/features/tasks/taskUtils";
 import { formatDuration, formatSize, formatUnixDate } from "@/lib/format";
 import { t } from "@/lib/i18n";
-import type { FileTask, SyncJob, SyncRun, SyncTrialSummary } from "@/types/kago";
+import type { SyncJob, SyncRun, SyncTrialSummary } from "@/types/kago";
 import { describeTrial } from "./TrialDialog";
 
 /** What there is to say of a run beyond when it was and how it ended. */
@@ -49,7 +49,7 @@ export function RunsDialog({ job, onClose }: { job: SyncJob | null; onClose: () 
         {runs.data?.length ? (
           <ul className="kago-well m-0 list-none divide-y divide-line rounded-md p-0">
             {runs.data.map((run) => {
-              const status = taskStatus({ status: run.status } as FileTask);
+              const status = taskStatus({ status: run.status });
               return (
                 <li key={run.task_id} className="flex items-start gap-3 px-3 py-2">
                   <div className="flex min-w-0 flex-1 flex-col gap-0.5">

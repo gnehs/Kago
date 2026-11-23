@@ -19,7 +19,7 @@ import { displayPath, normalizeLogicalPath } from "@/lib/paths";
 import { run } from "@/lib/run";
 import { confirmAction } from "@/stores/dialogs";
 import { toast } from "@/stores/toast";
-import type { Actor, FileTask, Root, SyncEndpoint, SyncJob, SyncSchedule } from "@/types/kago";
+import type { Actor, Root, SyncEndpoint, SyncJob, SyncSchedule } from "@/types/kago";
 import { RunsDialog } from "./RunsDialog";
 import { describeTrial, TrialDialog } from "./TrialDialog";
 import { t } from "@/lib/i18n";
@@ -104,8 +104,8 @@ export function SyncPage({ roots, user }: { roots: Root[]; user: Actor }) {
       {jobs.data?.length ? (
         <RowList>
           {jobs.data.map((job) => {
-            const last = job.last_status ? taskStatus({ status: job.last_status } as FileTask) : null;
-            const running = job.last_status !== null && isActiveTask({ status: job.last_status } as FileTask);
+            const last = job.last_status ? taskStatus({ status: job.last_status }) : null;
+            const running = job.last_status !== null && isActiveTask({ status: job.last_status });
             return (
               <Row
                 key={job.id}
@@ -119,7 +119,7 @@ export function SyncPage({ roots, user }: { roots: Root[]; user: Actor }) {
                     <span className="block truncate">
                       {[
                         // A run that is under way, or waiting, is said in words too: the icon alone has to be pointed at.
-                        last && isActiveTask({ status: job.last_status } as FileTask) ? last.label : null,
+                        last && running ? last.label : null,
                         job.enabled ? describeSchedule(job.schedule) : t("Schedule paused"),
                         job.last_error ? taskErrorLabel(job.last_error) : job.last_run_at ? t("Last run {date}", { date: formatUnixDate(job.last_run_at) }) : null,
                         job.created_by !== user.id ? t("Someone else’s") : null

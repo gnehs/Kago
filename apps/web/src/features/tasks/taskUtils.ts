@@ -31,8 +31,8 @@ const statusMeta: Record<string, { label: string; tone: "neutral" | "accent" | "
 };
 
 export const taskTypeLabel = (task: FileTask) => typeLabels[task.type] ?? task.type;
-export const taskStatus = (task: FileTask) => statusMeta[task.status] ?? { label: task.status, tone: "neutral" as const };
-export const isActiveTask = (task: FileTask) => ["queued", "running", "cancelling", "paused"].includes(task.status);
+export const taskStatus = (task: { status: string }) => statusMeta[task.status] ?? { label: task.status, tone: "neutral" as const };
+export const isActiveTask = (task: { status: string }) => ["queued", "running", "cancelling", "paused"].includes(task.status);
 /** How long moving to the Trash, or deleting, may run before it is shown as the work it has turned out to be. */
 const QUIET_MS = 2000;
 /** When this tab first saw each such task under way. The server's clock is not this one's, so its times are not compared. */

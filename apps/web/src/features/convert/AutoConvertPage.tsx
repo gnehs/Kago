@@ -21,7 +21,7 @@ import { run } from "@/lib/run";
 import { confirmAction } from "@/stores/dialogs";
 import { toast } from "@/stores/toast";
 import { useWorkspaceStore } from "@/stores/workspace";
-import type { Actor, ConvertJob, ConvertJobOptions, ConvertSpec, FileTask, Root } from "@/types/kago";
+import type { Actor, ConvertJob, ConvertJobOptions, ConvertSpec, Root } from "@/types/kago";
 import { ConvertFields, specIsValid } from "./ConvertFields";
 import { ConvertRunsDialog } from "./ConvertRunsDialog";
 import { CONVERT_FORMATS, DEFAULT_EXTENSIONS, describeSpec, kindOfFormat, parseExtensions, specFor, supportedFormats } from "./convertSpec";
@@ -128,8 +128,8 @@ export function AutoConvertPage({ roots, user }: { roots: Root[]; user: Actor })
       {jobs.data?.length ? (
         <RowList>
           {jobs.data.map((job) => {
-            const last = job.last_status ? taskStatus({ status: job.last_status } as FileTask) : null;
-            const running = job.last_status !== null && isActiveTask({ status: job.last_status } as FileTask);
+            const last = job.last_status ? taskStatus({ status: job.last_status }) : null;
+            const running = job.last_status !== null && isActiveTask({ status: job.last_status });
             const structuring = busy[job.id] === "structure";
             return (
               <Row
@@ -151,7 +151,7 @@ export function AutoConvertPage({ roots, user }: { roots: Root[]; user: Actor })
                     {/* How it last went has a line to itself: on one with the rest it is the first thing pushed out of sight. */}
                     <span className="block truncate">
                       {structuring ? t("Copying the folder structure…") : [
-                        last && isActiveTask({ status: job.last_status } as FileTask) ? last.label : null,
+                        last && running ? last.label : null,
                         job.last_error ? taskErrorLabel(job.last_error) : job.last_run_at ? t("Last run {date}", { date: formatUnixDate(job.last_run_at) }) : null,
                         job.failed > 0 ? t("{count} file failed | {count} files failed", { count: job.failed }) : null
                       ].filter(Boolean).join(" · ") || t("No runs yet")}
