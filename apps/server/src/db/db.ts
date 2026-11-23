@@ -3,6 +3,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { Env } from "../config/env.js";
 import { id, now } from "../lib/ids.js";
+import { transitionAll } from "../services/task-status.js";
 
 export type Db = DatabaseSync;
 
@@ -40,11 +41,9 @@ export function openDb(env: Env, options: { interruptRunningTasks?: boolean } = 
     UPDATE audit_logs SET action = 'tag_update' WHERE action = 'finder_tag_update'
   `);
   if (options.interruptRunningTasks ?? true) {
-    db.prepare(
-      "UPDATE tasks SET status = 'interrupted', updated_at = ?, finished_at = ? WHERE status = 'running'"
-    ).run(now(), now());
+    transitionAll(db, "interrupt");
     // The worker that was to let go of these is gone, so they have stopped.
-    db.prepare("UPDATE tasks SET status = 'cancelled', updated_at = ?, finished_at = ? WHERE status = 'cancelling'").run(now(), now());
+    transitionAll(db, "settle");
   }
 
   return db;
