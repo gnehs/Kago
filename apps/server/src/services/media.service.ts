@@ -65,12 +65,12 @@ const NO_TAGS: MediaTags = { title: "", artist: "", album: "", albumArtist: "", 
 /** Lyrics are kept whole in a tag; anything longer than a song's worth is not lyrics. */
 const MAX_LYRICS_LENGTH = 100_000;
 
-/** A picture subtitle file beside the video. */
 /** Only what tells one version of a file from the next is read from `stat`. */
 type FileVersion = { size: number; mtimeMs: number };
 
 /** A sidecar subtitle file as `FsService.subtitles` lists it. */
 type Sidecar = Awaited<ReturnType<FsService["subtitles"]>>[number];
+/** A picture subtitle file beside the video. */
 export type PictureSubtitleFile = { absolutePath: string; stat: FileVersion; format: PictureSubtitleFormat };
 
 const LADDER = [2160, 1440, 1080, 720, 480, 360];
