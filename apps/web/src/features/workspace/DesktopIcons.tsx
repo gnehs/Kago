@@ -37,7 +37,7 @@ export function DesktopIcons({ roots, isAdmin }: { roots: Root[]; isAdmin: boole
   const shown = reorder.order.flatMap((id) => apps.find((app) => app.id === id) ?? []);
   // A new window starts in a location on this machine when there is one: it answers at once and is always there.
   const home = roots.find((root) => root.provider === "local") ?? roots[0];
-  const openNew = (root: Root) => store().openWindow({ rootSlug: root.slug, logicalPath: "/", title: root.name });
+  const openNew = (root: Root) => store().openWindow({ rootSlug: root.slug, logicalPath: "/" });
 
   return (
     <div className="absolute inset-y-4 left-4 flex flex-col flex-wrap content-start gap-1">

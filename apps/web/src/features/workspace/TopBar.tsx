@@ -22,24 +22,25 @@ import { ExternalAppGlyph } from "@/components/kago/external-app-icon";
 import { FileIcon } from "@/components/kago/file-icon";
 import { appIcons } from "@/features/windows/AppWindow";
 import { uploadsTotal, useUploadStore } from "@/stores/uploads";
-import { minimizeWindows, useWorkspaceStore, type WindowFrame } from "@/stores/workspace";
+import { activeWindowId, fileWindows, folderTitle, minimizeWindows, useWorkspaceStore } from "@/stores/workspace";
 import type { Actor } from "@/types/kago";
 import { t } from "@/lib/i18n";
 
 /** The workspace's only chrome: open windows on the left, status and account on the right. */
 export function TopBar({ user, onOpenPalette }: { user: Actor; onOpenPalette: () => void }) {
-  const windows = useWorkspaceStore((state) => state.windows);
+  const windows = useWorkspaceStore(fileWindows);
   const appWindows = useWorkspaceStore((state) => state.appWindows);
   const previewWindows = useWorkspaceStore((state) => state.previewWindows);
+  const focusedId = useWorkspaceStore(activeWindowId);
   const ordered = [...windows, ...appWindows, ...previewWindows].sort((a, b) => a.createdAt - b.createdAt);
   const anyVisible = ordered.some((window) => !window.minimized);
   const roots = useRoots().data;
   const rootName = (slug: string) => roots?.find((root) => root.slug === slug)?.name ?? slug;
 
   /** Taskbar behaviour: restore or focus a window, or minimize it when it is already in front. */
-  function activate(window: WindowFrame) {
+  function activate(window: { id: string }) {
     const store = useWorkspaceStore.getState();
-    if (window.focused && !window.minimized) {
+    if (window.id === focusedId) {
       minimizeWindows([window.id]);
       return;
     }
@@ -73,16 +74,16 @@ export function TopBar({ user, onOpenPalette }: { user: Actor; onOpenPalette: ()
           <KagoTooltip key={window.id} label={"rootSlug" in window ? displayPath(rootName(window.rootSlug), window.logicalPath) : "preview" in window ? displayPath(rootName(window.preview.rootSlug), window.preview.item.path) : window.title}>
             <button
               data-dock={window.id}
-              aria-pressed={window.focused && !window.minimized}
+              aria-pressed={window.id === focusedId}
               className={cn(
                 "flex h-7 max-w-40 min-w-0 items-center gap-1.5 rounded-md px-2 outline-none focus-ring",
-                window.focused && !window.minimized ? "kago-raised" : "kago-flat text-muted",
+                window.id === focusedId ? "kago-raised" : "kago-flat text-muted",
                 window.minimized && "text-muted [&_svg]:grayscale [&_img]:grayscale"
               )}
               onClick={() => activate(window)}
             >
               {"app" in window ? (window.app === "external" ? <ExternalAppGlyph icon={window.external.icon} /> : appIcons[window.app]) : "preview" in window ? <FileIcon item={window.preview.item} /> : <FileIcon item={{ kind: "folder", type: "", name: "" }} />}
-              <span className="truncate">{window.title}</span>
+              <span className="truncate">{"rootSlug" in window ? folderTitle(window.rootSlug, window.logicalPath) : window.title}</span>
             </button>
           </KagoTooltip>
         ))}

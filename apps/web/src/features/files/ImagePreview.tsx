@@ -10,7 +10,7 @@ import { formatDate, formatSize, isConvertedImage, isImageType, kindLabel } from
 import { parentPath } from "@/lib/paths";
 import { getImageInfoOpen, setImageInfoOpen } from "@/lib/prefs";
 import { isEditableTarget, isInteractiveTarget } from "@/lib/usePointerDrag";
-import { useWorkspaceStore, type PreviewWindow } from "@/stores/workspace";
+import { activeWindowId, useWorkspaceStore, type PreviewWindow } from "@/stores/workspace";
 import type { FileItem } from "@/types/kago";
 import { KagoStatusBar } from "@/components/kago/status-bar";
 import { PhotoDetails } from "./Inspector";
@@ -409,7 +409,7 @@ export function ImagePreviewWindow({ window }: { window: PreviewWindow }) {
 
   function onKeyDown(event: KeyboardEvent) {
     const workspace = store();
-    if (workspace.activeWindowId !== window.id || window.minimized) return;
+    if (activeWindowId(workspace) !== window.id || window.minimized) return;
     // Dialogs and menus own the keyboard while they are open.
     if (document.querySelector("[role=dialog], [role=menu]") || isEditableTarget(event.target)) return;
     const mod = event.metaKey || event.ctrlKey;

@@ -10,7 +10,7 @@ import { FileIcon } from "@/components/kago/file-icon";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { useRecentStore } from "@/stores/recent";
-import { useWorkspaceStore } from "@/stores/workspace";
+import { folderTitle, useWorkspaceStore } from "@/stores/workspace";
 import type { FileWindow, FolderWindow, Root } from "@/types/kago";
 import { DropLayer } from "./DropLayer";
 import { FileColumns, FileList } from "./FileList";
@@ -45,9 +45,10 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
   const fileList = useFileList(frame.rootSlug, frame.logicalPath);
   // The folder says how it is shown; the window only shows it.
   const folderView = useFolderView(frame.rootSlug, frame.logicalPath, fileList.data?.items);
-  const win = useMemo<FolderWindow>(() => ({ ...frame, ...folderView.view }), [frame, folderView.view]);
+  const title = folderTitle(frame.rootSlug, frame.logicalPath);
+  const win = useMemo<FolderWindow>(() => ({ ...frame, ...folderView.view, title }), [frame, folderView.view, title]);
   const actions = useFileActions(win);
-  const tabId = frame.activeTabId ?? "";
+  const tabId = frame.activeTabId;
   const search = useFileSearch(win, tabId);
   const openFolders = useOpenFolders(win.id, tabId);
   const history = useFileHistory(win, tabId);
@@ -89,7 +90,7 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
     <KagoWindow
       window={win}
       icon={<FileIcon item={FOLDER} />}
-      titleBar={(win.tabs?.length ?? 0) > 1 ? <TabStrip window={win} roots={roots} /> : undefined}
+      titleBar={win.tabs.length > 1 ? <TabStrip window={win} roots={roots} /> : undefined}
       titleExtra={
         <>
           {readonly ? <KagoBadge>{t("Read-only")}</KagoBadge> : null}

@@ -8,7 +8,7 @@ import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
 import { Button } from "@/components/ui/button";
 import { locale, t } from "@/lib/i18n";
 import { parentPath } from "@/lib/paths";
-import { useWorkspaceStore, type PreviewWindow } from "@/stores/workspace";
+import { activeWindowId, useFocused, useWorkspaceStore, type PreviewWindow } from "@/stores/workspace";
 import type { FileMeta, PluginPreviewer } from "@/types/kago";
 import { PreviewFailure, PreviewWindowFrame, usePreviewFile } from "@/features/files/PreviewWindowFrame";
 import { companionNames } from "./companions";
@@ -186,6 +186,7 @@ export function PluginPreviewWindow({ window, previewer }: { window: PreviewWind
 
 function PluginFrame({ window, previewer, onDownload, onRetry }: { window: PreviewWindow; previewer: PluginPreviewer; onDownload: () => void; onRetry: () => void }) {
   const frame = useRef<HTMLIFrameElement>(null);
+  const focused = useFocused(window.id);
   const [phase, dispatch] = useReducer(advance, { kind: "loading" });
   // The frame is remounted for another file (see the key above), so what it is about is read as it is now.
   const latest = useRef({ window, previewer, onDownload });
@@ -283,7 +284,7 @@ function PluginFrame({ window, previewer, onDownload, onRetry }: { window: Previ
             if (reads.signal.aborted) return;
             companions = found;
             const { window } = latest.current;
-            post({ kind: "init", api: API_VERSION, file: { name: item.name, size: item.size, type: item.type, mtime: item.mtime }, companions: found.map((companion) => companion.info), locale, theme: currentTheme(), focused: window.focused });
+            post({ kind: "init", api: API_VERSION, file: { name: item.name, size: item.size, type: item.type, mtime: item.mtime }, companions: found.map((companion) => companion.info), locale, theme: currentTheme(), focused: activeWindowId(useWorkspaceStore.getState()) === window.id });
             dispatch({ kind: "hello" });
           });
           return;
@@ -320,7 +321,7 @@ function PluginFrame({ window, previewer, onDownload, onRetry }: { window: Previ
         case "key":
           // Only a key pressed in the frame while it has the focus, in the window in front: a frame in a window behind
           // has no keys to pass on, and would otherwise be pressing them in whatever window is in front.
-          if (!window.focused || document.activeElement !== element) return;
+          if (activeWindowId(useWorkspaceStore.getState()) !== window.id || document.activeElement !== element) return;
           // Heard by the interface's shortcuts as if pressed on the page: ⌘K still opens Quick open.
           document.dispatchEvent(new KeyboardEvent("keydown", { key: message.key, code: message.code, metaKey: message.meta, ctrlKey: message.ctrl, shiftKey: message.shift, altKey: message.alt, bubbles: true, cancelable: true }));
           return;
@@ -366,9 +367,9 @@ function PluginFrame({ window, previewer, onDownload, onRetry }: { window: Previ
   // Keys go to the window in front; with the frame focused, they reach the plugin rather than the page around it.
   useEffect(() => {
     if (!ready) return;
-    frame.current?.contentWindow?.postMessage({ kind: "focus", focused: window.focused } satisfies HostMessage, "*");
-    if (window.focused) frame.current?.focus();
-  }, [ready, window.focused]);
+    frame.current?.contentWindow?.postMessage({ kind: "focus", focused } satisfies HostMessage, "*");
+    if (focused) frame.current?.focus();
+  }, [ready, focused]);
 
   if (phase.kind === "failed") {
     return (

@@ -6,7 +6,7 @@ import { animateWindowBox, animateWindowIn } from "@/lib/motion";
 import { useCompact } from "@/lib/useCompact";
 import { isInteractiveTarget, usePointerDrag } from "@/lib/usePointerDrag";
 import { cn } from "@/lib/utils";
-import { clampWindowPosition, fitAspectSize, getCanvasSize, MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, minimizeWindows, requestCloseWindow, TITLEBAR_HEIGHT, useWorkspaceStore, type WindowFrame } from "@/stores/workspace";
+import { clampWindowPosition, fitAspectSize, getCanvasSize, MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, minimizeWindows, requestCloseWindow, TITLEBAR_HEIGHT, useFocused, useWorkspaceStore, type WindowFrame, type WindowPatch } from "@/stores/workspace";
 import { t } from "@/lib/i18n";
 
 type ResizeEdge = "n" | "e" | "s" | "w" | "ne" | "nw" | "se" | "sw";
@@ -23,7 +23,8 @@ export function KagoWindow({
   ...props
 }: Omit<React.ComponentProps<"section">, "title"> & { window: WindowFrame; icon?: ReactNode; titleExtra?: ReactNode; /** Takes the place of the icon and title in the middle of the title bar, for a window that has more to show there than its name. */ titleBar?: ReactNode; /** Hide rather than unmount while minimized, for content that holds unsaved work. */ keepMounted?: boolean }) {
   const store = useWorkspaceStore.getState;
-  const update = (patch: Partial<WindowFrame>) => store().updateWindow(window.id, patch);
+  const update = (patch: WindowPatch) => store().updateWindow(window.id, patch);
+  const focused = useFocused(window.id);
   // On a phone there is no room for a window to be anything but the whole desktop. That is not written down as
   // maximized: the same workspace opens on a wider screen with its windows where they were left.
   const compact = useCompact();
@@ -58,13 +59,13 @@ export function KagoWindow({
       ref={element}
       data-window={window.id}
       hidden={window.minimized}
-      data-inactive={window.focused ? undefined : ""}
+      data-inactive={focused ? undefined : ""}
       data-maximized={filled ? "" : undefined}
       className={cn(
         // Clipped, not hidden, for the reason the desktop is: nothing that takes the focus may scroll a window's frame.
         "kago-window absolute flex flex-col overflow-clip bg-surface",
         filled ? "inset-0" : "rounded-window",
-        window.focused ? "shadow-window-active" : "shadow-window",
+        focused ? "shadow-window-active" : "shadow-window",
         className
       )}
       style={filled ? { zIndex: window.zIndex } : { left: window.x, top: window.y, width: window.width, height: window.height, zIndex: window.zIndex }}
@@ -82,7 +83,7 @@ export function KagoWindow({
           {compact ? null : <WindowControl label={window.maximized ? t("Restore size") : t("Maximize")} icon={window.maximized ? Minimize2 : Maximize2} onClick={() => update({ maximized: !window.maximized })} />}
         </div>
         {titleBar ?? (
-          <div className={cn("flex min-w-0 flex-1 items-center justify-center gap-1.5 font-medium", !window.focused && "text-muted")}>
+          <div className={cn("flex min-w-0 flex-1 items-center justify-center gap-1.5 font-medium", !focused && "text-muted")}>
             {icon}
             <span className="truncate">{window.title}</span>
           </div>

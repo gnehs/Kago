@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 import { promptCompress, type CompressChoice } from "@/features/files/CompressDialog";
 import { resolveConflicts, type ConflictChoices } from "@/features/files/TransferConflicts";
 import { followTask } from "@/features/tasks/taskToast";
-import { getCanvasSize, useWorkspaceStore } from "@/stores/workspace";
+import { activeFileWindow, folderTitle, getCanvasSize, useWorkspaceStore } from "@/stores/workspace";
 import { t } from "@/lib/i18n";
 import type { Shelf as ShelfData } from "@/types/kago";
 
@@ -40,7 +40,7 @@ export function Shelf() {
   const shelves = useShelves();
   const roots = useRoots().data;
   const shelfState = useWorkspaceStore((state) => state.shelf);
-  const active = useWorkspaceStore((state) => state.windows.find((window) => window.id === state.activeWindowId && !window.minimized));
+  const active = useWorkspaceStore(activeFileWindow);
   const activeList = useFileList(active?.rootSlug ?? "", active?.logicalPath ?? "/", Boolean(active));
   const element = useRef<HTMLElement>(null);
   const [size, setSize] = useState({ width: 264, height: 40 });
@@ -170,7 +170,7 @@ export function Shelf() {
       menu={
         <>
           <KagoMenuNote className="max-w-60 truncate">
-            {active ? (activeList.data?.readonly ? t("The current window is read-only") : t("Send to “{title}”", { title: active.title })) : t("Pick a file window as the destination first")}
+            {active ? (activeList.data?.readonly ? t("The current window is read-only") : t("Send to “{title}”", { title: folderTitle(active.rootSlug, active.logicalPath) })) : t("Pick a file window as the destination first")}
           </KagoMenuNote>
           <KagoMenuItem icon={<Copy />} disabled={!canSend} onClick={() => void send("copy")}>{t("Copy")}</KagoMenuItem>
           <KagoMenuItem icon={<FolderInput />} disabled={!canSend} onClick={() => void send("move")}>{t("Move")}</KagoMenuItem>

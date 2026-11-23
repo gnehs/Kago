@@ -150,11 +150,23 @@ export type Group = {
   updated_at: number;
 };
 
-export type FileWindow = {
+/** A folder open in a tab of a file window, and what is selected in it. */
+export type FolderTab = {
   id: string;
   rootSlug: string;
   logicalPath: string;
-  title: string;
+  selectedItems: string[];
+};
+
+/** What a file window shows, which lives in its active tab and nowhere else. */
+type Shown = "rootSlug" | "logicalPath" | "selectedItems" | "title" | "focused";
+
+/**
+ * A file window as the store keeps it. The folder it shows is its active tab; the window has no copy of it to fall
+ * out of step, and the focus is the window in front, so it has no flag for that either.
+ */
+export type FileWindowState = {
+  id: string;
   x: number;
   y: number;
   width: number;
@@ -162,25 +174,40 @@ export type FileWindow = {
   zIndex: number;
   minimized: boolean;
   maximized: boolean;
-  focused: boolean;
-  selectedItems: string[];
   scrollTop?: number;
   inspectorOpen?: boolean;
   /** Whether the tree of locations is shown down the left side. Shown unless closed. */
   sidebarOpen?: boolean;
-  /** Every folder the window holds open. The one named by `activeTabId` is the one the fields above describe. */
-  tabs?: FileTab[];
-  activeTabId?: string;
+  /** Every folder the window holds open, never none. The one named by `activeTabId` is the one it shows. */
+  tabs: FolderTab[];
+  activeTabId: string;
   createdAt: number;
   updatedAt: number;
+} & { [K in Shown]?: never };
+
+/** A file window as it is read: its state, and the folder of its active tab with what is selected there. */
+export type FileWindow = Omit<FileWindowState, Shown> & Pick<FolderTab, "rootSlug" | "logicalPath" | "selectedItems">;
+
+/**
+ * A file window as the server keeps it, and as every client reads and writes it: the folder it shows is written out
+ * on the window, and again in its active tab.
+ */
+export type SavedFileWindow = Omit<FileWindowState, Shown | "tabs" | "activeTabId"> & {
+  rootSlug: string;
+  logicalPath: string;
+  title: string;
+  focused: boolean;
+  selectedItems: string[];
+  /** Missing in a window saved before there were tabs. */
+  tabs?: SavedTab[];
+  activeTabId?: string;
 };
 
-/** A folder kept open in a window alongside the one it is showing. */
-export type FileTab = {
+/** A tab of a saved window. The active one has no selection of its own; it is the window's. */
+export type SavedTab = {
   id: string;
   rootSlug: string;
   logicalPath: string;
-  /** What was selected in the tab when another was shown in its place, selected again when it comes back. */
   selectedItems?: string[];
 };
 
@@ -193,8 +220,8 @@ export type FolderView = {
   sortDirection: "asc" | "desc";
 };
 
-/** A window together with the view of the folder it is showing. */
-export type FolderWindow = FileWindow & FolderView;
+/** A window together with the view of the folder it is showing, and the name that folder goes by. */
+export type FolderWindow = FileWindow & FolderView & { title: string };
 
 /** What has been set for one folder. Whatever is left out is taken from the folders above it, then from the default. */
 export type FolderViewEntry = Partial<FolderView> & {
@@ -226,9 +253,10 @@ export type FavoriteFolder = { rootSlug: string; path: string };
 
 export type AccountPreferences = { settings: AccountSettings; folderViews: FolderViewEntry[]; favorites: FavoriteFolder[] };
 
+/** The desktop as the server keeps it. Only file windows are saved. */
 export type WorkspaceState = {
   activeWindowId: string | null;
-  windows: FileWindow[];
+  windows: SavedFileWindow[];
   sidebar: { collapsed?: boolean; width?: number };
   inspector: { open?: boolean; width?: number };
   shelf: { collapsed?: boolean; x?: number; y?: number };

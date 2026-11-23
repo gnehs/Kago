@@ -40,7 +40,7 @@ export function WindowErrorState({ error, window, onRetry }: { error: FileWindow
       title={error.title}
       description={error.kind === "forbidden" && contact ? `${error.message}${contact}` : error.message}
     >
-      {error.kind === "path_missing" ? <Button onClick={() => store().updateWindow(window.id, { logicalPath: "/", selectedItems: [] })}>{t("Go to the top level")}</Button> : null}
+      {error.kind === "path_missing" ? <Button onClick={() => store().navigate(window.id, { rootSlug: window.rootSlug, logicalPath: "/" })}>{t("Go to the top level")}</Button> : null}
       {error.kind === "forbidden" && admins.length > 0 ? <Button onClick={requestAccess}>{t("Request access by email")}</Button> : null}
       {error.kind === "unknown" ? <Button onClick={onRetry}>{t("Retry")}</Button> : null}
       <Button onClick={() => void requestCloseWindow(window.id)}>{t("Close window")}</Button>

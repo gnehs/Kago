@@ -14,7 +14,7 @@ import { displayPath } from "@/lib/paths";
 import { useCompact } from "@/lib/useCompact";
 import { cn } from "@/lib/utils";
 import { usePointerDrag } from "@/lib/usePointerDrag";
-import { useWorkspaceStore } from "@/stores/workspace";
+import { folderTitle, useWorkspaceStore } from "@/stores/workspace";
 import type { FileItem, FilmRecipe, FileWindow, ImageMetadata } from "@/types/kago";
 import { FileThumbnail } from "./FileThumbnail";
 import { videoInfoGroups } from "./videoInfo";
@@ -75,7 +75,7 @@ export function Inspector({ window: activeWindow, selection }: { window: FileWin
         <div className="min-h-0 flex-1 overflow-y-auto">
           <div className="flex flex-col items-center gap-2 p-4 text-center">
             <FileThumbnail rootSlug={rootSlug} item={meta.data} size={path === "/" || meta.data.kind === "folder" ? 64 : 144} />
-            <strong className="max-w-full text-sm font-semibold break-words">{path === "/" ? activeWindow.title : meta.data.name}</strong>
+            <strong className="max-w-full text-sm font-semibold break-words">{path === "/" ? folderTitle(rootSlug, "/") : meta.data.name}</strong>
             <span className="-mt-1.5 text-muted">
               {kindLabel(meta.data)}
               {meta.data.kind === "file" ? ` · ${formatSize(meta.data.size)}` : ""}

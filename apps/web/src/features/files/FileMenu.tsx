@@ -111,7 +111,7 @@ export function FileMenu({ win, targets, folder = win.logicalPath, readonly, all
       <KagoMenuItem icon={<FileVideo />} disabled={readonly} onClick={() => autoConvertInto({ rootSlug: win.rootSlug, path: folder })}>{t("Auto-convert into this folder…")}</KagoMenuItem>
       <KagoMenuSeparator />
       <KagoMenuItem icon={<PanelTop />} shortcut="⌥T" onClick={() => store().openTab(win.id, win)}>{t("New tab")}</KagoMenuItem>
-      <KagoMenuItem icon={<ExternalLink />} onClick={() => store().openWindow({ rootSlug: win.rootSlug, logicalPath: win.logicalPath, title: win.title })}>{t("Open this folder in a new window (⌥N)")}</KagoMenuItem>
+      <KagoMenuItem icon={<ExternalLink />} onClick={() => store().openWindow(win)}>{t("Open this folder in a new window (⌥N)")}</KagoMenuItem>
       {favoriteToggle(folder)}
       <KagoMenuItem icon={<RefreshCw />} shortcut="⌘R" onClick={() => void actions.refresh()}>{t("Refresh")}</KagoMenuItem>
     </>

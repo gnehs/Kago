@@ -15,7 +15,7 @@ import { lyricIndexAt, parseLrc, type LyricLine } from "@/lib/lrc";
 import { nfc, parentPath } from "@/lib/paths";
 import { getAudioPanels, getAudioVisual, getVideoVolume, setAudioPanels, setAudioVisual, setVideoVolume, type AudioVisualPref } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
-import { useWorkspaceStore, type PreviewWindow } from "@/stores/workspace";
+import { useFocused, useWorkspaceStore, type PreviewWindow } from "@/stores/workspace";
 import type { FileItem, MediaInfo } from "@/types/kago";
 import { useAudioVisual, VISUAL_STYLES, type VisualStyle } from "./audioVisuals";
 import { useMediaSession } from "./useMediaSession";
@@ -149,6 +149,7 @@ function graphOf(audio: HTMLAudioElement): AudioGraph | null {
  */
 export function AudioPreviewWindow({ window }: { window: PreviewWindow }) {
   const { rootSlug, item, download } = usePreviewFile(window);
+  const focused = useFocused(window.id);
   const folder = useFileList(rootSlug, parentPath(item.path));
   const files = folder.data?.items ?? NO_FILES;
   const sheetItem = isCueSheet(item) ? item : files.find((entry) => isCueSheet(entry) && [stem(item.name), nfc(item.name).toLowerCase()].includes(stem(entry.name)));
@@ -560,7 +561,7 @@ export function AudioPreviewWindow({ window }: { window: PreviewWindow }) {
               tracks={tracks}
               current={index}
               playing={playing}
-              focused={window.focused}
+              focused={focused}
               heading={byCue ? { title: albumTitle, performer: sheet?.performer || tags?.albumArtist || tags?.artist || "" } : null}
               lengthOf={(entry) => (entry.end ?? durations[entry.file.path] ?? 0) - entry.start}
               onSelect={select}

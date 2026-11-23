@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useWorkspaceStore } from "@/stores/workspace";
+import { fileWindows, useWorkspaceStore } from "@/stores/workspace";
 import type { FileItem, FolderWindow } from "@/types/kago";
 import type { FileColumn } from "./FileList";
 
@@ -27,7 +27,7 @@ export function useItemInteractions(win: FolderWindow, items: FileItem[], column
 
   function openItem(item: FileItem, where?: "window" | "tab") {
     if (item.kind === "file") store().openPreview(win.rootSlug, item);
-    else if (where === "window") store().openWindow({ rootSlug: win.rootSlug, logicalPath: item.path, title: item.name });
+    else if (where === "window") store().openWindow({ rootSlug: win.rootSlug, logicalPath: item.path });
     else if (where === "tab") store().openTab(win.id, { rootSlug: win.rootSlug, logicalPath: item.path });
     else navigate(item.path);
   }
@@ -66,7 +66,7 @@ export function useItemInteractions(win: FolderWindow, items: FileItem[], column
   /** Resting a finger on an item picks it out, and the context menu that opens for a long press is for it. */
   function holdItem(item: FileItem, among = items) {
     // A long press is heard twice on Android (the hold and its contextmenu event), and must come to the same.
-    const selection = store().windows.find((entry) => entry.id === win.id)?.selectedItems ?? [];
+    const selection = fileWindows(store()).find((entry) => entry.id === win.id)?.selectedItems ?? [];
     if (!selection.includes(item.path)) {
       if (picking) toggleItem(item, among);
       else store().selectItems(win.id, [item.path]);

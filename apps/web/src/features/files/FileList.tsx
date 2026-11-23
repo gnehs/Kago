@@ -7,7 +7,7 @@ import { parentPath } from "@/lib/paths";
 import { cn } from "@/lib/utils";
 import { useClipboardStore } from "@/stores/clipboard";
 import { setFolderView } from "@/stores/settings";
-import { folderTitle, useWorkspaceStore } from "@/stores/workspace";
+import { folderTitle, useFocused, useWorkspaceStore } from "@/stores/workspace";
 import type { FileItem, FolderView, FolderWindow } from "@/types/kago";
 import { setDragDownload, setDragPreview } from "./dragOut";
 import { FileIcon } from "@/components/kago/file-icon";
@@ -112,7 +112,7 @@ function itemProps({ window, items, selectedPaths, onSelect, onOpen, onContextIt
   };
 }
 
-const selectedClass = (window: FolderWindow, selected: boolean) => (selected ? (window.focused ? "kago-selection kago-selection-raised" : "bg-accent-soft") : "hover:bg-hover");
+const selectedClass = (focused: boolean, selected: boolean) => (selected ? (focused ? "kago-selection kago-selection-raised" : "bg-accent-soft") : "hover:bg-hover");
 
 /**
  * Where a chosen row stands among the chosen rows around it. Rows chosen one under another are drawn as one block,
@@ -141,6 +141,7 @@ export function FileList(props: FileListProps) {
 
 function ListView(props: ViewProps) {
   const { window, items, tree, locateFrom, layout, selectedPaths } = props;
+  const focused = useFocused(window.id);
   const range = useVisibleRange(props.scroller, layout, items.length);
   const list = useListbox(props.onHold);
   return (
@@ -156,12 +157,12 @@ function ListView(props: ViewProps) {
           const selected = selectedPaths.has(item.path);
           const open = tree?.expanded.has(item.path) ?? false;
           return (
-            <div key={item.path} role="option" data-run={selectionRun(items, range.start + offset, selectedPaths)} className={cn("mx-1 flex h-(--kago-row-h) items-center gap-2 rounded-sm px-2", selectedClass(window, selected), stateClass(props, item))} {...itemProps(props, list, item, range.start + offset)}>
+            <div key={item.path} role="option" data-run={selectionRun(items, range.start + offset, selectedPaths)} className={cn("mx-1 flex h-(--kago-row-h) items-center gap-2 rounded-sm px-2", selectedClass(focused, selected), stateClass(props, item))} {...itemProps(props, list, item, range.start + offset)}>
               <span className="flex min-w-0 flex-1 items-center gap-2" style={{ paddingLeft: (tree?.depths[range.start + offset] ?? 0) * TREE_INDENT }}>
                 {tree ? (
                   item.kind === "folder" ? (
                     <button
-                      className={cn("kago-hit-slop -mx-1 flex size-4 shrink-0 items-center justify-center rounded-sm outline-none", selected && window.focused ? "text-inherit" : "text-muted hover:text-ink")}
+                      className={cn("kago-hit-slop -mx-1 flex size-4 shrink-0 items-center justify-center rounded-sm outline-none", selected && focused ? "text-inherit" : "text-muted hover:text-ink")}
                       aria-label={open ? t("Collapse folder") : t("Expand folder")}
                       aria-expanded={open}
                       tabIndex={-1}
@@ -235,6 +236,7 @@ function SortHeader({ window, sortBy, label, className }: { window: FolderWindow
 
 function GridView(props: ViewProps) {
   const { window, items, layout, selectedPaths } = props;
+  const focused = useFocused(window.id);
   const range = useVisibleRange(props.scroller, layout, items.length);
   const { icon } = GRID_SIZES[window.iconSize];
   const list = useListbox(props.onHold);
@@ -252,7 +254,7 @@ function GridView(props: ViewProps) {
             <div className={cn("flex shrink-0 items-center justify-center rounded-md", selected && "bg-hover ring-1 ring-line ring-inset")} style={{ width: icon + 8, height: icon + 8 }}>
               <FileThumbnail rootSlug={window.rootSlug} item={item} size={icon} />
             </div>
-            <span className={cn("line-clamp-2 max-w-full rounded-sm px-1.5 text-center leading-4 break-words", selectedClass(window, selected))}>
+            <span className={cn("line-clamp-2 max-w-full rounded-sm px-1.5 text-center leading-4 break-words", selectedClass(focused, selected))}>
               <TagDots tags={item.tags} className="mr-1 inline-flex align-[-1px]" />
               {item.name}
             </span>
@@ -311,6 +313,7 @@ export function FileColumns(props: FileColumnsProps) {
 
 function Column({ column, index, opened, revealers, onSelect, onTap, onHold, onSelectColumn, onDropInto, ...shared }: FileColumnsProps & Pick<ViewProps, "selectedPaths" | "cutPaths" | "dropTarget" | "setDropTarget"> & { column: FileColumn; index: number; /** The folder of this column that the next one shows. */ opened?: string }) {
   const { window, dropTarget, setDropTarget } = shared;
+  const focused = useFocused(window.id);
   const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
   const layout = useFileLayout(scroller, "columns", window.iconSize);
   const items = column.items ?? EMPTY;
@@ -357,7 +360,7 @@ function Column({ column, index, opened, revealers, onSelect, onTap, onHold, onS
             const selected = shared.selectedPaths.has(item.path);
             return (
               // A folder the next column was opened from stays marked after the selection has moved on into it.
-              <div key={item.path} role="option" data-run={selectionRun(items, range.start + offset, shared.selectedPaths)} className={cn("mx-1 flex h-(--kago-row-h) items-center gap-2 rounded-sm px-2", selected ? selectedClass(window, true) : item.path === opened ? "bg-accent-soft" : "hover:bg-hover", stateClass(view, item))} {...itemProps(view, list, item, range.start + offset)}>
+              <div key={item.path} role="option" data-run={selectionRun(items, range.start + offset, shared.selectedPaths)} className={cn("mx-1 flex h-(--kago-row-h) items-center gap-2 rounded-sm px-2", selected ? selectedClass(focused, true) : item.path === opened ? "bg-accent-soft" : "hover:bg-hover", stateClass(view, item))} {...itemProps(view, list, item, range.start + offset)}>
                 <FileIcon item={item} />
                 <span className="min-w-0 flex-1 truncate">{item.name}</span>
                 <TagDots tags={item.tags} />

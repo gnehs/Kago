@@ -11,7 +11,7 @@ import { PreviewWindowView } from "@/features/files/PreviewWindow";
 import { AppWindowView } from "@/features/windows/AppWindow";
 import { useRecentStore } from "@/stores/recent";
 import { loadSettings, useSettingsStore, wallpaperUrl } from "@/stores/settings";
-import { setCanvasSize, setRootNames, useWorkspaceStore } from "@/stores/workspace";
+import { activeFileWindow, activeWindowId, fileWindows, folderTitle, setCanvasSize, setRootNames, useWorkspaceStore } from "@/stores/workspace";
 import type { Actor, Root } from "@/types/kago";
 import { CommandPalette } from "./CommandPalette";
 import { DesktopIcons } from "./DesktopIcons";
@@ -31,6 +31,8 @@ export function Workspace({ user }: { user: Actor }) {
   const openPalette = useCallback(() => setPaletteOpen(true), []);
   const isAdmin = user.role === "ADMIN";
   const rootList = roots.data ?? [];
+  // Windows and tabs are named after their folders, which takes knowing what the locations are called before any is drawn, the top bar included.
+  useMemo(() => setRootNames(roots.data ?? []), [roots.data]);
 
   // Folders are shown the way the account says, so nothing is drawn until that is known.
   useEffect(() => {
@@ -40,7 +42,12 @@ export function Workspace({ user }: { user: Actor }) {
   }, [user.id]);
 
   // The browser's tab is named after the window in front, as a taskbar entry would be.
-  const frontTitle = useWorkspaceStore((state) => [...state.windows, ...state.appWindows, ...state.previewWindows].find((window) => window.id === state.activeWindowId && !window.minimized)?.title);
+  const frontTitle = useWorkspaceStore((state) => {
+    const front = activeFileWindow(state);
+    if (front) return folderTitle(front.rootSlug, front.logicalPath);
+    const id = activeWindowId(state);
+    return [...state.appWindows, ...state.previewWindows].find((window) => window.id === id)?.title;
+  });
   useEffect(() => {
     document.title = frontTitle ? `${frontTitle} — Kago` : "Kago";
     return () => {
@@ -78,13 +85,11 @@ export function Workspace({ user }: { user: Actor }) {
 
 /** The desktop: shortcuts underneath, file, app and preview windows on top, and the workspace-level shelf. */
 function Canvas({ roots, user }: { roots: Root[]; user: Actor }) {
-  const windows = useWorkspaceStore((state) => state.windows);
+  const windows = useWorkspaceStore(fileWindows);
   const appWindows = useWorkspaceStore((state) => state.appWindows);
   const previewWindows = useWorkspaceStore((state) => state.previewWindows);
   const wallpaper = useSettingsStore((state) => state.settings.wallpaper);
   const element = useRef<HTMLDivElement>(null);
-  // Windows and tabs are named by the store, which has to know what the locations are called before any is drawn.
-  useMemo(() => setRootNames(roots), [roots]);
   // Bumped on resize so canvas-relative children (the shelf) re-clamp.
   const [, setResizeTick] = useState(0);
 

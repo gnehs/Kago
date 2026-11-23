@@ -9,7 +9,7 @@ import { baseName, nfc, parentPath } from "@/lib/paths";
 import { usePointerDrag } from "@/lib/usePointerDrag";
 import { cn } from "@/lib/utils";
 import { folderKey, setFavorite, useIsFavorite, useSettingsStore } from "@/stores/settings";
-import { folderTitle, useWorkspaceStore } from "@/stores/workspace";
+import { useWorkspaceStore } from "@/stores/workspace";
 import { useClipboardStore, type FileRef } from "@/stores/clipboard";
 import type { FileWindow, Root } from "@/types/kago";
 import { FileIcon } from "@/components/kago/file-icon";
@@ -241,7 +241,7 @@ function Favorite({ tree, rootSlug, path, label }: { tree: Tree; rootSlug: strin
         <>
           <KagoMenuItem icon={<FolderOpen />} onClick={() => tree.onNavigate(here)}>{t("Open")}</KagoMenuItem>
           <KagoMenuItem icon={<PanelTop />} onClick={openTab}>{t("Open in new tab")}</KagoMenuItem>
-          <KagoMenuItem icon={<ExternalLink />} onClick={() => store().openWindow({ rootSlug, logicalPath: path, title: folderTitle(rootSlug, path) })}>{t("Open in new window")}</KagoMenuItem>
+          <KagoMenuItem icon={<ExternalLink />} onClick={() => store().openWindow({ rootSlug, logicalPath: path })}>{t("Open in new window")}</KagoMenuItem>
           <KagoMenuSeparator />
           <KagoMenuItem icon={<StarOff />} onClick={() => void setFavorite(here, false)}>{t("Remove from Favorites")}</KagoMenuItem>
         </>
@@ -303,7 +303,7 @@ function Node({ tree, rootSlug, path, label, depth, locked }: { tree: Tree; root
           <>
             <KagoMenuItem icon={<FolderOpen />} onClick={() => tree.onNavigate(here)}>{t("Open")}</KagoMenuItem>
             <KagoMenuItem icon={<PanelTop />} onClick={openTab}>{t("Open in new tab")}</KagoMenuItem>
-            <KagoMenuItem icon={<ExternalLink />} onClick={() => store().openWindow({ rootSlug, logicalPath: path, title: folderTitle(rootSlug, path) })}>{t("Open in new window")}</KagoMenuItem>
+            <KagoMenuItem icon={<ExternalLink />} onClick={() => store().openWindow({ rootSlug, logicalPath: path })}>{t("Open in new window")}</KagoMenuItem>
             <KagoMenuSeparator />
             <KagoMenuItem icon={<FolderPlus />} disabled={readonly} onClick={() => void newFolderIn(queryClient, here, window.id).then((made) => made && tree.expand(key))}>{t("New folder")}</KagoMenuItem>
             {tree.clipCount > 0 ? <KagoMenuItem icon={<ClipboardPaste />} disabled={readonly} onClick={() => void pasteClipboard(queryClient, here, window.id)}>{t("Paste {count} item | Paste {count} items", { count: tree.clipCount })}</KagoMenuItem> : null}

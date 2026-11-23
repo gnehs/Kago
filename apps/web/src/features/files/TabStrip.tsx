@@ -1,8 +1,8 @@
 import { X } from "lucide-react";
 import { displayPath, nfc } from "@/lib/paths";
 import { cn } from "@/lib/utils";
-import { folderTitle, useWorkspaceStore } from "@/stores/workspace";
-import type { FileTab, FileWindow, Root } from "@/types/kago";
+import { folderTitle, useFocused, useWorkspaceStore } from "@/stores/workspace";
+import type { FolderTab, FileWindow, Root } from "@/types/kago";
 import { FileIcon } from "@/components/kago/file-icon";
 import { KagoTooltip } from "@/components/kago/tooltip";
 import { t } from "@/lib/i18n";
@@ -13,8 +13,8 @@ const FOLDER = { kind: "folder", type: "", name: "" } as const;
  * For tabs that share a name, the folders above each one, from the nearest up to the first that differs from the others,
  * so two "Trip" tabs read "Trip Photos 2024" and "Trip Photos 2025". Tabs alone in their name get nothing.
  */
-function distinguishingParents(tabs: FileTab[], roots: Root[]) {
-  const trail = (tab: FileTab) => [roots.find((root) => root.slug === tab.rootSlug)?.name ?? tab.rootSlug, ...tab.logicalPath.split("/").filter(Boolean).map(nfc)];
+function distinguishingParents(tabs: FolderTab[], roots: Root[]) {
+  const trail = (tab: FolderTab) => [roots.find((root) => root.slug === tab.rootSlug)?.name ?? tab.rootSlug, ...tab.logicalPath.split("/").filter(Boolean).map(nfc)];
   const trails = new Map(tabs.map((tab) => [tab.id, trail(tab)]));
   const parents = new Map<string, string>();
   for (const tab of tabs) {
@@ -40,7 +40,8 @@ function distinguishingParents(tabs: FileTab[], roots: Root[]) {
  */
 export function TabStrip({ window, roots }: { window: FileWindow; roots: Root[] }) {
   const store = useWorkspaceStore.getState;
-  const tabs = window.tabs ?? [];
+  const focused = useFocused(window.id);
+  const tabs = window.tabs;
   const parents = distinguishingParents(tabs, roots);
 
   return (
@@ -57,7 +58,7 @@ export function TabStrip({ window, roots }: { window: FileWindow; roots: Root[] 
             title={displayPath(roots.find((root) => root.slug === tab.rootSlug)?.name ?? tab.rootSlug, tab.logicalPath)}
             className={cn(
               "group flex h-6 max-w-52 min-w-0 flex-1 basis-0 items-center gap-1.5 rounded-md pr-1 pl-2 outline-none focus-ring",
-              active ? cn("kago-pressed font-medium", window.focused ? "text-ink" : "text-muted") : "text-muted hover:bg-hover hover:text-ink"
+              active ? cn("kago-pressed font-medium", focused ? "text-ink" : "text-muted") : "text-muted hover:bg-hover hover:text-ink"
             )}
             onClick={() => store().activateTab(window.id, tab.id)}
             onKeyDown={(event) => {

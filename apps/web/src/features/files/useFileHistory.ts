@@ -22,8 +22,8 @@ export function useFileHistory(win: FolderWindow, tabId: string) {
     setHistories({ ...histories, [tabId]: { stack, index: stack.length - 1 } });
   }
 
-  const navigate = (logicalPath: string, rootSlug = win.rootSlug) => store().updateWindow(win.id, { rootSlug, logicalPath, selectedItems: [] });
-  const goTo = useCallback((folder: Place) => useWorkspaceStore.getState().updateWindow(win.id, { rootSlug: folder.rootSlug, logicalPath: folder.path, selectedItems: [] }), [win.id]);
+  const navigate = (logicalPath: string, rootSlug = win.rootSlug) => store().navigate(win.id, { rootSlug, logicalPath });
+  const goTo = useCallback((folder: Place) => useWorkspaceStore.getState().navigate(win.id, { rootSlug: folder.rootSlug, logicalPath: folder.path }), [win.id]);
 
   function go(delta: -1 | 1) {
     const index = history.index + delta;

@@ -16,7 +16,7 @@ registerHooks({
 // No window is drawn, so the motion that sees one out finds nothing to animate.
 globalThis.document ??= { documentElement: {}, querySelector: () => null };
 globalThis.CSS ??= { escape: (value) => value };
-const { useWorkspaceStore, minimizeWindows, setRootNames } = await import('../src/stores/workspace.ts');
+const { useWorkspaceStore, minimizeWindows, setRootNames, setCanvasSize: setCanvas } = await import('../src/stores/workspace.ts');
 
 const store = () => useWorkspaceStore.getState();
 const saved = () => store().snapshot();
@@ -30,7 +30,7 @@ const tabIds = (id) => savedWindow(id).tabs.map((tab) => tab.id);
 const activeTab = (id) => savedWindow(id).activeTabId;
 const focusedIds = () => saved().windows.filter((window) => window.focused).map((window) => window.id);
 const lastWindowId = () => saved().windows.at(-1).id;
-const navigate = (id, rootSlug, logicalPath) => store().updateWindow(id, { rootSlug, logicalPath, selectedItems: [] });
+const navigate = (id, rootSlug, logicalPath) => store().navigate(id, { rootSlug, logicalPath });
 
 const savedFileWindow = (patch) => ({
   id: 'win_1',
@@ -358,4 +358,26 @@ test('a window another device gave the focus comes to the front, over an app win
   const settings = store().appWindows.find((window) => window.id === 'app_settings');
   assert.ok(savedWindow(a).zIndex > settings.zIndex, 'the focused window is in front of the settings window');
   assert.ok(savedWindow(a).zIndex > savedWindow(b).zIndex);
+});
+
+// As a sandbox server stored it after two windows, tabs, selections, a closed tab and a reload, before the store kept tabs in one place.
+const storedBySandbox = {"activeWindowId":"win_291d77f5-4d80-4351-a94e-127294c1a5d5","windows":[{"id":"win_291d77f5-4d80-4351-a94e-127294c1a5d5","rootSlug":"home","logicalPath":"/docs/sub","title":"sub","x":340,"y":154,"width":920,"height":620,"zIndex":101,"minimized":false,"maximized":false,"focused":true,"selectedItems":["/docs/sub/c.txt"],"tabs":[{"id":"tab_2108d7d9-cfa1-44f9-b3a9-8bb1d76a5f1a","rootSlug":"home","logicalPath":"/docs","selectedItems":["/docs/a.txt"]},{"id":"tab_9745a7bd-0d14-4af1-a5f6-0a5da62d98a6","rootSlug":"home","logicalPath":"/docs/sub"}],"activeTabId":"tab_9745a7bd-0d14-4af1-a5f6-0a5da62d98a6","createdAt":1795421079644,"updatedAt":1795421106782},{"id":"win_faabed85-0bf4-42b3-8896-1619cce6f036","rootSlug":"media","logicalPath":"/clips","title":"clips","x":368,"y":182,"width":920,"height":620,"zIndex":100,"minimized":false,"maximized":false,"focused":false,"selectedItems":["/clips/one.txt","/clips/two.txt"],"tabs":[{"id":"tab_1ebcf4ff-5bc9-4b1d-b8cc-0ce5891cd083","rootSlug":"media","logicalPath":"/clips"}],"activeTabId":"tab_1ebcf4ff-5bc9-4b1d-b8cc-0ce5891cd083","createdAt":1795421082356,"updatedAt":1795421100757}],"sidebar":{"collapsed":false},"inspector":{"open":false,"width":320},"shelf":{"collapsed":false}};
+
+test('a workspace stored by a real server is saved back exactly as it was loaded, and shows what it showed', () => {
+  setCanvas(1600, 960);
+  store().hydrate(storedBySandbox);
+  assert.deepEqual(JSON.parse(JSON.stringify(saved())), storedBySandbox);
+  const [docs] = storedBySandbox.windows;
+  store().activateTab(docs.id, docs.tabs[0].id);
+  assert.deepEqual(shown(docs.id), { rootSlug: 'home', logicalPath: '/docs', selectedItems: ['/docs/a.txt'], title: 'docs' });
+});
+
+test('a change that changes nothing leaves the saved windows as they were, so nothing is saved for it', () => {
+  store().hydrate(severalWindows);
+  const before = saved().windows;
+  store().deselect([{ rootSlug: 'home', path: '/nowhere' }]);
+  store().followFolder({ rootSlug: 'home', path: '/nowhere' }, { rootSlug: 'home', path: '/elsewhere' });
+  store().activateTab('win_a', 'tab_a2');
+  store().closeTab('win_b', 'tab_b1');
+  assert.equal(saved().windows, before);
 });

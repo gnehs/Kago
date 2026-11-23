@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { useWorkspaceStore } from "@/stores/workspace";
+import { fileWindows, useWorkspaceStore } from "@/stores/workspace";
 
 const store = useWorkspaceStore.getState;
 const NOTHING_OPEN: ReadonlySet<string> = new Set();
@@ -17,7 +17,7 @@ export function useOpenFolders(windowId: string, tabId: string) {
         return { ...all, [tabId]: next };
       });
       // What a closing folder hides cannot stay selected.
-      const selection = store().windows.find((entry) => entry.id === windowId)?.selectedItems ?? [];
+      const selection = fileWindows(store()).find((entry) => entry.id === windowId)?.selectedItems ?? [];
       if (!open && selection.some((selected) => selected.startsWith(`${path}/`))) store().selectItems(windowId, selection.filter((selected) => !selected.startsWith(`${path}/`)));
     },
     [windowId, tabId]

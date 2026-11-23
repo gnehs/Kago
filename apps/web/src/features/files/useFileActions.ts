@@ -441,7 +441,7 @@ export function useFileActions(window: FileWindow) {
         const sources = outermost(refs(paths));
         if (sources.length === 0) return;
         const folder = commonFolder(sources.map((source) => source.path));
-        const choice = await promptCompress({ window: window.id, title: t("Compress to zip"), defaultName: `${baseName(folder) || window.title || "archive"}.zip` });
+        const choice = await promptCompress({ window: window.id, title: t("Compress to zip"), defaultName: `${baseName(folder) || folderTitle(window.rootSlug, window.logicalPath) || "archive"}.zip` });
         if (!choice) return;
         followTask(await createTask(queryClient, { type: "compress", sources, destination: here(joinLogicalPath(folder, ensureZipName(choice.name))), options: choice.options }));
       }),

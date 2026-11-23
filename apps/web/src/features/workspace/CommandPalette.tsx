@@ -10,7 +10,7 @@ import { baseName, displayPath, nfc, normalizeLogicalPath } from "@/lib/paths";
 import { cn, isConfirmEnter } from "@/lib/utils";
 import { useRecentStore, type RecentFolder } from "@/stores/recent";
 import { useSettingsStore } from "@/stores/settings";
-import { useWorkspaceStore, type AppKind, type SettingsSection } from "@/stores/workspace";
+import { activeFileWindow, useWorkspaceStore, type AppKind, type SettingsSection } from "@/stores/workspace";
 import type { ExternalApp, FavoriteFolder, Root } from "@/types/kago";
 import { t } from "@/lib/i18n";
 
@@ -46,7 +46,7 @@ function suggestions(query: string, roots: Root[], activeRootSlug: string | unde
     if (results.has(key)) return;
     const rootName = roots.find((root) => root.slug === rootSlug)?.name ?? rootSlug;
     // The location itself is already named by its label.
-    results.set(key, { key, group, label, hint: logicalPath === "/" ? "" : displayPath(rootName, logicalPath), icon, open: () => useWorkspaceStore.getState().openWindow({ rootSlug, logicalPath, title: label }) });
+    results.set(key, { key, group, label, hint: logicalPath === "/" ? "" : displayPath(rootName, logicalPath), icon, open: () => useWorkspaceStore.getState().openWindow({ rootSlug, logicalPath }) });
   };
   const pushPath = (root: Root, rawPath: string) => {
     const logicalPath = normalizeLogicalPath(rawPath);
@@ -121,7 +121,7 @@ export function CommandPalette({ open, roots, isAdmin, onClose }: { open: boolea
 function Palette({ roots, isAdmin, onClose }: { roots: Root[]; isAdmin: boolean; onClose: () => void }) {
   const [query, setQuery] = useState("");
   const [index, setIndex] = useState(0);
-  const activeRootSlug = useWorkspaceStore((state) => state.windows.find((window) => window.id === state.activeWindowId)?.rootSlug);
+  const activeRootSlug = useWorkspaceStore((state) => activeFileWindow(state)?.rootSlug);
   const recent = useRecentStore((state) => state.folders);
   const favorites = useSettingsStore((state) => state.favorites);
   const externalApps = useExternalApps().data;

@@ -6,7 +6,7 @@ import { KagoIconButton } from "@/components/kago/icon-button";
 import { Button } from "@/components/ui/button";
 import { KagoWindow } from "@/components/kago/window";
 import { t } from "@/lib/i18n";
-import type { ExternalWindow } from "@/stores/workspace";
+import { useFocused, type ExternalWindow } from "@/stores/workspace";
 import { ExternalAppGlyph } from "@/components/kago/external-app-icon";
 import { blockedAsMixedContent, openInNewTab } from "./externalApps";
 
@@ -18,6 +18,7 @@ import { blockedAsMixedContent, openInNewTab } from "./externalApps";
 export function ExternalAppWindow({ window }: { window: ExternalWindow }) {
   const app = window.external;
   // Counted up to load the service afresh.
+  const focused = useFocused(window.id);
   const [load, setLoad] = useState(0);
   // The server asks from where it stands, and may have been told otherwise than the browser will be.
   const [insisted, setInsisted] = useState(false);
@@ -69,7 +70,7 @@ export function ExternalAppWindow({ window }: { window: ExternalWindow }) {
           />
         )}
         {/* A click inside a frame never reaches Kago. A window that is not in front is covered, so the click that lands on it brings it forward. */}
-        {window.focused || mixed || refused ? null : <div className="absolute inset-0" />}
+        {focused || mixed || refused ? null : <div className="absolute inset-0" />}
       </div>
     </KagoWindow>
   );

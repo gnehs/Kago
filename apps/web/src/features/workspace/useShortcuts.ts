@@ -3,10 +3,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import { keys } from "@/api/keys";
 import { fileViews } from "@/features/files/fileLayout";
 import { pasteClipboard, renameFile, setClipboard, trashFiles } from "@/features/files/useFileActions";
-import { baseName, nfc, parentPath } from "@/lib/paths";
+import { nfc, parentPath } from "@/lib/paths";
 import { isEditableTarget } from "@/lib/usePointerDrag";
 import { useClipboardStore } from "@/stores/clipboard";
-import { requestCloseWindow, useWorkspaceStore } from "@/stores/workspace";
+import { activeFileWindow, activeWindowId, requestCloseWindow, useWorkspaceStore } from "@/stores/workspace";
 
 export const EDIT_ADDRESS_EVENT = "kago:edit-address";
 export const OPEN_ITEM_EVENT = "kago:open-item";
@@ -47,14 +47,15 @@ export function useShortcuts({ enabled, onOpenPalette }: { enabled: boolean; onO
       if (isEditableTarget(event.target)) return;
 
       const store = useWorkspaceStore.getState();
-      const previewActive = store.previewWindows.some((window) => window.id === store.activeWindowId && !window.minimized);
+      const focused = activeWindowId(store);
+      const previewActive = store.previewWindows.some((window) => window.id === focused);
       // Escape dismisses a preview the way it used to dismiss the preview dialog.
-      if ((closes || (previewActive && event.key === "Escape")) && [...store.appWindows, ...store.previewWindows].some((window) => window.id === store.activeWindowId)) {
+      if ((closes || (previewActive && event.key === "Escape")) && [...store.appWindows, ...store.previewWindows].some((window) => window.id === focused)) {
         event.preventDefault();
-        void requestCloseWindow(store.activeWindowId!);
+        void requestCloseWindow(focused!);
         return;
       }
-      const active = store.windows.find((window) => window.id === store.activeWindowId && !window.minimized);
+      const active = activeFileWindow(store);
       if (!active) return;
       const view = fileViews.get(active.id);
       const items = view?.items ?? [];
@@ -62,14 +63,14 @@ export function useShortcuts({ enabled, onOpenPalette }: { enabled: boolean; onO
       if (closes) {
         event.preventDefault();
         // With several tabs open, closing takes them one at a time, as a browser does.
-        if ((active.tabs?.length ?? 0) > 1 && active.activeTabId) store.closeTab(active.id, active.activeTabId);
+        if (active.tabs.length > 1) store.closeTab(active.id, active.activeTabId);
         else void requestCloseWindow(active.id);
       } else if (altKey === "KeyT") {
         event.preventDefault();
         store.openTab(active.id, active);
       } else if (opensNew) {
         event.preventDefault();
-        store.openWindow({ rootSlug: active.rootSlug, logicalPath: active.logicalPath, title: active.title });
+        store.openWindow(active);
       } else if (mod && key === "r") {
         event.preventDefault();
         void queryClient.invalidateQueries({ queryKey: keys.fs.list(active.rootSlug, active.logicalPath) });
@@ -108,7 +109,7 @@ export function useShortcuts({ enabled, onOpenPalette }: { enabled: boolean; onO
         void trashFiles(queryClient, picked, active.id).then((task) => task && store.selectItems(active.id, []));
       } else if (event.key === "Backspace" && active.logicalPath !== "/") {
         event.preventDefault();
-        store.updateWindow(active.id, { logicalPath: parentPath(active.logicalPath), selectedItems: [] });
+        store.navigate(active.id, { rootSlug: active.rootSlug, logicalPath: parentPath(active.logicalPath) });
       } else if (view?.columns && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
         event.preventDefault();
         view.columns[event.key === "ArrowLeft" ? "left" : "right"]();
@@ -167,8 +168,8 @@ export function useShortcuts({ enabled, onOpenPalette }: { enabled: boolean; onO
         if (!selectedPath || !item) return;
         event.preventDefault();
         if (item.kind !== "folder") window.dispatchEvent(new CustomEvent(OPEN_ITEM_EVENT, { detail: { windowId: active.id, path: selectedPath } }));
-        else if (mod) store.openWindow({ rootSlug: active.rootSlug, logicalPath: selectedPath, title: baseName(selectedPath) });
-        else store.updateWindow(active.id, { logicalPath: selectedPath, selectedItems: [] });
+        else if (mod) store.openWindow({ rootSlug: active.rootSlug, logicalPath: selectedPath });
+        else store.navigate(active.id, { rootSlug: active.rootSlug, logicalPath: selectedPath });
       } else if (event.key === "Escape") {
         store.selectItems(active.id, []);
       } else if (!mod && !event.altKey && event.key.length === 1 && (event.key !== " " || typed)) {
