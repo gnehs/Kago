@@ -42,6 +42,11 @@ export const keys = {
   syncJobs: () => ["sync-jobs"] as const,
   syncTrial: (jobId: string | undefined, lastRunAt: unknown) => ["sync-trial", jobId, lastRunAt] as const,
   syncRuns: (jobId: string | undefined, lastRunAt: unknown, lastStatus: unknown) => ["sync-runs", jobId, lastRunAt, lastStatus] as const,
+  /**
+   * The text an editor was opened with. Not under `fs` on purpose: whatever reads every `fs` query again would read
+   * this one too, and the editor would be rebuilt over what was being typed.
+   */
+  editorText: (rootSlug: string, path: string) => ["editor-text", rootSlug, path] as const,
   fs: {
     all: () => ["fs"] as const,
     /** Every folder listing; searches nest under these. */
@@ -57,7 +62,6 @@ export const keys = {
     archive: (rootSlug: string, path: string, mtime: number | undefined) => ["fs", "archive", rootSlug, path, mtime] as const,
     exif: (rootSlug: string, path: string) => ["fs", "exif", rootSlug, path] as const,
     bytes: (rootSlug: string, path: string, mtime: number | undefined) => ["fs", "bytes", rootSlug, path, mtime] as const,
-    content: (rootSlug: string, path: string) => ["fs", "content", rootSlug, path] as const,
     text: (rootSlug: string, path: string | undefined, mtime: number | undefined) => ["fs", "text", rootSlug, path, mtime] as const
   },
   media: {

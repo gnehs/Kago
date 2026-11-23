@@ -58,3 +58,13 @@ test('reconnect refetches everything an event can invalidate, folder data aside'
   assert.ok(reconnectKeys.every((key) => key[0] !== 'fs'));
   assert.equal(covered.size, reconnectKeys.length, 'no key is listed twice');
 });
+
+test('no event reaches the text an editor was opened with', () => {
+  const editorText = keys.editorText('home', '/a.txt');
+  const reaches = (key) => key.every((part, index) => editorText[index] === part);
+  for (const [event, invalidated] of Object.entries(eventKeys)) {
+    assert.ok(!invalidated.some(reaches), `${event} would rebuild an editor over what is being typed`);
+  }
+  assert.ok(!reconnectKeys.some(reaches));
+  assert.ok(!reaches(keys.fs.all()));
+});

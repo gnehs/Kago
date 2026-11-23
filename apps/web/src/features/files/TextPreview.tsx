@@ -61,9 +61,10 @@ export function TextPreviewWindow({ window }: { window: PreviewWindow }) {
   // What the editor held when the preview was last opened; null until it has been edited at all.
   const [draft, setDraft] = useState<string | null>(null);
 
-  // Fetched once: a refetch behind the user's back would replace what they are typing.
+  // Fetched once: a refetch behind the user's back would replace what they are typing. Its key keeps it out of reach
+  // of the `fs` invalidations, which `staleTime` does not stop.
   const file = useQuery({
-    queryKey: keys.fs.content(rootSlug, item.path),
+    queryKey: keys.editorText(rootSlug, item.path),
     queryFn: () => loadText(rootSlug, item.path),
     staleTime: Infinity,
     gcTime: 0,
