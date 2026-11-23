@@ -23,6 +23,8 @@ export type SubtitleName = {
 const FORMATS: Record<string, SubtitleName["format"]> = { ass: "ass", ssa: "ass", srt: "srt", sup: "pgs", idx: "vobsub" };
 
 export const isPictureFormat = (format: string): format is PictureSubtitleFormat => format === "pgs" || format === "vobsub";
+/** The demuxer each kind of subtitle file is read with. It is named outright, so what is in the file cannot pick another. */
+export const SUBTITLE_DEMUXER: Record<PictureSubtitleFormat, string> = { pgs: "sup", vobsub: "vobsub" };
 
 /** Spellings that are not language tags themselves, as fansub releases and three-letter ISO codes write them. */
 const LANGUAGE_ALIASES: Record<string, string> = {

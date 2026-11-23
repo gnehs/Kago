@@ -13,6 +13,7 @@ import AdmZip from "adm-zip";
 import { buildApp } from "../dist/app.js";
 import { loadEnv } from "../dist/config/env.js";
 import { MediaService } from "../dist/services/media.service.js";
+import { Transcoder } from "../dist/services/transcoder.js";
 import { publicError } from "../dist/lib/errors.js";
 
 // Every sync runs through rclone, which a development machine may not have.
@@ -1737,7 +1738,7 @@ test("videos are probed and transcoded to HLS on demand", {
 });
 
 test("foreground preemption waits for the speculative child to close", async () => {
-  const service = Object.create(MediaService.prototype);
+  const service = Object.create(Transcoder.prototype);
   const child = new EventEmitter();
   child.closed = false;
   child.exitCode = null;
@@ -1785,13 +1786,13 @@ test("seeking back to a segment that was pruned re-encodes it instead of waiting
   try {
     const { mtimeMs, size } = await stat(film);
     const { id } = await media.createSession("viewer", film, { mtimeMs, size }, { height: 360, audioIndex: 0, subtitleIndex: null, hdr: false });
-    for (let index = 0; index < 12; index += 1) await media.segment("viewer", id, index);
+    for (let index = 0; index < 12; index += 1) await media.transcoder.segment("viewer", id, index);
     const first = path.join(fixture.appDataDir, "temp", "transcode", id, "0.ts");
     for (let tries = 0; tries < 50 && (await pathExists(first)); tries += 1) await new Promise((resolve) => setTimeout(resolve, 100));
     assert.equal(await pathExists(first), false, "the ticker pruned what the player had moved well past");
 
     const started = Date.now();
-    const again = await media.segment("viewer", id, 0);
+    const again = await media.transcoder.segment("viewer", id, 0);
     assert.ok(Date.now() - started < 10_000, `the pruned segment came back in ${Date.now() - started} ms`);
     assert.equal((await readFile(again))[0], 0x47);
   } finally {

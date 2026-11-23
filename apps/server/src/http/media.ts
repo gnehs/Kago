@@ -100,7 +100,7 @@ export const register = signedIn((app, s) => {
   app.post("/api/media/sessions/:id/prewarm", async (request) => {
     const params = z.object({ id: z.string().min(1) }).parse(request.params);
     const input = mediaPrewarmSchema.parse(request.body);
-    return s.media.prewarm(request.actor.id, params.id, input);
+    return s.media.transcoder.prewarm(request.actor.id, params.id, input);
   });
   app.get("/api/media/sessions/:id/:file", async (request, reply) => {
     const { actor } = request;
@@ -108,9 +108,9 @@ export const register = signedIn((app, s) => {
     reply.header("Cache-Control", "no-store");
     if (params.file === "index.m3u8") {
       reply.header("Content-Type", "application/vnd.apple.mpegurl");
-      return s.media.playlist(actor.id, params.id);
+      return s.media.transcoder.playlist(actor.id, params.id);
     }
-    const segment = params.file === "init.mp4" ? await s.media.initSegment(actor.id, params.id) : await s.media.segment(actor.id, params.id, Number.parseInt(params.file, 10));
+    const segment = params.file === "init.mp4" ? await s.media.transcoder.initSegment(actor.id, params.id) : await s.media.transcoder.segment(actor.id, params.id, Number.parseInt(params.file, 10));
     reply.header("Content-Type", params.file.endsWith(".ts") ? "video/mp2t" : "video/mp4");
     const stat = await fs.promises.stat(segment);
     reply.header("Content-Length", String(stat.size));
@@ -118,7 +118,7 @@ export const register = signedIn((app, s) => {
   });
   app.delete("/api/media/sessions/:id", async (request) => {
     const params = z.object({ id: z.string().min(1) }).parse(request.params);
-    s.media.close(request.actor.id, params.id);
+    s.media.transcoder.close(request.actor.id, params.id);
     return { ok: true };
   });
 });
