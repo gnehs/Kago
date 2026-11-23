@@ -258,7 +258,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       // does not come back with nothing in front for that: the file window that was on top takes its place.
       const onTop = workspace.windows.filter((window) => !window.minimized).sort((a, b) => b.zIndex - a.zIndex)[0];
       const activeWindowId = appFocused ? state.activeWindowId : (workspace.activeWindowId ?? onTop?.id ?? null);
-      return { ...workspace, activeWindowId, ...restack({ windows: workspace.windows.map((window) => withTabs(fitGeometry(window))), appWindows: state.appWindows, previewWindows: state.previewWindows }, appFocused ? activeWindowId : undefined, activeWindowId), hydrated: true };
+      return { ...workspace, activeWindowId, ...restack({ windows: workspace.windows.map((window) => withTabs(fitGeometry(window))), appWindows: state.appWindows, previewWindows: state.previewWindows }, activeWindowId), hydrated: true };
     }),
   refitWindows: () =>
     set((state) => {

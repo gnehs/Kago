@@ -344,3 +344,18 @@ test('a window moved by a client that does not know tabs shows where it was move
   store().activateTab('win_1', 't1');
   assert.deepEqual(shown('win_1'), { rootSlug: 'home', logicalPath: '/moved', selectedItems: ['/moved/a'], title: 'moved' }, 'coming back to the tab finds it where the window was');
 });
+
+test('a window another device gave the focus comes to the front, over an app window open here', () => {
+  store().openWindow({ rootSlug: 'home', logicalPath: '/a', title: 'a' });
+  const a = lastWindowId();
+  store().openApp('settings');
+  store().openWindow({ rootSlug: 'home', logicalPath: '/b', title: 'b' });
+  const b = lastWindowId();
+  const remote = saved();
+  // The other device clicked a, which put it in front of b there.
+  store().hydrate({ ...remote, activeWindowId: a, windows: remote.windows.map((window) => ({ ...window, focused: window.id === a, zIndex: window.id === a ? 101 : 100 })) });
+  assert.deepEqual(focusedIds(), [a]);
+  const settings = store().appWindows.find((window) => window.id === 'app_settings');
+  assert.ok(savedWindow(a).zIndex > settings.zIndex, 'the focused window is in front of the settings window');
+  assert.ok(savedWindow(a).zIndex > savedWindow(b).zIndex);
+});
