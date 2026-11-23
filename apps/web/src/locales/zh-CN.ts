@@ -935,6 +935,7 @@ export const zhCN: Dictionary = {
   "This location is a local folder": "这个位置是本机文件夹",
   "The kind of a location cannot be changed": "位置的种类无法更改",
   "The owner of the job can no longer sign in": "这个任务的所有者已无法登录",
+  "This job is already running": "这个任务正在执行",
   "This sync is already running": "这个同步正在执行",
   "Sync not found": "找不到同步",
   "The source and the destination overlap": "来源与目标互相重叠",

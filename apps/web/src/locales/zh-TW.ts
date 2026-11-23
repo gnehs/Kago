@@ -935,6 +935,7 @@ export const zhTW: Dictionary = {
   "This location is a local folder": "這個位置是本機資料夾",
   "The kind of a location cannot be changed": "位置的種類無法變更",
   "The owner of the job can no longer sign in": "這個工作的擁有者已無法登入",
+  "This job is already running": "這個工作正在執行",
   "This sync is already running": "這個同步正在執行",
   "Sync not found": "找不到同步",
   "The source and the destination overlap": "來源與目的地互相重疊",

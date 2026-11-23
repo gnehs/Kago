@@ -935,6 +935,7 @@ export const ja: Dictionary = {
   "This location is a local folder": "この場所はローカルのフォルダです",
   "The kind of a location cannot be changed": "場所の種類は変更できません",
   "The owner of the job can no longer sign in": "このジョブの所有者はサインインできなくなっています",
+  "This job is already running": "このジョブはすでに実行中です",
   "This sync is already running": "この同期はすでに実行中です",
   "Sync not found": "同期が見つかりません",
   "The source and the destination overlap": "同期元と同期先が重なっています",
