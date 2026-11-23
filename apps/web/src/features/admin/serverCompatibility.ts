@@ -1,28 +1,8 @@
-export type ServerCompatibilityCheck = {
-  id: string;
-  label: string;
-  codec: string;
-  operation: "encode" | "decode";
-  backend: string;
-  hardware: boolean;
-  status: "passed" | "failed" | "unsupported" | "unavailable";
-  detail: string;
-  durationMs: number | null;
-  deviceId: string | null;
-  deviceLabel: string | null;
-  deviceScope: "device" | "system" | "none";
-};
-
-export type ServerCompatibilityReport = {
-  checkedAt: string;
-  ffmpeg: { available: boolean; version: string | null };
-  checks: ServerCompatibilityCheck[];
-  discoveryNotes?: string[];
-};
+import type { CompatibilityCheck } from "@kago/contract";
 
 /** Device identity, rather than a shared model name or backend, keeps results from different GPUs apart. */
-export function groupServerChecks(checks: ServerCompatibilityCheck[]) {
-  const groups = new Map<string, { key: string; device: ServerCompatibilityCheck; checks: ServerCompatibilityCheck[] }>();
+export function groupServerChecks(checks: CompatibilityCheck[]) {
+  const groups = new Map<string, { key: string; device: CompatibilityCheck; checks: CompatibilityCheck[] }>();
   for (const check of checks) {
     const key = JSON.stringify([check.backend, check.deviceScope, check.deviceId]);
     const group = groups.get(key) ?? { key, device: check, checks: [] };
@@ -39,16 +19,16 @@ export type ServerDeviceSummary = {
   backend: string | null;
   hardware: boolean;
   /** Each result under `"<codec> <operation>"`. */
-  checks: Map<string, ServerCompatibilityCheck>;
+  checks: Map<string, CompatibilityCheck>;
   /** The tests that ran and failed. */
-  problems: ServerCompatibilityCheck[];
+  problems: CompatibilityCheck[];
 };
 
 /**
  * The report as the page tells it: the devices that were put to the test, graphics hardware ahead of the CPU, and
  * apart from them the kinds of acceleration the server simply does not have, which are named rather than tabulated.
  */
-export function summarizeServerChecks(checks: ServerCompatibilityCheck[]) {
+export function summarizeServerChecks(checks: CompatibilityCheck[]) {
   const devices: ServerDeviceSummary[] = [];
   const missing: string[] = [];
   for (const { key, device, checks: results } of groupServerChecks(checks)) {

@@ -1,34 +1,39 @@
-export type Actor = {
-  id: string;
-  email: string;
-  displayName: string;
-  role: "ADMIN" | "USER";
-  disabled: boolean;
-  /** When their profile picture was last set, which names the picture to ask for. Absent without one. */
-  avatar?: number | null;
-};
+import type { FileTask as WireFileTask, FileTag, FolderListing, Root, SyncTrialSummary } from "@kago/contract";
 
-export type Root = {
-  id: string;
-  slug: string;
-  name: string;
-  /** `local` for a folder on the server; otherwise the kind of remote it is kept on. */
-  provider: string;
-  readonly: number;
-  created_at: number;
-  updated_at: number;
-};
+export type {
+  Actor,
+  ArchiveEntry,
+  ArchiveListing,
+  CompanionRule,
+  ConvertRun,
+  ConvertRunFile,
+  ConvertSupport,
+  FileItem,
+  FileMeta,
+  FileTag,
+  FilmRecipe,
+  FrameVerdict,
+  ImageMetadata,
+  LibraryIcon,
+  MediaInfo,
+  PermissionRule,
+  PluginPreviewer,
+  ReadyStoryboard,
+  Root,
+  SqliteCell,
+  SqlitePage,
+  SqliteTable,
+  Storyboard,
+  SubtitleList,
+  SubtitleTrack,
+  SyncChange,
+  SyncRun,
+  SyncTrial,
+  SyncTrialSummary
+} from "@kago/contract";
 
 /** A shortcut on the desktop to another service. `icon` is where the picture Kago keeps for it is, when it has one. */
 export type ExternalApp = { id: string; name: string; url: string; /** On everyone's desktop. */ shared: boolean; /** Shown in a window of Kago's rather than in a tab of its own. */ embed: boolean; /** The name it signs in with (HTTP Basic), when it has a sign-in; the password stays on the server. */ authUser: string | null; /** Whether the person signed in may change it. */ editable: boolean; icon: string | null; created_at: number; updated_at: number };
-/** Whether a service lets itself be shown inside Kago, as the server found by asking it; `unknown` when it could not be asked. */
-export type FrameVerdict = "allowed" | "blocked" | "unknown";
-/** How a previewer names a file it reads beside the opened one: the opened file's name with the first `replace` swapped for `with`. */
-export type CompanionRule = { replace: string; with: string };
-/** A plugin's viewer for files of some extensions, and the address of the page to frame for one. */
-export type PluginPreviewer = { pluginId: string; previewerId: string; extensions: string[]; title: string; src: string; companions: CompanionRule[]; panorama: boolean };
-/** An icon of one of the open icon libraries, as suggested for a name. `exact` when it goes by that very name. */
-export type LibraryIcon = { source: string; name: string; label: string; exact: boolean };
 
 export type RemoteField = { key: string; label: string; kind?: "text" | "number" | "secret" | "boolean" | "select"; required?: boolean; placeholder?: string; options?: Array<{ value: string; label: string }> };
 export type RemoteProvider = { type: string; label: string; fields: RemoteField[]; path: { label: string; placeholder: string; required: boolean; hint?: string } };
@@ -40,29 +45,6 @@ export type StorageInfo = { available: boolean; providers: RemoteProvider[]; roo
 
 export type SyncEndpoint = { kind: "location"; rootSlug: string; path: string };
 export type SyncSchedule = { kind: "interval"; minutes: number } | { kind: "daily"; time: string } | { kind: "weekly"; weekday: number; time: string };
-export type SyncChange = { action: "copy" | "delete" | "mkdir" | "rmdir" | "touch"; path: string; size?: number };
-/** How much a run changed, or a trial run would have; `truncated` when it names fewer changes than it counted. */
-export type SyncTrialSummary = Record<SyncChange["action"], number> & { bytes: number; truncated: boolean };
-/** What the changes add up to, counted over all of them and not only the ones that are listed. */
-export type SyncTrialStats = {
-  freed: number;
-  extensions: Array<{ extension: string; count: number; bytes: number }>;
-  folders: Array<{ name: string; copy: number; delete: number; bytes: number }>;
-  moreFolders: number;
-};
-export type SyncTrial = SyncTrialSummary & { stats: SyncTrialStats; changes: SyncChange[] };
-/** One run of a sync job: `bytes` is what a real run sent, `summary` how much it changed, or would have when it was a trial. */
-export type SyncRun = {
-  task_id: string;
-  started_at: number;
-  finished_at: number | null;
-  status: string;
-  error_message: string | null;
-  dry_run: boolean;
-  scheduled: boolean;
-  bytes: number;
-  summary: SyncTrialSummary | null;
-};
 
 export type SyncJob = {
   id: string;
@@ -97,14 +79,7 @@ export type ConvertSpec = {
   /** Whether what is made of a file gets the tags the file has. */
   copyTags: boolean;
 };
-/** What the server's ffmpeg can make; nothing at all without one. */
-/** `videoCodecs` names the encoders that can be asked for, the GPU's among them. */
-export type ConvertSupport = { available: boolean; formats: string[]; videoCodecs: string[]; audioCodecs: string[]; /** The GPU conversions can use and the codecs it encodes; null without one. */ hardware: { device: string; codecs: string[] } | null };
 export type ConvertJobOptions = { keepSmaller: boolean; after: "keep" | "trash" | "delete"; copyOthers: boolean; /** The endings of the names of the files that are converted; null goes by what the format is made from. */ extensions: string[] | null };
-/** How a run of an auto-convert went, and how many files it converted, brought across as they were, or gave up on. */
-export type ConvertRun = { task_id: string; started_at: number; finished_at: number | null; status: string; error_message: string | null; scheduled: boolean; bytes: number; converted: number; copied: number; failed: number; /** What the files it converted measured together, before and after. */ size_in: number; size_out: number };
-/** What became of one file of a run. `size_out` is what reached the destination; a file that failed has none. */
-export type ConvertRunFile = { path: string; status: "converted" | "copied" | "failed"; size_in: number; size_out: number | null };
 /** A folder that converts itself: whatever turns up in `input` comes out in `destination`. */
 export type ConvertJob = {
   id: string;
@@ -259,102 +234,13 @@ export type WorkspaceState = {
   shelf: { collapsed?: boolean; x?: number; y?: number };
 };
 
-export type FileItem = {
-  name: string;
-  path: string;
-  kind: "file" | "folder";
-  size: number;
-  mtime: number;
-  type: string;
-  readonly: boolean;
-  tags?: FileTag[];
-};
-
-export type FileList = {
-  rootSlug: string;
-  path: string;
-  readonly: boolean;
-  items: FileItem[];
+export type FileList = FolderListing & {
   /** Whether the folder is still being read, and these are only the items that have arrived so far. */
   partial: boolean;
 };
 
-export type SqliteTable = { name: string; type: "table" | "view"; columns: Array<{ name: string; type: string; pk: boolean; notNull: boolean }> };
-export type SqliteCell = string | number | null | { blob: number };
-/** `total` is null for a database too large to count. */
-export type SqlitePage = { columns: string[]; rows: SqliteCell[][]; offset: number; hasMore: boolean; total: number | null };
-
-/** One entry of a zip, by its path inside it; `mtime` is null when the archive gives no date. */
-export type ArchiveEntry = { path: string; folder: boolean; size: number; packed: number; mtime: number | null; locked: boolean };
-/** `truncated` says entries past the server's limit were left out. */
-export type ArchiveListing = { entries: ArchiveEntry[]; truncated: boolean };
-
-/** Shooting data read from a picture; every field is there only when the file has it. */
-export type ImageMetadata = {
-  camera?: string;
-  lens?: string;
-  takenAt?: string;
-  timeZone?: string;
-  exposureTime?: string;
-  aperture?: number;
-  iso?: number;
-  focalLength?: string;
-  focalLength35?: string;
-  exposureCompensation?: number;
-  flash?: string;
-  whiteBalance?: string;
-  meteringMode?: string;
-  exposureProgram?: string;
-  width?: number;
-  height?: number;
-  colorSpace?: string;
-  software?: string;
-  gps?: { latitude: number; longitude: number; altitude?: number };
-  filmRecipe?: FilmRecipe;
-};
-
-/** The picture settings a Fujifilm camera developed the frame with. */
-export type FilmRecipe = {
-  simulation?: string;
-  grainRoughness?: string;
-  grainSize?: string;
-  colorChrome?: string;
-  colorChromeBlue?: string;
-  whiteBalanceShift?: { red: number; blue: number };
-  colorTemperature?: number;
-  dynamicRange?: number;
-  dynamicRangeAuto?: boolean;
-  dRangePriority?: string;
-  dRangePriorityAuto?: boolean;
-  highlight?: number;
-  shadow?: number;
-  color?: number;
-  sharpness?: number;
-  noiseReduction?: number;
-  clarity?: number;
-  monochromeWarmCool?: number;
-  monochromeMagentaGreen?: number;
-};
-
-export type FileMeta = {
-  rootSlug: string;
-  path: string;
-  name: string;
-  kind: "file" | "folder";
-  size: number;
-  mtime: number;
-  type: string;
-  tags?: FileTag[];
-};
-
 /** Everything inside a folder, however deep: the bytes of its files, and how many files there are. */
 export type FolderSize = { bytes: number; count: number };
-
-/** A tag kept on the file itself. */
-export type FileTag = {
-  name: string;
-  color: "gray" | "green" | "purple" | "blue" | "yellow" | "red" | "orange" | null;
-};
 
 export type TagShape = "circle" | "triangle" | "diamond" | "square" | "pentagon" | "hexagon" | "star";
 
@@ -376,36 +262,9 @@ export type ShareLink = {
   updated_at: number;
 };
 
-export type PermissionRule = {
-  id: string;
-  principal_type: "user" | "group";
-  principal_id: string;
-  root_id: string;
-  level: "view" | "edit";
-  created_at: number;
-  updated_at: number;
-};
-
-export type FileTask = {
-  id: string;
-  type: string;
-  status: string;
-  total_files: number;
-  processed_files: number;
-  total_bytes: number;
-  processed_bytes: number;
+export type FileTask = WireFileTask & {
   /** Bytes a second while it runs. Worked out here from one fetch of the list to the next; the server does not send it. */
   speed?: number;
-  /** How many frames a second a conversion is making its video at, and how tall that comes out. */
-  pace?: { fps: number; height: number | null };
-  sources_json: string;
-  destination: string | null;
-  current_path: string | null;
-  /** What a running task is at before it can count: `counting` what it has to do, its totals then being what it has found so far, or `preparing`. */
-  phase?: string | null;
-  error_message: string | null;
-  created_at: number;
-  updated_at: number;
 };
 
 export type Shelf = {
@@ -435,86 +294,4 @@ export type AuditLog = {
   ip: string | null;
   user_agent: string | null;
   created_at: number;
-};
-
-/**
- * The small pictures shown over a video's timeline: one every `interval` seconds, in sheets of `columns` by `rows`.
- * `pending` while the server has not got round to making them, which it does only when it is not encoding.
- */
-export type ReadyStoryboard = { status: "ready"; version: number; interval: number; count: number; width: number; height: number; columns: number; rows: number; sheets: number };
-export type Storyboard = ReadyStoryboard | { status: "pending" | "unavailable"; version: number };
-
-/** What the server knows about a video, and whether it can transcode it on the fly. */
-export type MediaInfo = {
-  transcode: boolean;
-  duration: number;
-  container: string;
-  /** Bits per second of the whole file; 0 where a figure is not known, here and for each stream. */
-  bitrate: number;
-  /**
-   * `hdr` names the transfer curve of an HDR picture: PQ (HDR10) or HLG. `level` is as ffprobe gives it
-   * (41 for H.264 level 4.1, 153 for HEVC level 5.1); `dolbyVision` is the profile, 0 without it.
-   */
-  video: {
-    codec: string;
-    profile: string;
-    level: number;
-    width: number;
-    height: number;
-    fps: number;
-    bitDepth: number;
-    pixelFormat: string;
-    interlaced: boolean;
-    bitrate: number;
-    hdr: "pq" | "hlg" | null;
-    peak: number;
-    dolbyVision: number;
-  } | null;
-  audio: Array<{ codec: string; profile: string; channels: number; layout: string; sampleRate: number; bitrate: number; language: string; title: string; default: boolean }>;
-  /** Subtitle streams inside the file. */
-  subtitles: Array<{ index: number; codec: string; language: string; title: string; default: boolean; forced: boolean; sdh: boolean }>;
-  /** Fonts attached to the file for its subtitles. */
-  fonts?: Array<{ index: number; name: string }>;
-  /** Heights the file can be transcoded to, tallest first. */
-  qualities: number[];
-  /** What the file says about itself (ID3, Vorbis comments, MP4 atoms); each empty where it says nothing. */
-  tags: { title: string; artist: string; album: string; albumArtist: string; track: string; date: string; genre: string; lyrics: string };
-  /** Which of the file's video streams is a picture attached to it, such as an album's cover; null without one. */
-  cover: number | null;
-  /** Whether the server can re-encode the file's sound as it plays, for music the browser cannot decode. */
-  audioTranscode: boolean;
-  /** What the server encodes with: `software`, or the GPU API in use. */
-  encoder: string;
-  /** Whether the server can transcode an HDR picture as HDR, for a screen that shows it. */
-  hdrOutput: boolean;
-  /** Whether the server can tone-map an HDR picture to SDR. */
-  tonemap: boolean;
-};
-
-/** A subtitle for a video: a file lying next to it, or a stream inside it. */
-export type SubtitleTrack = {
-  id: string;
-  /** Where its text is read from; empty for a picture subtitle, which has none. */
-  url: string;
-  embedded: boolean;
-  /** Anything but `ass` and `srt` is a picture subtitle (Blu-ray, DVD, broadcast). */
-  format: "ass" | "srt" | "pgs" | "vobsub" | "dvb" | "picture";
-  /** A picture subtitle's number among the subtitle streams of the file it is in. The server draws it into the frames, so showing it means transcoding. */
-  stream?: number;
-  /** The file a picture subtitle is in, when it lies next to the video rather than inside it. */
-  file?: string;
-  /** A BCP 47 tag, or empty when neither the name nor the stream carries a language. */
-  language: string;
-  title: string;
-  default: boolean;
-  forced: boolean;
-  sdh: boolean;
-};
-
-export type SubtitleList = {
-  tracks: SubtitleTrack[];
-  /** Fonts attached to the video for its own subtitles. */
-  fonts: string[];
-  /** How many picture subtitles (Blu-ray, DVD) the video has that a browser cannot draw. */
-  unsupported: number;
 };

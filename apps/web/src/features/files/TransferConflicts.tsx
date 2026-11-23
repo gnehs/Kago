@@ -1,3 +1,4 @@
+import type { TransferConflict } from "@kago/contract";
 import { useEffect, useState } from "react";
 import { Combine, CopyPlus, Replace, SkipForward } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
@@ -21,10 +22,10 @@ export type ConflictAction = Clash | `merge_${Clash}`;
 export type ConflictChoices = Record<string, ConflictAction>;
 
 /** What tells one of the two from the other. A size is a file's only, and a time is 0 where the location keeps none. */
-type Details = { kind: "file" | "folder"; size: number; mtime: number };
+type Details = TransferConflict["existing"];
 /** What brings items into a folder: a copy, a move, or an upload from this device. */
 type Arrival = "copy" | "move" | "upload";
-export type Conflict = Details & { rootSlug: string; path: string; name: string; /** The one the destination has. */ existing: Details; /** It is where it would be put already. */ same: boolean };
+export type Conflict = TransferConflict;
 type Answer = { action: ConflictAction; /** The same goes for every conflict still to come. */ all: boolean };
 type ConflictRequest = { window: string | null; type: Arrival; conflict: Conflict; folder: string; remaining: number };
 

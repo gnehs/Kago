@@ -9,7 +9,8 @@ import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { canPlayHdrStream, directPlaySupport } from "@/features/files/videoCapabilities";
 import { compatibilityDetail } from "./compatibilityMessages";
-import { summarizeServerChecks, type ServerCompatibilityCheck, type ServerCompatibilityReport } from "./serverCompatibility";
+import type { CompatibilityCheck, CompatibilityReport } from "@kago/contract";
+import { summarizeServerChecks } from "./serverCompatibility";
 
 type Tone = "success" | "warning" | "danger" | "muted";
 
@@ -52,7 +53,7 @@ function Waiting({ children }: { children: ReactNode }) {
 const headCell = "pb-2 font-medium";
 const cell = "py-2.5 align-top";
 
-function codecMark(check: ServerCompatibilityCheck | undefined) {
+function codecMark(check: CompatibilityCheck | undefined) {
   if (!check) return <Mark tone="muted" label={t("Not tested")} />;
   if (check.status === "passed") return <Mark tone="success" label={t("Works")} hint={check.durationMs != null ? t("{milliseconds} ms", { milliseconds: Math.round(check.durationMs) }) : undefined} />;
   const detail = compatibilityDetail(check.detail);
@@ -60,7 +61,7 @@ function codecMark(check: ServerCompatibilityCheck | undefined) {
   return <Mark tone="muted" label={check.status === "unsupported" ? t("Not supported") : t("Not tested")} hint={detail} />;
 }
 
-function ServerResults({ report }: { report: ServerCompatibilityReport }) {
+function ServerResults({ report }: { report: CompatibilityReport }) {
   const { codecs, devices, missing, hardware, software } = summarizeServerChecks(report.checks);
   const notes = [...new Set(report.discoveryNotes?.map(compatibilityDetail).filter((note) => note != null))];
 
@@ -175,7 +176,7 @@ function TestedAt({ date }: { date: string }) {
 
 /** The server's test is started deliberately: opening Settings should not compete with a video being transcoded. */
 export function CompatibilityPage({ isAdmin }: { isAdmin: boolean }) {
-  const [server, setServer] = useState<ServerCompatibilityReport | null>(null);
+  const [server, setServer] = useState<CompatibilityReport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const run = useRef<AbortController | null>(null);
@@ -190,7 +191,7 @@ export function CompatibilityPage({ isAdmin }: { isAdmin: boolean }) {
     setError(null);
     setServer(null);
     try {
-      const report = await api<ServerCompatibilityReport>("/api/compatibility/server", { method: "POST", signal: controller.signal });
+      const report = await api<CompatibilityReport>("/api/compatibility/server", { method: "POST", signal: controller.signal });
       if (!controller.signal.aborted) setServer(report);
     } catch (failure) {
       if (!controller.signal.aborted) setError(failure instanceof Error ? failure.message : t("Couldn’t test the server"));

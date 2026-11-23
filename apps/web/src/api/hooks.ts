@@ -1,3 +1,4 @@
+import type { FsChanged } from "@kago/contract";
 import { keepPreviousData, useInfiniteQuery, useMutation, useQueries, useQuery, useQueryClient, type Query, type QueryClient, type QueryKey, type UseQueryResult } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { api, apiLines, ApiError, previewUrl, serverMessage } from "./client";
@@ -139,8 +140,7 @@ function refreshKey(client: QueryClient, queryKey: QueryKey): Promise<unknown> {
   return reread;
 }
 
-/** What changed in a location: folders that hold something else now, items that are no longer where they were, and folders anything inside which may have changed. */
-export type FolderChange = { rootSlug: string; paths: string[]; gone?: string[]; trees?: string[] };
+export type FolderChange = Omit<FsChanged, "type">;
 
 const under = (path: string, folder: string) => path === folder || path.startsWith(folder === "/" ? "/" : `${folder}/`);
 

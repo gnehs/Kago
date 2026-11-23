@@ -1,21 +1,6 @@
+import type { ServerEventType } from "@kago/contract";
 import type { QueryClient, QueryKey } from "@tanstack/react-query";
 import { keys } from "./keys";
-
-/** The types in the server's event union (apps/server/src/ws/events.ts). */
-export type ServerEventType =
-  | "task.created"
-  | "task.progress"
-  | "task.done"
-  | "task.failed"
-  | "shelf.updated"
-  | "workspace.updated"
-  | "settings.updated"
-  | "account.updated"
-  | "permission.updated"
-  | "roots.updated"
-  | "apps.updated"
-  | "share.updated"
-  | "fs.changed";
 
 /**
  * What each event makes stale. A mutation that causes the same server-side change invalidates the same keys through
