@@ -15,6 +15,7 @@
     "test:compatibility": "node --import tsx --test test/compatibility.mjs",
     "test:splat": "node --import tsx --test test/splat.mjs",
     "test:video": "node --import tsx --test test/panorama.mjs",
+    "test:tasks": "node --import tsx --test test/task-status.mjs",
     "start": "node dist/main.js",
     "recover": "node dist/recover.js"
   },

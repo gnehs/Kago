@@ -33,6 +33,7 @@ import type { StorageService } from "./storage.service.js";
 import { SyncReport } from "./sync-report.js";
 import { taskChanges } from "./task-changes.js";
 import { TrashService, type RestorableTrashItem } from "./trash.service.js";
+import { endsTask, taskTransitions, transitionTask, type Transition, type TaskTransition } from "./task-status.js";
 import { finishedTaskStatuses, sqlStatuses, type Actor, type FileTask, type Root } from "./types.js";
 
 const maxExtractEntries = 10_000;
@@ -385,6 +386,22 @@ export class TaskService {
     const task = this.get(taskId);
     this.requireTaskAccess(actor, task);
     return task;
+  }
+
+  /**
+   * Moves a task along `taskTransitions` and tells whoever can see it. False, with the row untouched, when the task's
+   * status does not allow the move. What a task had counted is written before it ends.
+   */
+  transition<N extends TaskTransition>(taskId: string, name: N, ...[error]: N extends "fail" ? [error: string] : []): boolean {
+    if (endsTask(name)) this.flushProgress(taskId, true);
+    if (!transitionTask(this.db, taskId, name, error)) return false;
+    const { tell }: Transition = taskTransitions[name];
+    if (!tell) return true;
+    const task = this.get(taskId);
+    if (tell === "task.done") this.events.publish({ type: "task.done", userId: task.created_by, taskId });
+    else if (tell === "task.failed") this.events.publish({ type: "task.failed", userId: task.created_by, taskId, error: error! });
+    else this.events.publish({ type: "task.progress", userId: task.created_by, taskId, patch: Object.fromEntries(tell.map((field) => [field, task[field]])) });
+    return true;
   }
 
   cancel(actor: Actor, taskId: string): FileTask {
