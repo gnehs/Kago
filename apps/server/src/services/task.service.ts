@@ -485,9 +485,8 @@ export class TaskService {
 
   failRunning(taskId: string, errorMessage = "Worker failed before executing task"): void {
     const task = this.get(taskId);
-    if (task.status === "cancelling") return this.settleCancelling(taskId);
-    if (task.status !== "running") return;
-    this.finish(taskId, "failed", errorMessage);
+    // Not running any more, or asked to stop since it was read: a task asked to stop has stopped now.
+    if (!this.finish(taskId, "failed", errorMessage)) return this.settleCancelling(taskId);
     this.audit.write({
       actorType: "system",
       action: "task_failed",
