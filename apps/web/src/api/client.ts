@@ -1,4 +1,7 @@
+import type { FileTask as WireFileTask } from "@kago/contract";
 import { t } from "../lib/i18n";
+import { parseTask } from "../lib/taskModel";
+import type { FileTask } from "../types/kago";
 import { dismissToast, toast } from "../stores/toast";
 
 export class ApiError extends Error {
@@ -46,6 +49,11 @@ export function api<T>(path: string, init: RequestInit & { quiet?: boolean } = {
   const { quiet, ...request } = init;
   const sent = send<T>(path, request);
   return quiet || !request.method || request.method === "GET" ? sent : whileSlow(sent);
+}
+
+/** Asks for a task, which the server answers with its row. */
+export async function apiTask(path: string, init: RequestInit & { quiet?: boolean } = {}): Promise<FileTask> {
+  return parseTask(await api<WireFileTask>(path, init));
 }
 
 async function send<T>(path: string, init: RequestInit): Promise<T> {

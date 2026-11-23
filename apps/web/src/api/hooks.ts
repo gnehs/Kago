@@ -3,6 +3,8 @@ import { keepPreviousData, useInfiniteQuery, useMutation, useQueries, useQuery, 
 import { useEffect, useState } from "react";
 import { api, apiLines, ApiError, previewUrl, serverMessage } from "./client";
 import { decodeSubtitle } from "../lib/subtitles";
+import type { FileTask as WireFileTask } from "@kago/contract";
+import { parseTask } from "../lib/taskModel";
 import { withSpeeds } from "../lib/taskSpeed";
 import { parentPath } from "../lib/paths";
 import type { FileRef } from "../stores/clipboard";
@@ -436,7 +438,7 @@ export function usePermissions(rootId?: string, enabled = true) {
 }
 
 export function useTasks() {
-  return useQuery({ queryKey: keys.tasks(), queryFn: async () => withSpeeds(await api<FileTask[]>("/api/tasks")), refetchInterval: 4000 });
+  return useQuery({ queryKey: keys.tasks(), queryFn: async () => withSpeeds((await api<WireFileTask[]>("/api/tasks")).map(parseTask)), refetchInterval: 4000 });
 }
 
 export function useExternalApps() {

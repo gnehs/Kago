@@ -3,7 +3,7 @@ import { keys } from "@/api/keys";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, AudioLines, Captions, Film, X } from "lucide-react";
 import { create } from "zustand";
-import { api } from "@/api/client";
+import { apiTask } from "@/api/client";
 import { useMediaInfo } from "@/api/hooks";
 import { KagoDialog, KagoDialogActions } from "@/components/kago/dialog";
 import { KagoLoading, KagoSpinner } from "@/components/kago/empty-state";
@@ -16,7 +16,7 @@ import { isMusicFile } from "@/lib/format";
 import { nfc } from "@/lib/paths";
 import { run } from "@/lib/run";
 import { languageLabel } from "@/lib/subtitles";
-import type { FileItem, FileTask, MediaInfo } from "@/types/kago";
+import type { FileItem, MediaInfo } from "@/types/kago";
 import { t } from "@/lib/i18n";
 
 type Kind = "video" | "audio" | "subtitle";
@@ -174,7 +174,7 @@ function TrackEditor({ request, onClose }: { request: EditorRequest; onClose: ()
         }))
       )
     };
-    const task = await run(() => api<FileTask>("/api/remux", { method: "POST", body: JSON.stringify(body) }), t("Couldn’t start repacking"));
+    const task = await run(() => apiTask("/api/remux", { method: "POST", body: JSON.stringify(body) }), t("Couldn’t start repacking"));
     setBusy(false);
     if (!task) return;
     await queryClient.invalidateQueries({ queryKey: keys.tasks() });

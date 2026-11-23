@@ -109,14 +109,4 @@ const downloadMaxAgeSeconds = 24 * 60 * 60;
 export const hasTaskDownload = (task: FileTask) => task.type === "download_zip" && task.status === "done" && Date.now() / 1000 - task.updated_at < downloadMaxAgeSeconds;
 
 /** A finished compress task leaves a zip the user usually wants to download. */
-export function compressDownloadTarget(task: FileTask): { rootSlug: string; path: string } | null {
-  if (task.type !== "compress" || task.status !== "done" || !task.destination) return null;
-  try {
-    const destination = JSON.parse(task.destination) as { rootSlug?: unknown; path?: unknown } | null;
-    return destination && typeof destination.rootSlug === "string" && typeof destination.path === "string" && destination.rootSlug && destination.path
-      ? { rootSlug: destination.rootSlug, path: destination.path }
-      : null;
-  } catch {
-    return null;
-  }
-}
+export const compressDownloadTarget = (task: FileTask) => (task.type === "compress" && task.status === "done" ? task.destination : null);

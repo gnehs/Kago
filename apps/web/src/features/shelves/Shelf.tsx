@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { keys } from "@/api/keys";
 import { Archive, ArrowDownToLine, ChevronDown, ChevronUp, Copy, Ellipsis, FolderInput, ListX, X } from "lucide-react";
-import { api, thumbnailUrl } from "@/api/client";
+import { api, apiTask, thumbnailUrl } from "@/api/client";
 import { useFileList, useRoots, useShelves } from "@/api/hooks";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { KagoDropdownMenu, KagoMenuItem, KagoMenuNote, KagoMenuSeparator } from "@/components/kago/menu";
@@ -20,7 +20,7 @@ import { resolveConflicts, type ConflictChoices } from "@/features/files/Transfe
 import { followTask } from "@/features/tasks/taskToast";
 import { getCanvasSize, useWorkspaceStore } from "@/stores/workspace";
 import { t } from "@/lib/i18n";
-import type { FileTask, Shelf as ShelfData } from "@/types/kago";
+import type { Shelf as ShelfData } from "@/types/kago";
 
 type ShelfItem = ShelfData["items"][number];
 
@@ -138,7 +138,7 @@ export function Shelf() {
         if (items.every((item) => chosen[baseName(item.path)] === "skip")) return;
         conflicts = chosen;
       }
-      followTask(await api<FileTask>(`/api/shelves/${shelfId}/tasks`, { method: "POST", body: JSON.stringify({ type, destination, options: conflicts ? { conflicts } : options }) }));
+      followTask(await apiTask(`/api/shelves/${shelfId}/tasks`, { method: "POST", body: JSON.stringify({ type, destination, options: conflicts ? { conflicts } : options }) }));
       await queryClient.invalidateQueries({ queryKey: keys.tasks() });
     });
   }

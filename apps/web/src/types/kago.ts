@@ -1,4 +1,4 @@
-import type { FileTask as WireFileTask, FileTag, FolderListing, Root, SyncTrialSummary } from "@kago/contract";
+import type { FileRef, FileTask as WireFileTask, FileTag, FolderListing, Root, SyncTrialSummary } from "@kago/contract";
 
 export type {
   Actor,
@@ -262,7 +262,14 @@ export type ShareLink = {
   updated_at: number;
 };
 
-export type FileTask = WireFileTask & {
+/**
+ * A task as the client holds it: the wire row with its JSON read once, at the boundary (`parseTask`).
+ * `destination` is the place the task puts its result, which is all the client reads of the destination JSON: a folder,
+ * or for a compress the archive written. It is null for a task with none, such as a sync, whose endpoints are in the job.
+ */
+export type FileTask = Omit<WireFileTask, "sources_json" | "destination" | "auth_snapshot_json"> & {
+  sources: FileRef[];
+  destination: FileRef | null;
   /** Bytes a second while it runs. Worked out here from one fetch of the list to the next; the server does not send it. */
   speed?: number;
 };

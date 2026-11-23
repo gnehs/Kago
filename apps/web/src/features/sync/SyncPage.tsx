@@ -63,7 +63,7 @@ export function SyncPage({ roots, user }: { roots: Root[]; user: Actor }) {
     if (job.options.mode === "mirror" && !job.options.dryRun && !(await confirmAction({ window: scope, title: t("Run this sync now?"), subject: { icon: <KagoStatusIcon large><RefreshCw /></KagoStatusIcon>, name: job.name, detail: `${describeEndpoint(job.source)} → ${describeEndpoint(job.destination)}` }, description: t("Files at the destination that are not at the source are deleted for good, not moved to the trash. Turn on a trial run in Edit to see what would change first."), confirmLabel: t("Run now"), destructive: true }))) return;
     setStarting((current) => new Set(current).add(job.id));
     await run(async () => {
-      await api<FileTask>(`/api/sync-jobs/${job.id}/run`, { method: "POST" });
+      await api<unknown>(`/api/sync-jobs/${job.id}/run`, { method: "POST" });
       toast(t("{name} started", { name: job.name }));
       await Promise.all([refresh(), queryClient.invalidateQueries({ queryKey: keys.tasks() })]);
     }, t("Couldn’t start the sync"));

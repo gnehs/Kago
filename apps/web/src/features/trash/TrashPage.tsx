@@ -3,7 +3,7 @@ import { invalidateKeys } from "@/api/invalidations";
 import { keys } from "@/api/keys";
 import { useWindowScope } from "@/components/kago/window-scope";
 import { Trash2 } from "lucide-react";
-import { api } from "@/api/client";
+import { apiTask } from "@/api/client";
 import { useRoots, useTasks, useTrash } from "@/api/hooks";
 import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,6 @@ import { baseName, displayPath } from "@/lib/paths";
 import { run } from "@/lib/run";
 import { confirmAction } from "@/stores/dialogs";
 import { t } from "@/lib/i18n";
-import type { FileTask } from "@/types/kago";
 
 export function TrashPage() {
   const scope = useWindowScope();
@@ -28,7 +27,7 @@ export function TrashPage() {
 
   async function restore(itemId: string) {
     await run(async () => {
-      followTask(await api<FileTask>(`/api/trash/${itemId}/restore`, { method: "POST" }));
+      followTask(await apiTask(`/api/trash/${itemId}/restore`, { method: "POST" }));
       // Nothing is back in its folder until the task has put it there, which the server tells of then.
       await invalidateKeys(queryClient, [keys.trash(), keys.tasks()]);
     }, t("Couldn’t restore"));
@@ -45,7 +44,7 @@ export function TrashPage() {
     if (!confirmed) return;
     await run(async () => {
       // Emptied by a task, which counts what it removes: the list is read again once it is done.
-      followTask(await api<FileTask>("/api/trash", { method: "DELETE" }));
+      followTask(await apiTask("/api/trash", { method: "DELETE" }));
       await queryClient.invalidateQueries({ queryKey: keys.tasks() });
     }, t("Couldn’t empty the Trash"));
   }

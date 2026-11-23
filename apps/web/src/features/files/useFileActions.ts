@@ -1,7 +1,7 @@
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { invalidateKeys } from "@/api/invalidations";
 import { keys, isListingKey } from "@/api/keys";
-import { api, ApiError, apiLines, downloadUrl, serverMessage } from "@/api/client";
+import { api, ApiError, apiLines, apiTask, downloadUrl, serverMessage } from "@/api/client";
 import { dropLeft } from "@/api/hooks";
 import { errorMessage, formatSize } from "@/lib/format";
 import { baseName, ensureZipName, isInside, isWithin, joinLogicalPath, needsNormalizing, nfc, parentPath, triggerDownload } from "@/lib/paths";
@@ -53,7 +53,7 @@ async function createTask(queryClient: QueryClient, body: Record<string, unknown
   if (asking) hideLeaving(asking, leaving);
   let task: FileTask;
   try {
-    task = await api<FileTask>("/api/tasks", { method: "POST", body: JSON.stringify(body) });
+    task = await apiTask("/api/tasks", { method: "POST", body: JSON.stringify(body) });
   } finally {
     if (asking) showLeaving(asking);
   }
@@ -188,7 +188,7 @@ async function undoTrash(queryClient: QueryClient, sources: FileRef[], task: Fil
   let current = task;
   while (isActiveTask(current)) {
     await new Promise((resolve) => setTimeout(resolve, 500));
-    current = await api<FileTask>(`/api/tasks/${task.id}`);
+    current = await apiTask(`/api/tasks/${task.id}`);
   }
   const [roots, trashed] = await Promise.all([api<Root[]>("/api/roots"), api<TrashItem[]>("/api/trash")]);
   const found: TrashItem[] = [];
@@ -198,7 +198,7 @@ async function undoTrash(queryClient: QueryClient, sources: FileRef[], task: Fil
     if (match) found.push(match);
   }
   if (found.length === 0) throw new Error(t("Nothing to put back"));
-  for (const item of found) followTask(await api<FileTask>(`/api/trash/${item.id}/restore`, { method: "POST" }));
+  for (const item of found) followTask(await apiTask(`/api/trash/${item.id}/restore`, { method: "POST" }));
   await invalidateKeys(queryClient, [keys.trash(), keys.tasks()]);
 }
 
@@ -450,7 +450,7 @@ export function useFileActions(window: FileWindow) {
       run(async () => {
         const spec = await promptConvert({ window: window.id, kind, names: items.map((item) => nfc(item.name)) });
         if (!spec) return;
-        const task = await api<FileTask>("/api/convert", { method: "POST", body: JSON.stringify({ sources: refs(items.map((item) => item.path)), destination: here(commonFolder(items.map((item) => item.path))), spec }) });
+        const task = await apiTask("/api/convert", { method: "POST", body: JSON.stringify({ sources: refs(items.map((item) => item.path)), destination: here(commonFolder(items.map((item) => item.path))), spec }) });
         await queryClient.invalidateQueries({ queryKey: keys.tasks() });
         followTask(task);
       }, t("Couldn’t start the conversion")),

@@ -82,7 +82,7 @@ export function AutoConvertPage({ roots, user }: { roots: Root[]; user: Actor })
 
   const start = (job: ConvertJob) => during(job, "start", () =>
     run(async () => {
-      await api<FileTask>(`/api/convert-jobs/${job.id}/run`, { method: "POST" });
+      await api<unknown>(`/api/convert-jobs/${job.id}/run`, { method: "POST" });
       toast(t("{name} started", { name: job.name }));
       await Promise.all([refresh(), queryClient.invalidateQueries({ queryKey: keys.tasks() })]);
     }, t("Couldn’t start the conversion")));

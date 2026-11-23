@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { keys } from "@/api/keys";
 import type { QueryClient } from "@tanstack/react-query";
-import { api } from "@/api/client";
+import { apiTask } from "@/api/client";
 import { KagoDialog, KagoDialogActions } from "@/components/kago/dialog";
 import { Button } from "@/components/ui/button";
 import { Checkbox, Field } from "@/components/ui/input";
@@ -32,17 +32,11 @@ const promptArchivePassword = passwordPrompt.ask;
 /** The extraction a failed task was, if what it failed on was the password. */
 export function lockedExtract(task: FileTask): ExtractRequest | null {
   if (task.type !== "extract" || task.status !== "failed" || !passwordErrors.includes(task.error_message ?? "") || !task.destination) return null;
-  try {
-    const destination = JSON.parse(task.destination) as Partial<FileRef>;
-    const sources = JSON.parse(task.sources_json) as FileRef[];
-    return typeof destination.rootSlug === "string" && typeof destination.path === "string" ? { sources, destination: { rootSlug: destination.rootSlug, path: destination.path } } : null;
-  } catch {
-    return null;
-  }
+  return { sources: task.sources, destination: task.destination };
 }
 
 export async function startExtract(queryClient: QueryClient, request: ExtractRequest, options?: PasswordChoice, scope: string | null = null) {
-  const task = await api<FileTask>("/api/tasks", { method: "POST", body: JSON.stringify({ type: "extract", ...request, options }) });
+  const task = await apiTask("/api/tasks", { method: "POST", body: JSON.stringify({ type: "extract", ...request, options }) });
   pendingExtracts.set(task.id, request);
   extractWindows.set(task.id, scope);
   followTask(task);

@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { api, taskDownloadUrl } from "@/api/client";
-import { dropLeft, foldersChanged, type FolderChange } from "@/api/hooks";
+import { dropLeft, foldersChanged } from "@/api/hooks";
 import { invalidateEvent, invalidateKeys, isServerEventType, reconnectKeys } from "@/api/invalidations";
 import { isListingKey, keys } from "@/api/keys";
 import { askForArchivePassword, pendingExtracts } from "@/features/files/ArchivePassword";
@@ -10,7 +10,7 @@ import { announcedTypes, settleTask, taskFailed, taskFinished } from "@/features
 import { taskTypeLabel } from "@/features/tasks/taskUtils";
 import { parentPath, triggerDownload } from "@/lib/paths";
 import { loadSettings } from "@/stores/settings";
-import type { FileRef } from "@/stores/clipboard";
+import type { FileTask as WireFileTask, ServerEvent } from "@kago/contract";
 import { leavingRefs, settleLeaving, showLeaving, useLeavingStore } from "@/stores/leaving";
 import type { FileTask } from "@/types/kago";
 import { t } from "@/lib/i18n";
@@ -33,7 +33,7 @@ export function useRealtime(userId: string, onRemoteWorkspaceChange: () => void)
      * Tasks run on the server, so their outcome has to be announced or it goes unnoticed.
      * It is said in the notification that was counting the task, if this tab had one up.
      */
-    function announceTask(type: string, taskId: string, error?: string) {
+    function announceTask(type: "task.done" | "task.failed", taskId: string, error?: string) {
       const task = queryClient.getQueryData<FileTask[]>(keys.tasks())?.find((item) => item.id === taskId);
       const label = task ? taskTypeLabel(task) : t("Task");
       if (type === "task.failed") {
@@ -66,11 +66,10 @@ export function useRealtime(userId: string, onRemoteWorkspaceChange: () => void)
       const folders = left.map((ref) => ({ rootSlug: ref.rootSlug, path: parentPath(ref.path) }));
       const task = queryClient.getQueryData<FileTask[]>(keys.tasks())?.find((item) => item.id === taskId);
       if (task) {
-        const destination = JSON.parse(task.destination ?? "null") as Partial<FileRef> | null;
         // A copy's destination is a folder; an archive's is the file being written, in its folder.
-        if (destination?.rootSlug && destination.path) folders.push(destination as FileRef, { rootSlug: destination.rootSlug, path: parentPath(destination.path) });
+        if (task.destination) folders.push(task.destination, { rootSlug: task.destination.rootSlug, path: parentPath(task.destination.path) });
         if (["move", "delete_to_trash", "delete"].includes(task.type)) {
-          for (const source of JSON.parse(task.sources_json) as FileRef[]) folders.push({ rootSlug: source.rootSlug, path: parentPath(source.path) });
+          for (const source of task.sources) folders.push({ rootSlug: source.rootSlug, path: parentPath(source.path) });
         }
       }
       const byRoot = new Map<string, Set<string>>();
@@ -82,7 +81,7 @@ export function useRealtime(userId: string, onRemoteWorkspaceChange: () => void)
     async function settleUnheard(listings: Promise<unknown>) {
       const waiting = Object.keys(useLeavingStore.getState().tasks).filter((taskId) => !taskId.startsWith("asking:"));
       if (waiting.length === 0) return;
-      const tasks = await api<FileTask[]>("/api/tasks");
+      const tasks = await api<WireFileTask[]>("/api/tasks");
       for (const taskId of waiting) {
         const task = tasks.find((item) => item.id === taskId);
         if (task && !["done", "failed", "cancelled", "interrupted"].includes(task.status)) continue;
@@ -94,24 +93,23 @@ export function useRealtime(userId: string, onRemoteWorkspaceChange: () => void)
     }
 
     function handleMessage(event: MessageEvent) {
-      const message = JSON.parse(event.data) as { type?: string; userId?: string; taskId?: string; error?: string; patch?: { status?: string } };
-      const type = String(message.type);
-      const own = message.userId === userId;
-      if (type === "workspace.updated") {
+      const message = JSON.parse(event.data) as ServerEvent;
+      const own = "userId" in message && message.userId === userId;
+      if (message.type === "workspace.updated") {
         if (!own) return;
         onRemoteWorkspaceChange();
       }
-      if (isServerEventType(type)) void invalidateEvent(queryClient, type);
-      if (type.startsWith("task.")) {
+      if (isServerEventType(message.type)) void invalidateEvent(queryClient, message.type);
+      if (message.type === "task.done" || message.type === "task.failed") {
         // Admins also receive other people's task events; only announce your own.
-        if ((type === "task.done" || type === "task.failed") && own && message.taskId) announceTask(type, message.taskId, message.error);
-        if (message.taskId && (type === "task.done" || type === "task.failed" || message.patch?.status === "cancelled")) void settle(message.taskId, type === "task.done");
-      }
+        if (own) announceTask(message.type, message.taskId, message.type === "task.failed" ? message.error : undefined);
+        void settle(message.taskId, message.type === "task.done");
+      } else if (message.type === "task.progress" && message.patch.status === "cancelled") void settle(message.taskId, false);
       // Whoever can see a location hears what changed in it, by anyone; the folders it names are read again.
-      if (type === "fs.changed") void foldersChanged(queryClient, message as unknown as FolderChange);
-      if (type === "settings.updated" && own) void loadSettings();
+      if (message.type === "fs.changed") void foldersChanged(queryClient, message);
+      if (message.type === "settings.updated" && own) void loadSettings();
       // Someone has a new picture: one's own is on the bar, and an administrator's lists show everyone's.
-      if (type === "account.updated" && own) void queryClient.invalidateQueries({ queryKey: keys.auth.me() });
+      if (message.type === "account.updated" && own) void queryClient.invalidateQueries({ queryKey: keys.auth.me() });
     }
 
     function connect() {
