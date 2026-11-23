@@ -1,201 +1,64 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { byName } from "@/lib/sort";
-import { Archive, ArchiveRestore, Ban, CircleUserRound, ClipboardPaste, Copy, Download, ExternalLink, FileOutput, FileVideo, Folder, FolderInput, FolderOpen, FolderPlus, FolderUp, Inbox, Info, ListVideo, PanelTop, Pencil, Play, Plus, RefreshCw, Scissors, SquareArrowOutUpRight, Star, StarOff, Trash2, Upload, Wallpaper, X } from "lucide-react";
-import { useFileList, useFolderContents, useFolderSearch } from "@/api/hooks";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Folder, Plus } from "lucide-react";
+import { useFileList } from "@/api/hooks";
 import { KagoBadge } from "@/components/kago/badge";
 import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
-import { KagoContextMenu, KagoMenuButton, KagoMenuItem, KagoMenuNote, KagoMenuSeparator } from "@/components/kago/menu";
-import { chooseAvatar } from "@/features/auth/AvatarDialog";
-import { autoConvertInto } from "@/features/convert/AutoConvertPage";
-import { mediaKindOf } from "@/features/convert/convertSpec";
-import { openTrackEditor } from "@/features/convert/TrackEditor";
+import { KagoContextMenu } from "@/components/kago/menu";
 import { KagoWindow } from "@/components/kago/window";
-import { OPEN_ITEM_EVENT } from "@/features/workspace/useShortcuts";
-import { isArchive } from "@/lib/fileKind";
-import { formatSize, isCueSheet, isMusicFile, isPicture, isVideoType } from "@/lib/format";
-import { isInside, nfc, parentPath } from "@/lib/paths";
-import { run } from "@/lib/run";
-import { droppedTree, flatTree, pickedFolderTree } from "@/lib/uploadTree";
-import { cn } from "@/lib/utils";
-import { useClipboardStore } from "@/stores/clipboard";
-import { useRecentStore } from "@/stores/recent";
-import { setFavorite, setWallpaper, useSettingsStore } from "@/stores/settings";
-import { toast } from "@/stores/toast";
-import { folderTitle, useWorkspaceStore } from "@/stores/workspace";
-import type { FileItem, FileWindow, FolderView, FolderWindow, Root } from "@/types/kago";
 import { FileIcon } from "@/components/kago/file-icon";
-import { fileViews, indexesInArea, revealIndex, useFileLayout, type FileTree } from "./fileLayout";
-import { FileColumns, FileList, type FileColumn } from "./FileList";
+import { t } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
+import { useRecentStore } from "@/stores/recent";
+import { useWorkspaceStore } from "@/stores/workspace";
+import type { FileWindow, FolderWindow, Root } from "@/types/kago";
+import { DropLayer } from "./DropLayer";
+import { FileColumns, FileList } from "./FileList";
+import { FileMenu } from "./FileMenu";
+import { FileStatusBar } from "./FileStatusBar";
 import { FileToolbar } from "./FileToolbar";
+import { indexesInArea, useFileLayout } from "./fileLayout";
 import { useFolderView } from "./folderView";
 import { Inspector } from "./Inspector";
 import { Sidebar } from "./Sidebar";
 import { TabStrip } from "./TabStrip";
-import { placeable, readDraggedFiles, useFileActions, type FileRef } from "./useFileActions";
+import { useColumns } from "./useColumns";
+import { useFileActions } from "./useFileActions";
+import { useFileDrop } from "./useFileDrop";
+import { useFileHistory } from "./useFileHistory";
+import { useFileSearch } from "./useFileSearch";
+import { useFileViewRegistry } from "./useFileViewRegistry";
+import { useFolderListing } from "./useFolderListing";
+import { useItemInteractions } from "./useItemInteractions";
 import { useMarqueeSelection } from "./useMarqueeSelection";
-import { videoPageUrl } from "./VideoPage";
+import { useOpenFolders } from "./useOpenFolders";
+import { useScrollMemory } from "./useScrollMemory";
+import { useUploadPicker } from "./useUploadPicker";
 import { classifyFileWindowError, WindowErrorState } from "./WindowErrorState";
-import { t } from "@/lib/i18n";
 
+const store = useWorkspaceStore.getState;
 /** The icon of a window showing a folder. */
 const FOLDER = { kind: "folder", type: "", name: "" } as const;
-const NOTHING_OPEN: ReadonlySet<string> = new Set();
-
-const compare = (a: string, b: string) => byName.compare(a, b);
-
-function sortItems(items: FileItem[], sortBy: FolderView["sortBy"], direction: FolderView["sortDirection"]) {
-  const sign = direction === "asc" ? 1 : -1;
-  return [...items].sort((a, b) => {
-    // Folders stay grouped first, like Finder and File Station, whatever the sort column.
-    if (a.kind !== b.kind) return a.kind === "folder" ? -1 : 1;
-    const primary = sortBy === "size" ? a.size - b.size : sortBy === "mtime" ? a.mtime - b.mtime : sortBy === "type" ? compare(a.type, b.type) : compare(a.name, b.name);
-    return (primary || compare(a.name, b.name)) * sign;
-  });
-}
-
-/** A place a window has been: back and forward go between them, across locations too. */
-type Place = { rootSlug: string; path: string };
 
 export function FileWindowView({ window: frame, roots }: { window: FileWindow; roots: Root[] }) {
-  const store = useWorkspaceStore.getState;
   const rootName = roots.find((root) => root.slug === frame.rootSlug)?.name ?? frame.rootSlug;
   const fileList = useFileList(frame.rootSlug, frame.logicalPath);
   // The folder says how it is shown; the window only shows it.
   const folderView = useFolderView(frame.rootSlug, frame.logicalPath, fileList.data?.items);
   const win = useMemo<FolderWindow>(() => ({ ...frame, ...folderView.view }), [frame, folderView.view]);
   const actions = useFileActions(win);
-  const uploadInput = useRef<HTMLInputElement>(null);
-  const folderInput = useRef<HTMLInputElement>(null);
-  // Every tab has been to places of its own, and keeps what was typed in its search field.
   const tabId = frame.activeTabId ?? "";
-  const [searches, setSearches] = useState<Record<string, string>>({});
-  const search = searches[tabId] ?? "";
-  const setSearch = (value: string) => setSearches((all) => ({ ...all, [tabId]: value }));
-  // The folders below are searched once typing pauses; clearing the field, or coming back to a tab, goes there at once.
-  const [query, setQuery] = useState("");
-  const typed = nfc(search.trim());
-  const queryTab = useRef(tabId);
-  useEffect(() => {
-    const switched = queryTab.current !== tabId;
-    queryTab.current = tabId;
-    if (!typed || switched) return setQuery(typed);
-    const timer = setTimeout(() => setQuery(typed), 250);
-    return () => clearTimeout(timer);
-  }, [typed, tabId]);
-  const [anchorPath, setAnchorPath] = useState<string | null>(null);
-  const [menuItem, setMenuItem] = useState<FileItem | null>(null);
-  // After a finger has rested on an item, each tap picks an item out or puts it back, until none is left.
-  const [picking, setPicking] = useState(false);
-  if (picking && frame.selectedItems.length === 0) setPicking(false);
-  // The folder a right click on empty space was in: in the column view, that of the column clicked.
-  const [menuFolder, setMenuFolder] = useState<string | null>(null);
-  // Where the files picked for an upload go, set as the picker is opened.
-  const uploadFolder = useRef<string | null>(null);
-  // What is being held over the window: files from outside the browser, which would be uploaded, or items of Kago's own.
-  const [dropActive, setDropActive] = useState<false | "files" | "items">(false);
-  const [dropChoice, setDropChoice] = useState<{ sources: FileRef[]; destination: FileRef; x: number; y: number } | null>(null);
-  const clip = useClipboardStore((state) => state.clip);
-  const favorites = useSettingsStore((state) => state.favorites);
-  const [histories, setHistories] = useState<Record<string, { stack: Place[]; index: number }>>({});
-  const history = histories[tabId] ?? { stack: [], index: -1 };
-  const place = history.stack[history.index];
-
-  // Record every change of place (breadcrumb, sidebar, shortcut, double-click) unless it came from back/forward.
-  if (place?.rootSlug !== win.rootSlug || place.path !== win.logicalPath) {
-    const stack = [...history.stack.slice(0, history.index + 1), { rootSlug: win.rootSlug, path: win.logicalPath }];
-    setHistories({ ...histories, [tabId]: { stack, index: stack.length - 1 } });
-  }
-
-  // Each tab keeps the folders opened in place in it.
-  const [expandedByTab, setExpandedByTab] = useState<Record<string, ReadonlySet<string>>>({});
-  const expanded = expandedByTab[tabId] ?? NOTHING_OPEN;
-  // Folders open in place in the list view only; a search lists what it found, wherever inside the folder that is.
-  const searching = Boolean(typed);
-  const showsTree = win.viewMode === "list" && !searching;
-  const inColumns = win.viewMode === "columns";
-  const lastSelected = win.selectedItems.at(-1);
-  // In the column view the selection says how far in the columns go: every folder between the window's own and the one the selection is in.
-  const trail = useMemo(() => {
-    const folders: string[] = [];
-    if (!inColumns || searching || !lastSelected || !isInside(lastSelected, win.logicalPath)) return folders;
-    for (let path = parentPath(lastSelected); path !== win.logicalPath && path !== "/"; path = parentPath(path)) folders.unshift(path);
-    return folders;
-  }, [inColumns, searching, lastSelected, win.logicalPath]);
-  const expandedPaths = useMemo(() => (showsTree ? [...expanded] : trail), [showsTree, expanded, trail]);
-  const expandedContents = useFolderContents(win.rootSlug, expandedPaths);
+  const search = useFileSearch(win, tabId);
+  const openFolders = useOpenFolders(win.id, tabId);
+  const history = useFileHistory(win, tabId);
+  const { allItems, listed, trail, expandedContents, tree } = useFolderListing(win, fileList, openFolders, search);
+  const { columns, activeColumn, opened, columnReveal, items } = useColumns(win, listed, trail, expandedContents);
+  const { searching, searched } = search;
 
   // A folder that could not be read again goes on showing what it held, unless it is gone or out of reach.
   const failure = classifyFileWindowError(fileList.error);
   const error = failure && (!fileList.data || failure.kind !== "unknown") ? failure : null;
   const readonly = Boolean(fileList.data?.readonly);
-  const allItems = useMemo(() => sortItems(fileList.data?.items ?? [], win.sortBy, win.sortDirection), [fileList.data, win.sortBy, win.sortDirection]);
-  const searched = useFolderSearch(win.rootSlug, win.logicalPath, searching ? query : "");
-  // Matches kept from before are shown only while they are of this folder and of a search still being typed.
-  const results = searching && searched.data?.rootSlug === win.rootSlug && searched.data.path === win.logicalPath ? searched.data : undefined;
-  const found = useMemo(() => (results ? sortItems(results.items, win.sortBy, win.sortDirection) : []), [results, win.sortBy, win.sortDirection]);
-  // A search that failed is over, whatever it had found by then.
-  const searchPending = searching && (query !== typed || (!searched.isError && (!results || results.query !== query || results.partial)));
-  // What the window's own folder lists, with the folders opened in place in the list view.
-  const { items: listed, depths } = useMemo(() => {
-    if (searching) return { items: found, depths: [] };
-    if (!showsTree || expandedPaths.length === 0) return { items: allItems, depths: [] };
-    // Each open folder is followed by its own contents, sorted like the rest and one level further in.
-    const contents = new Map(expandedPaths.map((path, index) => [path, expandedContents[index]?.items]));
-    const items: FileItem[] = [];
-    const depths: number[] = [];
-    const walk = (list: FileItem[], depth: number) => {
-      for (const item of list) {
-        items.push(item);
-        depths.push(depth);
-        const inside = item.kind === "folder" ? contents.get(item.path) : undefined;
-        if (inside) walk(sortItems(inside, win.sortBy, win.sortDirection), depth + 1);
-      }
-    };
-    walk(allItems, 0);
-    return { items, depths };
-  }, [allItems, searching, found, showsTree, expandedPaths, expandedContents, win.sortBy, win.sortDirection]);
-
-  // The columns down to the folder the selection is in. A folder that is no longer where the selection says ends them.
-  const columnsAbove = useMemo(() => {
-    if (!inColumns) return null;
-    const columns: FileColumn[] = [{ folder: win.logicalPath, items: listed }];
-    for (const [index, folder] of trail.entries()) {
-      const before = columns.at(-1)!.items;
-      if (before && !before.some((item) => item.path === folder && item.kind === "folder")) break;
-      const inside = expandedContents[index];
-      columns.push({ folder, items: inside?.items && sortItems(inside.items, win.sortBy, win.sortDirection), loading: inside?.loading, failed: inside?.failed });
-    }
-    return columns;
-  }, [inColumns, win.logicalPath, listed, trail, expandedContents, win.sortBy, win.sortDirection]);
-  // A folder selected by itself opens one more column, for what it holds.
-  const deepest = columnsAbove?.at(-1);
-  const opened = columnsAbove && win.selectedItems.length === 1 && columnsAbove.length === trail.length + 1 ? deepest?.items?.find((item) => item.path === lastSelected && item.kind === "folder")?.path : undefined;
-  const openedList = useFileList(win.rootSlug, opened ?? win.logicalPath, Boolean(opened));
-  const columns = useMemo(
-    () =>
-      columnsAbove && opened
-        ? [...columnsAbove, { folder: opened, items: openedList.data && sortItems(openedList.data.items, win.sortBy, win.sortDirection), loading: !openedList.isError && openedList.data?.partial !== false, failed: openedList.isError }]
-        : columnsAbove,
-    [columnsAbove, opened, openedList.data, openedList.isError, win.sortBy, win.sortDirection]
-  );
-  /** The column the selection is in, which is the one the keyboard moves through. */
-  const activeColumn = columns && lastSelected ? Math.max(0, columns.findIndex((column) => column.folder === parentPath(lastSelected))) : 0;
-  const columnReveal = useRef<Array<((index: number) => void) | undefined>>([]);
-  const items = columns ? columns[activeColumn]?.items ?? listed : listed;
-  const selectedItems = useMemo(() => {
-    const selected = new Set(win.selectedItems);
-    return items.filter((item) => selected.has(item.path));
-  }, [items, win.selectedItems]);
-  const selectedPaths = selectedItems.map((item) => item.path);
-  // What the folder holds, for the status bar: how many of each, and how much the files weigh.
-  const summary = useMemo(() => {
-    const files = allItems.filter((item) => item.kind === "file");
-    const folders = allItems.length - files.length;
-    if (allItems.length === 0) return t("{count} item | {count} items", { count: 0 });
-    const counts = [folders > 0 ? t("{count} folder | {count} folders", { count: folders }) : null, files.length > 0 ? t("{count} file | {count} files", { count: files.length }) : null].filter(Boolean).join(t(", "));
-    return files.length > 0 ? `${counts} · ${formatSize(files.reduce((total, item) => total + item.size, 0))}` : counts;
-  }, [allItems]);
   const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
   const layout = useFileLayout(scroller, win.viewMode, win.iconSize);
   const marquee = useMarqueeSelection(win.id, (area) => indexesInArea(layout, listed.length, area).map((index) => listed[index]!.path));
@@ -210,308 +73,16 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
     const before = searchedPlace.current;
     searchedPlace.current = { tabId, rootSlug: win.rootSlug, path: win.logicalPath };
     if (before.tabId !== tabId || (before.rootSlug === win.rootSlug && before.path === win.logicalPath)) return;
-    setSearches((all) => ({ ...all, [tabId]: "" }));
-    setExpandedByTab((all) => ({ ...all, [tabId]: NOTHING_OPEN }));
+    search.reset();
+    openFolders.closeAll();
   }, [win.logicalPath, win.rootSlug, tabId]);
 
-  // Coming back to a folder (back, forward, up, or its tab) shows it scrolled to where it was left; going anywhere else starts at the top.
-  const scrollTops = useRef(new Map<string, number>());
-  const scrollPlace = useRef<{ key: string; tabId: string; rootSlug: string; path: string } | null>(null);
-  const scrollRestore = useRef<number | null>(null);
-  const viaHistory = useRef(false);
-  const scrollKey = `${tabId}\n${win.rootSlug}\n${win.logicalPath}`;
-  const listReady = Boolean(fileList.data);
-
-  useLayoutEffect(() => {
-    const left = scrollPlace.current;
-    if (left?.key !== scrollKey) {
-      const returning = viaHistory.current || (left !== null && (left.tabId !== tabId || (left.rootSlug === win.rootSlug && isInside(left.path, win.logicalPath))));
-      viaHistory.current = false;
-      scrollPlace.current = { key: scrollKey, tabId, rootSlug: win.rootSlug, path: win.logicalPath };
-      scrollRestore.current = (returning ? scrollTops.current.get(scrollKey) : undefined) ?? 0;
-    }
-    // The list has to be there before it can be scrolled.
-    if (scrollRestore.current === null || !scroller || !listReady) return;
-    scroller.scrollTop = scrollRestore.current;
-    scrollRestore.current = null;
-    // Tells the list which rows to render before the next paint, rather than a frame later.
-    scroller.dispatchEvent(new Event("scroll"));
-  }, [scrollKey, tabId, win.rootSlug, win.logicalPath, scroller, listReady]);
-
-  useEffect(() => {
-    if (!scroller) return;
-    // A folder that is still loading has nothing to scroll, which must not count as having been scrolled to the top.
-    const remember = () => scrollRestore.current === null && scrollPlace.current && scrollTops.current.set(scrollPlace.current.key, scroller.scrollTop);
-    scroller.addEventListener("scroll", remember, { passive: true });
-    return () => scroller.removeEventListener("scroll", remember);
-  }, [scroller]);
-
-  const tree = useMemo<FileTree | undefined>(() => {
-    if (!showsTree) return undefined;
-    return {
-      depths,
-      expanded,
-      setExpanded(path, open) {
-        setExpandedByTab((all) => {
-          const next = new Set(all[tabId] ?? NOTHING_OPEN);
-          if (open) next.add(path);
-          else next.delete(path);
-          return { ...all, [tabId]: next };
-        });
-        // What a closing folder hides cannot stay selected.
-        const selection = store().windows.find((entry) => entry.id === win.id)?.selectedItems ?? [];
-        if (!open && selection.some((selected) => selected.startsWith(`${path}/`))) store().selectItems(win.id, selection.filter((selected) => !selected.startsWith(`${path}/`)));
-      }
-    };
-  }, [showsTree, depths, expanded, win.id, tabId]);
-
-  // A window that lost access must not keep showing what it had selected.
-  useEffect(() => {
-    if (error?.kind === "forbidden" && win.selectedItems.length > 0) store().selectItems(win.id, []);
-  }, [error?.kind, win.id, win.selectedItems.length]);
-
-  useEffect(() => {
-    const onOpenItem = (event: Event) => {
-      const detail = (event as CustomEvent<{ windowId: string; path: string }>).detail;
-      const item = detail.windowId === win.id ? items.find((entry) => entry.path === detail.path) : undefined;
-      if (item) store().openPreview(win.rootSlug, item);
-    };
-    globalThis.addEventListener(OPEN_ITEM_EVENT, onOpenItem);
-    return () => globalThis.removeEventListener(OPEN_ITEM_EVENT, onOpenItem);
-  }, [items, win.id, win.rootSlug]);
-
-  // Keyboard shortcuts act on what the window lists, which is more than what is rendered.
-  const hasError = Boolean(error);
-  useEffect(() => {
-    if (hasError) fileViews.set(win.id, { items: [], reveal: () => undefined, folder: win.logicalPath, readonly: true });
-    else if (!columns) fileViews.set(win.id, { items, reveal: (index) => scroller && revealIndex(scroller, layout, index), across: layout.columns, tree, folder: win.logicalPath, readonly });
-    else {
-      const select = (column: number, item: FileItem | undefined) => {
-        if (!item) return;
-        store().selectItems(win.id, [item.path]);
-        columnReveal.current[column]?.(columns[column]!.items!.indexOf(item));
-      };
-      fileViews.set(win.id, {
-        items,
-        reveal: (index) => columnReveal.current[activeColumn]?.(index),
-        // The folder a column was opened for is the one being looked at; failing that, the one the selection is in.
-        folder: opened ?? columns[activeColumn]!.folder,
-        readonly,
-        columns: {
-          // Left steps out to the folder this column was opened from; right steps into the one selected.
-          left: () => select(activeColumn - 1, columns[activeColumn - 1]?.items?.find((item) => item.path === columns[activeColumn]!.folder)),
-          right: () => opened && select(activeColumn + 1, columns[activeColumn + 1]?.items?.[0])
-        }
-      });
-    }
-    return () => void fileViews.delete(win.id);
-  }, [win.id, win.logicalPath, items, hasError, readonly, scroller, layout, tree, columns, activeColumn, opened]);
-
-  const navigate = (logicalPath: string, rootSlug = win.rootSlug) => store().updateWindow(win.id, { rootSlug, logicalPath, selectedItems: [] });
-  const goTo = useCallback((folder: Place) => useWorkspaceStore.getState().updateWindow(frame.id, { rootSlug: folder.rootSlug, logicalPath: folder.path, selectedItems: [] }), [frame.id]);
-
-  function go(delta: -1 | 1) {
-    const index = history.index + delta;
-    const target = history.stack[index];
-    if (target === undefined) return;
-    setHistories({ ...histories, [tabId]: { ...history, index } });
-    viaHistory.current = true;
-    navigate(target.path, target.rootSlug);
-  }
-
-  function openItem(item: FileItem, where?: "window" | "tab") {
-    if (item.kind === "file") store().openPreview(win.rootSlug, item);
-    else if (where === "window") store().openWindow({ rootSlug: win.rootSlug, logicalPath: item.path, title: item.name });
-    else if (where === "tab") store().openTab(win.id, { rootSlug: win.rootSlug, logicalPath: item.path });
-    else navigate(item.path);
-  }
-
-  /** `among` is the list the item was clicked in: the window's, or in the column view that of one column. */
-  function selectItem(event: React.MouseEvent, item: FileItem, among = items) {
-    const paths = among.map((entry) => entry.path);
-    if (event.shiftKey && anchorPath && paths.includes(anchorPath)) {
-      const [from, to] = [paths.indexOf(anchorPath), paths.indexOf(item.path)].sort((a, b) => a - b);
-      store().selectItems(win.id, paths.slice(from, to! + 1));
-      return;
-    }
-    setAnchorPath(item.path);
-    if (event.metaKey || event.ctrlKey) toggleItem(item, among);
-    else store().selectItems(win.id, [item.path]);
-  }
-
-  function toggleItem(item: FileItem, among: FileItem[]) {
-    // A selection never spans two columns: adding to it from another column starts over there.
-    const listedHere = new Set(among.map((entry) => entry.path));
-    const current = win.selectedItems.filter((path) => listedHere.has(path));
-    store().selectItems(win.id, current.includes(item.path) ? current.filter((path) => path !== item.path) : [...current, item.path]);
-  }
-
-  /** A tap opens what a double click would, unless items are being picked out. In the column view a folder is selected instead, which lists it in the next column. */
-  function tapItem(item: FileItem, among = items) {
-    if (picking) {
-      setAnchorPath(item.path);
-      toggleItem(item, among);
-    } else if (columns && item.kind === "folder") {
-      setAnchorPath(item.path);
-      store().selectItems(win.id, [item.path]);
-    } else openItem(item);
-  }
-
-  /** Resting a finger on an item picks it out, and the context menu that opens for a long press is for it. */
-  function holdItem(item: FileItem, among = items) {
-    // A long press is heard twice on Android (the hold and its contextmenu event), and must come to the same.
-    const selection = store().windows.find((entry) => entry.id === win.id)?.selectedItems ?? [];
-    if (!selection.includes(item.path)) {
-      if (picking) toggleItem(item, among);
-      else store().selectItems(win.id, [item.path]);
-    }
-    setPicking(true);
-    setAnchorPath(item.path);
-    setMenuItem(item);
-    setMenuFolder(null);
-  }
-
-  function onContextItem(item: FileItem) {
-    setMenuItem(item);
-    if (!win.selectedItems.includes(item.path)) {
-      store().selectItems(win.id, [item.path]);
-      setAnchorPath(item.path);
-    }
-  }
-
-  /**
-   * Handles a drop on the window (its current folder), on one of the folders listed in it, or on a folder in the
-   * sidebar. Only the sidebar names a location: its folders may be anywhere, and whether one can be written to is
-   * for the server to say, not for the folder this window happens to show.
-   */
-  function dropInto(event: React.DragEvent, path: string, rootSlug?: string) {
-    event.preventDefault();
-    setDropActive(false);
-    if (rootSlug === undefined && (readonly || error)) return;
-    const destination = { rootSlug: rootSlug ?? win.rootSlug, path };
-    const dropped = droppedTree(event.dataTransfer);
-    if (dropped) {
-      void actions.upload(dropped, destination.path, destination.rootSlug);
-      return;
-    }
-    // Dropping items onto the folder they already live in is a no-op, and no folder goes into itself or one inside it.
-    const sources = placeable(
-      readDraggedFiles(event.dataTransfer).filter((source) => source.rootSlug !== destination.rootSlug || parentPath(source.path) !== path),
-      destination
-    );
-    const rect = event.currentTarget.closest("[data-window]")?.getBoundingClientRect();
-    if (sources.length === 0 || !rect) return;
-    setDropChoice({ sources, destination, x: Math.min(event.clientX - rect.left, rect.width - 180), y: Math.min(event.clientY - rect.top, rect.height - 130) });
-  }
-
-  /**
-   * A right click in the file area, before an item hears of it. On empty space the menu is for the folder there: in the
-   * column view, the column's. A finger is heard as it lands, since a long press opens the menu without a contextmenu event on iOS.
-   */
-  function onAreaMenu(event: React.SyntheticEvent) {
-    setMenuItem(null);
-    setMenuFolder((event.target as Element).closest<HTMLElement>("[data-folder]")?.dataset.folder ?? null);
-  }
-
-  /** Gives the keyboard back to the list: in the column view, to the column the selection is in. */
-  function focusList() {
-    const list = scroller?.querySelector("[aria-selected=true]")?.closest<HTMLElement>("[role=listbox]") ?? scroller?.querySelector<HTMLElement>("[role=listbox]");
-    list?.focus({ preventScroll: true });
-  }
-
-  function closeDropChoice() {
-    setDropChoice(null);
-    focusList();
-  }
-
-  const canTrash = (targets: FileItem[]) => !readonly && !targets.some((item) => item.readonly);
-
-  // Right-clicking acts on the whole selection when the clicked item is part of it.
-  const menuTargets = menuItem && selectedItems.some((item) => item.path === menuItem.path) ? selectedItems : menuItem ? [menuItem] : [];
-
-  function pickUpload(input: HTMLInputElement | null, folder: string) {
-    uploadFolder.current = folder;
-    input?.click();
-  }
-
-  const favoriteToggle = (path: string) => {
-    const here = { rootSlug: win.rootSlug, path };
-    const favorite = favorites.some((entry) => entry.rootSlug === here.rootSlug && entry.path === path);
-    return <KagoMenuItem icon={favorite ? <StarOff /> : <Star />} onClick={() => void setFavorite(here, !favorite)}>{favorite ? t("Remove from Favorites") : t("Add to Favorites")}</KagoMenuItem>;
-  };
-
-  /** Every action for a set of items, or for `folder` when there are none. Shared by right click and the toolbar. */
-  function renderMenu(targets: FileItem[], folder = win.logicalPath) {
-    const paths = targets.map((item) => item.path);
-    const single = targets.length === 1 ? targets[0]! : null;
-    const count = targets.length;
-    // Video and music open in a player, so the menu says what opening them does.
-    // Files of one kind of media can all be made into the same thing.
-    const kinds = new Set(targets.map(mediaKindOf));
-    const convertible = kinds.size === 1 ? [...kinds][0]! : null;
-    const playable = single?.kind === "file" && (isVideoType(single.type) || isMusicFile(single) || isCueSheet(single));
-    return targets.length > 0 ? (
-      <>
-        {single ? <KagoMenuItem icon={playable ? <Play /> : <FolderOpen />} shortcut="↩" onClick={() => openItem(single)}>{playable ? t("Play") : t("Open")}</KagoMenuItem> : null}
-        {single?.kind === "folder" ? <KagoMenuItem icon={<PanelTop />} onClick={() => openItem(single, "tab")}>{t("Open in new tab")}</KagoMenuItem> : null}
-        {single?.kind === "folder" ? <KagoMenuItem icon={<ExternalLink />} onClick={() => openItem(single, "window")}>{t("Open in new window")}</KagoMenuItem> : null}
-        {single?.kind === "folder" ? favoriteToggle(single.path) : null}
-        {single?.kind === "file" && isVideoType(single.type) ? (
-          <KagoMenuItem icon={<SquareArrowOutUpRight />} onClick={() => globalThis.open(videoPageUrl(win.rootSlug, single.path), "_blank", "noopener")}>{t("Play in new tab")}</KagoMenuItem>
-        ) : null}
-        <KagoMenuItem icon={<Download />} onClick={() => void actions.download(targets)}>{count > 1 ? t("Download {count} item | Download {count} items", { count }) : t("Download")}</KagoMenuItem>
-        <KagoMenuItem icon={<Inbox />} onClick={() => void actions.addToShelf(paths)}>{t("Add to Shelf")}</KagoMenuItem>
-        <KagoMenuItem icon={<Info />} shortcut="⌘I" onClick={() => store().updateWindow(win.id, { inspectorOpen: true })}>{t("Info, tags and sharing")}</KagoMenuItem>
-        {single && isPicture(single) ? (
-          <KagoMenuItem
-            icon={<Wallpaper />}
-            onClick={() =>
-              void run(async () => {
-                await setWallpaper({ rootSlug: win.rootSlug, path: single.path });
-                toast(t("Desktop background set"));
-              }, t("Couldn’t set the desktop background"))
-            }
-          >
-            {t("Set as desktop background")}
-          </KagoMenuItem>
-        ) : null}
-        {single && isPicture(single) ? (
-          <KagoMenuItem icon={<CircleUserRound />} onClick={() => chooseAvatar(win.rootSlug, single, win.id)}>{t("Set as profile picture…")}</KagoMenuItem>
-        ) : null}
-        <KagoMenuSeparator />
-        <KagoMenuItem icon={<Copy />} shortcut="⌘C" onClick={() => actions.copy(paths)}>{t("Copy")}</KagoMenuItem>
-        <KagoMenuItem icon={<Scissors />} shortcut="⌘X" disabled={readonly || targets.some((item) => item.readonly)} onClick={() => actions.cut(paths)}>{t("Cut")}</KagoMenuItem>
-        {single ? <KagoMenuItem icon={<Pencil />} disabled={readonly || single.readonly} onClick={() => void actions.rename(single)}>{t("Rename")}</KagoMenuItem> : null}
-        {count > 1 ? <KagoMenuItem icon={<Pencil />} disabled={readonly || targets.some((item) => item.readonly)} onClick={() => void actions.renameMany(targets)}>{t("Rename {count} item… | Rename {count} items…", { count })}</KagoMenuItem> : null}
-        <KagoMenuItem icon={<FolderPlus />} disabled={readonly || targets.some((item) => item.readonly)} onClick={() => void actions.newFolderWith(paths)}>{count > 1 ? t("New folder with {count} item | New folder with {count} items", { count }) : t("New folder with selection")}</KagoMenuItem>
-        <KagoMenuItem icon={<Archive />} disabled={readonly} onClick={() => void actions.compress(paths)}>{count > 1 ? t("Compress {count} item | Compress {count} items", { count }) : t("Compress")}</KagoMenuItem>
-        {targets.every(isArchive) ? <KagoMenuItem icon={<ArchiveRestore />} disabled={readonly} onClick={() => void actions.extract(paths)}>{t("Extract here")}</KagoMenuItem> : null}
-        {convertible ? <KagoMenuItem icon={<FileOutput />} disabled={readonly} onClick={() => void actions.convert(targets, convertible)}>{count > 1 ? t("Convert {count} item… | Convert {count} items…", { count }) : t("Convert…")}</KagoMenuItem> : null}
-        {single && convertible === "video" ? <KagoMenuItem icon={<ListVideo />} disabled={readonly} onClick={() => openTrackEditor({ window: win.id, rootSlug: win.rootSlug, item: single, siblings: allItems.filter((item) => parentPath(item.path) === parentPath(single.path)) })}>{t("Edit tracks…")}</KagoMenuItem> : null}
-        {single?.kind === "folder" ? <KagoMenuItem icon={<FileVideo />} disabled={readonly || single.readonly} onClick={() => autoConvertInto({ rootSlug: win.rootSlug, path: single.path })}>{t("Auto-convert into this folder…")}</KagoMenuItem> : null}
-        <KagoMenuSeparator />
-        <KagoMenuItem icon={<Trash2 />} destructive disabled={!canTrash(targets)} onClick={() => void actions.trash(paths)}>{t("Move to Trash")}</KagoMenuItem>
-      </>
-    ) : (
-      <>
-        {clip ? (
-          <>
-            <KagoMenuItem icon={<ClipboardPaste />} shortcut="⌘V" disabled={readonly} onClick={() => void actions.paste(folder)}>{t("Paste {count} item | Paste {count} items", { count: clip.items.length })}</KagoMenuItem>
-            <KagoMenuSeparator />
-          </>
-        ) : null}
-        <KagoMenuItem icon={<FolderPlus />} disabled={readonly} onClick={() => void actions.newFolder(folder)}>{t("New folder")}</KagoMenuItem>
-        <KagoMenuItem icon={<Upload />} disabled={readonly} onClick={() => pickUpload(uploadInput.current, folder)}>{t("Upload files")}</KagoMenuItem>
-        <KagoMenuItem icon={<FolderUp />} disabled={readonly} onClick={() => pickUpload(folderInput.current, folder)}>{t("Upload folder")}</KagoMenuItem>
-        <KagoMenuItem icon={<FileVideo />} disabled={readonly} onClick={() => autoConvertInto({ rootSlug: win.rootSlug, path: folder })}>{t("Auto-convert into this folder…")}</KagoMenuItem>
-        <KagoMenuSeparator />
-        <KagoMenuItem icon={<PanelTop />} shortcut="⌥T" onClick={() => store().openTab(win.id, win)}>{t("New tab")}</KagoMenuItem>
-        <KagoMenuItem icon={<ExternalLink />} onClick={() => store().openWindow({ rootSlug: win.rootSlug, logicalPath: win.logicalPath, title: win.title })}>{t("Open this folder in a new window (⌥N)")}</KagoMenuItem>
-        {favoriteToggle(folder)}
-        <KagoMenuItem icon={<RefreshCw />} shortcut="⌘R" onClick={() => void actions.refresh()}>{t("Refresh")}</KagoMenuItem>
-      </>
-    );
-  }
+  useScrollMemory(scroller, win, tabId, Boolean(fileList.data), history.viaHistory);
+  const { selectedItems, menuTargets, menuFolder, openItem, selectItem, tapItem, holdItem, onContextItem, onAreaMenu } = useItemInteractions(win, items, columns, history.navigate);
+  useFileViewRegistry({ win, items, columns, activeColumn, opened, columnReveal, tree, layout, scroller, readonly, error });
+  const drop = useFileDrop(win, readonly, error, actions, scroller);
+  const picker = useUploadPicker(actions, win.logicalPath);
+  const menu = (targets: typeof items, folder?: string) => <FileMenu win={win} targets={targets} folder={folder} readonly={readonly} allItems={allItems} actions={actions} openItem={openItem} picker={picker} />;
 
   return (
     <KagoWindow
@@ -526,35 +97,35 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
       }
       onDragOver={(event) => {
         event.preventDefault();
-        setDropActive(event.dataTransfer.types.includes("Files") ? "files" : "items");
+        drop.setDropActive(event.dataTransfer.types.includes("Files") ? "files" : "items");
       }}
-      onDragLeave={(event) => !event.currentTarget.contains(event.relatedTarget as Node | null) && setDropActive(false)}
-      onDrop={(event) => dropInto(event, win.logicalPath)}
+      onDragLeave={(event) => !event.currentTarget.contains(event.relatedTarget as Node | null) && drop.setDropActive(false)}
+      onDrop={(event) => drop.dropInto(event, win.logicalPath)}
     >
       <FileToolbar
         window={win}
         folderView={folderView}
         rootName={rootName}
         readonly={readonly || Boolean(error)}
-        canGoBack={history.index > 0}
-        canGoForward={history.index < history.stack.length - 1}
-        search={search}
-        onSearch={setSearch}
-        onGo={go}
-        onNavigate={(path) => navigate(path)}
+        canGoBack={history.canGoBack}
+        canGoForward={history.canGoForward}
+        search={search.search}
+        onSearch={search.setSearch}
+        onGo={history.go}
+        onNavigate={(path) => history.navigate(path)}
         onNewFolder={() => void actions.newFolder()}
-        onUpload={() => pickUpload(uploadInput.current, win.logicalPath)}
-        menu={error ? null : renderMenu(selectedItems)}
+        onUpload={() => picker.pickFiles(win.logicalPath)}
+        menu={error ? null : menu(selectedItems)}
       />
 
       <div className="@container/body relative flex min-h-0 flex-1">
-        {win.sidebarOpen === false ? null : <Sidebar window={win} roots={roots} onNavigate={goTo} onDragTarget={() => setDropActive(false)} onDropInto={(event, folder) => dropInto(event, folder.path, folder.rootSlug)} />}
+        {win.sidebarOpen === false ? null : <Sidebar window={win} roots={roots} onNavigate={history.goTo} onDragTarget={() => drop.setDropActive(false)} onDropInto={(event, folder) => drop.dropInto(event, folder.path, folder.rootSlug)} />}
         {error ? (
           <div className="min-h-0 min-w-0 flex-1">
             <WindowErrorState error={error} window={win} onRetry={() => void fileList.refetch()} />
           </div>
         ) : (
-          <KagoContextMenu menu={renderMenu(menuTargets, menuFolder ?? win.logicalPath)} className="flex min-h-0 min-w-0 flex-1">
+          <KagoContextMenu menu={menu(menuTargets, menuFolder ?? win.logicalPath)} className="flex min-h-0 min-w-0 flex-1">
             {/* The columns scroll one by one, so there is no one area for a rubber band to be drawn across. */}
             <div
               ref={setScroller}
@@ -568,13 +139,13 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
               onTouchStartCapture={onAreaMenu}
               {...(columns ? {} : marquee.handlers)}
             >
-              {fileList.isLoading || (searching && listed.length === 0 && searchPending && !searched.isError) ? <KagoLoading /> : null}
-              {fileList.data && listed.length === 0 && !(searching && searchPending && !searched.isError) ? (
+              {fileList.isLoading || (searching && listed.length === 0 && search.pending && !searched.isError) ? <KagoLoading /> : null}
+              {fileList.data && listed.length === 0 && !(searching && search.pending && !searched.isError) ? (
                 <KagoEmptyState
                   className="h-full"
                   icon={<Folder />}
                   title={searching ? (searched.isError ? t("Couldn’t load") : t("No matching items")) : t("This folder is empty")}
-                  description={searching ? (searched.isError ? searched.error.message : t("Nothing in this folder or its subfolders has “{query}” in its name.", { query: typed })) : readonly ? t("This location is read-only.") : t("Drag files in, or upload from the toolbar.")}
+                  description={searching ? (searched.isError ? searched.error.message : t("Nothing in this folder or its subfolders has “{query}” in its name.", { query: search.typed })) : readonly ? t("This location is read-only.") : t("Drag files in, or upload from the toolbar.")}
                 />
               ) : null}
               {listed.length === 0 ? null : columns ? (
@@ -588,10 +159,10 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
                   onSelectColumn={(column) => store().selectItems(win.id, column === 0 ? [] : [columns[column]!.folder])}
                   onOpen={openItem}
                   onContextItem={onContextItem}
-                  onDropInto={readonly ? undefined : dropInto}
+                  onDropInto={readonly ? undefined : drop.dropInto}
                 />
               ) : (
-                <FileList window={win} items={items} tree={tree} locateFrom={searching ? win.logicalPath : undefined} scroller={scroller} layout={layout} onSelect={selectItem} onOpen={openItem} onContextItem={onContextItem} onTap={tapItem} onHold={holdItem} onDropInto={readonly ? undefined : (event, folder) => dropInto(event, folder.path)} />
+                <FileList window={win} items={items} tree={tree} locateFrom={searching ? win.logicalPath : undefined} scroller={scroller} layout={layout} onSelect={selectItem} onOpen={openItem} onContextItem={onContextItem} onTap={tapItem} onHold={holdItem} onDropInto={readonly ? undefined : (event, folder) => drop.dropInto(event, folder.path)} />
               )}
               {marquee.style ? <div className="pointer-events-none absolute border border-accent bg-accent/15" style={marquee.style} /> : null}
             </div>
@@ -600,94 +171,10 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
         {win.inspectorOpen ? <Inspector window={win} selection={selectedItems} /> : null}
       </div>
 
-      <footer className="kago-toolbar flex h-8 shrink-0 items-center gap-1 border-t pointer-coarse:gap-2 border-line-strong px-3 text-xs text-muted">
-        {selectedItems.length > 0 ? (
-          <>
-            <span className="min-w-0 flex-1 truncate text-ink">
-              {t("{count} selected", { count: selectedItems.length })}
-              {selectedItems.every((item) => item.kind === "file") ? ` · ${formatSize(selectedItems.reduce((total, item) => total + item.size, 0))}` : ""}
-            </span>
-            <KagoIconButton label={t("Download")} className="kago-hit-slop size-6" onClick={() => void actions.download(selectedItems)}><Download /></KagoIconButton>
-            <KagoIconButton label={t("Add to Shelf")} className="kago-hit-slop size-6" onClick={() => void actions.addToShelf(selectedPaths)}><Inbox /></KagoIconButton>
-            <KagoIconButton label={t("Compress")} className="kago-hit-slop size-6" disabled={readonly} onClick={() => void actions.compress(selectedPaths)}><Archive /></KagoIconButton>
-            <KagoIconButton label={t("Move to Trash")} className="kago-hit-slop size-6" disabled={!canTrash(selectedItems)} onClick={() => void actions.trash(selectedPaths)}><Trash2 /></KagoIconButton>
-          </>
-        ) : (
-          <span className="truncate">{error ? t("Couldn’t load") : searching ? (results?.truncated ? t("Showing the first {count} matches", { count: found.length }) : t("{count} item found | {count} items found", { count: found.length })) : summary}{error ? "" : searching ? (searchPending ? ` · ${t("Searching…")}` : searched.isError && results ? ` · ${t("Couldn’t load")}` : "") : fileList.isError ? ` · ${t("Couldn’t load")}` : fileList.data?.partial ? ` · ${t("Loading…")}` : ""}</span>
-        )}
-      </footer>
+      <FileStatusBar selectedItems={selectedItems} allItems={allItems} readonly={readonly} actions={actions} error={error} search={search} fileList={fileList} />
 
-      {dropActive && !error ? (
-        <div className={cn("pointer-events-none absolute inset-0 z-20 rounded-[inherit]", !readonly && "ring-2 ring-accent ring-inset")}>
-          {/* Files brought from outside are told what letting go will do, or why it will do nothing. */}
-          {dropActive === "files" ? (
-            <span className="absolute bottom-11 left-1/2 flex h-8 max-w-[calc(100%-24px)] -translate-x-1/2 items-center gap-2 kago-glass rounded-full pr-3.5 pl-3 font-medium whitespace-nowrap">
-              {readonly ? <Ban className="text-muted" /> : <Upload className="text-accent" />}
-              <span className="truncate">{readonly ? t("This location is read-only.") : t("Drop to upload")}</span>
-            </span>
-          ) : null}
-        </div>
-      ) : null}
-      {dropChoice ? (
-        <>
-          <div className="absolute inset-0 z-20" onClick={closeDropChoice} />
-          {/* What to do with what was dropped is picked from a menu where it was dropped, as any other choice of one action is. Copying is the one already chosen, since it loses nothing. */}
-          <div
-            role="menu"
-            aria-label={t("{count} item | {count} items", { count: dropChoice.sources.length })}
-            className="absolute z-30 kago-glass flex min-w-44 flex-col rounded-lg p-1 select-none"
-            style={{ left: Math.max(8, dropChoice.x), top: Math.max(44, dropChoice.y) }}
-            onKeyDown={(event) => {
-              if (event.key === "Escape") closeDropChoice();
-              if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
-              event.preventDefault();
-              const items = [...event.currentTarget.querySelectorAll("button")];
-              const at = items.indexOf(document.activeElement as HTMLButtonElement);
-              items[(at + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length]?.focus();
-            }}
-          >
-            <KagoMenuNote className="max-w-60 truncate">
-              {t("{count} item | {count} items", { count: dropChoice.sources.length })}{dropChoice.destination.path === win.logicalPath && dropChoice.destination.rootSlug === win.rootSlug ? "" : ` → ${folderTitle(dropChoice.destination.rootSlug, dropChoice.destination.path)}`}
-            </KagoMenuNote>
-            {(["copy", "move"] as const).map((type) => (
-              <KagoMenuButton
-                key={type}
-                autoFocus={type === "copy"}
-                icon={type === "copy" ? <Copy /> : <FolderInput />}
-                onClick={() => {
-                  void actions.transfer(type, dropChoice.sources, dropChoice.destination);
-                  closeDropChoice();
-                }}
-              >
-                {type === "copy" ? t("Copy here") : t("Move here")}
-              </KagoMenuButton>
-            ))}
-            <KagoMenuSeparator />
-            <KagoMenuButton icon={<X />} onClick={closeDropChoice}>{t("Cancel")}</KagoMenuButton>
-          </div>
-        </>
-      ) : null}
-
-      <input
-        ref={uploadInput}
-        type="file"
-        multiple
-        hidden
-        onChange={(event) => {
-          void actions.upload(flatTree(Array.from(event.target.files ?? [])), uploadFolder.current ?? win.logicalPath);
-          event.target.value = "";
-        }}
-      />
-      <input
-        ref={folderInput}
-        type="file"
-        hidden
-        {...{ webkitdirectory: "" }}
-        onChange={(event) => {
-          void actions.upload(pickedFolderTree(Array.from(event.target.files ?? [])), uploadFolder.current ?? win.logicalPath);
-          event.target.value = "";
-        }}
-      />
+      <DropLayer win={win} active={error ? false : drop.dropActive} readonly={readonly} choice={drop.dropChoice} actions={actions} onClose={drop.closeDropChoice} />
+      {picker.inputs}
     </KagoWindow>
   );
 }
