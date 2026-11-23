@@ -65,5 +65,5 @@ export function useFileViewRegistry({ win, items, columns, activeColumn, opened,
       });
     }
     return () => void fileViews.delete(win.id);
-  }, [win.id, win.logicalPath, items, hasError, readonly, scroller, layout, tree, columns, activeColumn, opened]);
+  }, [win.id, win.logicalPath, items, hasError, readonly, scroller, layout, tree, columns, activeColumn, opened, columnReveal]);
 }

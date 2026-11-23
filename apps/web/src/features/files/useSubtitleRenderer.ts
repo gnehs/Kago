@@ -1,4 +1,4 @@
-import { useEffect, type RefObject } from "react";
+import { useEffect, useEffectEvent, type RefObject } from "react";
 import { cjkFontFamily, cjkFontsFor, cjkFontUrl, decodeSubtitle, srtToAss } from "@/lib/subtitles";
 import { t } from "@/lib/i18n";
 import { dismissToast, toast } from "@/stores/toast";
@@ -23,6 +23,7 @@ export function useSubtitleRenderer(videoRef: RefObject<HTMLVideoElement | null>
   const language = track?.language ?? "";
   // Only a converted SubRip file is laid out for the picture's shape.
   const shape = format === "srt" ? aspect : 0;
+  const reportError = useEffectEvent(onError);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -31,7 +32,7 @@ export function useSubtitleRenderer(videoRef: RefObject<HTMLVideoElement | null>
     const stop = new AbortController();
     let renderer: { dispose: () => void } | null = null;
     const fail = () => {
-      if (!cancelled) onError();
+      if (!cancelled) reportError();
     };
 
     void (async () => {
@@ -65,6 +66,5 @@ export function useSubtitleRenderer(videoRef: RefObject<HTMLVideoElement | null>
       stop.abort();
       renderer?.dispose();
     };
-    // `onError` only reports; a new callback identity must not rebuild the renderer.
   }, [videoRef, url, embedded, ownFonts, format, language, shape]);
 }

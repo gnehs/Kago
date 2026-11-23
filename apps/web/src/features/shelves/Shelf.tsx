@@ -77,9 +77,10 @@ export function Shelf() {
     };
   }, []);
 
+  const hasShelf = Boolean(shelf);
   useLayoutEffect(() => {
     if (element.current) setSize({ width: element.current.offsetWidth, height: element.current.offsetHeight });
-  }, [collapsed, itemCount, dragging, Boolean(shelf)]);
+  }, [collapsed, itemCount, dragging, hasShelf]);
 
   const canvas = getCanvasSize();
   const clamp = (x: number, y: number) => ({

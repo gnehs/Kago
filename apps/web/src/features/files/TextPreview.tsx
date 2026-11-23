@@ -87,7 +87,7 @@ export function TextPreviewWindow({ window }: { window: PreviewWindow }) {
       withdraw();
       globalThis.removeEventListener("beforeunload", warn);
     };
-  }, [dirty, window.id, item.name]);
+  }, [dirty, window.id, item]);
 
   async function save() {
     if (!editor.current || !loaded || readOnly || saving) return;

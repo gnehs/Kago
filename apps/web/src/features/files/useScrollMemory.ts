@@ -24,7 +24,7 @@ export function useScrollMemory(scroller: HTMLDivElement | null, win: FolderWind
     scrollRestore.current = null;
     // Tells the list which rows to render before the next paint, rather than a frame later.
     scroller.dispatchEvent(new Event("scroll"));
-  }, [scrollKey, tabId, win.rootSlug, win.logicalPath, scroller, listReady]);
+  }, [scrollKey, tabId, win.rootSlug, win.logicalPath, scroller, listReady, viaHistory]);
 
   useEffect(() => {
     if (!scroller) return;
