@@ -3,7 +3,7 @@ import { formatSize, formatWholeSize } from "@/lib/format";
 import type { FileTask } from "@/types/kago";
 import { t } from "@/lib/i18n";
 
-const typeLabels: Record<string, string> = {
+const typeLabels: Record<FileTask["type"], string> = {
   copy: t("Copy"),
   move: t("Move"),
   compress: t("Compress"),
