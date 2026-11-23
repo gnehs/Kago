@@ -189,7 +189,10 @@ const newTab = (folder: Pick<FileTab, "rootSlug" | "logicalPath">): FileTab => (
 
 /** Every window has at least the tab it is showing; one saved before there were tabs is given it here. */
 function withTabs(window: FileWindow): FileWindow {
-  if (window.tabs?.length && window.tabs.some((tab) => tab.id === window.activeTabId)) return window;
+  // A client from before tabs moves the window without its tab; where the window is wins.
+  if (window.tabs?.length && window.tabs.some((tab) => tab.id === window.activeTabId)) {
+    return { ...window, tabs: window.tabs.map((tab) => (tab.id === window.activeTabId ? { ...tab, rootSlug: window.rootSlug, logicalPath: window.logicalPath } : tab)) };
+  }
   const tab = newTab(window);
   return { ...window, tabs: [tab], activeTabId: tab.id };
 }

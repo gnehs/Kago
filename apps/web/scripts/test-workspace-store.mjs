@@ -321,3 +321,26 @@ test('a window saved before there were tabs comes back in a tab of its own, and 
   assert.deepEqual(shown('win_1'), { rootSlug: 'home', logicalPath: '/docs', selectedItems: ['/docs/a'], title: 'docs' });
   assert.deepEqual(focusedIds(), ['win_1'], 'the window on top takes the focus when none was saved');
 });
+
+test('a window moved by a client that does not know tabs shows where it was moved to, in that tab too', () => {
+  // A client from before tabs moves the window and saves it, carrying the tabs it read along unchanged.
+  store().hydrate({
+    ...emptyWorkspace,
+    windows: [
+      savedFileWindow({
+        logicalPath: '/moved',
+        title: 'moved',
+        selectedItems: ['/moved/a'],
+        activeTabId: 't1',
+        tabs: [
+          { id: 't1', rootSlug: 'home', logicalPath: '/before' },
+          { id: 't2', rootSlug: 'media', logicalPath: '/', selectedItems: [] },
+        ],
+      }),
+    ],
+  });
+  assert.deepEqual(shown('win_1'), { rootSlug: 'home', logicalPath: '/moved', selectedItems: ['/moved/a'], title: 'moved' });
+  store().activateTab('win_1', 't2');
+  store().activateTab('win_1', 't1');
+  assert.deepEqual(shown('win_1'), { rootSlug: 'home', logicalPath: '/moved', selectedItems: ['/moved/a'], title: 'moved' }, 'coming back to the tab finds it where the window was');
+});
