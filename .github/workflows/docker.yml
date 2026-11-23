@@ -51,7 +51,8 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - run: pnpm typecheck
+      # Type checks every package, and runs the React hooks rules over the web app.
+      - run: pnpm lint
 
       - run: pnpm i18n
 
