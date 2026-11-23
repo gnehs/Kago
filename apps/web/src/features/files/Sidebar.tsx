@@ -151,6 +151,7 @@ export function Sidebar({
 
   // Tab lands on the row last focused, else on the window's own folder. When that row is not drawn, on the first one.
   const tabStop = focusKey ?? folderKey(window.rootSlug, window.logicalPath);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- rows are drawn by folders that load on their own, so this checks after every render, not when tabStop changes.
   useLayoutEffect(() => {
     const rows = navRef.current ? [...navRef.current.querySelectorAll<HTMLElement>("[data-nav]")] : [];
     if (rows.length > 0 && !rows.some((row) => row.dataset.nav === tabStop)) setFocusKey(rows[0]!.dataset.nav!);

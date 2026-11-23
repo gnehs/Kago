@@ -132,7 +132,7 @@ function AvatarCropper({ request }: { request: AvatarRequest }) {
     };
     node.addEventListener("wheel", onWheel, { passive: false });
     return () => node.removeEventListener("wheel", onWheel);
-    // `transform` is made anew each time, out of these two.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `transform` is made anew each render out of these two; listing it would re-add the listener every render.
   }, [picture, frame]);
 
   async function save() {

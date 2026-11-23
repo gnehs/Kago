@@ -44,6 +44,7 @@ export function PublicSharePage({ token }: { token: string }) {
 
   useEffect(() => {
     void loadShare();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `loadShare` is made anew every render and sets state; the share is read again only for a new token.
   }, [token]);
 
   async function loadShare() {

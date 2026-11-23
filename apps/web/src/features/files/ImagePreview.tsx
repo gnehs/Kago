@@ -473,7 +473,7 @@ export function ImagePreviewWindow({ window }: { window: PreviewWindow }) {
     const current = viewRef.current;
     const bounded = limit(current);
     if (bounded.x !== current.x || bounded.y !== current.y) apply(bounded);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `limit` and `apply` are made anew every render and read the view from a ref; only a new box can push it out of bounds.
   }, [box.w, box.h]);
 
   const zoomed = view.z > 1.001;
@@ -625,7 +625,7 @@ function Slide({
     if (!staged || !current || state !== "loading") return;
     const timer = globalThis.setTimeout(onSlow, SLOW_MS);
     return () => globalThis.clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `onSlow` is a new arrow every render of the parent; restarting the timer with it would put off calling the picture slow.
   }, [staged, current, state]);
 
   // The browser knows how large a picture is from its first bytes, long before the last has arrived.
@@ -636,7 +636,7 @@ function Slide({
       if (image && image.naturalWidth > 0 && image.naturalHeight > 0) onSize({ w: image.naturalWidth, h: image.naturalHeight });
     }, 30);
     return () => globalThis.clearInterval(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `onSize` is a new arrow every render of the parent; the poll only needs to stop once the size is known.
   }, [staged, sizeKnown]);
 
   useEffect(() => {
@@ -649,7 +649,7 @@ function Slide({
 
   useEffect(() => {
     onStage(shown);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `onStage` is a new arrow every render of the parent; the stage is reported when it changes.
   }, [shown]);
 
   const layer = (visible: boolean) => `absolute inset-0 size-full ${visible ? "" : "opacity-0"}`;

@@ -75,6 +75,7 @@ export function FileWindowView({ window: frame, roots }: { window: FileWindow; r
     if (before.tabId !== tabId || (before.rootSlug === win.rootSlug && before.path === win.logicalPath)) return;
     search.reset();
     openFolders.closeAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `search` and `openFolders` are new objects every render; this runs when the place changes, not when they do.
   }, [win.logicalPath, win.rootSlug, tabId]);
 
   useScrollMemory(scroller, win, tabId, Boolean(fileList.data), history.viaHistory);
