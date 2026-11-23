@@ -11,13 +11,13 @@ import type { Actor, FileRef, FileTask } from "./types.js";
  */
 export type TaskLane = "files" | "media";
 
-/** A task's destination as its type shapes it, read only as far as what is said of every type here needs. */
+/** A task's destination, read only as far as the kinds here need. */
 export type TaskDestination = Partial<FileRef> & {
   job?: { id?: string; input?: FileRef };
   sync?: { jobId?: string; destination?: FileRef; options?: { dryRun?: boolean } };
 };
 
-/** What a finished task is told about, and how it says what it changed. */
+/** What `changes` is given: the finished task, and the ways to say what it changed. */
 type Announce = {
   db: Db;
   sources: FileRef[];
@@ -34,7 +34,6 @@ type Announce = {
 
 export type TaskKind = {
   lane: TaskLane;
-  /** Does the task's work, on the worker of its lane. */
   run(tasks: TaskService, task: FileTask, actor: Actor): Promise<void>;
   /**
    * What a retry checks again before it queues the task as it was. A type asked for through `create` gives back what
