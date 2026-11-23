@@ -21,6 +21,7 @@ import { RcloneJobStopped, refusedForPermission, type RcloneItem, type RcloneSta
 import { runRclone } from "../storage/rclone-daemon.js";
 import { isReservedName, REPLACE_PARTIAL, TRASH_FOLDER } from "../lib/system-files.js";
 import { isRemote, joinFs, transferProgress } from "../storage/remote-storage.js";
+import type { TaskPace as Pace, TaskType, TransferConflict } from "@kago/contract";
 import type { EventPublisher } from "../ws/events.js";
 import { ArchivePasswordService } from "./archive-password.service.js";
 import type { AuditService } from "./audit.service.js";
@@ -216,14 +217,14 @@ export class TaskService {
     return task;
   }
 
-  private queue(actor: Actor, type: string, sources: Array<{ rootSlug: string; path: string }>, destination: string, scheduled = false): FileTask {
+  private queue(actor: Actor, type: TaskType, sources: Array<{ rootSlug: string; path: string }>, destination: string, scheduled = false): FileTask {
     const task = this.insertQueued(actor, type, sources, destination, scheduled ? { scheduled } : {});
     this.events.publish({ type: "task.created", userId: task.created_by, task });
     return task;
   }
 
   /** Inserts a fresh queued task. `auth` is what goes into its auth snapshot beside the actor. */
-  private insertQueued(actor: Actor, type: string, sources: Array<{ rootSlug: string; path: string }>, destination: string | null, auth: Record<string, unknown>): FileTask {
+  private insertQueued(actor: Actor, type: TaskType, sources: Array<{ rootSlug: string; path: string }>, destination: string | null, auth: Record<string, unknown>): FileTask {
     const ts = now();
     const task: FileTask = {
       id: id("task"),
@@ -1880,7 +1881,7 @@ export class TaskService {
       .run(buffer.currentPath ?? null, buffer.processedFiles, buffer.processedBytes, buffer.pace?.fps ?? null, buffer.pace?.fps ?? null, buffer.pace?.height ?? null, now(), taskId);
 
     const task = this.get(taskId);
-    const patch: Record<string, unknown> = {
+    const patch: Partial<FileTask> = {
       processed_files: task.processed_files,
       processed_bytes: task.processed_bytes
     };
@@ -1946,12 +1947,6 @@ export class TaskService {
 
 /** Where a source of a copy or move ends up: `occupant` is what has its name there, when that makes way or takes it in. */
 type Landing = { mode: "new" | "skip" | "keep" | "replace" | "merge"; name: string; directory: boolean; clash?: Clash; occupant?: FolderEntry };
-
-/** Sizes are of files only, and a time is 0 where the location keeps none. */
-export type TransferConflict = { rootSlug: string; path: string; name: string; kind: "file" | "folder"; size: number; mtime: number; existing: { kind: "file" | "folder"; size: number; mtime: number }; same: boolean };
-
-/** How many frames a second a conversion is making its video at, and how tall that comes out. */
-type Pace = { fps: number; height: number | null };
 
 type ProgressBuffer = {
   processedFiles: number;

@@ -1,3 +1,4 @@
+import type { ConvertRun, ConvertRunFile } from "@kago/contract";
 import { z } from "zod";
 import type { Db } from "../db/db.js";
 import { row, rows } from "../db/db.js";
@@ -38,11 +39,6 @@ type ConvertJobRow = {
   created_at: number;
   updated_at: number;
 };
-
-/** How a run of a job went: when, how it ended, and how many files it converted, brought across as they were, or gave up on. */
-export type ConvertRun = { task_id: string; started_at: number; finished_at: number | null; status: string; error_message: string | null; scheduled: boolean; bytes: number; converted: number; copied: number; failed: number; /** What the files it converted measured together, before and after. */ size_in: number; size_out: number };
-/** What became of one file of a run. `size_out` is what reached the destination; a file that failed has none. */
-export type ConvertRunFile = { path: string; status: "converted" | "copied" | "failed"; size_in: number; size_out: number | null };
 
 /** How many of a run's files are sent at a time. */
 const MAX_RUN_FILES = 1000;

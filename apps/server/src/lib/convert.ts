@@ -1,5 +1,6 @@
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
+import type { ConvertSupport } from "@kago/contract";
 import { z } from "zod";
 import { hardwareEncoder, type ConvertAccel, type HardwareCodec } from "./convert-accel.js";
 import { AppError, errnoIs } from "./errors.js";
@@ -294,8 +295,7 @@ const NEEDED: { formats: Record<string, string[]>; audioCodecs: Record<string, s
   audioCodecs: AUDIO_ENCODERS
 };
 
-/** `videoCodecs` names the encoders of `VIDEO_ENCODERS` that can be asked for. */
-export type ConvertSupport = { available: boolean; formats: string[]; videoCodecs: string[]; audioCodecs: string[]; /** The GPU conversions can use and the codecs it encodes; null without one. */ hardware: { device: string; codecs: string[] } | null };
+export type { ConvertSupport } from "@kago/contract";
 
 /** The pictures an encoder takes, as this build of ffmpeg tells them; null when it does not say. */
 async function pixelFormats(ffmpeg: string, encoder: string): Promise<Set<string> | null> {

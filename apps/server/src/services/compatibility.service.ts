@@ -3,6 +3,7 @@ import { mkdtemp, realpath, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import type { CompatibilityCheck, CompatibilityDeviceScope, CompatibilityOperation, CompatibilityReport, CompatibilityStatus } from "@kago/contract";
 import { readRenderNodes } from "../lib/hw-accel.js";
 
 const execFileAsync = promisify(execFile) as (
@@ -18,34 +19,6 @@ const TEST_FRAMES = 4;
 const TEST_SOURCE = "testsrc2=size=320x180:rate=4:duration=1";
 const COMMON_ARGS = ["-nostdin", "-hide_banner", "-loglevel", "error", "-y"];
 const PROGRESS_ARGS = ["-progress", "pipe:1", "-nostats"];
-
-export type CompatibilityStatus = "passed" | "failed" | "unsupported" | "unavailable";
-export type CompatibilityOperation = "encode" | "decode";
-export type CompatibilityDeviceScope = "device" | "system" | "none";
-
-export type CompatibilityCheck = {
-  id: string;
-  label: string;
-  codec: "H.264" | "HEVC Main 10";
-  operation: CompatibilityOperation;
-  backend: "CPU" | "NVIDIA NVENC / CUDA" | "VA-API" | "Apple VideoToolbox";
-  hardware: boolean;
-  status: CompatibilityStatus;
-  /** Stable localization key. Never includes a process error, command line, or local path. */
-  detail: string;
-  durationMs: number | null;
-  deviceId: string | null;
-  deviceLabel: string | null;
-  deviceScope: CompatibilityDeviceScope;
-};
-
-export type CompatibilityReport = {
-  checkedAt: string;
-  ffmpeg: { available: boolean; version: string | null };
-  checks: CompatibilityCheck[];
-  /** Stable localization keys describing discovery limits; raw process errors are never returned. */
-  discoveryNotes?: string[];
-};
 
 type RunOptions = { timeoutMs: number; maxBufferBytes: number };
 type RunResult = { stdout: string; stderr: string };

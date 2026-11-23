@@ -1,15 +1,6 @@
-export type SyncChange = { action: "copy" | "delete" | "mkdir" | "rmdir" | "touch"; path: string; size?: number };
-export type SyncSummary = Record<SyncChange["action"], number> & { bytes: number };
-/** What the changes add up to, counted over all of them and not only the ones that are listed. */
-export type SyncStats = {
-  /** The bytes of what would be deleted, as far as the tool said how big that is. */
-  freed: number;
-  /** What would be copied, by the ending of its name; the many small ones are folded into the one with no ending. */
-  extensions: Array<{ extension: string; count: number; bytes: number }>;
-  /** The folders at the top that most would change in; `name` is empty for what lies beside them. */
-  folders: Array<{ name: string; copy: number; delete: number; bytes: number }>;
-  moreFolders: number;
-};
+import type { SyncChange, SyncStats, SyncSummary } from "@kago/contract";
+
+export type { SyncChange, SyncStats, SyncSummary } from "@kago/contract";
 
 /** A trial run of a big folder may name far more than anyone reads; the counts are of all of it all the same. */
 const LISTED_CHANGES = 20_000;

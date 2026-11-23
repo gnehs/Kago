@@ -1,5 +1,6 @@
 import fsp from "node:fs/promises";
 import path from "node:path";
+import type { LibraryIcon } from "@kago/contract";
 import { AppError } from "../lib/errors.js";
 import { ICON_MAX_BYTES, readIcon, type IconType } from "../lib/icon-image.js";
 import { pruneKeptFiles, useKeptFile } from "../lib/kept-files.js";
@@ -75,8 +76,6 @@ function score(entry: Indexed, wanted: string, words: string[]): number {
   if (wanted.length >= 3 && entry.keys.some((key) => key.includes(wanted))) return 30;
   return 0;
 }
-
-export type LibraryIcon = { source: string; name: string; label: string; /** Whether the icon goes by the very name that was asked for. */ exact: boolean };
 
 type State = { ready?: Promise<void>; index?: { fetchedAt: number; entries: Indexed[]; byName: Map<string, Indexed> }; refreshing?: Promise<void>; failedAt: number };
 

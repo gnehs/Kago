@@ -2,9 +2,7 @@ import dns from "node:dns";
 import http from "node:http";
 import https from "node:https";
 import net from "node:net";
-
-/** Whether a service lets itself be shown inside a page of Kago's: it does, it does not, or it could not be asked. */
-export type FrameVerdict = "allowed" | "blocked" | "unknown";
+import type { FrameVerdict } from "@kago/contract";
 
 /**
  * Where the question is never sent. A shortcut leads to a service on the home network, so private addresses are

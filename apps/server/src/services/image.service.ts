@@ -4,6 +4,7 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
+import type { FilmRecipe, ImageMetadata } from "@kago/contract";
 import { ExifTool, type Tags } from "exiftool-vendored";
 import { AppError } from "../lib/errors.js";
 import { guardedInput } from "../lib/ffmpeg-input.js";
@@ -20,59 +21,6 @@ const MAX_EDGE = 4096;
 const CONVERT_TIMEOUT_MS = 60_000;
 /** Embedded previews, largest wins; a thumbnail is only used when a camera embedded nothing better. */
 const PREVIEW_TAGS = ["JpgFromRaw", "PreviewImage", "OtherImage", "ThumbnailImage"] as const;
-
-export type ImageMetadata = {
-  camera?: string;
-  lens?: string;
-  /** Wall-clock time where the picture was taken, as the camera wrote it. */
-  takenAt?: string;
-  timeZone?: string;
-  exposureTime?: string;
-  aperture?: number;
-  iso?: number;
-  focalLength?: string;
-  focalLength35?: string;
-  exposureCompensation?: number;
-  flash?: string;
-  whiteBalance?: string;
-  meteringMode?: string;
-  exposureProgram?: string;
-  width?: number;
-  height?: number;
-  colorSpace?: string;
-  software?: string;
-  gps?: { latitude: number; longitude: number; altitude?: number };
-  filmRecipe?: FilmRecipe;
-};
-
-/** The picture settings a Fujifilm camera developed the frame with, which its photographers trade as recipes. */
-export type FilmRecipe = {
-  /** Named as the camera's menu names it. */
-  simulation?: string;
-  grainRoughness?: string;
-  grainSize?: string;
-  colorChrome?: string;
-  colorChromeBlue?: string;
-  /** In the steps the menu counts in. */
-  whiteBalanceShift?: { red: number; blue: number };
-  /** Kelvin, when the white balance was set as a temperature. */
-  colorTemperature?: number;
-  /** A percentage: 100, 200 or 400. */
-  dynamicRange?: number;
-  dynamicRangeAuto?: boolean;
-  dRangePriority?: string;
-  dRangePriorityAuto?: boolean;
-  highlight?: number;
-  shadow?: number;
-  color?: number;
-  sharpness?: number;
-  noiseReduction?: number;
-  clarity?: number;
-  /** Warm above zero, cool below. */
-  monochromeWarmCool?: number;
-  /** Green above zero, magenta below. */
-  monochromeMagentaGreen?: number;
-};
 
 /** How a picture the browser cannot decode is turned into one it can; null for a file that needs no such help. */
 export function renditionKind(name: string): "heif" | "raw" | null {

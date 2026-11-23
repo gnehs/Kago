@@ -8,15 +8,10 @@ import { AppError } from "./errors.js";
 import { guardedInput, guardedProbe } from "./ffmpeg-input.js";
 import { idleCores } from "./idle-cores.js";
 import { pruneKeptFiles, useKeptFile } from "./kept-files.js";
+import type { StoryboardLayout as Storyboard } from "@kago/contract";
 import { logger } from "./logger.js";
 
 const execFileAsync = promisify(execFile);
-
-/**
- * The small pictures shown over a video's timeline: one every `interval` seconds, laid out in sheets of
- * `columns` by `rows`, each `width` by `height`. Picture `n` is in sheet `n / (columns * rows)`.
- */
-export type Storyboard = { interval: number; count: number; width: number; height: number; columns: number; rows: number; sheets: number };
 
 export type StoryboardState = ({ status: "ready" } & Storyboard) | { status: "pending" | "unavailable" };
 

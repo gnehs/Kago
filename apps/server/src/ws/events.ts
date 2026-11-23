@@ -1,26 +1,8 @@
 import type { WebSocket } from "@fastify/websocket";
+import type { ServerEvent } from "@kago/contract";
 import type { Actor } from "../services/types.js";
 
-export type ServerEvent =
-  | { type: "task.created"; userId: string; task: unknown }
-  | { type: "task.progress"; userId: string; taskId: string; patch: Record<string, unknown> }
-  | { type: "task.done"; userId: string; taskId: string }
-  | { type: "task.failed"; userId: string; taskId: string; error: string }
-  | { type: "shelf.updated"; userId: string; shelfId: string }
-  | { type: "workspace.updated"; userId: string }
-  | { type: "settings.updated"; userId: string }
-  | { type: "account.updated"; userId: string }
-  | { type: "permission.updated"; userId?: string }
-  | { type: "roots.updated" }
-  | { type: "apps.updated"; userId?: string }
-  | { type: "share.updated"; userId: string }
-  | FsChanged;
-
-/**
- * What changed in a location: `paths` are folders that hold something else now, `gone` items that are no longer where
- * they were, and `trees` folders anything inside which may have changed. It goes to whoever may see the location.
- */
-export type FsChanged = { type: "fs.changed"; rootSlug: string; paths: string[]; gone?: string[]; trees?: string[] };
+export type { FsChanged, ServerEvent } from "@kago/contract";
 
 type ClientContext = Pick<Actor, "id" | "role" | "disabled">;
 /** Whether someone may see what is in a location; without one, nobody hears of changes in any. */

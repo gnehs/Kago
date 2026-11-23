@@ -22,6 +22,7 @@ import type { PermissionService } from "./permission.service.js";
 import type { PreferenceService } from "./preference.service.js";
 import type { StorageService } from "./storage.service.js";
 import type { Actor } from "./types.js";
+import type { FileItem as ListedItem, FileMeta, FolderListing as Listing } from "@kago/contract";
 import type { EventPublisher, FsChanged } from "../ws/events.js";
 
 /** Subtitles are read whole by the player; anything larger is not a text subtitle. */
@@ -141,9 +142,6 @@ const LIST_BATCH_MS = 200;
 const MAX_SEARCH_RESULTS = 1000;
 /** How many batches may be waiting on what was asked about their entries while the folder is read further. */
 const LIST_BATCHES_AHEAD = 3;
-
-export type ListedItem = { name: string; path: string; kind: "folder" | "file"; size: number; mtime: number; type: string; readonly: boolean; tags: FileTag[] };
-type Listing = { rootSlug: string; path: string; readonly: boolean; items: ListedItem[] };
 
 export class FsService {
   private readonly thumbnailer: Thumbnailer;
@@ -282,7 +280,7 @@ export class FsService {
     }));
   }
 
-  async meta(actor: Actor, rootSlug: string, logicalPath: string) {
+  async meta(actor: Actor, rootSlug: string, logicalPath: string): Promise<FileMeta> {
     const safe = await this.paths.resolveExisting(rootSlug, logicalPath);
     this.permissions.require(actor, "view", safe.root, safe.logicalPath);
     if (this.storage.isRemote(safe)) {

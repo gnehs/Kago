@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import { createHmac, randomBytes } from "node:crypto";
 import path from "node:path";
+import type { PluginPreviewer } from "@kago/contract";
 import { z } from "zod";
 import { logger } from "../lib/logger.js";
 
@@ -48,7 +49,6 @@ const manifestSchema = z.object({
 });
 
 export type PreviewerManifest = z.infer<typeof previewerSchema>;
-export type CompanionRule = PreviewerManifest["companions"][number];
 
 export type PluginManifest = {
   id: PluginId;
@@ -60,9 +60,6 @@ export type PluginManifest = {
   token: string;
   previewers: PreviewerManifest[];
 };
-
-/** A previewer as the interface is told of it: what it opens, and the page to frame for it. */
-export type PluginPreviewer = { pluginId: PluginId; previewerId: string; extensions: string[]; title: string; src: string; companions: CompanionRule[]; panorama: boolean };
 
 /**
  * The plugins found at start, from the folders given in order: Kago's own first, then those installed beside its

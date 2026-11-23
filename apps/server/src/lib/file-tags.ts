@@ -2,15 +2,13 @@ import { execFile } from "node:child_process";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
+import type { FileTag, FileTagColor } from "@kago/contract";
 import { logger } from "./logger.js";
 
-/** A tag kept on the file itself, the way macOS Finder keeps its own. */
-export type FileTag = { name: string; color: FileTagColor | null };
-
-export type FileTagColor = (typeof colors)[number];
+export type { FileTag } from "@kago/contract";
 
 // Finder stores each tag as "name\n<index>", the index pointing into this list (0 is no colour).
-const colors = ["gray", "green", "purple", "blue", "yellow", "red", "orange"] as const;
+const colors = ["gray", "green", "purple", "blue", "yellow", "red", "orange"] as const satisfies readonly FileTagColor[];
 
 // Object references in the stored list are one byte, and the path limit of a name is plenty for a tag.
 export const fileTagSchema = z.object({

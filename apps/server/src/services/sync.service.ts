@@ -7,6 +7,7 @@ import { logger } from "../lib/logger.js";
 import type { RemoteManager } from "../storage/remote-manager.js";
 import type { AuditService } from "./audit.service.js";
 import type { AuthService } from "./auth.service.js";
+import type { SyncRun } from "@kago/contract";
 import type { SyncChange, SyncStats, SyncSummary } from "./sync-report.js";
 import { syncEndpointSchema, syncOptionsSchema, type SyncEndpoint, type TaskService } from "./task.service.js";
 import { isActiveTaskStatus, type Actor, type FileTask } from "./types.js";
@@ -46,20 +47,6 @@ type SyncJobRow = {
   created_by: string;
   created_at: number;
   updated_at: number;
-};
-
-type SyncRun = {
-  task_id: string;
-  started_at: number;
-  finished_at: number | null;
-  status: string;
-  error_message: string | null;
-  dry_run: boolean;
-  scheduled: boolean;
-  /** What a run that was not a trial brought across. */
-  bytes: number;
-  /** How much the run changed, or would have changed when it was a trial; known only of a run that ended well. */
-  summary: (SyncSummary & { truncated: boolean }) | null;
 };
 
 const SCHEDULER_INTERVAL_MS = 30_000;

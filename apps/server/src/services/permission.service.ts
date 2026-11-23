@@ -3,6 +3,7 @@ import type { Db } from "../db/db.js";
 import { row, rows } from "../db/db.js";
 import { AppError } from "../lib/errors.js";
 import { id, now } from "../lib/ids.js";
+import type { PermissionRule } from "@kago/contract";
 import type { AuditService } from "./audit.service.js";
 import type { Actor, Root } from "./types.js";
 
@@ -18,14 +19,6 @@ export const permissionSetSchema = z.object({
   rootId: z.string().min(1),
   level: z.enum(levels).nullable()
 });
-
-type PermissionRule = {
-  id: string;
-  principal_type: "user" | "group";
-  principal_id: string;
-  root_id: string;
-  level: Level;
-};
 
 /**
  * A rule is for a whole location: whoever it names gets its level on everything inside, and nothing in a location

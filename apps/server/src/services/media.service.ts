@@ -16,6 +16,7 @@ import { PANORAMA_HEIGHT, planPanorama, videoStreams, type VideoStream } from ".
 import { sharpAvailable, writeAvif } from "../lib/sharp.js";
 import { Storyboards, type StoryboardState } from "../lib/storyboard.js";
 import { isPictureFormat, streamLanguage, TEXT_SUBTITLES, type PictureSubtitleFormat, type SubtitleFormat } from "../lib/subtitles.js";
+import type { MediaEncoder as Encoder, HdrTransfer as Hdr, MediaInfo, MediaTags, Storyboard, SubtitleList, SubtitleTrack } from "@kago/contract";
 import type { FsService } from "./fs.service.js";
 
 const execFileAsync = promisify(execFile);
@@ -60,62 +61,9 @@ export const mediaAudioSchema = z.object({
   start: z.coerce.number().min(0).max(1_000_000).default(0)
 });
 
-export type MediaInfo = {
-  /** False when ffmpeg is missing; the client then falls back to playing the file as-is. */
-  transcode: boolean;
-  duration: number;
-  /** ffprobe's format name list, e.g. `mov,mp4,m4a,3gp,3g2,mj2` or `matroska,webm`. */
-  container: string;
-  /** Bits per second of the whole file; 0 where a figure is not known, here and for each stream. */
-  bitrate: number;
-  /**
-   * `hdr` names the transfer curve of an HDR picture: PQ (HDR10, Dolby Vision with an HDR10 base) or HLG.
-   * `peak` is the brightest its mastering display went, in nits; 0 when the file does not say.
-   * `level` is as ffprobe gives it (41 for H.264 level 4.1, 153 for HEVC level 5.1); `dolbyVision` is the profile, 0 without it.
-   */
-  video: {
-    codec: string;
-    profile: string;
-    level: number;
-    width: number;
-    height: number;
-    fps: number;
-    bitDepth: number;
-    pixelFormat: string;
-    interlaced: boolean;
-    bitrate: number;
-    hdr: Hdr | null;
-    peak: number;
-    dolbyVision: number;
-  } | null;
-  audio: Array<{ codec: string; profile: string; channels: number; layout: string; sampleRate: number; bitrate: number; language: string; title: string; default: boolean }>;
-  /** Subtitle streams inside the file, numbered among themselves. `text` ones are handed to the player; `picture` ones are drawn into the frames. */
-  subtitles: Array<{ index: number; codec: string; language: string; title: string; default: boolean; forced: boolean; sdh: boolean; text: boolean; picture: boolean }>;
-  /** Fonts attached to the file for its subtitles, numbered among the attachments. */
-  fonts: Array<{ index: number; name: string }>;
-  /** Heights the file can be transcoded to, tallest first. */
-  qualities: number[];
-  /** What the file says about itself: ID3 in an MP3, Vorbis comments in FLAC and Ogg, atoms in MP4, and so on. Empty where it says nothing. */
-  tags: MediaTags;
-  /** Which of the file's video streams is a picture attached to it, such as the cover of an album; null without one. */
-  cover: number | null;
-  /** Whether the file's sound can be re-encoded as Opus as it plays, for music the browser cannot decode. */
-  audioTranscode: boolean;
-  /** What does the encoding: `software`, or the GPU API in use. */
-  encoder: Encoder;
-  /** Whether an HDR source can be transcoded as HDR (10-bit HEVC), for a screen that shows it. */
-  hdrOutput: boolean;
-  /** Whether an HDR source can be tone-mapped to SDR. Without it the transcoded picture is washed out. */
-  tonemap: boolean;
-};
-
-export type MediaTags = { title: string; artist: string; album: string; albumArtist: string; track: string; date: string; genre: string; lyrics: string };
-
 const NO_TAGS: MediaTags = { title: "", artist: "", album: "", albumArtist: "", track: "", date: "", genre: "", lyrics: "" };
 /** Lyrics are kept whole in a tag; anything longer than a song's worth is not lyrics. */
 const MAX_LYRICS_LENGTH = 100_000;
-
-type Hdr = "pq" | "hlg";
 
 /** A picture subtitle file beside the video. */
 /** Only what tells one version of a file from the next is read from `stat`. */
@@ -124,8 +72,6 @@ type FileVersion = { size: number; mtimeMs: number };
 /** A sidecar subtitle file as `FsService.subtitles` lists it. */
 type Sidecar = Awaited<ReturnType<FsService["subtitles"]>>[number];
 export type PictureSubtitleFile = { absolutePath: string; stat: FileVersion; format: PictureSubtitleFormat };
-
-type Encoder = "software" | "nvenc" | "vaapi" | "vaapi-cqp" | "videotoolbox";
 
 /** How one encoder is driven: what goes before the input, after the scaler, and in place of libx264. */
 type Accel = {
@@ -222,7 +168,7 @@ const LIFT_GAIN = 2.03;
 /** The mastering peak assumed for a picture that does not give one. */
 const DEFAULT_PEAK_NITS = 1000;
 /** What the player calls each kind of picture subtitle. */
-const PICTURE_FORMAT_NAMES: Record<string, string> = { hdmv_pgs_subtitle: "pgs", dvd_subtitle: "vobsub", dvb_subtitle: "dvb" };
+const PICTURE_FORMAT_NAMES: Record<string, SubtitleTrack["format"]> = { hdmv_pgs_subtitle: "pgs", dvd_subtitle: "vobsub", dvb_subtitle: "dvb" };
 /** The demuxer each kind of subtitle file is read with. It is named outright, so what is in the file cannot pick another. */
 const SUBTITLE_DEMUXER: Record<PictureSubtitleFormat, string> = { pgs: "sup", vobsub: "vobsub" };
 /** How far before the video a subtitle file starts being read, so a line already on screen at that point is there. */
@@ -381,7 +327,7 @@ export class MediaService {
    * Every subtitle track of a video the player can offer: the files lying next to it, then the streams inside it,
    * with the picture ones last, and the fonts its container carries.
    */
-  async subtitleTracks(rootSlug: string, logicalPath: string, file: { input: string; stat: FileVersion }, sidecars: Sidecar[]) {
+  async subtitleTracks(rootSlug: string, logicalPath: string, file: { input: string; stat: FileVersion }, sidecars: Sidecar[]): Promise<SubtitleList> {
     // Something ffprobe cannot read simply has no streams of its own to offer.
     const info = await this.info(file.input, file.stat).catch(() => null);
     const own = new URLSearchParams({ rootSlug, path: logicalPath }).toString();
@@ -418,7 +364,7 @@ export class MediaService {
           })),
         ...embedded
           .filter((stream) => stream.text)
-          .map(({ index, codec, text, picture, ...track }) => ({
+          .map(({ index, codec, text, picture, ...track }): SubtitleTrack => ({
             ...track,
             format: codec === "ass" || codec === "ssa" ? "ass" : "srt",
             id: `stream:${index}`,
@@ -429,7 +375,7 @@ export class MediaService {
         ...pictureFiles,
         ...embedded
           .filter((stream) => stream.picture && info?.transcode)
-          .map(({ index, codec, text, picture, ...track }) => ({
+          .map(({ index, codec, text, picture, ...track }): SubtitleTrack => ({
             ...track,
             format: PICTURE_FORMAT_NAMES[codec] ?? "picture",
             id: `stream:${index}`,
@@ -469,7 +415,7 @@ export class MediaService {
   }
 
   /** The pictures shown over the timeline of a video. They are made while nothing is being encoded, so the first to ask finds none yet. */
-  async storyboard(absolutePath: string, stat: FileVersion): Promise<StoryboardState & { version: number }> {
+  async storyboard(absolutePath: string, stat: FileVersion): Promise<Storyboard> {
     const { video, duration } = await this.info(absolutePath, stat);
     // The sheets are kept by the browser; `version` tells those of one state of the file from the next.
     const version = Math.round(stat.mtimeMs);

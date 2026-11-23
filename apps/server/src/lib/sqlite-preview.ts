@@ -3,16 +3,15 @@ import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { AppError } from "./errors.js";
 import { loaderExecArgv } from "./fork-args.js";
+import type { SqlitePage, SqliteTable } from "@kago/contract";
 
 const MAX_CONCURRENT_SQLITE_PREVIEWS = 2;
 const SQLITE_PREVIEW_TIMEOUT_MS = 2500;
 const MAX_WORKER_OLD_SPACE_MB = 64;
 export const MAX_SQLITE_PAGE = 200;
 
-export type SqliteCell = string | number | null | { blob: number };
-export type SqliteTable = { name: string; type: "table" | "view"; columns: Array<{ name: string; type: string; pk: boolean; notNull: boolean }> };
+export type { SqliteCell, SqlitePage, SqliteTable } from "@kago/contract";
 export type SqliteOverview = { tables: SqliteTable[] };
-export type SqlitePage = { columns: string[]; rows: SqliteCell[][]; offset: number; hasMore: boolean; total: number | null };
 
 export type SqlitePreviewRequest =
   | { kind: "overview"; file: string }
