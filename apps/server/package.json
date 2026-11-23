@@ -34,6 +34,7 @@
     "yauzl": "^3.4.0"
   },
   "devDependencies": {
+    "@kago/contract": "workspace:*",
     "@types/adm-zip": "^0.5.7",
     "@types/mime-types": "^2.1.4",
     "tsx": "^4.19.4",
