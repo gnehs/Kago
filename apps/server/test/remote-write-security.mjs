@@ -47,6 +47,28 @@ test("failed restoration keeps the recovery copy on the remote", async () => {
   assert.equal(recovery?.[1].toString("utf8"), "original");
 });
 
+test("an upload whose bytes all landed is kept when SMB cannot set its modified time", async () => {
+  const remote = new FakeRclone();
+  remote.failModTime = true;
+  const storage = new RemoteStorage(remote, roots, env);
+
+  await storage.write(root, "/scans/scene.ply", Readable.from([Buffer.from("splat "), Buffer.from("data")]));
+
+  assert.equal(remote.text("scans/scene.ply"), "splat data");
+  assert.deepEqual([...remote.files.keys()], ["scans/scene.ply"]);
+});
+
+test("an upload cut short is still refused when SMB cannot set its modified time", async () => {
+  const remote = new FakeRclone();
+  remote.failModTime = true;
+  remote.truncate = true;
+  const storage = new RemoteStorage(remote, roots, env);
+
+  await assert.rejects(storage.write(root, "/scans/scene.ply", Readable.from([Buffer.from("splat data")])));
+
+  assert.deepEqual([...remote.files.keys()], []);
+});
+
 test("a remote's trash is recognised under any spelling, as SMB finds it under every one", async () => {
   const webdav = new RemoteStorage(new FakeRclone(), roots, env);
   for (const spelling of ["/.kago-trash", "/.KAGO-TRASH", "/.Kago-Trash/item"]) assert.ok(webdav.isTrash(root, spelling), spelling);
@@ -68,6 +90,8 @@ class FakeRclone {
   failUpload = false;
   failCommitAfterPartialWrite = false;
   failRestore = false;
+  failModTime = false;
+  truncate = false;
 
   constructor(files = {}) {
     this.files = new Map(Object.entries(files));
@@ -82,7 +106,9 @@ class FakeRclone {
     if (this.failUpload) throw new Error("simulated upload failure before remote replacement");
     const chunks = [];
     for await (const chunk of source) chunks.push(Buffer.from(chunk));
-    this.files.set(path.posix.join(directory, name), Buffer.concat(chunks));
+    const data = Buffer.concat(chunks);
+    this.files.set(path.posix.join(directory, name), this.truncate ? data.subarray(1) : data);
+    if (this.failModTime) throw new Error("Update SetModTime failed: chtimes: connection error: i/o timeout");
   }
 
   async call(command, body) {

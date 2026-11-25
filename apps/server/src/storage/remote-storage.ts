@@ -2,7 +2,7 @@ import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto
 import { createWriteStream } from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
-import type { Readable } from "node:stream";
+import { Transform, type Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { Env } from "../config/env.js";
 import { AppError } from "../lib/errors.js";
@@ -164,11 +164,23 @@ export class RemoteStorage {
     const move = (from: string, to: string) =>
       this.client.call("operations/movefile", { srcFs: fs, srcRemote: from, dstFs: fs, dstRemote: to });
 
+    let sent = 0;
+    const counted = source.pipe(
+      new Transform({
+        transform(chunk: Buffer, _encoding, done) {
+          sent += chunk.length;
+          done(null, chunk);
+        }
+      })
+    );
+    source.once("error", (error) => counted.destroy(error));
     try {
-      await this.client.upload(fs, directory, tempName, source);
+      await this.client.upload(fs, directory, tempName, counted);
     } catch (error) {
-      await remove(temp);
-      throw remoteFailure(error);
+      if (!(await this.landedWhole(fs, temp, sent, error))) {
+        await remove(temp);
+        throw remoteFailure(error);
+      }
     }
 
     let hasBackup = false;
@@ -213,6 +225,25 @@ export class RemoteStorage {
         logger.warn("remote write succeeded but its recovery copy could not be removed", error instanceof Error ? error.message : error);
       });
     }
+  }
+
+  /**
+   * rclone's SMB backend closes a written file and only then sets its modified time; a server slow to answer that
+   * last call (seen from a Synology after a 15 GB upload) fails the whole upload with every byte already on disk.
+   * The time is of no use to a new upload, so a file found whole is kept. The connection that timed out is
+   * dropped by rclone, and the server may take a moment to answer a fresh one.
+   */
+  private async landedWhole(fs: string, temp: string, sent: number, error: unknown): Promise<boolean> {
+    if (!(error instanceof Error) || !error.message.includes("SetModTime failed")) return false;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 5_000));
+      const landed = await this.client.stat(fs, temp).catch(() => undefined);
+      if (landed === undefined) continue;
+      const whole = !!landed && !landed.IsDir && landed.Size === sent;
+      if (whole) logger.warn("remote upload kept although its modified time could not be set", error.message);
+      return whole;
+    }
+    return false;
   }
 
   async mkdir(root: Root, logicalPath: string): Promise<void> {
