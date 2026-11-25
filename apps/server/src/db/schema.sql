@@ -202,6 +202,7 @@ CREATE TABLE IF NOT EXISTS external_app_positions (
 CREATE TABLE IF NOT EXISTS share_links (
   id TEXT PRIMARY KEY,
   token_hash TEXT UNIQUE NOT NULL,
+  token_sealed TEXT,
   root_id TEXT NOT NULL,
   path TEXT NOT NULL,
   permission_json TEXT NOT NULL,

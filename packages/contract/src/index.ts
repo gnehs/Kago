@@ -137,6 +137,27 @@ export type ServerEvent =
 
 export type ServerEventType = ServerEvent["type"];
 
+/** A share link as its creator, or an admin, is sent it. Who else may use it is decided again on every visit. */
+export type ShareLink = {
+  id: string;
+  root_id: string;
+  path: string;
+  /** `{ "mode": "view_only" | "download" | "upload_only" }`. */
+  permission_json: string;
+  expires_at: number | null;
+  max_downloads: number | null;
+  download_count: number;
+  has_password: boolean;
+  created_by: string;
+  disabled: number;
+  created_at: number;
+  updated_at: number;
+  /** What follows `/s/` in the link. Null for a link made before Kago kept them: it still works, but can only be copied once it is given a new one. */
+  token: string | null;
+  /** Whoever made the link, with what their avatar is drawn from. */
+  creator: { id: string; email: string; display_name: string; avatar_at: number | null };
+};
+
 export type PermissionLevel = "view" | "edit";
 
 /** A rule is for a whole location: whoever it names gets its level on everything inside. */

@@ -26,6 +26,8 @@ export function openDb(env: Env, options: { interruptRunningTasks?: boolean } = 
   addMissingColumns(db, "external_apps", { embed: "INTEGER NOT NULL DEFAULT 0", auth_user: "TEXT", auth_secret: "TEXT" });
   addMissingColumns(db, "sessions", { identity_id: "TEXT", oidc_refresh: "TEXT", oidc_checked_at: "INTEGER" });
   addMissingColumns(db, "group_members", { source: "TEXT" });
+  // Links made before this have none, and are copied again only once they are given a new token.
+  addMissingColumns(db, "share_links", { token_sealed: "TEXT" });
   addMissingColumns(db, "tasks", { cleared: "INTEGER NOT NULL DEFAULT 0", pace_fps: "REAL", pace_height: "INTEGER", phase: "TEXT", job_id: "TEXT" });
   holdJobsToOneActiveRun(db);
   migratePermissionLevels(db);

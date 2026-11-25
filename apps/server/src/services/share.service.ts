@@ -1,9 +1,11 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import { lookup } from "mime-types";
+import type { ShareLink } from "@kago/contract";
 import type { Db } from "../db/db.js";
 import { row, rows } from "../db/db.js";
 import { AttemptLimiter, guesserOf } from "../lib/attempts.js";
+import type { SecretBox } from "../lib/secret-box.js";
 import { hashPassword, randomToken, sha256, verifyPassword } from "../lib/crypto.js";
 import { AppError } from "../lib/errors.js";
 import { id, now } from "../lib/ids.js";
@@ -22,6 +24,13 @@ export const shareSchema = z.object({
   password: z.string().min(8).max(1024).optional(),
   expiresAt: z.number().int().optional(),
   maxDownloads: z.number().int().positive().optional()
+});
+
+/** A link fixed in place: null takes its expiry or its limit away. */
+export const sharePatchSchema = z.object({
+  disabled: z.boolean().optional(),
+  expiresAt: shareSchema.shape.expiresAt.unwrap().nullable().optional(),
+  maxDownloads: shareSchema.shape.maxDownloads.unwrap().nullable().optional()
 });
 
 /** How many wrong passwords one address may try for one link, and for all links, before it is made to wait. */
@@ -43,16 +52,17 @@ export class ShareService {
     private readonly audit: AuditService,
     private readonly events: EventPublisher,
     private readonly storage: StorageService,
-    private readonly secret: string
+    private readonly secret: string,
+    private readonly secrets: SecretBox
   ) {}
 
   private readonly attempts = new AttemptLimiter();
 
-  list(actor: Actor) {
+  list(actor: Actor): ShareLink[] {
     const items =
       actor.role === "ADMIN"
-        ? rows<ResolvedShare>(this.db.prepare("SELECT * FROM share_links ORDER BY created_at DESC").all())
-        : rows<ResolvedShare>(this.db.prepare("SELECT * FROM share_links WHERE created_by = ? ORDER BY created_at DESC").all(actor.id));
+        ? rows<ListedShare>(this.db.prepare(`${LISTED_SHARE} ORDER BY share_links.created_at DESC`).all())
+        : rows<ListedShare>(this.db.prepare(`${LISTED_SHARE} WHERE share_links.created_by = ? ORDER BY share_links.created_at DESC`).all(actor.id));
     return items.map((share) => this.publicShare(share));
   }
 
@@ -68,6 +78,7 @@ export class ShareService {
     const share = {
       id: id("share"),
       token_hash: sha256(token),
+      token_sealed: this.secrets.seal(token),
       root_id: safe.root.id,
       path: safe.logicalPath,
       permission_json: JSON.stringify({ mode: input.mode }),
@@ -83,13 +94,14 @@ export class ShareService {
     this.db
       .prepare(
         `INSERT INTO share_links
-        (id, token_hash, root_id, path, permission_json, expires_at, max_downloads, password_hash,
+        (id, token_hash, token_sealed, root_id, path, permission_json, expires_at, max_downloads, password_hash,
          created_by, disabled, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         share.id,
         share.token_hash,
+        share.token_sealed,
         share.root_id,
         share.path,
         share.permission_json,
@@ -110,29 +122,60 @@ export class ShareService {
       result: "success"
     });
     this.events.publish({ type: "share.updated", userId: actor.id });
-    return { ...this.publicShare(share), token };
+    return this.listed(share.id);
   }
 
-  async patch(actor: Actor, shareId: string, input: { disabled?: boolean }) {
+  async patch(actor: Actor, shareId: string, input: z.infer<typeof sharePatchSchema>): Promise<ShareLink> {
     const existing = this.getForActor(actor, shareId);
-    if (input.disabled === false) {
+    const onlyDisabling = input.disabled === true && input.expiresAt === undefined && input.maxDownloads === undefined;
+    // Anything but turning a link off may bring a dead one back, so it takes what making the link took.
+    if (!onlyDisabling) {
       const safe = await this.paths.resolveRootById(existing.root_id, existing.path);
       this.requireCreatorPermissions(existing, safe);
     }
     this.db
-      .prepare("UPDATE share_links SET disabled = COALESCE(?, disabled), updated_at = ? WHERE id = ?")
-      .run(input.disabled === undefined ? null : input.disabled ? 1 : 0, now(), shareId);
+      .prepare("UPDATE share_links SET disabled = ?, expires_at = ?, max_downloads = ?, updated_at = ? WHERE id = ?")
+      .run(
+        input.disabled === undefined ? existing.disabled : input.disabled ? 1 : 0,
+        input.expiresAt === undefined ? existing.expires_at : input.expiresAt,
+        input.maxDownloads === undefined ? existing.max_downloads : input.maxDownloads,
+        now(),
+        shareId
+      );
     this.audit.write({
       actorType: "user",
       actorId: actor.id,
-      action: "disable_share",
+      action: input.expiresAt === undefined && input.maxDownloads === undefined ? "disable_share" : "update_share",
       rootId: existing.root_id,
       path: existing.path,
-      target: { shareId, disabled: input.disabled },
+      target: { shareId, ...input },
       result: "success"
     });
     this.events.publish({ type: "share.updated", userId: existing.created_by });
-    return this.publicShare(this.get(shareId));
+    return this.listed(shareId);
+  }
+
+  /**
+   * A new link for the share. A response already being sent runs to its end, but the old link answers nothing after it:
+   * the visit and password cookies are kept under the old link's path, so they go with it.
+   */
+  rotate(actor: Actor, shareId: string): ShareLink {
+    const existing = this.getForActor(actor, shareId);
+    const token = randomToken();
+    this.db
+      .prepare("UPDATE share_links SET token_hash = ?, token_sealed = ?, updated_at = ? WHERE id = ?")
+      .run(sha256(token), this.secrets.seal(token), now(), shareId);
+    this.audit.write({
+      actorType: "user",
+      actorId: actor.id,
+      action: "rotate_share",
+      rootId: existing.root_id,
+      path: existing.path,
+      target: { shareId },
+      result: "success"
+    });
+    this.events.publish({ type: "share.updated", userId: existing.created_by });
+    return this.listed(shareId);
   }
 
   delete(actor: Actor, shareId: string): void {
@@ -173,21 +216,7 @@ export class ShareService {
 
   /** `visitor` lets someone already counted against the limit go on using a link that has since reached it. */
   resolveToken(token: string, visitor?: ShareVisitor) {
-    const share = row<{
-      id: string;
-      token_hash: string;
-      root_id: string;
-      path: string;
-      permission_json: string;
-      expires_at: number | null;
-      max_downloads: number | null;
-      download_count: number;
-      password_hash: string | null;
-      created_by: string;
-      disabled: number;
-      created_at: number;
-      updated_at: number;
-    }>(this.db.prepare("SELECT * FROM share_links WHERE token_hash = ?").get(sha256(token)));
+    const share = row<ResolvedShare>(this.db.prepare("SELECT * FROM share_links WHERE token_hash = ?").get(sha256(token)));
     if (!share || share.disabled) throw new AppError(404, "Share not found", "SHARE_NOT_FOUND");
     if (share.expires_at && share.expires_at < now()) throw new AppError(410, "Share expired", "SHARE_EXPIRED");
     if (share.max_downloads && share.download_count >= share.max_downloads && !(visitor && this.counted(share.id, visitor))) {
@@ -379,15 +408,37 @@ export class ShareService {
     this.permissions.require(actor, shareLevel(mode), safe.root, safe.logicalPath);
   }
 
-  private publicShare(share: ResolvedShare): PublicShareLink {
-    const { token_hash: _tokenHash, password_hash, ...safeShare } = share;
-    return { ...safeShare, has_password: Boolean(password_hash) };
+  private listed(shareId: string): ShareLink {
+    const share = row<ListedShare>(this.db.prepare(`${LISTED_SHARE} WHERE share_links.id = ?`).get(shareId));
+    if (!share) throw new AppError(404, "Share not found", "SHARE_NOT_FOUND");
+    return this.publicShare(share);
+  }
+
+  private publicShare(share: ListedShare): ShareLink {
+    const { token_hash: _tokenHash, token_sealed, password_hash, creator_email, creator_name, creator_avatar_at, ...safeShare } = share;
+    return {
+      ...safeShare,
+      has_password: Boolean(password_hash),
+      token: this.openToken(token_sealed),
+      creator: { id: share.created_by, email: creator_email, display_name: creator_name, avatar_at: creator_avatar_at }
+    };
+  }
+
+  /** A token sealed with a `storage.key` that has since been lost is as good as none: the link can be given a new one. */
+  private openToken(sealed: string | null): string | null {
+    if (!sealed) return null;
+    try {
+      return this.secrets.open(sealed);
+    } catch {
+      return null;
+    }
   }
 }
 
 type ResolvedShare = {
   id: string;
   token_hash: string;
+  token_sealed: string | null;
   root_id: string;
   path: string;
   permission_json: string;
@@ -401,9 +452,10 @@ type ResolvedShare = {
   updated_at: number;
 };
 
-type PublicShareLink = Omit<ResolvedShare, "token_hash" | "password_hash"> & {
-  has_password: boolean;
-};
+type ListedShare = ResolvedShare & { creator_email: string; creator_name: string; creator_avatar_at: number | null };
+
+const LISTED_SHARE = `SELECT share_links.*, users.email AS creator_email, users.display_name AS creator_name, users.avatar_at AS creator_avatar_at
+  FROM share_links JOIN users ON users.id = share_links.created_by`;
 
 /** A cookie alone could be handed around, and an address alone is shared by a whole office: a visitor is the two together. */
 const visitorKey = (visitor: ShareVisitor) => sha256(`share-visit:${visitor.address}:${visitor.session ?? ""}`);

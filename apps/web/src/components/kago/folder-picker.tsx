@@ -7,7 +7,7 @@ import { api } from "@/api/client";
 import { useFileList } from "@/api/hooks";
 import { Button } from "@/components/ui/button";
 import { controlClass, FieldGroup, Input } from "@/components/ui/input";
-import { displayPath, nfc } from "@/lib/paths";
+import { baseName, displayPath, nfc } from "@/lib/paths";
 import { run } from "@/lib/run";
 import { cn } from "@/lib/utils";
 import type { Root } from "@/types/kago";
@@ -19,7 +19,11 @@ import { KagoSpinner } from "@/components/kago/empty-state";
 
 export type FolderRef = { rootSlug: string; path: string };
 
+/** What a picker that takes files too hands back: where it is, and enough of it to draw its icon. */
+export type PickedItem = FolderRef & { kind: "file" | "folder"; name: string; type: string };
+
 const FOLDER = { kind: "folder", type: "", name: "" } as const;
+const folderOf = (folder: FolderRef, name = ""): PickedItem => ({ ...folder, kind: "folder", name, type: "" });
 const INDENT = 14;
 /** A folder of thousands of folders is not drawn whole; the ones past this are reached by typing the path. */
 const MAX_CHILDREN = 300;
@@ -52,19 +56,31 @@ export function FolderField({ label, hint, roots, value, onChange, writable, cla
         <span className="shrink-0 text-xs text-muted">{t("Choose…")}</span>
       </button>
       <KagoDialog open={open} onClose={() => setOpen(false)} title={label} className="w-[min(480px,calc(100%-32px))]">
-        {open ? <Picker roots={roots} initial={value} writable={writable} onCancel={() => setOpen(false)} onChoose={(folder) => { onChange(folder); setOpen(false); }} /> : null}
+        {open ? <Picker roots={roots} initial={folderOf(value)} writable={writable} onCancel={() => setOpen(false)} onChoose={(folder) => { onChange({ rootSlug: folder.rootSlug, path: folder.path }); setOpen(false); }} /> : null}
       </KagoDialog>
     </FieldGroup>
   );
 }
 
-type Tree = { roots: Root[]; selected: FolderRef; expanded: ReadonlySet<string>; select: (folder: FolderRef) => void; toggle: (folder: FolderRef) => void; choose: (folder: FolderRef) => void; writable?: boolean };
+/**
+ * The same picker for a place where a file will do as well as a folder (what to share): it lists what is in each
+ * folder, files included, and hands back whichever was chosen with its name and type.
+ */
+export function ItemPickerDialog({ open, onClose, title, roots, value, onChoose }: { open: boolean; onClose: () => void; title: string; roots: Root[]; value: PickedItem | FolderRef | null; onChoose: (item: PickedItem) => void }) {
+  return (
+    <KagoDialog open={open} onClose={onClose} title={title} className="w-[min(480px,calc(100%-32px))]">
+      {open ? <Picker files roots={roots} initial={value && "kind" in value ? value : folderOf(value ?? { rootSlug: roots[0]?.slug ?? "", path: "/" })} onCancel={onClose} onChoose={(item) => { onChoose(item); onClose(); }} /> : null}
+    </KagoDialog>
+  );
+}
 
-function Picker({ roots, initial, writable, onCancel, onChoose }: { roots: Root[]; initial: FolderRef; writable?: boolean; onCancel: () => void; onChoose: (folder: FolderRef) => void }) {
+type Tree = { roots: Root[]; selected: PickedItem; expanded: ReadonlySet<string>; select: (item: PickedItem) => void; toggle: (folder: FolderRef) => void; choose: (item: PickedItem) => void; writable?: boolean; /** Files are listed and can be chosen. */ files?: boolean };
+
+function Picker({ roots, initial, writable, files, onCancel, onChoose }: { roots: Root[]; initial: PickedItem; writable?: boolean; files?: boolean; onCancel: () => void; onChoose: (item: PickedItem) => void }) {
   const queryClient = useQueryClient();
   const offered = useMemo(() => (writable ? roots.filter((root) => !root.readonly) : roots), [roots, writable]);
-  const [selected, setSelected] = useState<FolderRef>(() => (offered.some((root) => root.slug === initial.rootSlug) ? initial : { rootSlug: offered[0]?.slug ?? "", path: "/" }));
-  // Opened down to where it points, so the folder chosen last is in sight.
+  const [selected, setSelected] = useState<PickedItem>(() => (offered.some((root) => root.slug === initial.rootSlug) ? initial : folderOf({ rootSlug: offered[0]?.slug ?? "", path: "/" })));
+  // Opened down to where it points, so the item chosen last is in sight.
   const [expanded, setExpanded] = useState(() => new Set(lineage(selected).slice(0, -1).map(keyOf).concat(offered.length === 1 ? [keyOf({ rootSlug: offered[0]!.slug, path: "/" })] : [])));
   const [naming, setNaming] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -80,7 +96,7 @@ function Picker({ roots, initial, writable, onCancel, onChoose }: { roots: Root[
     if (!made) return;
     await queryClient.invalidateQueries({ queryKey: keys.fs.list(selected.rootSlug, selected.path) });
     expand(selected);
-    setSelected({ rootSlug: selected.rootSlug, path: made.path });
+    setSelected(folderOf({ rootSlug: selected.rootSlug, path: made.path }, baseName(made.path)));
     setNaming(null);
   }
 
@@ -89,6 +105,7 @@ function Picker({ roots, initial, writable, onCancel, onChoose }: { roots: Root[
     selected,
     expanded,
     writable,
+    files,
     select: setSelected,
     choose: onChoose,
     toggle: (folder) =>
@@ -103,7 +120,7 @@ function Picker({ roots, initial, writable, onCancel, onChoose }: { roots: Root[
     <div className="flex min-h-0 flex-col gap-3 p-4 pt-2">
       <div role="tree" aria-label={t("Folders")} className="kago-well h-[min(22rem,50vh)] overflow-y-auto overscroll-contain rounded-md p-1">
         {offered.length === 0 ? <p className="m-0 p-3 text-muted">{t("There is no location to choose a folder in.")}</p> : null}
-        {offered.map((item) => <Node key={item.id} tree={tree} folder={{ rootSlug: item.slug, path: "/" }} label={item.name} depth={0} root={item} />)}
+        {offered.map((item) => <Node key={item.id} tree={tree} entry={folderOf({ rootSlug: item.slug, path: "/" }, item.name)} depth={0} root={item} />)}
       </div>
       {naming === null ? (
         <p className="m-0 flex min-w-0 items-center gap-2 text-xs text-muted">
@@ -124,7 +141,7 @@ function Picker({ roots, initial, writable, onCancel, onChoose }: { roots: Root[
         </form>
       )}
       <KagoDialogActions>
-        <Button className="mr-auto" disabled={!root || Boolean(root.readonly) || naming !== null} onClick={() => setNaming("")}><FolderPlus />{t("New folder")}</Button>
+        <Button className="mr-auto" disabled={!root || Boolean(root.readonly) || selected.kind === "file" || naming !== null} onClick={() => setNaming("")}><FolderPlus />{t("New folder")}</Button>
         <Button onClick={onCancel}>{t("Cancel")}</Button>
         <Button variant="default" disabled={!root} onClick={() => onChoose(selected)}>{t("Choose")}</Button>
       </KagoDialogActions>
@@ -132,9 +149,10 @@ function Picker({ roots, initial, writable, onCancel, onChoose }: { roots: Root[
   );
 }
 
-function Node({ tree, folder, label, depth, root }: { tree: Tree; folder: FolderRef; label: string; depth: number; /** The location itself, for the row that stands for its top. */ root?: Root }) {
-  const open = tree.expanded.has(keyOf(folder));
-  const current = tree.selected.rootSlug === folder.rootSlug && tree.selected.path === folder.path;
+function Node({ tree, entry, depth, root }: { tree: Tree; entry: PickedItem; depth: number; /** The location itself, for the row that stands for its top. */ root?: Root }) {
+  const isFile = entry.kind === "file";
+  const open = !isFile && tree.expanded.has(keyOf(entry));
+  const current = tree.selected.rootSlug === entry.rootSlug && tree.selected.path === entry.path;
   const row = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (current) row.current?.scrollIntoView({ block: "nearest" });
@@ -146,16 +164,16 @@ function Node({ tree, folder, label, depth, root }: { tree: Tree; folder: Folder
         ref={row}
         role="treeitem"
         tabIndex={current ? 0 : -1}
-        aria-expanded={open}
+        aria-expanded={isFile ? undefined : open}
         aria-selected={current}
         className={cn("flex h-7 cursor-default items-center gap-1.5 rounded-md pr-2 outline-none select-none hover:bg-hover focus-ring", current && "kago-selection hover:bg-transparent")}
         style={{ paddingLeft: 4 + depth * INDENT }}
-        onClick={() => tree.select(folder)}
-        onDoubleClick={() => tree.choose(folder)}
+        onClick={() => tree.select(entry)}
+        onDoubleClick={() => tree.choose(entry)}
         onKeyDown={(event) => {
-          if (event.key === "Enter") tree.choose(folder);
-          else if (event.key === "ArrowRight" && !open) tree.toggle(folder);
-          else if (event.key === "ArrowLeft" && open) tree.toggle(folder);
+          if (event.key === "Enter") tree.choose(entry);
+          else if (event.key === "ArrowRight" && !isFile && !open) tree.toggle(entry);
+          else if (event.key === "ArrowLeft" && open) tree.toggle(entry);
           else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
             // The rows as they stand on the page are the order the arrows walk them in.
             const rows = [...(row.current?.closest("[role=tree]")?.querySelectorAll<HTMLElement>("[role=treeitem]") ?? [])];
@@ -166,39 +184,49 @@ function Node({ tree, folder, label, depth, root }: { tree: Tree; folder: Folder
           event.preventDefault();
         }}
       >
-        <button
-          type="button"
-          tabIndex={-1}
-          aria-label={open ? t("Collapse folder") : t("Expand folder")}
-          className={cn("flex size-4 shrink-0 items-center justify-center rounded-sm outline-none", current ? "text-inherit" : "text-muted hover:text-ink")}
-          onClick={(event) => {
-            event.stopPropagation();
-            tree.toggle(folder);
-          }}
-          onDoubleClick={(event) => event.stopPropagation()}
-        >
-          <ChevronRight className={cn("size-3.5 transition-transform", open && "rotate-90")} />
-        </button>
-        {root ? <RootGlyph root={root} /> : <FileIcon item={FOLDER} className="shrink-0" />}
-        <span className="min-w-0 flex-1 truncate">{label}</span>
+        {isFile ? (
+          <span className="size-4 shrink-0" />
+        ) : (
+          <button
+            type="button"
+            tabIndex={-1}
+            aria-label={open ? t("Collapse folder") : t("Expand folder")}
+            className={cn("flex size-4 shrink-0 items-center justify-center rounded-sm outline-none", current ? "text-inherit" : "text-muted hover:text-ink")}
+            onClick={(event) => {
+              event.stopPropagation();
+              tree.toggle(entry);
+            }}
+            onDoubleClick={(event) => event.stopPropagation()}
+          >
+            <ChevronRight className={cn("size-3.5 transition-transform", open && "rotate-90")} />
+          </button>
+        )}
+        {root ? <RootGlyph root={root} /> : <FileIcon item={isFile ? entry : FOLDER} className="shrink-0" />}
+        <span className="min-w-0 flex-1 truncate">{entry.name}</span>
       </div>
-      {open ? <Children tree={tree} folder={folder} depth={depth + 1} /> : null}
+      {open ? <Children tree={tree} folder={entry} depth={depth + 1} /> : null}
     </>
   );
 }
 
-/** The folders inside one that is open in the tree. They are only asked for once it is opened. */
+/** What is inside one that is open in the tree: its folders, and with `files` its files after them. They are only asked for once it is opened. */
 function Children({ tree, folder, depth }: { tree: Tree; folder: FolderRef; depth: number }) {
   const list = useFileList(folder.rootSlug, folder.path);
-  const folders = useMemo(() => list.data?.items.filter((item) => item.kind === "folder" && !(tree.writable && item.readonly)).sort((a, b) => byName.compare(a.name, b.name)), [list.data, tree.writable]);
+  const entries = useMemo(
+    () =>
+      list.data?.items
+        .filter((item) => (item.kind === "folder" ? !(tree.writable && item.readonly) : tree.files))
+        .sort((a, b) => (a.kind === b.kind ? byName.compare(a.name, b.name) : a.kind === "folder" ? -1 : 1)),
+    [list.data, tree.writable, tree.files]
+  );
   const note = (text: string) => <span className="block truncate py-1 text-xs text-faint" style={{ paddingLeft: 24 + depth * INDENT }}>{text}</span>;
 
-  if (!folders) return list.isError ? note(t("Couldn’t load")) : note(t("Loading"));
-  if (folders.length === 0) return note(t("No folders inside"));
+  if (!entries) return list.isError ? note(t("Couldn’t load")) : note(t("Loading"));
+  if (entries.length === 0) return note(tree.files ? t("Nothing inside") : t("No folders inside"));
   return (
     <>
-      {folders.slice(0, MAX_CHILDREN).map((item) => <Node key={item.path} tree={tree} folder={{ rootSlug: folder.rootSlug, path: item.path }} label={nfc(item.name)} depth={depth} />)}
-      {folders.length > MAX_CHILDREN ? note(t("{count} more folder | {count} more folders", { count: folders.length - MAX_CHILDREN })) : null}
+      {entries.slice(0, MAX_CHILDREN).map((item) => <Node key={item.path} tree={tree} entry={{ rootSlug: folder.rootSlug, path: item.path, kind: item.kind === "folder" ? "folder" : "file", name: nfc(item.name), type: item.type }} depth={depth} />)}
+      {entries.length > MAX_CHILDREN ? note(tree.files ? t("{count} more item | {count} more items", { count: entries.length - MAX_CHILDREN }) : t("{count} more folder | {count} more folders", { count: entries.length - MAX_CHILDREN })) : null}
     </>
   );
 }

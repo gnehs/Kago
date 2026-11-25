@@ -997,6 +997,46 @@
     opacity: 0.5;
   }
 
+  /* A switch (`KagoSwitch`): a groove sunk into the surface with a knob raised like a button; on, the groove is lit in the accent. */
+  .kago-switch {
+    position: relative;
+    display: inline-block;
+    width: 30px;
+    height: 18px;
+    flex-shrink: 0;
+    border-radius: 9px;
+    background: var(--kago-well);
+    box-shadow: var(--kago-well-shadow);
+    outline: none;
+  }
+
+  .kago-switch[data-checked] {
+    background: linear-gradient(var(--kago-primary-from), var(--kago-primary-to));
+    box-shadow: 0 0 0 1px var(--kago-primary-ring), 0 1px 2px rgb(8 30 90 / 0.3), inset 0 1px 0 rgb(255 255 255 / 0.45);
+  }
+
+  .kago-switch-thumb {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--kago-raised);
+    box-shadow: var(--kago-raised-shadow);
+    transition: transform 120ms;
+  }
+
+  .kago-switch[data-checked] .kago-switch-thumb {
+    transform: translateX(12px);
+    background: #ffffff;
+  }
+
+  .kago-switch:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--kago-accent) 50%, transparent);
+    outline-offset: 2px;
+  }
+
   /* An app icon sits on the desktop, and throws a shadow in its own colour. */
   .kago-app-icon {
     width: 100%;

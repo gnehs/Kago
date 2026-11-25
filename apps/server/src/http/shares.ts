@@ -6,7 +6,7 @@ import { randomToken } from "../lib/crypto.js";
 import { isBrowserViewable } from "../lib/viewable.js";
 import { MAX_PASSWORD } from "../services/auth.service.js";
 import { maxUploadFiles } from "../services/fs.service.js";
-import { SHARE_ACCESS_SECONDS, SHARE_VISIT_SECONDS, shareSchema, type ShareVisitor } from "../services/share.service.js";
+import { SHARE_ACCESS_SECONDS, SHARE_VISIT_SECONDS, sharePatchSchema, shareSchema, type ShareVisitor } from "../services/share.service.js";
 import { isPlayable, sendUserFile } from "./respond.js";
 import { idParams } from "./schemas.js";
 import type { Services } from "./services.js";
@@ -17,9 +17,9 @@ const userRoutes = signedIn((app, s) => {
   app.post("/api/shares", async (request) => s.shares.create(request.actor, shareSchema.parse(request.body)));
   app.patch("/api/shares/:id", async (request) => {
     const params = idParams.parse(request.params);
-    const body = z.object({ disabled: z.boolean().optional() }).parse(request.body);
-    return s.shares.patch(request.actor, params.id, body);
+    return s.shares.patch(request.actor, params.id, sharePatchSchema.parse(request.body));
   });
+  app.post("/api/shares/:id/rotate", async (request) => s.shares.rotate(request.actor, idParams.parse(request.params).id));
   app.delete("/api/shares/:id", async (request) => {
     s.shares.delete(request.actor, idParams.parse(request.params).id);
     return { ok: true };

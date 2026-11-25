@@ -1,16 +1,18 @@
 import { useState, type ReactNode } from "react";
-import { Link2, X } from "lucide-react";
+import { Copy, Link2, X } from "lucide-react";
 import { useFileMeta, useFolderSize, useImageMetadata, useMediaInfo, useRoots, useShares } from "@/api/hooks";
 import { KagoBadge } from "@/components/kago/badge";
 import { Detail, DetailList, DetailSection } from "@/components/kago/details";
 import { KagoLoading } from "@/components/kago/empty-state";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { Button } from "@/components/ui/button";
-import { ShareForm } from "@/features/shares/ShareForm";
-import { parseShareMode, shareModeLabel } from "@/features/shares/shareUtils";
+import { ShareDialog } from "@/features/shares/ShareDialog";
+import { endText, expiryText, visitorCan } from "@/features/shares/shareUtils";
+import { copyShare } from "@/features/shares/useShareActions";
 import { TagEditor } from "@/features/tags/TagEditor";
 import { formatDate, formatSize, isPicture, isVideoType, kindLabel } from "@/lib/format";
 import { displayPath } from "@/lib/paths";
+import { parseShareMode, shareEnd, shareExpiry } from "@/lib/shareModel";
 import { useCompact } from "@/lib/useCompact";
 import { cn } from "@/lib/utils";
 import { usePointerDrag } from "@/lib/usePointerDrag";
@@ -46,9 +48,10 @@ export function Inspector({ window: activeWindow, selection }: { window: FileWin
   // Tags go on the whole selection. The item on show has its tags from its own info, which is the first to hear of a change.
   const tagTargets = selection.length > 1 ? selection.filter((item) => !item.readonly).map((item) => ({ path: item.path, tags: (item.path === path ? meta.data?.tags : item.tags) ?? [] })) : [{ path, tags: meta.data?.tags ?? [] }];
   const pathShares = (shares.data ?? []).filter((share) => share.root_id === rootId && share.path === path);
-  // The share form only opens on request, and only for the item it was opened on.
+  // The form to create a link opens on request, on the item the panel shows, and closes when it moves to another.
   const [sharingKey, setSharingKey] = useState<string | null>(null);
   const shareKey = `${rootSlug}:${path}`;
+  const now = Math.floor(Date.now() / 1000);
 
   const resizeHandlers = usePointerDrag(
     () => width,
@@ -121,27 +124,34 @@ export function Inspector({ window: activeWindow, selection }: { window: FileWin
 
           <DetailSection title={t("Share links")}>
             {pathShares.length > 0 ? (
-              <ul className="m-0 mb-3 flex list-none flex-col gap-1.5 p-0">
-                {pathShares.map((share) => (
-                  <li key={share.id} className="flex items-center gap-2">
-                    <span className="min-w-0 flex-1 truncate">{shareModeLabel(parseShareMode(share.permission_json))} · {t("{count} download | {count} downloads", { count: share.download_count })}</span>
-                    <KagoBadge tone={share.disabled ? "neutral" : "success"}>{share.disabled ? t("Disabled") : t("Active")}</KagoBadge>
-                  </li>
-                ))}
+              <ul className="m-0 mb-3 flex list-none flex-col gap-1 p-0">
+                {pathShares.map((share) => {
+                  const end = shareEnd(share, now);
+                  const expiry = shareExpiry(share, now);
+                  return (
+                    <li key={share.id} className="flex min-h-6 items-center gap-2">
+                      {/* What the link is for and when it ends; one that has stopped says why instead, and in the warning colour. */}
+                      <span className={cn("min-w-0 flex-1 truncate", end ? "text-warning" : "text-muted")}>
+                        {end ? endText(end) : `${visitorCan(parseShareMode(share.permission_json))} · ${expiryText(expiry)}`}
+                      </span>
+                      {!end && share.token ? <KagoIconButton label={t("Copy link")} size="sm" onClick={() => void copyShare(share)}><Copy /></KagoIconButton> : null}
+                    </li>
+                  );
+                })}
               </ul>
-            ) : null}
-            {sharingKey === shareKey ? (
-              <>
-                <ShareForm key={shareKey} target={{ rootSlug, path }} compact />
-                <Button className="mt-2 w-full" onClick={() => setSharingKey(null)}>{t("Collapse")}</Button>
-              </>
             ) : (
-              <>
-                {pathShares.length === 0 ? <p className="m-0 mb-2 text-faint">{t("Not shared yet")}</p> : null}
-                <Button className="w-full" onClick={() => setSharingKey(shareKey)}><Link2 />{t("Create share link")}</Button>
-              </>
+              <p className="m-0 mb-2 text-faint">{t("Not shared yet")}</p>
             )}
-            {pathShares.length > 0 ? <Button className="mt-2 w-full" onClick={() => store().openApp("shares")}>{t("Manage all shares")}</Button> : null}
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={() => setSharingKey(shareKey)}><Link2 />{t("Create share link")}</Button>
+              {pathShares.length > 0 ? <Button onClick={() => store().openApp("shares")}>{t("Manage all shares")}</Button> : null}
+            </div>
+            <ShareDialog
+              open={sharingKey === shareKey}
+              onClose={() => setSharingKey(null)}
+              roots={roots.data ?? []}
+              item={{ rootSlug, path, kind: meta.data.kind, name: path === "/" ? root?.name ?? rootSlug : meta.data.name, type: meta.data.type }}
+            />
           </DetailSection>
         </div>
       )}

@@ -29,6 +29,7 @@ export function KagoSegmented<T extends string>({
         const segment = (
           <button
             key={item.value}
+            type="button"
             role="radio"
             aria-checked={value === item.value}
             aria-label={iconOnly ? item.label : undefined}

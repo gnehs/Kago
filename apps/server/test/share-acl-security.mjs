@@ -163,6 +163,117 @@ test("a share password opens the link for twelve hours, and only until the passw
   }
 });
 
+test("a share's link can be copied again by whoever manages it, and given a new one", async () => {
+  const fixture = await createFixture();
+  let app = await buildApp(testEnv(fixture));
+  let admin = client(app);
+  let owner = client(app);
+  const other = client(app);
+
+  try {
+    await app.ready();
+    await admin.post("/api/auth/setup", { email: "admin@example.test", password: "fake-admin-password-123", displayName: "Admin" });
+    const root = (await admin.get("/api/roots")).json[0];
+    const userIds = {};
+    for (const [name, browser] of [["owner", owner], ["other", other]]) {
+      const created = await admin.post("/api/users", { email: `${name}@example.test`, password: `fake-${name}-password-123`, displayName: `Share ${name}`, role: "USER" });
+      userIds[name] = created.json.id;
+      assert.equal((await admin.put("/api/permissions", { principalType: "user", principalId: created.json.id, rootId: root.id, level: "view" })).statusCode, 200);
+      assert.equal((await browser.post("/api/auth/login", { email: `${name}@example.test`, password: `fake-${name}-password-123` })).statusCode, 200);
+    }
+    const download = (token) => app.inject({ method: "GET", url: `/s/${token}/download` });
+    const rawShare = (id) => {
+      const db = new DatabaseSync(path.join(fixture.appDataDir, "app.db"));
+      try {
+        return db.prepare("SELECT token_hash, token_sealed FROM share_links WHERE id = ?").get(id);
+      } finally {
+        db.close();
+      }
+    };
+
+    const created = await owner.post("/api/shares", { rootSlug: "photos", path: "/shared/readable.txt", mode: "download" });
+    assert.equal(created.statusCode, 200);
+    const { id, token } = created.json;
+    assert.equal(typeof token, "string");
+    const listed = (await owner.get("/api/shares")).json.find((item) => item.id === id);
+    assert.equal(listed.token, token, "the link comes back on its creator's list");
+    assert.deepEqual(listed.creator, { id: userIds.owner, email: "owner@example.test", display_name: "Share owner", avatar_at: null });
+    assert.equal((await download(listed.token)).payload, "share canary");
+
+    const stored = rawShare(id);
+    assert.ok(stored.token_sealed.startsWith("v1:"));
+    assert.ok(!stored.token_sealed.includes(token), "the database keeps the link sealed, not as it was handed out");
+    assert.notEqual(stored.token_hash, token);
+
+    const asAdmin = (await admin.get("/api/shares")).json.find((item) => item.id === id);
+    assert.equal(asAdmin.token, token, "an admin manages every link, so is sent every one");
+    assert.equal(asAdmin.creator.display_name, "Share owner");
+
+    const otherList = await other.get("/api/shares");
+    assert.equal(otherList.statusCode, 200);
+    assert.ok(!otherList.payload.includes(token));
+    for (const attempt of [other.post(`/api/shares/${id}/rotate`), other.patch(`/api/shares/${id}`, { maxDownloads: 5 }), other.patch(`/api/shares/${id}`, { disabled: false })]) {
+      const response = await attempt;
+      assert.equal(response.statusCode, 403);
+      assert.ok(!response.payload.includes(token));
+    }
+
+    for (const body of [{ maxDownloads: 0 }, { maxDownloads: -1 }, { maxDownloads: 1.5 }, { maxDownloads: "3" }, { expiresAt: "tomorrow" }, { expiresAt: 1.5 }]) {
+      assert.equal((await owner.patch(`/api/shares/${id}`, body)).statusCode, 400, JSON.stringify(body));
+    }
+    const past = Math.floor(Date.now() / 1000) - 60;
+    const expired = await owner.patch(`/api/shares/${id}`, { expiresAt: past, maxDownloads: 7 });
+    assert.equal(expired.statusCode, 200);
+    assert.equal(expired.json.expires_at, past);
+    assert.equal(expired.json.max_downloads, 7);
+    assert.equal((await download(token)).statusCode, 410);
+    const revived = await owner.patch(`/api/shares/${id}`, { expiresAt: null, maxDownloads: null });
+    assert.equal(revived.json.expires_at, null);
+    assert.equal(revived.json.max_downloads, null);
+    assert.equal(revived.json.token, token, "an update leaves the link as it was");
+    assert.equal((await download(token)).statusCode, 200);
+
+    const rotated = await owner.post(`/api/shares/${id}/rotate`);
+    assert.equal(rotated.statusCode, 200);
+    assert.notEqual(rotated.json.token, token);
+    assert.equal((await download(token)).statusCode, 404, "the old link stops working");
+    assert.equal((await download(rotated.json.token)).payload, "share canary");
+    assert.equal((await owner.get("/api/shares")).json.find((item) => item.id === id).token, rotated.json.token);
+
+    const audit = await admin.get("/api/audit");
+    const actions = audit.json.filter((entry) => entry.actor_id === userIds.owner).map((entry) => entry.action);
+    for (const action of ["create_share", "update_share", "rotate_share"]) assert.ok(actions.includes(action), action);
+    assert.ok(![token, rotated.json.token].some((value) => audit.payload.includes(value)), "no link is written to the audit log");
+
+    // A link made before Kago kept them: the database is upgraded in place, and the link goes on working.
+    const older = await owner.post("/api/shares", { rootSlug: "photos", path: "/shared/readable.txt", mode: "download" });
+    await app.close();
+    const db = new DatabaseSync(path.join(fixture.appDataDir, "app.db"));
+    db.exec("ALTER TABLE share_links DROP COLUMN token_sealed");
+    db.close();
+    app = await buildApp(testEnv(fixture));
+    await app.ready();
+    admin = client(app);
+    owner = client(app);
+    assert.equal((await owner.post("/api/auth/login", { email: "owner@example.test", password: "fake-owner-password-123" })).statusCode, 200);
+    const upgraded = (await owner.get("/api/shares")).json;
+    assert.equal(upgraded.find((item) => item.id === older.json.id).token, null);
+    assert.equal(upgraded.find((item) => item.id === id).token, null, "what the upgrade found had no column to come from");
+    assert.equal((await download(older.json.token)).statusCode, 200);
+    const renewed = await owner.post(`/api/shares/${older.json.id}/rotate`);
+    assert.equal(typeof renewed.json.token, "string");
+    assert.equal((await download(older.json.token)).statusCode, 404);
+    assert.equal((await download(renewed.json.token)).payload, "share canary");
+
+    assert.equal((await owner.delete(`/api/shares/${older.json.id}`)).statusCode, 200);
+    assert.equal(rawShare(older.json.id), undefined, "nothing of a deleted link is kept");
+    assert.equal((await download(renewed.json.token)).statusCode, 404);
+  } finally {
+    await app.close();
+    await rm(fixture.baseDir, { recursive: true, force: true });
+  }
+});
+
 function testEnv(fixture) {
   return {
     port: 0,
@@ -193,6 +304,7 @@ function client(app) {
     post: (url, body) => request("POST", url, body),
     put: (url, body) => request("PUT", url, body),
     patch: (url, body) => request("PATCH", url, body),
+    delete: (url) => request("DELETE", url),
   };
 
   async function request(method, url, body) {

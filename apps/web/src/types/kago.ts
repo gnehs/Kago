@@ -20,6 +20,7 @@ export type {
   PluginPreviewer,
   ReadyStoryboard,
   Root,
+  ShareLink,
   SqliteCell,
   SqlitePage,
   SqliteTable,
@@ -274,21 +275,6 @@ export type TagShape = "circle" | "triangle" | "diamond" | "square" | "pentagon"
 
 /** A tag in a person's own list. The shape is theirs: without one, the tag is drawn in the shape of its colour. */
 export type ListedTag = FileTag & { shape?: TagShape };
-
-export type ShareLink = {
-  id: string;
-  root_id: string;
-  path: string;
-  permission_json: string;
-  expires_at: number | null;
-  max_downloads: number | null;
-  download_count: number;
-  has_password: boolean;
-  created_by: string;
-  disabled: number;
-  created_at: number;
-  updated_at: number;
-};
 
 /**
  * A task as the client holds it: the wire row with its JSON read once, at the boundary (`parseTask`).

@@ -119,7 +119,7 @@ docker run -d \
 /app-data
   app.db            SQLite 資料庫
   session.secret    簽署 session 的密鑰（未提供 SESSION_SECRET 時自動產生）
-  storage.key       加密遠端位置連線設定、單一登入 secret 等的金鑰
+  storage.key       加密遠端位置連線設定、單一登入 secret、分享連結等的金鑰
   trash/            本機位置放不了自己的 .kago-trash 時的垃圾桶
   thumbnails/
   previews/
@@ -1649,6 +1649,7 @@ CREATE TABLE shelf_items (
 CREATE TABLE share_links (
   id TEXT PRIMARY KEY,
   token_hash TEXT UNIQUE NOT NULL,
+  token_sealed TEXT,
   root_id TEXT NOT NULL,
   path TEXT NOT NULL,
   permission_json TEXT NOT NULL,
@@ -1673,7 +1674,7 @@ CREATE TABLE share_visits (
 );
 ```
 
-`permission_json` 存分享模式。`share_visits` 記錄哪些訪客已經算過一次（見 §39）。
+`permission_json` 存分享模式。`token_sealed` 是以 storage.key 加密的 token，升級前建立的連結沒有。`share_visits` 記錄哪些訪客已經算過一次（見 §39）。
 
 ### trash_items
 
@@ -2185,7 +2186,7 @@ WebSocket 只是通知，不是狀態來源。
 
 公開分享連結使用高熵 token。
 
-DB 只存 token hash，不存明文 token。token 只在建立時回傳一次。
+DB 不存明文 token：用來查連結的是 token hash，另外存一份以 storage.key 加密的 token，讓建立者（與管理員）隨時能再複製連結。開連結時只比對 hash，不解密。升級前建立的連結沒有加密的 token，要換新的 token 才能再複製；換新 token 後舊連結立刻失效。
 
 可設定：
 
@@ -2789,7 +2790,7 @@ HttpOnly
 Secure when HTTPS
 SameSite=Lax
 password hash
-session token 與 share token 只存 hash
+session token 只存 hash；share token 以 hash 查找，另存以 storage.key 加密的一份
 CSRF 防護：/api 與 /s 底下 GET 以外的請求必須帶自訂標頭
 WebSocket 檢查 Origin
 path traversal 防護
@@ -2798,7 +2799,7 @@ audit log
 deny-by-default authorization
 server-side permission check
 worker-side permission revalidation
-存進資料庫的密鑰（遠端位置的連線設定、單一登入的 secret 與 refresh token、捷徑與壓縮檔的密碼）一律先以 storage.key 加密
+存進資料庫的密鑰（遠端位置的連線設定、單一登入的 secret 與 refresh token、捷徑與壓縮檔的密碼、分享連結的 token）一律先以 storage.key 加密
 ```
 
 檔案上傳限制：

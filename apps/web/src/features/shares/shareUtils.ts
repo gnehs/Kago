@@ -1,36 +1,42 @@
-import { t } from "../../lib/i18n";
-import type { ShareLink } from "../../types/kago";
-export type ShareMode = "download" | "view_only" | "upload_only";
+import type { ShareLink } from "@/types/kago";
+import { t } from "@/lib/i18n";
+import { kindOfExtension, extensionOf } from "@/lib/fileKind";
+import { shareIsFolder, shareName, type ShareEnd, type ShareExpiry, type ShareFigure, type ShareMode, type Span } from "@/lib/shareModel";
 
-export const shareModes: Array<{ value: ShareMode; label: string }> = [
-  { value: "download", label: t("Can download") },
-  { value: "view_only", label: t("View only") },
-  { value: "upload_only", label: t("Upload only (drop box)") }
+/** The three things a visitor can be let do, in the order they are offered. `visitor` is how a card in the list says it. */
+export const shareModes: Array<{ value: ShareMode; label: string; visitor: string; description: string }> = [
+  { value: "download", label: t("Download"), visitor: t("Can download"), description: t("See the file and download it") },
+  { value: "view_only", label: t("View only"), visitor: t("View only"), description: t("Preview it online, with no download") },
+  { value: "upload_only", label: t("Upload to me"), visitor: t("Drop box"), description: t("A drop box: they add files but can’t see what’s inside") }
 ];
 
-export function parseShareMode(permissionJson: string): ShareMode {
-  try {
-    const mode = (JSON.parse(permissionJson) as { mode?: unknown }).mode;
-    if (mode === "view_only" || mode === "upload_only") return mode;
-  } catch {
-    // Fall through to the default mode.
-  }
-  return "download";
+export const visitorCan = (mode: ShareMode) => shareModes.find((item) => item.value === mode)!.visitor;
+
+export function spanAhead({ unit, amount }: Span) {
+  return unit === "minute" ? t("expires in {count} minute | expires in {count} minutes", { count: amount }) : unit === "hour" ? t("expires in {count} hour | expires in {count} hours", { count: amount }) : t("expires in {count} day | expires in {count} days", { count: amount });
 }
 
-export const shareModeLabel = (mode: ShareMode) => shareModes.find((item) => item.value === mode)?.label ?? mode;
-
-export type ShareState = "disabled" | "expired" | "limit" | "active";
-
-/** What a link in the list is doing right now, as the server judges it when the link is opened. */
-export function shareState(share: ShareLink, nowSeconds = Math.floor(Date.now() / 1000)): ShareState {
-  if (share.disabled) return "disabled";
-  if (share.expires_at && share.expires_at < nowSeconds) return "expired";
-  if (share.max_downloads && share.download_count >= share.max_downloads) return "limit";
-  return "active";
+export function spanBehind({ unit, amount }: Span) {
+  return unit === "minute" ? t("expired {count} minute ago | expired {count} minutes ago", { count: amount }) : unit === "hour" ? t("expired {count} hour ago | expired {count} hours ago", { count: amount }) : t("expired {count} day ago | expired {count} days ago", { count: amount });
 }
 
-export const shareStateLabel = (state: ShareState) => ({ disabled: t("Disabled"), expired: t("Expired"), limit: t("Limit reached"), active: t("Active") })[state];
+export const expiryText = (expiry: ShareExpiry) => (expiry.kind === "never" ? t("never expires") : expiry.kind === "in" ? spanAhead(expiry.span) : spanBehind(expiry.span));
+
+export const endText = (end: ShareEnd) => (end.state === "expired" ? spanBehind(end.span) : end.state === "limit" ? t("{used} / {max} downloads, limit reached", { used: end.used, max: end.max }) : t("disabled"));
+
+export const figureText = (figure: ShareFigure) => (figure.kind === "limit" ? `${figure.used} / ${figure.max}` : t("{count} download | {count} downloads", { count: figure.count }));
+
+/**
+ * What a share's icon is drawn from. The list is told no more than the name and the mode, but the server refuses any
+ * pair but a file with download or view and a folder with upload, so the mode says which it is and the name's ending
+ * says what kind of file. A kind has no registered type here, so one is made up that `fileKind` will take for it.
+ */
+export function shareIconItem(share: ShareLink, rootName: string) {
+  const name = shareName(share, rootName);
+  if (shareIsFolder(share)) return { kind: "folder", type: "", name } as const;
+  const kind = kindOfExtension(extensionOf(name));
+  return { kind: "file", type: kind === "image" ? "image/x-share" : kind === "video" ? "video/x-share" : kind === "audio" ? "audio/x-share" : kind === "pdf" ? "application/pdf" : "", name } as const;
+}
 
 /** Puts the link on the clipboard, falling back to the old way when the browser turns the first down (it does once the page has waited on the network). */
 export async function copyShareLink(text: string): Promise<boolean> {
