@@ -7,6 +7,7 @@ export const zhCN: Dictionary = {
   "OK": "确定",
   "Loading": "加载中",
   "Dismiss notification": "关闭通知",
+  "Hide notification": "隐藏通知",
   "Processing…": "处理中…",
   "{duration} left": "剩余 {duration}",
   "Uploading {name}": "正在上传 {name}",

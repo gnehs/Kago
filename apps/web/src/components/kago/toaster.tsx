@@ -1,4 +1,4 @@
-import { CircleAlert, X } from "lucide-react";
+import { CircleAlert, Minus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatPercent } from "@/lib/format";
 import { useToastStore } from "@/stores/toast";
@@ -26,7 +26,7 @@ export function KagoToaster() {
           onBlurCapture={() => release(toast.id)}
         >
           {toast.progress ? (
-            <Count title={toast.message} speed={toast.progress.speed} value={toast.progress.unknown ? null : toast.progress.value} max={toast.progress.max} details={toast.progress.detail} close={<Close label={t("Dismiss notification")} onClick={() => dismiss(toast.id)} />} />
+            <Count title={toast.message} speed={toast.progress.speed} value={toast.progress.unknown ? null : toast.progress.value} max={toast.progress.max} details={toast.progress.detail} close={<Close icon={Minus} label={t("Hide notification")} onClick={() => dismiss(toast.id)} />} />
           ) : (
             <>
               {toast.kind === "error" ? <CircleAlert /> : null}
@@ -51,10 +51,11 @@ export function KagoToaster() {
   );
 }
 
-function Close({ label, onClick }: { label: string; onClick: () => void }) {
+/** A card that counts is only put out of sight: the work goes on, so it does not wear the X that would read as stopping it. */
+function Close({ icon: Icon = X, label, onClick }: { icon?: typeof X; label: string; onClick: () => void }) {
   return (
     <button className="shrink-0 rounded-sm p-1 text-muted outline-none kago-flat focus-ring" aria-label={label} onClick={onClick}>
-      <X className="size-3.5" />
+      <Icon className="size-3.5" />
     </button>
   );
 }

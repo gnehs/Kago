@@ -7,6 +7,7 @@ export const ja: Dictionary = {
   "OK": "OK",
   "Loading": "読み込み中",
   "Dismiss notification": "通知を閉じる",
+  "Hide notification": "通知を隠す",
   "Processing…": "処理中…",
   "{duration} left": "残り {duration}",
   "Uploading {name}": "{name} をアップロード中",

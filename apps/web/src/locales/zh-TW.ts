@@ -7,6 +7,7 @@ export const zhTW: Dictionary = {
   "OK": "確定",
   "Loading": "載入中",
   "Dismiss notification": "關閉通知",
+  "Hide notification": "隱藏通知",
   "Processing…": "處理中…",
   "{duration} left": "剩餘 {duration}",
   "Uploading {name}": "正在上傳 {name}",
