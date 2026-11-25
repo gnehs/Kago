@@ -17,7 +17,7 @@
     "test:keys": "node --test scripts/test-query-keys.mjs",
     "test:plugins": "node --test scripts/test-plugin-companions.mjs",
     "test:player": "node --test scripts/test-player-keys.mjs",
-    "test:tasks": "node --test scripts/test-task-model.mjs",
+    "test:tasks": "node --test scripts/test-task-model.mjs scripts/test-task-layout.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

@@ -16,6 +16,7 @@ import { UploadRow } from "@/features/tasks/UploadRow";
 import { isActiveTask, isFinishedTask, tasksProgress, useShownTasks } from "@/features/tasks/taskUtils";
 import { useClearFinishedTasks } from "@/features/tasks/useClearFinishedTasks";
 import { formatDuration, formatSize } from "@/lib/format";
+import { groupTasks } from "@/lib/taskLayout";
 import { displayPath } from "@/lib/paths";
 import { cn } from "@/lib/utils";
 import { ExternalAppGlyph } from "@/components/kago/external-app-icon";
@@ -155,8 +156,9 @@ function TaskStatus() {
   const all = useShownTasks(tasks.data ?? []);
   const active = all.filter(isActiveTask);
   const activeCount = active.length;
-  // Active tasks first, then the most recent finished ones.
-  const visible = [...active, ...all.filter((task) => !isActiveTask(task))].slice(0, 5);
+  // The same order as the tasks window: what is under way or needs a look, the queue, then what finished.
+  const { pinned, queue, finished } = groupTasks(all);
+  const visible = [...pinned, ...queue, ...finished].slice(0, 5);
   const upload = uploads.length > 0 ? uploadsTotal(uploads) : null;
 
   const tasksLabel = activeCount > 0 ? t("{count} task in progress | {count} tasks in progress", { count: activeCount }) : t("Tasks");
@@ -177,7 +179,7 @@ function TaskStatus() {
       )}
       // It hangs a little below the bar rather than from its edge, and keeps off the side of the screen.
       sideOffset={10}
-      // Nothing is ruled across the glass: a line drawn on it is lighter than what shows through and reads as a scratch. Each task lies on a slab of its own, and space sets the rest apart.
+      // Nothing is ruled across the glass: a line drawn on it is lighter than what shows through and reads as a scratch. Each task is a card of its own, and space sets the rest apart.
       panelClassName="flex w-80 flex-col gap-2"
       panel={
         <>
@@ -190,7 +192,7 @@ function TaskStatus() {
           ) : (
             <div className="flex max-h-96 scroll-fade flex-col gap-1.5 overflow-y-auto">
               {uploads.map((item) => <UploadRow key={`upload:${item.id}`} upload={item} />)}
-              {visible.map((task) => <TaskRow key={task.id} task={task} />)}
+              {visible.map((task) => <TaskRow key={task.id} task={task} position={queue.indexOf(task) + 1} />)}
             </div>
           )}
           {/* What can be pressed is a button, raised like any other; a line of text here read as one more remark. */}

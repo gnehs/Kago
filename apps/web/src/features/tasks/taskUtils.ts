@@ -1,5 +1,6 @@
 import { useEffect, useReducer } from "react";
-import { formatSize, formatWholeSize } from "@/lib/format";
+import { formatDuration, formatSize, formatWholeSize } from "@/lib/format";
+import { taskDestinationName, taskSecondsLeft, taskSubject } from "@/lib/taskLayout";
 import type { FileTask } from "@/types/kago";
 import { t } from "@/lib/i18n";
 
@@ -81,6 +82,26 @@ export function taskProgressLabel(task: FileTask) {
   }
   const files = t("{done}/{total} items", { done: task.processed_files, total: Math.max(task.total_files, 1) });
   return task.total_bytes > 0 ? `${formatWholeSize(task.processed_bytes)} / ${formatWholeSize(task.total_bytes)} · ${files}` : files;
+}
+
+/**
+ * What a task is doing, in the parts the title sets in different weights: the verb, what it works on, and where
+ * it goes. A location's root has no name of its own in a path, so it is called what the location is.
+ */
+export function taskSentence(task: FileTask, rootName: (slug: string) => string | undefined): { verb: string; subject: string | null; destination: string | null } {
+  const subject = taskSubject(task);
+  const destination = taskDestinationName(task) ?? (task.destination ? rootName(task.destination.rootSlug) ?? null : null);
+  return {
+    verb: taskTypeLabel(task),
+    subject: subject ? (subject.more > 0 ? t("{name} and {count} more", { name: subject.name, count: subject.more }) : subject.name) : null,
+    destination
+  };
+}
+
+/** How long a running task has left, once it can be told. */
+export function taskLeftLabel(task: FileTask): string | null {
+  const seconds = taskSecondsLeft(task);
+  return seconds === null ? null : t("{duration} left", { duration: formatDuration(seconds) });
 }
 
 /** How fast a running task is going, once that can be told and while it is going at all. */

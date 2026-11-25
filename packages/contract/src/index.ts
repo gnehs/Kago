@@ -93,6 +93,10 @@ export type FileTask = {
   processed_files: number;
   total_bytes: number;
   processed_bytes: number;
+  /**
+   * The file a running task is on: its path in a location, posix, with a leading slash, which is the same
+   * for every type. It is kept after the task ends, so only a running task's is current.
+   */
   current_path: string | null;
   /**
    * What a running task is at before there is anything to count: `counting` while it adds up what it has to do,

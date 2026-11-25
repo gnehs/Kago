@@ -389,21 +389,29 @@ test("minimum file-manager demo flow", async () => {
       sources: [{ rootSlug: "photos", path: "/2026/demo.txt" }],
       destination: { rootSlug: "photos", path: "/public" }
     });
-    assert.equal((await waitTask(admin, copyTask.json.id)).status, "done");
+    const copied = await waitTask(admin, copyTask.json.id);
+    assert.equal(copied.status, "done");
+    // The form every type reports in: the path of the file in its location, with a leading slash, never a path on the host's disk.
+    assert.equal(copied.current_path, "/2026/demo.txt");
 
     const compressTask = await admin.post("/api/tasks", {
       type: "compress",
       sources: [{ rootSlug: "photos", path: "/public/readme.txt" }],
       destination: { rootSlug: "photos", path: "/2026/readme-bundle.zip" }
     });
-    assert.equal((await waitTask(admin, compressTask.json.id)).status, "done");
+    const compressed = await waitTask(admin, compressTask.json.id);
+    assert.equal(compressed.status, "done");
+    assert.equal(compressed.current_path, "/public/readme.txt");
     assert.equal((await admin.post("/api/fs/mkdir", { rootSlug: "photos", path: "/2026", name: "extracted" })).statusCode, 200);
     const extractTask = await admin.post("/api/tasks", {
       type: "extract",
       sources: [{ rootSlug: "photos", path: "/2026/readme-bundle.zip" }],
       destination: { rootSlug: "photos", path: "/2026/extracted" }
     });
-    assert.equal((await waitTask(admin, extractTask.json.id)).status, "done");
+    const extracted = await waitTask(admin, extractTask.json.id);
+    assert.equal(extracted.status, "done");
+    // An archive entry is named by where it lands in the location, not by the name the archive spells it with.
+    assert.equal(extracted.current_path, "/2026/extracted/readme.txt");
     assert.equal((await admin.get("/api/fs/download?rootSlug=photos&path=/2026/extracted/readme.txt")).payload, "public");
 
     const thumbnailTask = await admin.post("/api/tasks", {
@@ -422,7 +430,9 @@ test("minimum file-manager demo flow", async () => {
     const trashedUpload = trash.json.find((item) => item.original_path === "/public/uploaded.txt");
     assert.ok(trashedUpload);
     const restoreTask = await admin.post(`/api/trash/${trashedUpload.id}/restore`);
-    assert.equal((await waitTask(admin, restoreTask.json.id)).status, "done");
+    const restored = await waitTask(admin, restoreTask.json.id);
+    assert.equal(restored.status, "done");
+    assert.equal(restored.current_path, "/public/uploaded.txt");
     assert.equal((await admin.get("/api/fs/download?rootSlug=photos&path=/public/uploaded.txt")).payload, "uploaded");
 
     assert.equal((await admin.post("/api/fs/mkdir", { rootSlug: "photos", path: "/public", name: "to-empty" })).statusCode, 200);

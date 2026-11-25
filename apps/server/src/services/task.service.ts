@@ -1027,6 +1027,7 @@ export class TaskService {
 
     for (const source of sources) {
       const item = this.trash.getRestorable(actor, source.path);
+      await this.progress(task.id, item.original_path);
       const { root } = await this.paths.resolveRootById(item.original_root_id, "/");
       const folder = path.posix.dirname(item.original_path);
       const name = path.posix.basename(item.original_path);
@@ -1222,6 +1223,7 @@ export class TaskService {
             open: async () => {
               // The archive can take a long while to write, and the rule that allowed it may be gone by now.
               service.permissions.require(actor, sourceLevel, planned.safe.root, planned.logicalPath);
+              service.show(task.id, planned.logicalPath);
               let source: Readable;
               if (planned.absolutePath) {
                 const stat = await fsp.lstat(planned.absolutePath);
@@ -1350,7 +1352,9 @@ export class TaskService {
         for await (const entry of zip.eachEntry()) {
           entryCount += 1;
           if (entryCount > maxExtractEntries) throw new AppError(413, "Zip contains too many entries", "ZIP_ENTRY_LIMIT");
-          await this.progress(task.id, entry.fileName);
+          // Where it will land in the location, never the name as the archive spells it, which an unsafe entry can bend.
+          const landing = safeRelativeZipPath(entry.fileName);
+          await this.progress(task.id, landing ? path.posix.join(dest.logicalPath, ...landing.map(nfc)) : dest.logicalPath);
           if (isZipSymlink(entry)) throw new AppError(400, "Symlink zip entries are not allowed", "ZIP_SYMLINK_FORBIDDEN");
           const processedBytes = isRemote(dest.root)
             ? await this.extractEntryRemote(entry, zip, dest, remainingBytes, archive.password)
@@ -1558,10 +1562,11 @@ export class TaskService {
   async runSync(task: FileTask, actor: Actor): Promise<void> {
     const spec = syncSpecOf(task);
     const { source, destination } = await this.assertSyncPermissions(actor, spec);
-    await this.progress(task.id, spec.name);
+    await this.progress(task.id, source.logicalPath);
     const mirror = spec.options.mode === "mirror";
     const stopped = () => this.isCancelled(task.id);
-    const onBytes = transferProgress((bytes) => this.countBytes(task.id, bytes));
+    // rclone names what it carries from the folder the run starts in: the source.
+    const onBytes = transferProgress((bytes) => this.countBytes(task.id, bytes), (carried) => this.show(task.id, path.posix.join(source.logicalPath, carried)));
     // A trial run changes nothing; what it would have changed is what it leaves behind. Of a real run only the counts are kept.
     const trial = spec.options.dryRun;
     const report = trial ? new SyncReport() : new SyncReport(0);
