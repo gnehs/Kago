@@ -1687,6 +1687,10 @@ CREATE TABLE trash_items (
   deleted_by TEXT NOT NULL,
   deleted_at INTEGER NOT NULL,
   restored_at INTEGER,
+  kind TEXT,
+  size INTEGER,
+  item_count INTEGER,
+  deletion_id TEXT,
   FOREIGN KEY (original_root_id) REFERENCES roots(id) ON DELETE CASCADE
 );
 ```
@@ -2154,7 +2158,8 @@ type ServerEvent =
   | { type: "permission.updated"; userId?: string }
   | { type: "roots.updated" }
   | { type: "apps.updated"; userId?: string }
-  | { type: "share.updated"; userId: string };
+  | { type: "share.updated"; userId: string }
+  | { type: "trash.updated"; userId: string };
 ```
 
 帶著 `userId` 的事件只送給那個人（以及 ADMIN，如果那是 ADMIN 看得到的東西）；別人的事件不會送到你的連線上。
@@ -2264,7 +2269,7 @@ edit permissions
 
 丟進垃圾桶仍得跨磁碟複製（垃圾桶和檔案不在同一個檔案系統）且超過 1 GB 時，先問使用者要照樣移到垃圾桶，還是直接刪除（`delete` 任務，不可復原）。
 
-刪除時要記錄 trash_items。
+刪除時要記錄 trash_items，連同當時就知道的：種類（檔案或資料夾）、大小（資料夾是裡面所有檔案加起來）、資料夾裡有幾個項目，以及是哪一次刪除（那個 `delete_to_trash` task 的 id；同一次丟進去的項目共用，清單依此分組、可以一起還原）。資料夾的大小與項目數不在丟進去時算：本機同一顆磁碟上的資料夾照舊只是一次 rename，task 不進計數階段、也不走過裡面的內容，所以不論多大都馬上完成，資料夾立刻離開檔案清單；那一列先以 kind 為資料夾、size 與 item_count 為空記下，丟進去之後由伺服器在 task 之外走過垃圾桶裡的那個資料夾，再把大小與項目數補上（`UPDATE` 只在那一列仍在垃圾桶、尚未還原、尚未補過時才寫；量到一半被還原或永久刪除、或資料夾在走的途中不見了，就不寫，留空）。一個 worker 同一時間只量一個資料夾，一次丟很多個也是排隊一個個量；補上後以 `trash.updated` 事件通知丟它的人（ADMIN 也會收到；網頁只重新取垃圾桶的清單），垃圾桶視窗因此重新取清單，不必重新打開。補完之前或補不出來（資料夾裡有讀不到的部分照舊算作沒有；伺服器中途停止則整個沒補）的資料夾，size 與 item_count 維持空，清單當作大小不明；worker 啟動時會把最近 200 個這樣的本機資料夾再排進同一個佇列補一次。需要複製到另一顆磁碟的資料夾，仍在 task 的計數階段走過一遍（要複製、要顯示進度），一開始就記下大小；檔案只要一次 stat，一開始就記；遠端位置的資料夾不走，大小留空。這些欄位在升級前丟進垃圾桶的項目是空的，清單把它們當作大小不明、各自單獨一項。
 
 必須支援 restore。還原與丟進垃圾桶一樣，需要那個位置的 `edit`。
 
@@ -2276,6 +2281,10 @@ ADMIN 清掉所有人的
 ```
 
 清空只刪除 Kago 自己的垃圾桶裡的東西，`trash_items` 記著的路徑不在那裡面就不碰。
+
+只永久刪除其中幾項，是 `empty_trash` task 的 `sources` 只列那幾項（`{ rootSlug: "trash", path: <trash item id> }`），權限同清空：不是自己丟的（ADMIN 除外）就略過。只有一項時，稽核紀錄的 `trash_empty` 會記下它的位置與路徑。
+
+`GET /api/trash` 給每一項送出 kind、size、item_count、deletion_id，以及丟掉它的人（`deleter`）。一般使用者只看得到自己丟的，ADMIN 看得到所有人的。還原一次可以列好幾項（`restore_trash` 的 `sources`）：有一項的檔案已不在垃圾桶裡，整批在動任何東西之前就失敗；其餘的失敗則停在那一項，之前的已經還原，它和之後的仍在垃圾桶裡。原位置的名稱已被占用時，以「名稱 2」還原。
 
 ## 41. Tags
 
@@ -2648,8 +2657,9 @@ POST   /api/tasks/:id/resume
 ### Trash
 
 ```txt
-GET    /api/trash
+GET    /api/trash                    kind、size、item_count、deletion_id、deleter
 DELETE /api/trash                    清空
+POST   /api/trash/cost
 POST   /api/trash/:id/restore
 ```
 

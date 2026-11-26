@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { Plus, Search, Share2, X } from "lucide-react";
+import { Plus, Search, Share2 } from "lucide-react";
 import { useMe, useShares } from "@/api/hooks";
 import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
+import { KagoSearchField } from "@/components/kago/search-field";
 import { Button } from "@/components/ui/button";
 import { groupShares } from "@/lib/shareModel";
 import type { Root, ShareLink } from "@/types/kago";
@@ -55,23 +56,7 @@ export function SharesPage({ roots }: { roots: Root[] }) {
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       {total > 0 ? (
         <header className="flex shrink-0 items-center gap-2 border-b border-line bg-elevated p-2.5">
-          <label className="kago-well flex h-(--kago-control-h) min-w-0 flex-1 items-center gap-1.5 rounded-md px-2.5">
-            <Search className="size-3.5 shrink-0 text-muted" />
-            <input
-              type="search"
-              aria-label={t("Search shares")}
-              placeholder={t("Search shares")}
-              className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-faint [&::-webkit-search-cancel-button]:hidden"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key !== "Escape" || !query) return;
-                event.stopPropagation();
-                setQuery("");
-              }}
-            />
-            {query ? <button type="button" aria-label={t("Clear search")} className="text-muted hover:text-ink" onClick={() => setQuery("")}><X className="size-3.5" /></button> : null}
-          </label>
+          <KagoSearchField label={t("Search shares")} value={query} onChange={setQuery} />
           {create}
         </header>
       ) : null}

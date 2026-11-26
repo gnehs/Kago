@@ -30,7 +30,8 @@ export type {
   SyncChange,
   SyncRun,
   SyncTrial,
-  SyncTrialSummary
+  SyncTrialSummary,
+  TrashItem
 } from "@kago/contract";
 
 /** A shortcut on the desktop to another service. `icon` is where the picture Kago keeps for it is, when it has one. */
@@ -292,15 +293,6 @@ export type Shelf = {
   id: string;
   name: string;
   items: Array<{ id: string; root_id: string; root_slug: string; path: string; kind: string; name: string; size: number }>;
-};
-
-export type TrashItem = {
-  id: string;
-  original_root_id: string;
-  original_path: string;
-  deleted_by: string;
-  deleted_at: number;
-  restored_at: number | null;
 };
 
 export type AuditLog = {

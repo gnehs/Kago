@@ -235,6 +235,11 @@ CREATE TABLE IF NOT EXISTS trash_items (
   deleted_by TEXT NOT NULL,
   deleted_at INTEGER NOT NULL,
   restored_at INTEGER,
+  -- What was known when it was thrown away; see TrashItem in the contract. Null in rows from before they were kept.
+  kind TEXT,
+  size INTEGER,
+  item_count INTEGER,
+  deletion_id TEXT,
   FOREIGN KEY (original_root_id) REFERENCES roots(id) ON DELETE CASCADE
 );
 

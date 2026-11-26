@@ -74,6 +74,7 @@ schedule(0);
 // One of the workers is enough to keep house.
 if (input.lane === "files") {
   tidy();
+  void tasks.trash.measureLeftover().catch(() => undefined);
   setInterval(tidy, 60 * 60 * 1000).unref();
 }
 

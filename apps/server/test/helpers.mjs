@@ -34,3 +34,13 @@ export async function waitTask(api, taskId) {
   }
   throw new Error(`Task ${taskId} did not finish`);
 }
+
+/** Asks `read` again until it gives something other than null or false, for what is settled by the server after the request that caused it has answered. */
+export async function waitFor(read, what = "the condition") {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    const value = await read();
+    if (value) return value;
+    await sleep(25);
+  }
+  throw new Error(`Gave up waiting for ${what}`);
+}

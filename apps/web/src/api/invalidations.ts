@@ -21,6 +21,7 @@ export const eventKeys = {
   "roots.updated": [keys.roots(), keys.storage(), keys.fs.all()],
   "apps.updated": [keys.externalApps()],
   "share.updated": [keys.shares()],
+  "trash.updated": [keys.trash()],
   "fs.changed": []
 } as const satisfies Record<ServerEventType, readonly QueryKey[]>;
 

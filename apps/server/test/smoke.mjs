@@ -1297,7 +1297,10 @@ test("what is thrown away on its own disk, or put back there, is renamed without
   const trashed = await admin.post("/api/tasks", { type: "delete_to_trash", sources });
   assert.equal((await waitTask(admin, trashed.json.id)).status, "done");
   await assert.rejects(access(path.join(fixture.dataDir, "photos", "src")));
-  const [item] = (await admin.get("/api/trash")).json;
+  const [listed] = (await admin.get("/api/trash")).json;
+  // Added up afterwards, in the Trash, where the part nobody can list counts for nothing.
+  const item = await waitFor(async () => (await admin.get("/api/trash")).json.find((entry) => entry.id === listed.id && entry.size !== null), "the folder's size");
+  assert.deepEqual([item.kind, item.size, item.item_count], ["folder", 4, 2]);
   const restored = await admin.post(`/api/trash/${item.id}/restore`);
   assert.equal((await waitTask(admin, restored.json.id)).status, "done");
   assert.equal(await readFile(path.join(fixture.dataDir, "photos", "src", "file.txt"), "utf8"), "demo");
@@ -1914,6 +1917,15 @@ async function waitTask(api, taskId) {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   throw new Error(`Task ${taskId} did not finish`);
+}
+
+async function waitFor(read, what) {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    const value = await read();
+    if (value) return value;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`Gave up waiting for ${what}`);
 }
 
 function snapshotEnv(keys) {

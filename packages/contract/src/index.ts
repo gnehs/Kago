@@ -113,6 +113,37 @@ export type FileTask = {
   pace?: TaskPace;
 };
 
+/** Whether a trashed thing was one file or a folder with what is in it. */
+export type TrashKind = "file" | "folder";
+
+/**
+ * Something in the Trash, as whoever threw it away, or an admin, is sent it. Kind and the rest are what was known
+ * when it was thrown away, so that the Trash opens without reading anything through; items trashed before Kago
+ * recorded them have none. A folder renamed into the Trash is added up only afterwards, so its size and item count
+ * are null for a moment and then filled in; the Trash is told to read its list again when they are.
+ */
+export type TrashItem = {
+  id: string;
+  /** The location it came from; its name is the one that location has now. */
+  original_root_id: string;
+  /** Where it lay in that location: posix, with a leading slash, its own name last. */
+  original_path: string;
+  deleted_by: string;
+  deleted_at: number;
+  /** Always null here: what has been put back is no longer in the Trash. */
+  restored_at: number | null;
+  /** Null for an item trashed before Kago recorded it. */
+  kind: TrashKind | null;
+  /** Bytes in it, a folder's being those of every file inside. Null when not known: a local folder for a moment after it was trashed, until it has been added up; an older item; or a folder in a remote location, which is not read through to add up. */
+  size: number | null;
+  /** The files and folders inside a folder, itself not counted. Null for a file, and wherever `size` is null, a folder just trashed among them: it is filled in together with `size`. */
+  item_count: number | null;
+  /** The id of the task that threw it away. Items with the same one were one action, and can be put back together. Null for an item trashed before Kago recorded it. */
+  deletion_id: string | null;
+  /** Whoever threw it away, with what their avatar is drawn from. */
+  deleter: { id: string; email: string; display_name: string; avatar_at: number | null };
+};
+
 /**
  * What changed in a location: `paths` are folders that hold something else now, `gone` items that are no longer where
  * they were, and `trees` folders anything inside which may have changed. It goes to whoever may see the location.
@@ -133,6 +164,7 @@ export type ServerEvent =
   | { type: "roots.updated" }
   | { type: "apps.updated"; userId?: string }
   | { type: "share.updated"; userId: string }
+  | { type: "trash.updated"; userId: string }
   | FsChanged;
 
 export type ServerEventType = ServerEvent["type"];

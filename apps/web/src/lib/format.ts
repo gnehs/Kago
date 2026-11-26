@@ -46,6 +46,17 @@ const dateFormat = new Intl.DateTimeFormat(locale, { year: "numeric", month: "nu
 export const formatDate = (ms: number) => dateFormat.format(new Date(ms));
 export const formatUnixDate = (seconds: number) => dateFormat.format(new Date(seconds * 1000));
 
+const timeOfDayFormat = new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit" });
+const dayFormat = new Intl.DateTimeFormat(locale, { month: "long", day: "numeric" });
+const dayYearFormat = new Intl.DateTimeFormat(locale, { year: "numeric", month: "long", day: "numeric" });
+
+/** The hour and minute of a database timestamp, for a day that is named somewhere else. */
+export const formatUnixTime = (seconds: number) => timeOfDayFormat.format(new Date(seconds * 1000));
+
+/** The day of a database timestamp without the time, with the year only where it is not this one. */
+export const formatUnixDay = (seconds: number, nowSeconds = Date.now() / 1000) =>
+  (new Date(seconds * 1000).getFullYear() === new Date(nowSeconds * 1000).getFullYear() ? dayFormat : dayYearFormat).format(new Date(seconds * 1000));
+
 /** Files the video player takes; RealMedia has no `video/` type of its own. */
 export const isVideoType = (type: string) => type.startsWith("video/") || type.startsWith("application/vnd.rn-realmedia");
 

@@ -145,8 +145,8 @@ export class TaskService {
     private readonly preferences: PreferenceService
   ) {
     this.archivePasswords = new ArchivePasswordService(db, () => this.secrets());
-    this.trash = new TrashService(db, paths, permissions, audit, storage, appDataDir);
-    this.convert = new ConvertService(db, paths, permissions, audit, storage, appDataDir, (actor, safe) => this.trashNow(actor, safe));
+    this.trash = new TrashService(db, paths, permissions, audit, storage, appDataDir, events);
+    this.convert = new ConvertService(db, paths, permissions, audit, storage, appDataDir, (actor, safe, taskId) => this.trashNow(actor, safe, taskId));
   }
 
   async create(actor: Actor, input: z.infer<typeof taskInputSchema>): Promise<FileTask> {
@@ -376,7 +376,16 @@ export class TaskService {
       });
       await this.bumpProcessed(task.id, entries - counted);
     }
-    this.audit.write({ actorType: "user", actorId: actor.id, action: "trash_empty", target: { count: operations.length }, result: "success" });
+    // One item is named, so that the log says which file was removed for good; many are only counted.
+    const [only] = operations.length === 1 ? operations : [];
+    this.audit.write({
+      actorType: "user",
+      actorId: actor.id,
+      action: "trash_empty",
+      ...(only ? { rootId: only.target.item.original_root_id, path: only.target.item.original_path } : {}),
+      target: { count: operations.length },
+      result: "success"
+    });
   }
 
   get(taskId: string): FileTask {
@@ -962,25 +971,27 @@ export class TaskService {
       const safe = await this.paths.resolveExisting(source.rootSlug, source.path);
       this.permissions.require(actor, "edit", safe.root, safe.logicalPath);
       this.assertNotFixed(safe);
-      const bytes = await this.trash.carryBytes(safe, found);
+      // A folder renamed on its own disk is not read through here; the Trash adds it up afterwards, and one that is copied is counted as it goes.
+      const measured = await this.trash.measure(safe, found);
+      const bytes = await this.trash.carryBytes(safe, found, measured);
       totalBytes += bytes;
-      operations.push({ safe, bytes });
+      operations.push({ safe, bytes, measured });
     }
     await this.updateTotals(task.id, operations.length, totalBytes);
 
-    for (const { safe, bytes } of operations) {
+    for (const { safe, bytes, measured } of operations) {
       await this.progress(task.id, safe.logicalPath);
-      const streamed = await this.trash.place(actor, safe, (processedBytes) => this.bumpProcessedBytes(task.id, processedBytes));
+      const streamed = await this.trash.place(actor, safe, task.id, measured, (processedBytes) => this.bumpProcessedBytes(task.id, processedBytes));
       await this.bumpProcessed(task.id);
       if (!streamed) this.bumpProcessedBytes(task.id, bytes);
     }
   }
 
   /** Throws one file away in the middle of other work, the way `runTrash` does a list of them. */
-  private async trashNow(actor: Actor, safe: SafePath): Promise<void> {
+  private async trashNow(actor: Actor, safe: SafePath, taskId: string): Promise<void> {
     this.permissions.require(actor, "edit", safe.root, safe.logicalPath);
     this.assertNotFixed(safe);
-    await this.trash.place(actor, safe);
+    await this.trash.place(actor, safe, taskId);
   }
 
   /** The folder something is restored into, made again, with any folder above it, when it has gone since. */

@@ -133,8 +133,67 @@ export async function collectPathStats(targetPath: string, found?: Found): Promi
  * whole folder through takes minutes on a hard disk.
  */
 export async function bytesToCarry(sourcePath: string, folder: string, found?: Found): Promise<number> {
+  return (await onAnotherDisk(sourcePath, folder)) ? (await collectPathStats(sourcePath, found)).bytes : 0;
+}
+
+/** Whether moving `sourcePath` into `folder` has to copy it, rather than rename it. */
+export async function onAnotherDisk(sourcePath: string, folder: string): Promise<boolean> {
   const [item, there] = await Promise.all([fsp.lstat(sourcePath), fsp.stat(folder)]);
-  return item.dev === there.dev ? 0 : (await collectPathStats(sourcePath, found)).bytes;
+  return item.dev !== there.dev;
+}
+
+export type TreeSize = {
+  directory: boolean;
+  /** What its files hold in all. */
+  bytes: number;
+  /** The files, folders and anything else inside it, itself not counted. */
+  entries: number;
+};
+
+/**
+ * Adds up a file or a whole folder for a record of it, several entries at a time. Unlike `collectPathStats` it takes
+ * what it finds as it is: a symlink is one entry of no size, and what cannot be read counts for nothing, as the
+ * thing is being thrown away and not read. Null when the top has gone.
+ *
+ * With `moving`, for a folder that others may restore or remove while it is added up, something that vanishes
+ * part way means the sum is short, so the walk stops and gives null as well.
+ */
+export async function measureTree(targetPath: string, found?: Found, options: { moving?: boolean } = {}): Promise<TreeSize | null> {
+  const limit = limiter(treeConcurrency);
+  let vanished = false;
+  const unseen = <T>(fallback: T) => (error: unknown): T => {
+    if (options.moving && (errnoIs(error, "ENOENT") || errnoIs(error, "ENOTDIR"))) vanished = true;
+    return fallback;
+  };
+  const sizeOf = async (file: string) => (await limit(() => fsp.lstat(file).catch(unseen<Stats | null>(null))))?.size ?? 0;
+  const visit = async (folder: string): Promise<{ bytes: number; entries: number }> => {
+    if (vanished) return { bytes: 0, entries: 0 };
+    const names = await limit(() => fsp.readdir(folder, { withFileTypes: true }).catch(unseen([] as Dirent[])));
+    const inside = await Promise.all(
+      names.map(async (entry) => {
+        const child = path.join(folder, entry.name);
+        if (entry.isDirectory()) {
+          const sub = await visit(child);
+          return { bytes: sub.bytes, entries: sub.entries + 1 };
+        }
+        const size = entry.isFile() ? await sizeOf(child) : 0;
+        found?.(1, size);
+        return { bytes: size, entries: 1 };
+      })
+    );
+    return inside.reduce((sum, child) => ({ bytes: sum.bytes + child.bytes, entries: sum.entries + child.entries }), { bytes: 0, entries: 0 });
+  };
+  const top = await fsp.lstat(targetPath).catch((error: unknown) => {
+    if (!errnoIs(error, "ENOENT")) throw error;
+    return null;
+  });
+  if (!top) return null;
+  if (!top.isDirectory()) {
+    found?.(1, top.size);
+    return { directory: false, bytes: top.size, entries: 0 };
+  }
+  const total = await visit(targetPath);
+  return vanished ? null : { directory: true, ...total };
 }
 
 /** How many files and folders there are to remove, the one given among them, or none if it has gone. Only names are read, not what each one holds. */

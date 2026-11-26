@@ -28,6 +28,8 @@ export function openDb(env: Env, options: { interruptRunningTasks?: boolean } = 
   addMissingColumns(db, "group_members", { source: "TEXT" });
   // Links made before this have none, and are copied again only once they are given a new token.
   addMissingColumns(db, "share_links", { token_sealed: "TEXT" });
+  // Items trashed before this have none, and are listed one by one with their size unknown.
+  addMissingColumns(db, "trash_items", { kind: "TEXT", size: "INTEGER", item_count: "INTEGER", deletion_id: "TEXT" });
   addMissingColumns(db, "tasks", { cleared: "INTEGER NOT NULL DEFAULT 0", pace_fps: "REAL", pace_height: "INTEGER", phase: "TEXT", job_id: "TEXT" });
   holdJobsToOneActiveRun(db);
   migratePermissionLevels(db);
