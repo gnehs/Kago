@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { auditQuerySchema } from "../services/audit.service.js";
+import { AppError } from "../lib/errors.js";
+import { auditQuerySchema, auditRunMembersSchema } from "../services/audit.service.js";
 import { createUserSchema, patchUserSchema, resetPasswordSchema } from "../services/auth.service.js";
 import { createGroupSchema } from "../services/group.service.js";
 import { oidcConfigSchema } from "../services/oidc.service.js";
@@ -110,4 +111,9 @@ export const register = adminOnly((app, s) => {
   });
 
   app.get("/api/audit", async (request) => s.audit.list(auditQuerySchema.parse(request.query)));
+  app.get("/api/audit/runs/:id", async (request) => {
+    const members = s.audit.runMembers(idParams.parse(request.params).id, auditRunMembersSchema.parse(request.query));
+    if (!members) throw new AppError(404, "Run not found", "AUDIT_RUN_NOT_FOUND");
+    return members;
+  });
 });

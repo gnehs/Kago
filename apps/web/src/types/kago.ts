@@ -4,6 +4,11 @@ export type {
   Actor,
   ArchiveEntry,
   ArchiveListing,
+  AuditAction,
+  AuditBurst,
+  AuditCategory,
+  AuditFilter,
+  AuditLog,
   CompanionRule,
   ConvertRun,
   ConvertRunFile,
@@ -293,18 +298,4 @@ export type Shelf = {
   id: string;
   name: string;
   items: Array<{ id: string; root_id: string; root_slug: string; path: string; kind: string; name: string; size: number }>;
-};
-
-export type AuditLog = {
-  id: string;
-  actor_type: "user" | "share_link" | "system";
-  actor_id: string | null;
-  action: string;
-  root_id: string | null;
-  path: string | null;
-  target_json: string | null;
-  result: "success" | "failure" | "denied";
-  ip: string | null;
-  user_agent: string | null;
-  created_at: number;
 };

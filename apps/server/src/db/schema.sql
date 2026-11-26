@@ -254,7 +254,19 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   result TEXT NOT NULL,
   ip TEXT,
   user_agent TEXT,
-  created_at INTEGER NOT NULL
+  created_at INTEGER NOT NULL,
+  -- What the action is and how loud (see lib/audit-actions.ts), written with the row so that the log is read by index.
+  category TEXT,
+  signal TEXT NOT NULL DEFAULT 'normal',
+  -- Every string the target carries, for searching.
+  subject TEXT,
+  -- Rows of one actor, action and result written close together are a run: the newest is its head, the only one listed,
+  -- and holds the run's count, its first time and its folders. Null `run_id` is a row from before runs, not yet placed.
+  run_id TEXT,
+  run_count INTEGER NOT NULL DEFAULT 1,
+  run_first_at INTEGER,
+  run_folders TEXT,
+  head INTEGER NOT NULL DEFAULT 1
 );
 
 CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at);

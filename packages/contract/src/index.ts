@@ -422,3 +422,109 @@ export type CompatibilityReport = {
   /** Stable localization keys describing discovery limits; raw process errors are never returned. */
   discoveryNotes?: string[];
 };
+
+/** What an audit row is about, in the groups the audit page switches between. Every action belongs to exactly one. */
+export type AuditCategory =
+  /** Signing in and out, and what ends a session. */
+  | "sign_in"
+  /** A person's own account: passwords, profile, single sign-on links, and an admin adding or disabling people. */
+  | "account"
+  /** Who may reach what: groups, permission rules, and every refusal for lack of permission. */
+  | "permission"
+  /** Things done to files and folders, and viewing them. */
+  | "file"
+  /** Share links, and what is done through them. */
+  | "share"
+  /** Tasks, syncs and auto-converts as such; the file changes they make are `file`. */
+  | "task"
+  /** How the installation is set up: locations, single sign-on, apps, a person's desktop and wallpaper. */
+  | "settings"
+  /** Requests the server turned away, which no other action describes. */
+  | "system";
+
+/** `low` is bookkeeping and background noise (thumbnails, saving the desktop): kept, but left out of what an admin reads first. */
+export type AuditSignal = "normal" | "low";
+
+export type AuditResult = "success" | "failure" | "denied";
+
+/** Every action the server writes. A new one is added here and in the server's table of categories, or it does not compile. */
+export type AuditAction =
+  | "setup_admin" | "login_success" | "login_failed" | "logout" | "session_revoked" | "admin_recovery"
+  | "password_change" | "password_reset" | "user_create" | "user_update" | "user_disable" | "set_avatar" | "sso_link" | "sso_unlink"
+  | "group_create" | "group_rename" | "group_delete" | "group_member_add" | "group_member_remove" | "permission_change" | "permission_denied"
+  | "upload" | "mkdir" | "rename" | "edit" | "copy" | "move" | "delete" | "delete_to_trash" | "restore_trash" | "trash_empty" | "compress" | "extract" | "download" | "download_zip" | "thumbnail" | "tag_update" | "convert" | "remux" | "convert_structure"
+  | "create_share" | "update_share" | "disable_share" | "rotate_share" | "delete_share" | "share_auth_failed" | "download_via_share" | "upload_via_share"
+  | "create_task" | "task_start" | "task_failed" | "task_cancel" | "task_pause" | "task_resume" | "task_retry" | "tasks_clear" | "sync" | "sync_job_create" | "sync_job_update" | "sync_job_delete" | "sync_job_skipped" | "convert_job_create" | "convert_job_update" | "convert_job_delete" | "convert_job_skipped"
+  | "sso_update" | "root_create" | "root_update" | "root_delete" | "workspace_update" | "set_wallpaper" | "external_app_create" | "external_app_update" | "external_app_delete"
+  | "request_failed" | "request_denied";
+
+/**
+ * Several rows of one actor, one action and one result that came close together, shown as one: the newest row stands
+ * for them, and this says what it stands for. A row follows the one before it when that was at most a minute earlier,
+ * and a run closes after an hour whatever follows.
+ */
+export type AuditBurst = {
+  /** Names the run for good, where the row that stands for it is replaced by a newer one as the run grows. Ask for its rows with `GET /api/audit/runs/:id`. */
+  id: string;
+  /** How many rows the run holds, the newest included. At least 2. */
+  count: number;
+  /** When its oldest row was written; its newest row's `created_at` is when it ended. */
+  first_at: number;
+  /** The folders its rows were in, newest first: the folder the row's own path is in, and where the others were. A row with no path adds none. */
+  folders: Array<{ root_id: string | null; path: string }>;
+  /** True when the run touched more folders than are listed. */
+  folders_truncated: boolean;
+};
+
+/** One row of the audit log as an admin is sent it. */
+export type AuditLog = {
+  id: string;
+  /** `user` for someone signed in, `share_link` for a visitor through a link (whose id is `actor_id`), `system` for the server itself and for anyone not signed in. */
+  actor_type: "user" | "share_link" | "system";
+  actor_id: string | null;
+  /** The person's name and email now, null for a share link, the system, or someone since deleted. */
+  actor_name: string | null;
+  actor_email: string | null;
+  action: AuditAction;
+  /** The group of `action`, as the table in the server sets it. */
+  category: AuditCategory;
+  /** `low` when the action is bookkeeping, or a refused request for a picture, preview or the like; see `AuditSignal`. */
+  signal: AuditSignal;
+  root_id: string | null;
+  /** The location's name and slug now, null without a location or once it is deleted. */
+  root_name: string | null;
+  root_slug: string | null;
+  /** Where in the location it happened. */
+  path: string | null;
+  /** What else the action carries, as JSON, which differs by action. It never holds a share link's token or a password. */
+  target_json: string | null;
+  result: AuditResult;
+  ip: string | null;
+  /** The browser as it called itself, cut to 512 characters. */
+  user_agent: string | null;
+  /** Unix seconds. For a row standing for a run, when the run ended. */
+  created_at: number;
+  /** Null for a row that stands alone. */
+  burst: AuditBurst | null;
+};
+
+/**
+ * What `GET /api/audit` is asked, each part narrowing the rest. `before` is the last row of the page already shown,
+ * as `<created_at>:<id>`. `result` may list several, separated by commas. `actor` is a user's id, or `system`, or
+ * `share_link` for every visitor through a link. `from` is inclusive and `to` exclusive, in unix seconds; a run is in
+ * the range when any of its time is. `q` is looked for in the person's name or email, the path, the location's name,
+ * and what the row carries (a share or group id, an email, a name).
+ */
+export type AuditFilter = {
+  limit?: number;
+  before?: string;
+  actor?: string;
+  action?: AuditAction;
+  category?: AuditCategory;
+  result?: string;
+  /** Leaves out the rows whose `signal` is `low`. */
+  important?: boolean;
+  from?: number;
+  to?: number;
+  q?: string;
+};

@@ -5,6 +5,7 @@ import { loadEnv } from "./config/env.js";
 import { openDb, row } from "./db/db.js";
 import { hashPassword, randomToken } from "./lib/crypto.js";
 import { id, now } from "./lib/ids.js";
+import { AuditService } from "./services/audit.service.js";
 import type { User } from "./services/types.js";
 
 const args = process.argv.slice(2);
@@ -21,10 +22,8 @@ if ((!email && !disableSso) || (email && !/^[^\s@]+@[^\s@]+$/.test(email))) {
 // The server may be running: its tasks are left alone.
 const db = openDb(loadEnv(), { interruptRunningTasks: false });
 const ts = now();
-const audit = (action: string, target: unknown) =>
-  db
-    .prepare("INSERT INTO audit_logs (id, actor_type, actor_id, action, root_id, path, target_json, result, ip, user_agent, created_at) VALUES (?, 'system', NULL, ?, NULL, NULL, ?, 'success', NULL, NULL, ?)")
-    .run(id("audit"), action, JSON.stringify(target), ts);
+const log = new AuditService(db);
+const audit = (action: "sso_update" | "admin_recovery", target: unknown) => log.write({ actorType: "system", action, target, result: "success" });
 
 if (disableSso) {
   const stored = row<{ value_json: string }>(db.prepare("SELECT value_json FROM app_settings WHERE key = 'oidc'").get());

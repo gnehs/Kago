@@ -36,6 +36,7 @@ export function KagoDropdownMenu({
   sideOffset = 4,
   align = "end",
   raised,
+  wide,
   container,
   onOpenChange,
   children
@@ -48,6 +49,8 @@ export function KagoDropdownMenu({
   sideOffset?: number;
   /** Drawn as a button with a body, to stand beside other such buttons (at the end of a row of a list) instead of on a bar. */
   raised?: boolean;
+  /** A button with words on it (a filter that says what it is set to), as wide as they are, not a square for an icon. */
+  wide?: boolean;
   /** Which edge of the button the popup lines up with. */
   align?: "start" | "end";
   /** Where the popup is mounted. An element shown fullscreen has to hold its own menu. */
@@ -63,7 +66,8 @@ export function KagoDropdownMenu({
       // Shown fullscreen, the element holds its own menu but not the tooltips, which are drawn on the page behind it.
       title={container ? label : undefined}
       className={cn(
-        "flex size-(--kago-control-h) shrink-0 items-center justify-center rounded-md outline-none focus-ring",
+        "flex shrink-0 items-center justify-center rounded-md outline-none focus-ring",
+        wide ? "h-(--kago-control-h) gap-1.5 px-2.5 whitespace-nowrap" : "size-(--kago-control-h)",
         raised ? "kago-raised text-ink" : "kago-flat text-muted hover:text-ink data-[popup-open]:text-ink",
         className
       )}
@@ -78,7 +82,7 @@ export function KagoDropdownMenu({
         onOpenChange?.(next);
       }}
     >
-      {container ? trigger : <KagoTooltip label={label} disabled={open}>{trigger}</KagoTooltip>}
+      {container || wide ? trigger : <KagoTooltip label={label} disabled={open}>{trigger}</KagoTooltip>}
       <Menu.Portal container={container ?? undefined}>
         <Menu.Positioner side={side} sideOffset={sideOffset} align={align} collisionPadding={8} className="z-[800] outline-none">
           <Menu.Popup className="kago-glass kago-pop max-h-(--available-height) min-w-44 cursor-default overflow-y-auto overscroll-contain rounded-lg p-1 outline-none select-none">{menu}</Menu.Popup>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Search, Trash2 } from "lucide-react";
 import { useMe, useRoots, useTasks, useTrash } from "@/api/hooks";
 import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
@@ -6,21 +6,10 @@ import { KagoSearchField } from "@/components/kago/search-field";
 import { Button } from "@/components/ui/button";
 import { isActiveTask } from "@/features/tasks/taskUtils";
 import { t } from "@/lib/i18n";
+import { useNow } from "@/lib/useNow";
 import { arrangeTrash, isLocalRoot, othersOf, totalOf, type TrashSection } from "@/lib/trashModel";
 import { TrashCard, TrashGroupCard, type TrashView } from "./TrashCard";
 import { totalText, useTrashActions } from "./useTrashActions";
-
-const nowSeconds = () => Math.floor(Date.now() / 1000);
-
-/** Times in the list and the day each item is under are read again now and then, so "Today" does not stay that past midnight. */
-function useNow() {
-  const [now, setNow] = useState(nowSeconds);
-  useEffect(() => {
-    const timer = setInterval(() => setNow(nowSeconds()), 30_000);
-    return () => clearInterval(timer);
-  }, []);
-  return now;
-}
 
 const sectionTitle = (section: TrashSection) => (section === "today" ? t("Today") : section === "yesterday" ? t("Yesterday") : t("Earlier"));
 

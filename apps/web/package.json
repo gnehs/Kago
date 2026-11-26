@@ -21,6 +21,7 @@
     "test:shares": "node --test scripts/test-share-model.mjs",
     "test:trash": "node --test scripts/test-trash-model.mjs",
     "test:people": "node --test scripts/test-people-model.mjs",
+    "test:audit": "node --test scripts/test-audit-model.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

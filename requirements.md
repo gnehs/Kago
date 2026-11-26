@@ -1709,11 +1709,21 @@ CREATE TABLE audit_logs (
   result TEXT NOT NULL,
   ip TEXT,
   user_agent TEXT,
-  created_at INTEGER NOT NULL
+  created_at INTEGER NOT NULL,
+  category TEXT,
+  signal TEXT NOT NULL DEFAULT 'normal',
+  subject TEXT,
+  run_id TEXT,
+  run_count INTEGER NOT NULL DEFAULT 1,
+  run_first_at INTEGER,
+  run_folders TEXT,
+  head INTEGER NOT NULL DEFAULT 1
 );
 
 CREATE INDEX idx_audit_logs_created_at ON audit_logs(created_at);
 ```
+
+`category`、`signal` 在寫入時依動作寫上（見「45. Audit log」），`subject` 是 `target_json` 裡所有字串串起來，給搜尋用。`run_id`、`run_count`、`run_first_at`、`run_folders`、`head` 是連發（burst）：只有 `head = 1` 的那一列會被列出。列表用的索引都只建在 `head = 1` 的列上（依時間、依分類、依動作、依人、只看重要的、只看失敗與拒絕），另有 `run_id` 索引用來取一組連發的全部成員。
 
 ### sync_jobs
 
@@ -2776,7 +2786,10 @@ POST   /s/:token/upload
 
 ```txt
 GET /api/audit                      ADMIN
+GET /api/audit/runs/:id             ADMIN
 ```
+
+`GET /api/audit` 一列一組連發，新的在前。參數：`limit`、`before`（上一頁最後一列的 `<created_at>:<id>`）、`actor`（使用者 id、`system` 或 `share_link`）、`action`、`category`、`result`（可用逗號列出多個）、`important=true`（略過低訊號的列）、`from`／`to`（unix 秒，含頭不含尾）、`q`（人名、email、路徑、位置名稱，以及 `target_json` 裡的字串）。`GET /api/audit/runs/:id` 回傳一組連發的全部成員，`id` 是列上 `burst.id`。
 
 ### Events
 
@@ -2930,7 +2943,6 @@ Kago 不會從使用者填的網址抓東西，唯一的例外是確認它允不
   extract
   download
   download_zip
-  thumbnail
   tag_create
   tag_update
   tag_update
@@ -2977,6 +2989,14 @@ Kago 不會從使用者填的網址抓東西，唯一的例外是確認它允不
 ```
 
 每一筆記下是誰（`user`、`share_link` 或 `system`）、做了什麼、在哪個位置的哪個路徑、結果（`success`、`failure`、`denied`）、IP 與瀏覽器。
+
+每個動作屬於一個分類（`sign_in`、`account`、`permission`、`file`、`share`、`task`、`settings`、`system`），也有一個訊號等級：`normal`，或 `low`（縮圖、儲存桌面、登出、任務開始這類記錄用的紀錄）。表放在伺服器的 `lib/audit-actions.ts`，動作的型別在 contract 的 `AuditAction`，寫入時的 `action` 就是那個型別，所以新增動作不放進表就無法編譯。被拒絕的縮圖、預覽、圖示這類請求（`request_failed`、`request_denied`）也算 `low`；被拒絕的刪除與登入失敗不是。
+
+縮圖不寫 audit log：一個資料夾的檔案一次要幾十張，看圖的人每張還要再要一次，會佔掉記錄的一半。預覽、看圖、`exif`、列出資料夾也不寫。被拒絕的縮圖照舊拒絕，並留下 `permission_denied` 一列。`thumbnail` 這個動作留在 `AuditAction` 與表裡（表的 `retiredActions`），因為以前寫下的列還在，它們仍然是 `low`；測試要求停寫的動作在原始碼裡找不到寫入，還在寫的動作找得到。
+
+一次拒絕只寫一列：拒絕的那一方已經寫下 `permission_denied` 時，這個請求不再另寫 `request_denied`（`AppError` 的 `recorded`）；沒有人寫過的拒絕（例如缺少 CSRF 標頭）仍由請求自己寫。`request_failed` 沒說出對方要做什麼，管理員會處理的事各有自己的一列（登入失敗、被拒絕），所以它是 `low`，只有伺服器自己出錯（5xx）時才是 `normal`。
+
+同一個人、同一個動作、同一個結果、同樣的訊號等級，只要和上一列相隔不超過 60 秒，就併進同一組連發，一組最長一小時。列表一組只出一列（最新的那一列），上面有筆數、第一筆的時間，以及這一組去過的資料夾。路徑不同不會中斷一組。
 
 不要只記成功，也要記失敗與拒絕。
 

@@ -1,3 +1,4 @@
+import type { AuditAction } from "@kago/contract";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { AppError } from "../lib/errors.js";
 import type { Actor } from "../services/types.js";
@@ -32,7 +33,7 @@ export const adminOnly = (routes: Routes): Routes =>
         ip: request.ip,
         userAgent: request.headers["user-agent"]
       });
-      throw new AppError(403, "Admin required", "ADMIN_REQUIRED");
+      throw new AppError(403, "Admin required", "ADMIN_REQUIRED", true);
     }
     return actor;
   });
@@ -49,5 +50,5 @@ function guarded(routes: Routes, resolve: (s: Services, request: FastifyRequest)
   };
 }
 
-export const auditor = (s: Services) => (actor: Actor, action: string, target?: unknown, rootId?: string) =>
+export const auditor = (s: Services) => (actor: Actor, action: AuditAction, target?: unknown, rootId?: string) =>
   s.audit.write({ actorType: "user", actorId: actor.id, action, rootId, target, result: "success" });

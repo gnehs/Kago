@@ -53,6 +53,17 @@ const dayYearFormat = new Intl.DateTimeFormat(locale, { year: "numeric", month: 
 /** The hour and minute of a database timestamp, for a day that is named somewhere else. */
 export const formatUnixTime = (seconds: number) => timeOfDayFormat.format(new Date(seconds * 1000));
 
+const dateTimeFormat = new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "medium" });
+const clockFormat = new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
+const time24Format = new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+
+/** A database timestamp to the second, for a record that has to say exactly when. */
+export const formatUnixDateTime = (seconds: number) => dateTimeFormat.format(new Date(seconds * 1000));
+/** The hour and minute on a 24-hour clock, for a log whose rows are told apart by the minute and read down a column. */
+export const formatUnixTime24 = (seconds: number) => time24Format.format(new Date(seconds * 1000));
+/** The hour, minute and second of a database timestamp on a 24-hour clock, for rows of one day. */
+export const formatUnixClock = (seconds: number) => clockFormat.format(new Date(seconds * 1000));
+
 /** The day of a database timestamp without the time, with the year only where it is not this one. */
 export const formatUnixDay = (seconds: number, nowSeconds = Date.now() / 1000) =>
   (new Date(seconds * 1000).getFullYear() === new Date(nowSeconds * 1000).getFullYear() ? dayFormat : dayYearFormat).format(new Date(seconds * 1000));

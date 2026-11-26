@@ -600,7 +600,6 @@ test("minimum file-manager demo flow", async () => {
       "restore_trash",
       "compress",
       "extract",
-      "thumbnail",
       "permission_denied"
     ]) {
       assert.ok(actions.has(action), `audit should include ${action}`);

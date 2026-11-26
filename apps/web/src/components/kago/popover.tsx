@@ -16,6 +16,8 @@ export function KagoPopover({
   panelClassName,
   sideOffset = 4,
   align = "end",
+  raised,
+  wide,
   children
 }: {
   label: string;
@@ -28,15 +30,24 @@ export function KagoPopover({
   sideOffset?: number;
   /** Which edge of the button the panel lines up with. */
   align?: "start" | "end";
+  /** Drawn as a button with a body, to stand beside other such buttons instead of on a bar. */
+  raised?: boolean;
+  /** A button with words on it, as wide as they are, not a square for an icon. Its words are its name. */
+  wide?: boolean;
   children: ReactNode;
 }) {
   return (
     <Popover.Root open={open} onOpenChange={onOpenChange}>
       {/* With its panel open the button needs no name beside it. */}
-      <KagoTooltip label={label} disabled={open}>
+      <KagoTooltip label={label} disabled={open || wide}>
         <Popover.Trigger
-          aria-label={label}
-          className={cn("flex size-(--kago-control-h) shrink-0 items-center justify-center kago-flat rounded-md text-muted outline-none hover:text-ink focus-ring", className)}
+          aria-label={wide ? undefined : label}
+          className={cn(
+            "flex shrink-0 items-center justify-center rounded-md outline-none focus-ring",
+            wide ? "h-(--kago-control-h) gap-1.5 px-2.5 whitespace-nowrap" : "size-(--kago-control-h)",
+            raised ? "kago-raised text-ink" : "kago-flat text-muted hover:text-ink",
+            className
+          )}
         >
           {children}
         </Popover.Trigger>

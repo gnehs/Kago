@@ -6,6 +6,7 @@ import { decodeSubtitle } from "../lib/subtitles";
 import type { FileTask as WireFileTask } from "@kago/contract";
 import { parseTask } from "../lib/taskModel";
 import { withSpeeds } from "../lib/taskSpeed";
+import { auditParams, AUDIT_PAGE, cursorOf, MEMBERS_FIRST, MEMBERS_MORE, type AuditScope } from "../lib/auditModel";
 import { parentPath } from "../lib/paths";
 import type { FileRef } from "../stores/clipboard";
 import { keys } from "./keys";
@@ -477,25 +478,32 @@ export function useTrash(enabled = true) {
   return useQuery({ queryKey: keys.trash(), queryFn: () => api<TrashItem[]>("/api/trash"), enabled });
 }
 
-export type AuditEntry = AuditLog & { actor_name: string | null; actor_email: string | null };
-export type AuditFilter = { action?: string; result?: AuditLog["result"] };
-const AUDIT_PAGE = 100;
-
-/** The log newest first, a page at a time; each page continues after the last row of the one before. */
-export function useAudit(filter: AuditFilter = {}, enabled = true) {
+/**
+ * The log newest first, a page at a time, narrowed as `scope` says. The rows already shown stay while a narrower or
+ * wider scope is being read, so that changing a filter does not blank the list. Only a reader at the top of the log is
+ * kept up to date: a page deep down is history, and re-reading every page above it would be a request for each.
+ */
+export function useAudit(scope: AuditScope, enabled = true) {
   return useInfiniteQuery({
-    queryKey: keys.audit(filter),
+    queryKey: keys.audit(scope),
     initialPageParam: "",
-    queryFn: ({ pageParam }) => {
-      const query = new URLSearchParams({ limit: String(AUDIT_PAGE) });
-      if (pageParam) query.set("before", pageParam);
-      if (filter.action) query.set("action", filter.action);
-      if (filter.result) query.set("result", filter.result);
-      return api<AuditEntry[]>(`/api/audit?${query}`);
-    },
-    getNextPageParam: (last) => (last.length < AUDIT_PAGE ? undefined : `${last[last.length - 1]!.created_at}:${last[last.length - 1]!.id}`),
+    queryFn: ({ pageParam }) => api<AuditLog[]>(`/api/audit?${auditParams(scope, Math.floor(Date.now() / 1000), pageParam || undefined)}`),
+    getNextPageParam: (last) => (last.length < AUDIT_PAGE ? undefined : cursorOf(last[last.length - 1]!)),
+    placeholderData: keepPreviousData,
     enabled,
-    refetchInterval: enabled ? 6000 : false
+    refetchInterval: (query) => (enabled && (query.state.data?.pages.length ?? 0) <= 3 ? 8000 : false)
+  });
+}
+
+/** The rows of a run: a few at first, then more as asked, newest first. Each page continues after the last row of the one before. */
+export function useAuditRun(runId: string, total: number, enabled: boolean) {
+  return useInfiniteQuery({
+    queryKey: keys.auditRun(runId),
+    initialPageParam: { before: "", limit: MEMBERS_FIRST },
+    queryFn: ({ pageParam }) => api<AuditLog[]>(`/api/audit/runs/${runId}?${new URLSearchParams({ limit: String(pageParam.limit), ...(pageParam.before ? { before: pageParam.before } : {}) })}`),
+    getNextPageParam: (last, pages) => (pages.reduce((sum, page) => sum + page.length, 0) >= total || last.length === 0 ? undefined : { before: cursorOf(last[last.length - 1]!), limit: MEMBERS_MORE }),
+    enabled,
+    retry: false
   });
 }
 

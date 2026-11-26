@@ -1902,7 +1902,7 @@ export class TaskService {
       target: { action: "task_access", taskId: task.id },
       result: "denied"
     });
-    throw new AppError(403, "Task access denied", "TASK_ACCESS_DENIED");
+    throw new AppError(403, "Task access denied", "TASK_ACCESS_DENIED", true);
   }
 
   private cloneTask(actor: Actor, task: FileTask): FileTask {

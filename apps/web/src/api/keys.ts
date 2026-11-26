@@ -29,7 +29,8 @@ export const keys = {
   appIcons: (name: string) => ["app-icons", name] as const,
   frameProbe: (url: string) => ["frame-probe", url] as const,
   thumbnailText: (source: unknown) => ["thumbnail-text", source] as const,
-  audit: (filter: unknown) => ["audit", filter] as const,
+  audit: (scope: unknown) => ["audit", scope] as const,
+  auditRun: (runId: string) => ["audit", "run", runId] as const,
   archivePasswords: () => ["archive-passwords"] as const,
   permissions: {
     all: () => ["permissions"] as const,

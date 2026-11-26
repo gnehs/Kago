@@ -31,6 +31,8 @@ const statusMeta: Record<string, { label: string; tone: "neutral" | "accent" | "
   interrupted: { label: t("Interrupted"), tone: "danger" }
 };
 
+/** What a kind of task is called, for the ones that are only known by their type; a type this does not know is as it came. */
+export const taskTypeName = (type: string) => typeLabels[type as FileTask["type"]] ?? type;
 export const taskTypeLabel = (task: FileTask) => typeLabels[task.type] ?? task.type;
 export const taskStatus = (task: { status: string }) => statusMeta[task.status] ?? { label: task.status, tone: "neutral" as const };
 export const isActiveTask = (task: { status: string }) => ["queued", "running", "cancelling", "paused"].includes(task.status);

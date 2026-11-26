@@ -3,6 +3,8 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { Env } from "../config/env.js";
 import { id, now } from "../lib/ids.js";
+import { logger } from "../lib/logger.js";
+import { AuditService, classAuditRows, placeAuditRows } from "../services/audit.service.js";
 import { jobIdOf } from "../services/job-run.js";
 import { transitionAll } from "../services/task-status.js";
 import { activeTaskStatuses, isActiveTaskStatus, sqlStatuses, type FileTask } from "../services/types.js";
@@ -30,6 +32,18 @@ export function openDb(env: Env, options: { interruptRunningTasks?: boolean } = 
   addMissingColumns(db, "share_links", { token_sealed: "TEXT" });
   // Items trashed before this have none, and are listed one by one with their size unknown.
   addMissingColumns(db, "trash_items", { kind: "TEXT", size: "INTEGER", item_count: "INTEGER", deletion_id: "TEXT" });
+  // Rows from before these have no class and no run: they are placed below, once the indexes are there.
+  addMissingColumns(db, "audit_logs", {
+    category: "TEXT",
+    signal: "TEXT NOT NULL DEFAULT 'normal'",
+    subject: "TEXT",
+    run_id: "TEXT",
+    run_count: "INTEGER NOT NULL DEFAULT 1",
+    run_first_at: "INTEGER",
+    run_folders: "TEXT",
+    head: "INTEGER NOT NULL DEFAULT 1"
+  });
+  addAuditIndexes(db);
   addMissingColumns(db, "tasks", { cleared: "INTEGER NOT NULL DEFAULT 0", pace_fps: "REAL", pace_height: "INTEGER", phase: "TEXT", job_id: "TEXT" });
   holdJobsToOneActiveRun(db);
   migratePermissionLevels(db);
@@ -47,6 +61,8 @@ export function openDb(env: Env, options: { interruptRunningTasks?: boolean } = 
     WHERE json_type(settings_json, '$.finderTags') IS NOT NULL;
     UPDATE audit_logs SET action = 'tag_update' WHERE action = 'finder_tag_update'
   `);
+  placeAuditRowsAloud(db);
+  classAuditRows(db);
   if (options.interruptRunningTasks ?? true) {
     transitionAll(db, "interrupt");
     // The worker that was to let go of these is gone, so they have stopped.
@@ -54,6 +70,34 @@ export function openDb(env: Env, options: { interruptRunningTasks?: boolean } = 
   }
 
   return db;
+}
+
+/** Placing a large log takes seconds (about 6 s for 500 000 rows) before the server listens, so it says so. */
+function placeAuditRowsAloud(db: Db): void {
+  const { waiting } = db.prepare("SELECT COUNT(*) AS waiting FROM audit_logs WHERE run_id IS NULL").get() as { waiting: number };
+  if (waiting === 0) return;
+  logger.info(`placing ${waiting} audit log rows in runs; the server listens once this is done`);
+  const started = Date.now();
+  placeAuditRows(db);
+  logger.info(`placed ${waiting} audit log rows in runs in ${((Date.now() - started) / 1000).toFixed(1)} s`);
+}
+
+/**
+ * What the audit page reads by. Each is kept to the rows that are listed (a run's head), which is most of what the log
+ * holds once thumbnails and other bursts have folded. The tip index is how a new row finds the run it joins.
+ */
+function addAuditIndexes(db: Db): void {
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_audit_head ON audit_logs(created_at DESC, id DESC) WHERE head = 1;
+    CREATE INDEX IF NOT EXISTS idx_audit_important ON audit_logs(created_at DESC, id DESC) WHERE head = 1 AND signal = 'normal';
+    CREATE INDEX IF NOT EXISTS idx_audit_problem ON audit_logs(created_at DESC, id DESC) WHERE head = 1 AND result <> 'success';
+    CREATE INDEX IF NOT EXISTS idx_audit_category ON audit_logs(category, created_at DESC, id DESC) WHERE head = 1;
+    CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_logs(action, created_at DESC, id DESC) WHERE head = 1;
+    CREATE INDEX IF NOT EXISTS idx_audit_actor ON audit_logs(actor_type, actor_id, created_at DESC, id DESC) WHERE head = 1;
+    CREATE INDEX IF NOT EXISTS idx_audit_run ON audit_logs(run_id, created_at DESC, id DESC);
+    CREATE INDEX IF NOT EXISTS idx_audit_tip ON audit_logs(actor_type, actor_id, action, result, signal, created_at DESC) WHERE head = 1;
+    CREATE INDEX IF NOT EXISTS idx_audit_unplaced ON audit_logs(created_at, id) WHERE run_id IS NULL;
+  `);
 }
 
 /** `CREATE TABLE IF NOT EXISTS` leaves an older database's tables as they were; columns added since are added here. */
@@ -153,9 +197,7 @@ function migratePermissionLocations(db: Db): void {
   try {
     // The task worker opens the database at the same moment and may have migrated it while this waited for the lock.
     if (columns().has("path_prefix")) {
-      const audit = db.prepare(
-        "INSERT INTO audit_logs (id, actor_type, action, root_id, path, target_json, result, created_at) VALUES (?, 'system', 'permission_change', ?, ?, ?, 'success', ?)"
-      );
+      const audit = new AuditService(db);
       const narrow = db.prepare("SELECT * FROM permission_rules WHERE path_prefix != '/' OR recursive = 0").all() as Array<{
         principal_type: string;
         principal_id: string;
@@ -165,7 +207,7 @@ function migratePermissionLocations(db: Db): void {
       }>;
       for (const rule of narrow) {
         const target = { principalType: rule.principal_type, principalId: rule.principal_id, level: rule.level, deleted: true, note: "Permissions are set per location" };
-        audit.run(id("audit"), rule.root_id, rule.path_prefix.slice(0, 2048), JSON.stringify(target), now());
+        audit.write({ actorType: "system", action: "permission_change", rootId: rule.root_id, path: rule.path_prefix, target, result: "success" });
       }
       db.exec(`
         CREATE TABLE permission_rules_per_location (

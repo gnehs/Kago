@@ -54,7 +54,7 @@ export class PermissionService {
         target: { level, reason: result.reason ?? "Forbidden" },
         result: "denied"
       });
-      throw new AppError(403, result.reason ?? "Forbidden", "FORBIDDEN");
+      throw new AppError(403, result.reason ?? "Forbidden", "FORBIDDEN", true);
     }
   }
 

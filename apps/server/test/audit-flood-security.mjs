@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { AuditService } from "../src/services/audit.service.ts";
@@ -59,10 +60,6 @@ test("the current password cannot be found out by trying from inside a session",
 
 function harness() {
   const db = new DatabaseSync(":memory:");
-  db.exec(`
-    CREATE TABLE audit_logs (id TEXT PRIMARY KEY, actor_type TEXT NOT NULL, actor_id TEXT, action TEXT NOT NULL, root_id TEXT, path TEXT, target_json TEXT, result TEXT NOT NULL, ip TEXT, user_agent TEXT, created_at INTEGER NOT NULL);
-    CREATE TABLE users (id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, display_name TEXT NOT NULL, role TEXT NOT NULL, disabled INTEGER NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
-    CREATE TABLE sessions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, token_hash TEXT NOT NULL, expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL, last_seen_at INTEGER NOT NULL);
-  `);
+  db.exec(readFileSync(new URL("../src/db/schema.sql", import.meta.url), "utf8"));
   return { db, audit: new AuditService(db) };
 }

@@ -1,4 +1,5 @@
 import type { Root, TrashItem } from "../types/kago";
+import { daysAgo } from "./days.ts";
 
 /*
  * What the Trash window knows about its items without asking anyone: which were thrown away together, which day each
@@ -54,13 +55,8 @@ export type TrashSection = "today" | "yesterday" | "earlier";
 
 /** Which day an item falls under by the clock of the person looking, not of the server. */
 export function sectionOf(deletedAt: number, nowSeconds = Math.floor(Date.now() / 1000)): TrashSection {
-  const startOfToday = new Date(nowSeconds * 1000);
-  startOfToday.setHours(0, 0, 0, 0);
-  const today = startOfToday.getTime() / 1000;
-  if (deletedAt >= today) return "today";
-  const yesterday = new Date(startOfToday);
-  yesterday.setDate(yesterday.getDate() - 1);
-  return deletedAt >= yesterday.getTime() / 1000 ? "yesterday" : "earlier";
+  const days = daysAgo(deletedAt, nowSeconds);
+  return days <= 0 ? "today" : days === 1 ? "yesterday" : "earlier";
 }
 
 /** What the window lists for a search: whole deletions, newest first, under the day they belong to; a day with nothing is left out. */

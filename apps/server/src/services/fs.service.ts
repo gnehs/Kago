@@ -930,7 +930,6 @@ export class FsService {
     this.permissions.require(actor, "view", safe.root, safe.logicalPath);
     const stat = await this.storage.stat(safe);
     if (!stat.isFile() || stat.size === 0) return null;
-    this.auditThumbnail(actor, safe.root.id, safe.logicalPath);
     const contentType = String(lookup(safe.logicalPath) || "application/octet-stream");
     const extension = path.extname(safe.logicalPath).slice(1).toLowerCase();
     const remote = this.storage.isRemote(safe);
@@ -1016,7 +1015,7 @@ export class FsService {
   }
 
   /** Writes Kago's own copy of a picture the actor may see to `target`, so the file it came from can move or go. */
-  private async keepPicture(actor: Actor, rootSlug: string, logicalPath: string, copy: { target: string; edge: number; square?: boolean | Crop; action: string; /** What to answer for a file that is not one. */ notPicture: AppError }): Promise<void> {
+  private async keepPicture(actor: Actor, rootSlug: string, logicalPath: string, copy: { target: string; edge: number; square?: boolean | Crop; action: "set_wallpaper" | "set_avatar"; /** What to answer for a file that is not one. */ notPicture: AppError }): Promise<void> {
     const safe = await this.paths.resolveExisting(rootSlug, logicalPath);
     this.permissions.require(actor, "view", safe.root, safe.logicalPath);
     const stat = await this.storage.stat(safe);
@@ -1029,17 +1028,6 @@ export class FsService {
     } else picture = this.storage.isRemote(safe) ? this.storage.mediaInput(safe) : safe.absolutePath;
     if (!picture || !(await this.thumbnailer.convert(picture, copy.target, copy.edge, copy.square))) throw new AppError(422, "The picture could not be converted", "PICTURE_FAILED");
     this.audit.write({ actorType: "user", actorId: actor.id, action: copy.action, rootId: safe.root.id, path: safe.logicalPath, result: "success" });
-  }
-
-  private auditThumbnail(actor: Actor, rootId: string, logicalPath: string): void {
-    this.audit.write({
-      actorType: "user",
-      actorId: actor.id,
-      action: "thumbnail",
-      rootId,
-      path: logicalPath,
-      result: "success"
-    });
   }
 
   /** The entry of `parent` whose name reads the same as `name`, as it is spelled there, or null when there is none. */

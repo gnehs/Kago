@@ -260,7 +260,7 @@ export class ExternalAppService {
   private requireAdmin(actor: Actor): void {
     if (actor.role === "ADMIN") return;
     this.audit.write({ actorType: "user", actorId: actor.id, action: "permission_denied", target: { action: "shared_external_app" }, result: "denied" });
-    throw new AppError(403, "Admin required", "ADMIN_REQUIRED");
+    throw new AppError(403, "Admin required", "ADMIN_REQUIRED", true);
   }
 
   /** The sign-in a request asks for, as it is kept: the password sealed, and the one there was kept when none was given. */

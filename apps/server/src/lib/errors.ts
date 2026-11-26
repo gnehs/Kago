@@ -8,7 +8,9 @@ export class AppError extends Error {
   constructor(
     public readonly statusCode: number,
     message: string,
-    public readonly code = "APP_ERROR"
+    public readonly code = "APP_ERROR",
+    /** The refusal is in the audit log already, written by whoever refused: the request's own failure would say it twice. */
+    public readonly recorded = false
   ) {
     super(message);
   }

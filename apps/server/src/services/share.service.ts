@@ -211,7 +211,7 @@ export class ShareService {
       target: { action: "share_access", shareId },
       result: "denied"
     });
-    throw new AppError(403, "Share access denied", "SHARE_ACCESS_DENIED");
+    throw new AppError(403, "Share access denied", "SHARE_ACCESS_DENIED", true);
   }
 
   /** `visitor` lets someone already counted against the limit go on using a link that has since reached it. */
