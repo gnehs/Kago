@@ -1,18 +1,34 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { invalidateEvent } from "@/api/invalidations";
-import { KeyRound, UserRound, UsersRound } from "lucide-react";
+import { KeyRound, UsersRound } from "lucide-react";
 import { api } from "@/api/client";
 import { useGroups, usePermissions, useUsers } from "@/api/hooks";
+import { avatarUrl, KagoAvatar } from "@/components/kago/avatar";
 import { KagoEmptyState } from "@/components/kago/empty-state";
+import { KagoStatusIcon } from "@/components/kago/status-icon";
 import { Select } from "@/components/ui/input";
 import { Card, Page, RowList } from "@/components/kago/page";
+import { arrangeUsers, groupsOf, personName } from "@/lib/peopleModel";
 import { run } from "@/lib/run";
+import { cn } from "@/lib/utils";
 import type { PermissionRule, Root } from "@/types/kago";
 import { permissionLabel, type PermissionLevel } from "./permissionUtils";
 import { t } from "@/lib/i18n";
 
-type Principal = { type: PermissionRule["principal_type"]; id: string; name: string; admin?: boolean; groupIds?: string[] };
+type Principal = {
+  type: PermissionRule["principal_type"];
+  id: string;
+  name: string;
+  /** Of a group: how many are in it. */
+  members?: number;
+  /** Of a user: their address when the name is not it, their picture, and whether they are switched off. */
+  email?: string;
+  picture?: string | null;
+  admin?: boolean;
+  off?: boolean;
+  groupIds?: string[];
+};
 
 const higher = (a: PermissionRule | undefined, b: PermissionRule) => (!a || (a.level === "view" && b.level === "edit") ? b : a);
 
@@ -57,26 +73,35 @@ export function PermissionsPage({ roots }: { roots: Root[] }) {
     );
   }
 
-  const groupRows: Principal[] = (groups.data ?? []).map((group) => ({ type: "group", id: group.id, name: group.name }));
-  const userRows: Principal[] = (users.data ?? []).map((user) => ({
-    type: "user",
-    id: user.id,
-    name: user.email,
-    admin: user.role === "ADMIN",
-    groupIds: (groups.data ?? []).filter((group) => group.members.some((member) => member.id === user.id)).map((group) => group.id)
-  }));
+  const groupRows: Principal[] = [...(groups.data ?? [])]
+    .sort((x, y) => x.name.localeCompare(y.name, undefined, { numeric: true }))
+    .map((group) => ({ type: "group", id: group.id, name: group.name, members: group.members.length }));
+  // The people come in the order the Users page lists them: administrators, users, and the accounts switched off last.
+  const userRows: Principal[] = arrangeUsers(users.data ?? [], "").flatMap(({ users: list }) =>
+    list.map((user): Principal => ({
+      type: "user",
+      id: user.id,
+      name: personName(user),
+      email: user.display_name ? user.email : undefined,
+      picture: avatarUrl(user.id, user.avatar_at),
+      admin: user.role === "ADMIN",
+      off: Boolean(user.disabled),
+      groupIds: groupsOf(user.id, groups.data ?? []).map((group) => group.id)
+    }))
+  );
 
   function row(principal: Principal) {
     const level = principal.admin ? "edit" : ruleOf(principal.type, principal.id)?.level ?? null;
     const disabled = principal.admin || saving === `${principal.type}:${principal.id}`;
     const note = principal.admin ? t("Administrators can reach every location") : granted(principal);
+    const line = [principal.off ? t("Disabled") : null, principal.members !== undefined ? t("{count} member | {count} members", { count: principal.members }) : null, principal.email, note].filter(Boolean).join(" · ");
     return (
       <li key={`${principal.type}:${principal.id}`} className="grid min-h-11 grid-cols-[1fr_3.5rem_3.5rem] items-center py-1.5">
-        <div className="flex min-w-0 items-center gap-2.5 [&>.lucide]:shrink-0 [&>.lucide]:text-muted">
-          {principal.type === "group" ? <UsersRound /> : <UserRound />}
+        <div className="flex min-w-0 items-center gap-2.5">
+          {principal.type === "group" ? <KagoStatusIcon className="size-6.5 [&>.lucide]:size-3.5"><UsersRound /></KagoStatusIcon> : <KagoAvatar name={principal.name} picture={principal.picture} className={cn("size-6.5", principal.off && "text-faint")} />}
           <div className="flex min-w-0 flex-col">
-            <span className="truncate font-medium">{principal.name}</span>
-            {note ? <span className="truncate text-xs text-muted">{note}</span> : null}
+            <span className={cn("truncate", principal.off ? "text-muted" : "font-medium")}>{principal.name}</span>
+            {line ? <span className="truncate text-xs text-muted">{line}</span> : null}
           </div>
         </div>
         <span className="flex justify-center">
@@ -88,6 +113,8 @@ export function PermissionsPage({ roots }: { roots: Root[] }) {
       </li>
     );
   }
+
+  const heading = (text: string) => <li className="flex min-h-0 pt-3 pb-1 text-xs font-semibold text-muted">{text}</li>;
 
   return (
     <Page
@@ -109,7 +136,9 @@ export function PermissionsPage({ roots }: { roots: Root[] }) {
             <span>{t("Edit")}</span>
           </div>
           <RowList bare>
+            {groupRows.length > 0 ? heading(t("Groups · {count}", { count: groupRows.length })) : null}
             {groupRows.map(row)}
+            {userRows.length > 0 ? heading(t("Users · {count}", { count: userRows.length })) : null}
             {userRows.map(row)}
           </RowList>
         </div>

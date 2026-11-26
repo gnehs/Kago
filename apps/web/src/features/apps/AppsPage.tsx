@@ -19,6 +19,7 @@ export function AppsPage() {
 
   return (
     <Page
+      wide
       title={t("Apps")}
       description={t("Shortcuts on the desktop to the other services you run, such as Jellyfin or Home Assistant. Each opens in a new tab, or in a window inside Kago.")}
       actions={apps.data?.length ? addButton : null}

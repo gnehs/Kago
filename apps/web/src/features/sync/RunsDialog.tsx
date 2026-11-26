@@ -1,21 +1,23 @@
 import { useState } from "react";
 import { History } from "lucide-react";
 import { useSyncRuns } from "@/api/hooks";
-import { KagoBadge } from "@/components/kago/badge";
 import { KagoDialog } from "@/components/kago/dialog";
 import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
+import { KagoStatusIcon } from "@/components/kago/status-icon";
 import { Button } from "@/components/ui/button";
+import { statusGlyph } from "@/features/tasks/statusGlyph";
 import { taskErrorLabel, taskStatus } from "@/features/tasks/taskUtils";
 import { formatDuration, formatSize, formatUnixDate } from "@/lib/format";
 import { t } from "@/lib/i18n";
+import { runSeconds } from "@/lib/runModel";
 import type { SyncJob, SyncRun, SyncTrialSummary } from "@/types/kago";
 import { describeTrial } from "./TrialDialog";
 
-/** What there is to say of a run beyond when it was and how it ended. */
+/** Where a run came from and what it moved, under its headline. */
 function describeRun(run: SyncRun) {
   return [
+    formatUnixDate(run.started_at),
     run.scheduled ? t("On schedule") : t("Started by hand"),
-    run.finished_at ? t("Took {duration}", { duration: formatDuration(run.finished_at - run.started_at) }) : null,
     // What a run changed says how much it copied; of one that left no such count, only what it sent is known, if that.
     !run.summary && !run.dry_run && run.bytes > 0 ? t("{size} transferred", { size: formatSize(run.bytes) }) : null
   ].filter(Boolean).join(" · ");
@@ -34,7 +36,13 @@ function describeChanges(summary: SyncTrialSummary) {
   return parts.length > 0 ? parts.join(" · ") : t("Nothing was copied or deleted");
 }
 
-/** The job's last runs: when each was, how it ended, and what it changed. */
+/** What a run did, as its headline: what it changed, or where it left no count, how it ended. */
+function headlineOf(run: SyncRun) {
+  if (run.summary) return run.dry_run ? describeTrial(run.summary) : describeChanges(run.summary);
+  return taskStatus({ status: run.status }).label;
+}
+
+/** The job's last runs: what each did and how long it took, and under that when it was and what started it. */
 export function RunsDialog({ job, onClose }: { job: SyncJob | null; onClose: () => void }) {
   // The last job stays on show while its dialog fades out, and so do its runs.
   const [shown, setShown] = useState(job);
@@ -50,16 +58,18 @@ export function RunsDialog({ job, onClose }: { job: SyncJob | null; onClose: () 
           <ul className="kago-well m-0 list-none divide-y divide-line rounded-md p-0">
             {runs.data.map((run) => {
               const status = taskStatus({ status: run.status });
+              const seconds = runSeconds(run);
               return (
                 <li key={run.task_id} className="flex items-start gap-3 px-3 py-2">
+                  <KagoStatusIcon tone={status.tone} label={status.label}>{statusGlyph(run.status)}</KagoStatusIcon>
                   <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                    <span className="font-medium tabular-nums">{formatUnixDate(run.started_at)}</span>
-                    <span className="text-xs text-muted">{describeRun(run)}</span>
-                    {run.summary ? <span className="text-xs text-muted">{run.dry_run ? describeTrial(run.summary) : describeChanges(run.summary)}</span> : null}
+                    <span className="font-medium">
+                      {headlineOf(run)}
+                      {seconds !== null ? <span className="font-normal text-muted"> · {formatDuration(seconds)}</span> : null}
+                    </span>
+                    <span className="text-xs text-muted tabular-nums">{describeRun(run)}</span>
                     {run.error_message ? <span className="text-xs break-words text-danger">{taskErrorLabel(run.error_message)}</span> : null}
                   </div>
-                  {run.dry_run ? <KagoBadge tone="neutral">{t("Trial run")}</KagoBadge> : null}
-                  <KagoBadge tone={status.tone}>{status.label}</KagoBadge>
                 </li>
               );
             })}

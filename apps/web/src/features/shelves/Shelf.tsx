@@ -90,6 +90,18 @@ export function Shelf() {
   const placed = shelfState.x !== undefined && shelfState.y !== undefined;
   const style = placed ? (({ x, y }) => ({ left: x, top: y }))(clamp(shelfState.x!, shelfState.y!)) : { right: MARGIN, bottom: compact ? MARGIN + 32 : MARGIN };
 
+  // A maximized window stops short of the shelf instead of lying under it, so that nothing in it is out of reach. Only a
+  // shelf on the right half reserves anything, and only while it holds something.
+  const onRight = (placed ? clamp(shelfState.x!, shelfState.y!).x + size.width / 2 : canvas.width - MARGIN - size.width / 2) > canvas.width / 2;
+  const inset = shelf && itemCount > 0 && onRight && !compact ? (placed ? canvas.width - clamp(shelfState.x!, shelfState.y!).x : MARGIN + size.width) + MARGIN : 0;
+  useLayoutEffect(() => {
+    const desktop = element.current?.parentElement;
+    desktop?.style.setProperty("--kago-shelf-inset", `${inset}px`);
+    return () => {
+      desktop?.style.removeProperty("--kago-shelf-inset");
+    };
+  }, [inset]);
+
   // The shelf is moved by whatever part of it does nothing else: not its controls, nor the items, which are dragged out of it.
   // Its menu is mounted elsewhere in the document, and what happens there still reaches these handlers.
   const dragHandlers = usePointerDrag(

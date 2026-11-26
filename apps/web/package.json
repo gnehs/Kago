@@ -22,6 +22,7 @@
     "test:trash": "node --test scripts/test-trash-model.mjs",
     "test:people": "node --test scripts/test-people-model.mjs",
     "test:audit": "node --test scripts/test-audit-model.mjs",
+    "test:convert": "node --test scripts/test-convert-model.mjs scripts/test-run-model.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

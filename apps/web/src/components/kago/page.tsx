@@ -1,24 +1,35 @@
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 import { cn } from "@/lib/utils";
 
 /**
- * Scrollable content area of an app window (tasks, shares, trash, settings sections).
- * The title is for sections of a window; a window with a single page is already named by its title bar.
+ * One section of the settings window: a header that stays put, and the page scrolling under it. The header is the
+ * same on every section: the title with what the page is for under it, then the search (beside the title where there
+ * is room, under it where there is not), then the buttons. `toolbar` is a row of its own for filters and views.
+ *
+ * What the page is made of decides its width. A form, or a table of ticks, reads best narrow and sits in the middle
+ * of a wide window. A list or a log is read across, so it is `wide` and uses what the window gives it.
  */
-export function Page({ title, description, actions, children }: { title?: string; description?: string; actions?: ReactNode; children: ReactNode }) {
+export function Page({ title, description, search, actions, toolbar, wide, scrollRef, children }: { title?: string; description?: string; search?: ReactNode; actions?: ReactNode; toolbar?: ReactNode; wide?: boolean; scrollRef?: Ref<HTMLDivElement>; children: ReactNode }) {
+  const gutter = wide ? "px-4" : "mx-auto max-w-3xl px-5";
   return (
-    <div className="@container min-h-0 min-w-0 flex-1 overflow-y-auto">
-      <div className="mx-auto flex min-h-full max-w-3xl flex-col gap-4 p-5 [&>[data-empty]]:flex-1">
-        {title || description || actions ? (
-          <header className="flex min-h-(--kago-control-h) items-center gap-4">
-            <div className="min-w-0 flex-1">
-              {title ? <h1 className="m-0 text-base font-semibold">{title}</h1> : null}
-              {description ? <p className={cn("m-0 text-muted", title && "mt-0.5")}>{description}</p> : null}
+    <div className="@container flex min-h-0 min-w-0 flex-1 flex-col">
+      {title || description || search || actions || toolbar ? (
+        <header className="shrink-0 border-b border-line bg-elevated py-3">
+          <div className={cn("flex flex-col gap-2.5", gutter)}>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+              <div className="min-w-0 flex-1 basis-56">
+                {title ? <h1 className="m-0 text-base font-semibold">{title}</h1> : null}
+                {description ? <p className={cn("m-0 text-xs text-pretty text-muted", title && "mt-0.5")}>{description}</p> : null}
+              </div>
+              {search ? <div className="order-last flex basis-full @2xl:order-none @2xl:basis-60 @2xl:flex-none">{search}</div> : null}
+              {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
             </div>
-            {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
-          </header>
-        ) : null}
-        {children}
+            {toolbar}
+          </div>
+        </header>
+      ) : null}
+      <div ref={scrollRef} className="min-h-0 flex-1 scroll-fade overflow-y-auto">
+        <div className={cn("flex min-h-full flex-col gap-4 [&>[data-empty]]:flex-1", wide ? "p-4" : "mx-auto max-w-3xl p-5")}>{children}</div>
       </div>
     </div>
   );
@@ -55,6 +66,16 @@ export function Section({ title, description, action, children }: { title: strin
       </header>
       {children}
     </section>
+  );
+}
+
+/** One part of a long form: what it is about as a small heading, then its fields, with a hairline between one part and the next. */
+export function FormSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <fieldset className="m-0 flex min-w-0 flex-col gap-3 border-0 p-0 not-first:border-t not-first:border-line not-first:pt-4">
+      <legend className="float-left mb-0 w-full p-0 text-xs font-semibold text-muted">{title}</legend>
+      {children}
+    </fieldset>
   );
 }
 

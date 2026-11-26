@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { groupShares, parseDownloadLimit, parseShareMode, resolveExpiry, shareEnd, shareExpiry, shareFigure, shareName, shareProblem, shareState, spanOf } from '../src/lib/shareModel.ts';
+import { groupShares, parseDownloadLimit, parseShareMode, resolveExpiry, shareEnd, shareEnds, shareExpiry, shareFix, shareFigure, shareName, shareProblem, shareState, spanOf } from '../src/lib/shareModel.ts';
 
 const NOW = 1_800_000_000;
 const HOUR = 3600;
@@ -47,6 +47,17 @@ test('a dead link gives the reason it is dead, a live one none', () => {
   assert.deepEqual(shareEnd(share({ disabled: 1 }), NOW), { state: 'disabled' });
   assert.deepEqual(shareEnd(share({ expires_at: NOW - 5 * DAY }), NOW), { state: 'expired', span: { unit: 'day', amount: 5 } });
   assert.deepEqual(shareEnd(share({ max_downloads: 3, download_count: 3 }), NOW), { state: 'limit', used: 3, max: 3 });
+});
+
+test('a link that is disabled and also out of time or downloads is told as both, and one save brings it back', () => {
+  const both = share({ disabled: 1, expires_at: NOW - 2 * DAY });
+  assert.deepEqual(shareEnds(both, NOW), [{ state: 'disabled' }, { state: 'expired', span: { unit: 'day', amount: 2 } }]);
+  assert.deepEqual(shareEnd(both, NOW), { state: 'disabled' });
+  assert.deepEqual(shareFix(shareEnds(both, NOW)), { open: 'expiry', enable: true });
+  assert.deepEqual(shareFix(shareEnds(share({ disabled: 1, max_downloads: 2, download_count: 2 }), NOW)), { open: 'limit', enable: true });
+  assert.deepEqual(shareFix(shareEnds(share({ expires_at: NOW - 1 }), NOW)), { open: 'expiry', enable: false });
+  assert.deepEqual(shareFix(shareEnds(share({ disabled: 1 }), NOW)), { open: null, enable: true });
+  assert.equal(shareFix(shareEnds(share(), NOW)), null);
 });
 
 test('the download figure shows a limit, or a count once there is one, and nothing for a drop box', () => {

@@ -5,6 +5,7 @@ import { api } from "@/api/client";
 import { keys } from "@/api/keys";
 import { useGroups, usePermissions, useRoots, useUsers } from "@/api/hooks";
 import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
+import { Page } from "@/components/kago/page";
 import { KagoSearchField } from "@/components/kago/search-field";
 import { KagoStatusIcon } from "@/components/kago/status-icon";
 import { useWindowScope } from "@/components/kago/window-scope";
@@ -76,23 +77,22 @@ export function GroupsPage() {
   const add = <Button variant="default" onClick={() => void create()}><Plus />{t("Add group")}</Button>;
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      {all.length > 0 ? (
-        <header className="flex shrink-0 items-center gap-2 border-b border-line bg-elevated p-2.5">
-          <KagoSearchField label={t("Search groups or members")} value={query} onChange={setQuery} />
-          {add}
-        </header>
-      ) : null}
-
+    <Page
+      wide
+      title={t("Groups")}
+      description={t("Groups let you grant access to several people at once.")}
+      search={all.length > 0 ? <KagoSearchField label={t("Search groups or members")} value={query} onChange={setQuery} /> : undefined}
+      actions={all.length > 0 ? add : undefined}
+    >
       {groups.isLoading ? <KagoLoading /> : null}
       {groups.data && all.length === 0 ? (
-        <KagoEmptyState className="flex-1" icon={<UsersRound />} title={t("No groups yet")} description={t("Groups let you grant access to several people at once.")}>
+        <KagoEmptyState className="flex-1" icon={<UsersRound />} title={t("No groups yet")}>
           {add}
         </KagoEmptyState>
       ) : null}
       {all.length > 0 && found.length === 0 ? <KagoEmptyState className="flex-1" icon={<Search />} title={t("No groups match “{query}”", { query: query.trim() })} /> : null}
       {found.length > 0 ? (
-        <div className="flex min-h-0 flex-1 scroll-fade flex-col gap-1 overflow-y-auto p-2.5">
+        <section className="flex flex-col gap-1">
           <h2 className="m-0 px-1 pb-0.5 text-xs font-semibold text-muted">{t("{count} group | {count} groups", { count: found.length })}</h2>
           <ul className="m-0 flex list-none flex-col gap-1 p-0">
             {found.map((group) => (
@@ -108,10 +108,10 @@ export function GroupsPage() {
               />
             ))}
           </ul>
-        </div>
+        </section>
       ) : null}
 
       <AddMembersDialog group={all.find((group) => group.id === adding) ?? null} onClose={() => setAdding(null)} />
-    </div>
+    </Page>
   );
 }

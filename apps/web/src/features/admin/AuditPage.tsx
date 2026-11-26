@@ -3,6 +3,7 @@ import { ChevronDown, ScrollText, Search } from "lucide-react";
 import { useAudit, useGroups, useRoots, useUsers } from "@/api/hooks";
 import { KagoDropdownMenu, KagoMenuCheckItem } from "@/components/kago/menu";
 import { KagoEmptyState, KagoLoading, KagoSpinner } from "@/components/kago/empty-state";
+import { Page } from "@/components/kago/page";
 import { KagoSearchField } from "@/components/kago/search-field";
 import { KagoSegmented } from "@/components/kago/segmented";
 import { Button } from "@/components/ui/button";
@@ -40,8 +41,7 @@ function useSettled<T>(value: T, ms = 300) {
 
 /**
  * What happened, newest first, under the day it happened: one card to an event, each a sentence. The header holds the
- * search, whose and when, and the switch between the kinds of event; the window's sidebar already names the page, so it
- * carries no title of its own. The list grows as it is scrolled to its end, and a run of the same thing is one card.
+ * search, whose and when, and the switch between the kinds of event. The list grows as it is scrolled to its end, and a run of the same thing is one card.
  */
 export function AuditPage() {
   const now = useNow();
@@ -85,14 +85,16 @@ export function AuditPage() {
   const more = isMoreView(view);
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <header className="flex shrink-0 flex-col gap-2 border-b border-line bg-elevated p-2.5">
-        <div className="flex items-center gap-2">
-          <KagoSearchField label={t("Search people, files or actions")} value={typed} onChange={setTyped} />
+    <Page
+      wide
+      scrollRef={scroller}
+      title={t("Audit log")}
+      description={t("Who did what in Kago, newest first.")}
+      search={<KagoSearchField label={t("Search people, files or actions")} value={typed} onChange={setTyped} />}
+      toolbar={
+        <div className="-m-0.5 flex items-center gap-2 overflow-x-auto p-0.5 [scrollbar-width:none]">
           <PersonFilter actor={actor} users={users ?? []} onChange={setActor} />
           <DateFilter range={dates} onChange={setDates} />
-        </div>
-        <div className="-m-0.5 flex items-center gap-2 overflow-x-auto p-0.5 [scrollbar-width:none]">
           <KagoSegmented<AuditView | "">
             label={t("Audit views")}
             className="shrink-0"
@@ -112,8 +114,8 @@ export function AuditPage() {
             <ChevronDown className="size-3.5 shrink-0 text-muted" />
           </KagoDropdownMenu>
         </div>
-      </header>
-
+      }
+    >
       {audit.isLoading ? <KagoLoading /> : null}
       {audit.data && days.length === 0 ? (
         filtered || view !== "all" ? (
@@ -122,26 +124,22 @@ export function AuditPage() {
           <KagoEmptyState className="flex-1" icon={<ScrollText />} title={t("Nothing recorded yet")} description={t("What people do in Kago is written down here.")} />
         )
       ) : null}
-      {days.length > 0 ? (
-        <div ref={scroller} className="flex min-h-0 flex-1 scroll-fade flex-col gap-1 overflow-y-auto p-2.5">
-          {days.map((day, index) => (
-            <section key={day.day} className={index > 0 ? "mt-2 flex flex-col gap-1" : "flex flex-col gap-1"}>
-              <h2 className="m-0 px-1 pb-0.5 text-xs font-semibold text-muted">{dayTitle(day)}</h2>
-              <ul className="m-0 flex list-none flex-col gap-1 p-0">
-                {day.rows.map((row) => <AuditCard key={row.burst?.id ?? row.id} row={row} names={names} avatars={avatars} />)}
-              </ul>
-            </section>
-          ))}
-          {hasNextPage ? (
-            <div ref={end} className="flex shrink-0 justify-center py-2">
-              <Button disabled={isFetchingNextPage} onClick={() => void fetchNextPage()}>
-                {isFetchingNextPage ? <KagoSpinner className="text-inherit" /> : null}
-                {isFetchingNextPage ? t("Loading events…") : t("Show more")}
-              </Button>
-            </div>
-          ) : null}
+      {days.map((day) => (
+        <section key={day.day} className="flex flex-col gap-1">
+          <h2 className="m-0 px-1 pb-0.5 text-xs font-semibold text-muted">{dayTitle(day)}</h2>
+          <ul className="m-0 flex list-none flex-col gap-1 p-0">
+            {day.rows.map((row) => <AuditCard key={row.burst?.id ?? row.id} row={row} names={names} avatars={avatars} />)}
+          </ul>
+        </section>
+      ))}
+      {days.length > 0 && hasNextPage ? (
+        <div ref={end} className="flex shrink-0 justify-center py-2">
+          <Button disabled={isFetchingNextPage} onClick={() => void fetchNextPage()}>
+            {isFetchingNextPage ? <KagoSpinner className="text-inherit" /> : null}
+            {isFetchingNextPage ? t("Loading events…") : t("Show more")}
+          </Button>
         </div>
       ) : null}
-    </div>
+    </Page>
   );
 }

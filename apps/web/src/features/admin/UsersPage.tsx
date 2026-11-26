@@ -6,6 +6,7 @@ import { keys } from "@/api/keys";
 import { useGroups, useUsers } from "@/api/hooks";
 import { avatarUrl, KagoAvatar } from "@/components/kago/avatar";
 import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
+import { Page } from "@/components/kago/page";
 import { KagoSearchField } from "@/components/kago/search-field";
 import { useWindowScope } from "@/components/kago/window-scope";
 import { Button } from "@/components/ui/button";
@@ -23,8 +24,7 @@ const sectionTitle = (section: UserSection, count: number) =>
 
 /**
  * Everyone who can sign in, by what they are: administrators, users, and the accounts that are switched off. Each card
- * says which groups the user is in and how they get in. The header holds the search and adding a user; the window's
- * sidebar already names the page, so it carries no title of its own.
+ * says which groups the user is in and how they get in. The header holds the search and adding a user.
  */
 export function UsersPage({ currentUserId }: { currentUserId: string }) {
   const scope = useWindowScope();
@@ -75,29 +75,26 @@ export function UsersPage({ currentUserId }: { currentUserId: string }) {
   };
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <header className="flex shrink-0 items-center gap-2 border-b border-line bg-elevated p-2.5">
-        <KagoSearchField label={t("Search users")} value={query} onChange={setQuery} />
-        <Button variant="default" onClick={() => setDialog({ user: null })}><Plus />{t("Add user")}</Button>
-      </header>
-
+    <Page
+      wide
+      title={t("Users")}
+      description={t("Administrators can reach every location; everyone else needs permission rules.")}
+      search={<KagoSearchField label={t("Search users")} value={query} onChange={setQuery} />}
+      actions={<Button variant="default" onClick={() => setDialog({ user: null })}><Plus />{t("Add user")}</Button>}
+    >
       {users.isLoading ? <KagoLoading /> : null}
       {users.data && all.length === 0 ? <KagoEmptyState className="flex-1" icon={<UserRound />} title={t("No users yet")} /> : null}
       {all.length > 0 && sections.length === 0 ? <KagoEmptyState className="flex-1" icon={<Search />} title={t("No users match “{query}”", { query: query.trim() })} /> : null}
-      {sections.length > 0 ? (
-        <div className="@container flex min-h-0 flex-1 scroll-fade flex-col gap-1 overflow-y-auto p-2.5">
-          {sections.map(({ section, users: list }, index) => (
-            <section key={section} className={index > 0 ? "mt-2 flex flex-col gap-1" : "flex flex-col gap-1"}>
-              <h2 className="m-0 px-1 pb-0.5 text-xs font-semibold text-muted">{sectionTitle(section, list.length)}</h2>
-              <ul className="m-0 flex list-none flex-col gap-1 p-0">
-                {list.map((user) => <UserCard key={user.id} user={user} groups={groupsOf(user.id, groups.data ?? [])} isMe={user.id === currentUserId} actions={actions} />)}
-              </ul>
-            </section>
-          ))}
-        </div>
-      ) : null}
+      {sections.map(({ section, users: list }) => (
+        <section key={section} className="flex flex-col gap-1">
+          <h2 className="m-0 px-1 pb-0.5 text-xs font-semibold text-muted">{sectionTitle(section, list.length)}</h2>
+          <ul className="m-0 flex list-none flex-col gap-1 p-0">
+            {list.map((user) => <UserCard key={user.id} user={user} groups={groupsOf(user.id, groups.data ?? [])} isMe={user.id === currentUserId} actions={actions} />)}
+          </ul>
+        </section>
+      ))}
 
       <UserDialog target={dialog} onClose={() => setDialog(null)} />
-    </div>
+    </Page>
   );
 }

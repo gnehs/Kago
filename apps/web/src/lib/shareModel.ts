@@ -47,15 +47,29 @@ export function shareExpiry(share: Pick<ShareLink, "expires_at">, nowSeconds = M
   return left < 0 ? { kind: "ago", span: spanOf(left) } : { kind: "in", span: spanOf(left), soon: left < 86400 };
 }
 
-/** Why a link that no longer works has stopped; null for one that works. */
+/** Why a link that no longer works has stopped. */
 export type ShareEnd = { state: "expired"; span: Span } | { state: "limit"; used: number; max: number } | { state: "disabled" };
 
-export function shareEnd(share: ShareLink, nowSeconds = Math.floor(Date.now() / 1000)): ShareEnd | null {
-  const state = shareState(share, nowSeconds);
-  if (state === "active") return null;
-  if (state === "disabled") return { state };
-  if (state === "expired") return { state, span: spanOf(nowSeconds - share.expires_at!) };
-  return { state, used: share.download_count, max: share.max_downloads! };
+/** Every reason a link does not work, disabled first: a link that was switched off and has also run out of time is both, and enabling it alone does not bring it back. Empty for one that works. */
+export function shareEnds(share: ShareLink, nowSeconds = Math.floor(Date.now() / 1000)): ShareEnd[] {
+  const ends: ShareEnd[] = [];
+  if (share.disabled) ends.push({ state: "disabled" });
+  if (share.expires_at && share.expires_at < nowSeconds) ends.push({ state: "expired", span: spanOf(nowSeconds - share.expires_at) });
+  if (share.max_downloads && share.download_count >= share.max_downloads) ends.push({ state: "limit", used: share.download_count, max: share.max_downloads });
+  return ends;
+}
+
+/** The first reason a link does not work, the one that decides which list it is in; null for one that works. */
+export const shareEnd = (share: ShareLink, nowSeconds = Math.floor(Date.now() / 1000)): ShareEnd | null => shareEnds(share, nowSeconds)[0] ?? null;
+
+/**
+ * What brings a stopped link back: the dialog that gives it more time or more downloads (the first of the two it needs),
+ * and whether that same save also switches it on, which the server takes in one request. Null for a link that works.
+ */
+export function shareFix(ends: readonly ShareEnd[]): { open: "expiry" | "limit" | null; enable: boolean } | null {
+  if (ends.length === 0) return null;
+  const open = ends.some((end) => end.state === "expired") ? "expiry" : ends.some((end) => end.state === "limit") ? "limit" : null;
+  return { open, enable: ends.some((end) => end.state === "disabled") };
 }
 
 /** The one number about downloads worth showing: how much of a limit is used, or how many there have been. Upload-only has no downloads. */

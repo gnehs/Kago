@@ -10,11 +10,12 @@ import { KagoEmptyState, KagoLoading, KagoSpinner } from "@/components/kago/empt
 import { FolderField } from "@/components/kago/folder-picker";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { KagoDropdownMenu, KagoMenuItem, KagoMenuSeparator } from "@/components/kago/menu";
-import { Card, Page, Row, RowList } from "@/components/kago/page";
+import { Card, FormSection, Page, Row, RowList } from "@/components/kago/page";
 import { KagoStatusIcon } from "@/components/kago/status-icon";
 import { Button } from "@/components/ui/button";
 import { Checkbox, Field, Input, Select } from "@/components/ui/input";
 import { isActiveTask, taskErrorLabel, taskStatus } from "@/features/tasks/taskUtils";
+import { convertProblem, startingFolder, type ConvertProblem } from "@/lib/convertModel";
 import { formatUnixDate } from "@/lib/format";
 import { baseName, displayPath, normalizeLogicalPath } from "@/lib/paths";
 import { run } from "@/lib/run";
@@ -110,12 +111,13 @@ export function AutoConvertPage({ roots, user }: { roots: Root[]; user: Actor })
 
   return (
     <Page
+      wide
       title={t("Auto-convert")}
       description={t("Drop files into an input folder and find them converted in another, in the same folders they were dropped in.")}
       actions={jobs.data?.length && !editing ? addButton : null}
     >
       {editing ? (
-        <Card title={editing === true ? t("Add auto-convert") : t("Edit {name}", { name: editing.name })} action={<KagoIconButton label={t("Close")} onClick={close}><X /></KagoIconButton>}>
+        <Card className="max-w-3xl" title={editing === true ? t("Add auto-convert") : t("Edit {name}", { name: editing.name })} action={<KagoIconButton label={t("Close")} onClick={close}><X /></KagoIconButton>}>
           <JobForm key={editing === true ? `new:${destination?.rootSlug}:${destination?.path}` : editing.id} roots={roots} job={editing === true ? null : editing} destination={destination} onSaved={async () => { close(); await refresh(); }} />
         </Card>
       ) : null}
@@ -185,7 +187,15 @@ export function AutoConvertPage({ roots, user }: { roots: Root[]; user: Actor })
   );
 }
 
-const draftOf = (folder: Folder | null | undefined, roots: Root[]): Folder => ({ rootSlug: folder?.rootSlug ?? roots[0]?.slug ?? "", path: folder?.path ?? "/" });
+const reasons: Record<ConvertProblem, () => string> = {
+  "no-name": () => t("Give it a name"),
+  "no-input": () => t("Choose an input folder"),
+  "no-destination": () => t("Choose a destination"),
+  "destination-readonly": () => t("The destination is read-only. Choose a location that can be written to."),
+  overlap: () => t("The input folder and the destination can’t hold one another"),
+  "no-extensions": () => t("List at least one file extension to convert"),
+  "bad-settings": () => t("Check the quality setting: it is a whole number in range")
+};
 
 function folderOf(draft: Folder): Folder | null {
   const path = normalizeLogicalPath(draft.path);
@@ -195,8 +205,8 @@ function folderOf(draft: Folder): Folder | null {
 function JobForm({ roots, job, destination, onSaved }: { roots: Root[]; job: ConvertJob | null; /** Where a new job is to put things, when that was chosen before coming here. */ destination: Folder | null; onSaved: () => Promise<void> }) {
   const support = useConvertSupport();
   const [name, setName] = useState(job?.name ?? (destination ? baseName(destination.path) || (roots.find((root) => root.slug === destination.rootSlug)?.name ?? "") : ""));
-  const [input, setInput] = useState(() => draftOf(job?.input, roots));
-  const [output, setOutput] = useState(() => draftOf(job?.destination ?? destination, roots));
+  const [input, setInput] = useState(() => startingFolder(job?.input, roots));
+  const [output, setOutput] = useState(() => startingFolder(job?.destination ?? destination, roots, true));
   const [spec, setSpec] = useState<ConvertSpec>(() => job?.spec ?? specFor("mp4"));
   const [options, setOptions] = useState<ConvertJobOptions>(() => job?.options ?? { keepSmaller: true, after: "keep", copyOthers: true, extensions: null });
   // A job from before the endings could be chosen went by the kind of file, which is what the list starts as.
@@ -209,7 +219,7 @@ function JobForm({ roots, job, destination, onSaved }: { roots: Root[]; job: Con
   const from = folderOf(input);
   const to = folderOf(output);
   const extensions = parseExtensions(endings);
-  const canSubmit = name.trim().length > 0 && from !== null && to !== null && specIsValid(spec) && extensions.length > 0;
+  const problem = convertProblem({ name, input: from, destination: to, destinationReadonly: Boolean(to && roots.find((root) => root.slug === to.rootSlug)?.readonly), extensions: extensions.length, settingsValid: specIsValid(spec) });
 
   function changeSpec(next: ConvertSpec) {
     const was = DEFAULT_EXTENSIONS[kindOfFormat(spec.format)];
@@ -221,7 +231,7 @@ function JobForm({ roots, job, destination, onSaved }: { roots: Root[]; job: Con
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    if (!canSubmit || saving) return;
+    if (problem || saving) return;
     const body = JSON.stringify({ name: name.trim(), input: from, destination: to, spec, options: { ...options, extensions }, watch });
     setSaving("job");
     const saved = await run(() => api<ConvertJob>(job ? `/api/convert-jobs/${job.id}` : "/api/convert-jobs", { method: job ? "PUT" : "POST", body }), t("Couldn’t save the auto-convert"));
@@ -237,36 +247,43 @@ function JobForm({ roots, job, destination, onSaved }: { roots: Root[]; job: Con
   }
 
   return (
-    <form className="flex flex-col gap-3" onSubmit={submit}>
-      <Field label={t("Name")}><Input autoFocus value={name} onChange={(event) => setName(event.target.value)} /></Field>
-      <FolderField label={t("Input folder")} hint={t("Where you drop what is to be converted.")} roots={roots} value={input} onChange={setInput} />
-      <FolderField label={t("Destination")} hint={t("Where the converted files end up, in the same folders they were dropped in.")} roots={roots} value={output}
-        writable
-        onChange={(folder) => {
-          setOutput(folder);
-          // A job is most often called after where it puts things.
-          if (!name.trim()) setName(baseName(folder.path) || (roots.find((root) => root.slug === folder.rootSlug)?.name ?? ""));
-        }}
-      />
-      <ConvertFields spec={spec} formats={supportedFormats(CONVERT_FORMATS, support.data)} support={support.data} onChange={changeSpec} />
-      <Field label={t("File extensions to convert")} hint={options.copyOthers ? t("Separated by commas or spaces. Files with any other extension are copied to the destination as they are.") : t("Separated by commas or spaces. Files with any other extension are left alone.")}>
-        <Input value={endings} spellCheck={false} autoCapitalize="off" autoCorrect="off" placeholder="mp4, mkv, mov" onChange={(event) => setEndings(event.target.value)} />
-      </Field>
-      <Field label={t("Once a file has reached the destination")} hint={options.after === "delete" ? t("Deleted for good, without passing through the Trash.") : undefined}>
-        <Select value={options.after} onChange={(event) => setOptions({ ...options, after: event.target.value as ConvertJobOptions["after"] })}>
-          <option value="keep">{t("Leave it in the input folder")}</option>
-          <option value="trash">{t("Move it to the Trash")}</option>
-          <option value="delete">{t("Delete it")}</option>
-        </Select>
-      </Field>
-      <div className="flex flex-col gap-2">
-        <Checkbox label={t("Watch the input folder and convert new files by itself")} checked={watch} onChange={(event) => setWatch(event.target.checked)} />
+    <form className="flex flex-col gap-4" onSubmit={submit}>
+      <FormSection title={t("What to convert")}>
+        <Field label={t("Name")}><Input autoFocus value={name} onChange={(event) => setName(event.target.value)} /></Field>
+        <FolderField label={t("Input folder")} hint={t("Where you drop what is to be converted.")} roots={roots} value={input} onChange={setInput} />
+        <FolderField label={t("Destination")} hint={t("Where the converted files end up, in the same folders they were dropped in.")} roots={roots} value={output}
+          writable
+          onChange={(folder) => {
+            setOutput(folder);
+            // A job is most often called after where it puts things.
+            if (!name.trim()) setName(baseName(folder.path) || (roots.find((root) => root.slug === folder.rootSlug)?.name ?? ""));
+          }}
+        />
+        <Field label={t("File extensions to convert")} hint={options.copyOthers ? t("Separated by commas or spaces. Files with any other extension are copied to the destination as they are.") : t("Separated by commas or spaces. Files with any other extension are left alone.")}>
+          <Input value={endings} spellCheck={false} autoCapitalize="off" autoCorrect="off" placeholder="mp4, mkv, mov" onChange={(event) => setEndings(event.target.value)} />
+        </Field>
+        <div className="flex flex-col gap-2">
+          <Checkbox label={t("Copy files with other extensions to the destination as they are")} checked={options.copyOthers} onChange={(event) => setOptions({ ...options, copyOthers: event.target.checked })} />
+          <Checkbox label={t("Watch the input folder and convert new files by itself")} checked={watch} onChange={(event) => setWatch(event.target.checked)} />
+          <Checkbox label={t("Copy the destination’s folder structure into the input folder now (folders only, no files)")} checked={structure} onChange={(event) => setStructure(event.target.checked)} />
+        </div>
+      </FormSection>
+      <FormSection title={t("How")}>
+        <ConvertFields spec={spec} formats={supportedFormats(CONVERT_FORMATS, support.data)} support={support.data} onChange={changeSpec} />
+      </FormSection>
+      <FormSection title={t("Afterwards")}>
+        <Field label={t("Once a file has reached the destination")} hint={options.after === "delete" ? t("Deleted for good, without passing through the Trash.") : undefined}>
+          <Select value={options.after} onChange={(event) => setOptions({ ...options, after: event.target.value as ConvertJobOptions["after"] })}>
+            <option value="keep">{t("Leave it in the input folder")}</option>
+            <option value="trash">{t("Move it to the Trash")}</option>
+            <option value="delete">{t("Delete it")}</option>
+          </Select>
+        </Field>
         <Checkbox label={t("If the conversion comes out no smaller, put the original in the destination instead")} checked={options.keepSmaller} onChange={(event) => setOptions({ ...options, keepSmaller: event.target.checked })} />
-        <Checkbox label={t("Copy files with other extensions to the destination as they are")} checked={options.copyOthers} onChange={(event) => setOptions({ ...options, copyOthers: event.target.checked })} />
-        <Checkbox label={t("Copy the destination’s folder structure into the input folder now (folders only, no files)")} checked={structure} onChange={(event) => setStructure(event.target.checked)} />
-      </div>
-      <div className="flex justify-end">
-        <Button type="submit" variant="default" disabled={!canSubmit || saving !== null}>
+      </FormSection>
+      <div className="flex items-center justify-end gap-3">
+        {problem ? <span role="status" className="mr-auto flex min-w-0 items-center text-xs text-muted">{reasons[problem]()}</span> : null}
+        <Button type="submit" variant="default" disabled={Boolean(problem) || saving !== null}>
           {saving ? <KagoSpinner className="text-inherit" /> : null}
           {saving === "structure" ? t("Copying the folder structure…") : job ? t("Save") : t("Add auto-convert")}
         </Button>

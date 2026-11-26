@@ -68,7 +68,7 @@ export function KagoWindow({
         focused ? "shadow-window-active" : "shadow-window",
         className
       )}
-      style={filled ? { zIndex: window.zIndex } : { left: window.x, top: window.y, width: window.width, height: window.height, zIndex: window.zIndex }}
+      style={filled ? { zIndex: window.zIndex, ...(compact ? null : { right: "var(--kago-shelf-inset, 0px)" }) } : { left: window.x, top: window.y, width: window.width, height: window.height, zIndex: window.zIndex }}
       onPointerDownCapture={() => store().focusWindow(window.id)}
       {...props}
     >

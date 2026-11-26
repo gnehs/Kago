@@ -41,7 +41,7 @@ export function SharesPage({ roots }: { roots: Root[] }) {
   const { active, dead } = groupShares(shares.data ?? [], rootName, query, now);
   const total = shares.data?.length ?? 0;
   const create = roots.length > 0 ? <Button variant="default" onClick={() => setCreating(true)}><Plus />{t("Create share link")}</Button> : null;
-  const editing = (field: ShareEdit["field"]) => (share: ShareLink) => setEdit({ share, field, name: shareName(share, rootName(share.root_id)) });
+  const editing = (field: ShareEdit["field"]) => (share: ShareLink, enable?: boolean) => setEdit({ share, field, enable, name: shareName(share, rootName(share.root_id)) });
   const cardActions = {
     copy: (share: ShareLink) => void copyShare(share),
     rotate: (share: ShareLink) => void actions.rotate(share),
@@ -63,7 +63,7 @@ export function SharesPage({ roots }: { roots: Root[] }) {
 
       {shares.isLoading ? <KagoLoading /> : null}
       {shares.data && total === 0 ? (
-        <KagoEmptyState className="flex-1" icon={<Share2 />} title={t("No share links yet")} description={t("Create one here, or share straight from a file’s info panel.")}>
+        <KagoEmptyState className="flex-1" icon={<Share2 />} title={t("No share links yet")} description={roots.length > 0 ? t("Create one here, or share straight from a file’s info panel.") : t("You can’t share anything yet: you don’t have access to any location. Ask an administrator to give you access to one.")}>
           {create}
         </KagoEmptyState>
       ) : null}

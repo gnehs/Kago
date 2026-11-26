@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useWindowScope } from "@/components/kago/window-scope";
 import { useQueryClient } from "@tanstack/react-query";
 import { keys } from "@/api/keys";
-import { Ban, Check, Clock, Ellipsis, FileDiff, History, Pause, Pencil, Plus, RefreshCw, Trash2, X } from "lucide-react";
+import { Ellipsis, FileDiff, History, Pencil, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import { api } from "@/api/client";
 import { useSyncJobs } from "@/api/hooks";
 import { KagoEmptyState, KagoLoading, KagoSpinner } from "@/components/kago/empty-state";
@@ -11,6 +11,7 @@ import { KagoIconButton } from "@/components/kago/icon-button";
 import { KagoDropdownMenu, KagoMenuItem, KagoMenuSeparator } from "@/components/kago/menu";
 import { Button } from "@/components/ui/button";
 import { Checkbox, Field, Input, Select } from "@/components/ui/input";
+import { statusGlyph } from "@/features/tasks/statusGlyph";
 import { isActiveTask, taskErrorLabel, taskStatus } from "@/features/tasks/taskUtils";
 import { Card, Page, Row, RowList } from "@/components/kago/page";
 import { KagoStatusIcon } from "@/components/kago/status-icon";
@@ -33,17 +34,6 @@ function describeSchedule(schedule: SyncSchedule | null) {
   return schedule.minutes % 60 === 0
     ? t("Every {count} hour | Every {count} hours", { count: schedule.minutes / 60 })
     : t("Every {count} minute | Every {count} minutes", { count: schedule.minutes });
-}
-
-/** The glyph for how a sync's last run ended, or for the run it is in the middle of. */
-function statusGlyph(status: string | null) {
-  if (status === "done") return <Check />;
-  if (status === "running") return <RefreshCw className="animate-spin" />;
-  if (status === "queued") return <Clock />;
-  if (status === "paused") return <Pause />;
-  if (status === "cancelling" || status === "cancelled") return <Ban />;
-  if (status === "failed" || status === "interrupted") return <X />;
-  return <RefreshCw />;
 }
 
 export function SyncPage({ roots, user }: { roots: Root[]; user: Actor }) {
@@ -86,12 +76,13 @@ export function SyncPage({ roots, user }: { roots: Root[]; user: Actor }) {
 
   return (
     <Page
+      wide
       title={t("Sync")}
       description={t("Keep a folder of one location the same as a folder of another.")}
       actions={jobs.data?.length && !editing ? addButton : null}
     >
       {editing ? (
-        <Card title={editing === true ? t("Add sync") : t("Edit {name}", { name: editing.name })} action={<KagoIconButton label={t("Close")} onClick={() => setEditing(null)}><X /></KagoIconButton>}>
+        <Card className="max-w-3xl" title={editing === true ? t("Add sync") : t("Edit {name}", { name: editing.name })} action={<KagoIconButton label={t("Close")} onClick={() => setEditing(null)}><X /></KagoIconButton>}>
           <SyncForm key={editing === true ? "new" : editing.id} roots={roots} job={editing === true ? null : editing} onSaved={async () => { setEditing(null); await refresh(); }} />
         </Card>
       ) : null}

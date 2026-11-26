@@ -85,7 +85,7 @@ export function LocationsPage({ roots }: { roots: Root[] }) {
   const readonlyButton = (root: Root) => <Button onClick={() => void setRootReadonly(root, !root.readonly)}>{root.readonly ? t("Allow writing") : t("Make read-only")}</Button>;
 
   return (
-    <Page title={t("Locations")}>
+    <Page wide title={t("Locations")}>
       {/* A local location is a folder the server already has: it comes and goes with /data, and only how it is used is set here. */}
       <Section title={t("Local locations")} description={t("Every folder mounted under /data becomes a location.")}>
         {local.length > 0 ? (
@@ -101,7 +101,8 @@ export function LocationsPage({ roots }: { roots: Root[] }) {
                   )
                 }
                 title={root.name}
-                subtitle={<>{hindrance(root, refusal(root))}{root.slug}</>}
+                // The server does not send a local location's path, but it is always the folder of the same name under /data.
+                subtitle={<>{hindrance(root, refusal(root))}{t("Local folder")} · {`/data/${root.name}`}</>}
               >
                 {readonlyButton(root)}
               </Row>
