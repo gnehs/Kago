@@ -33,7 +33,7 @@ import type { Level, PermissionService } from "./permission.service.js";
 import type { PreferenceService } from "./preference.service.js";
 import type { StorageService } from "./storage.service.js";
 import { SyncReport } from "./sync-report.js";
-import { mediaTaskTypes, taskChanges, taskKinds, type TaskLane } from "./task-kinds.js";
+import { laneTypes, nextToStart, taskChanges, taskKinds, type TaskLane } from "./task-kinds.js";
 import { TrashService, type RestorableTrashItem } from "./trash.service.js";
 import { allowsTransition, endsTask, taskTransitions, transitionTask, type Transition, type TaskTransition } from "./task-status.js";
 import { finishedTaskStatuses, sqlStatuses, type Actor, type FileTask, type Root } from "./types.js";
@@ -506,21 +506,24 @@ export class TaskService {
     });
   }
 
-  /** Takes the oldest task that is waiting, of the given lane's when one is named. */
-  claimNext(lane?: TaskLane): FileTask | null {
-    const mine = lane ? ` AND type ${lane === "media" ? "IN" : "NOT IN"} (${mediaTaskTypes.map(() => "?").join(", ")})` : "";
+  /** Takes the oldest task of the lane that may start: see `nextToStart`. */
+  claimNext(lane: TaskLane): FileTask | null {
+    const types = laneTypes(lane);
+    const queued = `status = 'queued' AND type IN (${types.map(() => "?").join(", ")})`;
+    // Asked every second by every worker, and nearly always answered with nothing.
+    if (!this.db.prepare(`SELECT 1 FROM tasks WHERE ${queued} LIMIT 1`).get(...types)) return null;
     this.db.exec("BEGIN IMMEDIATE");
     try {
-      const task = row<FileTask>(
-        this.db.prepare(`SELECT * FROM tasks WHERE status = 'queued'${mine} ORDER BY created_at ASC LIMIT 1`).get(...(lane ? mediaTaskTypes : []))
-      );
-      if (!task) {
-        this.db.exec("COMMIT");
-        return null;
-      }
-      this.transition(task.id, "start");
+      // A conversion claims no paths: it is taken in turn, and the many a saved job queues are not read through for the other lanes.
+      const media = laneTypes("media");
+      const active =
+        lane === "media"
+          ? this.db.prepare(`SELECT * FROM tasks WHERE ${queued} ORDER BY created_at ASC, rowid ASC LIMIT 1`).all(...types)
+          : this.db.prepare(`SELECT * FROM tasks WHERE status IN ('queued', 'running', 'cancelling') AND type NOT IN (${media.map(() => "?").join(", ")}) ORDER BY created_at ASC, rowid ASC`).all(...media);
+      const task = nextToStart(lane, rows<FileTask>(active));
+      if (task) this.transition(task.id, "start");
       this.db.exec("COMMIT");
-      return this.get(task.id);
+      return task ? this.get(task.id) : null;
     } catch (error) {
       this.db.exec("ROLLBACK");
       throw error;

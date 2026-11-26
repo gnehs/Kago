@@ -213,7 +213,7 @@ async function trashHarness(t) {
   };
   const trash = async (...names) => {
     const created = await tasks.create(actor, { type: "delete_to_trash", sources: names.map((name) => ({ rootSlug: "family", path: `/${name}` })) });
-    const claimed = tasks.claimNext("files");
+    const claimed = tasks.claimNext("removal");
     assert.equal(claimed.id, created.id);
     await tasks.runTask(claimed, actor);
     return tasks.get(created.id);

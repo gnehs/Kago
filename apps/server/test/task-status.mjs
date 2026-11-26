@@ -162,11 +162,11 @@ test("claiming takes the oldest waiting task and starts it", async (t) => {
   const { tasks, insert, read } = await fixture(t);
   insert("paused");
   const queued = insert("queued");
-  const claimed = tasks.claimNext();
+  const claimed = tasks.claimNext("files");
   assert.equal(claimed.id, queued);
   assert.equal(read(queued).status, "running");
   assert.ok(read(queued).started_at > 0);
-  assert.equal(tasks.claimNext(), null, "a paused task is not claimed");
+  assert.equal(tasks.claimNext("files"), null, "a paused task is not claimed");
 });
 
 test("opening the database ends what the last run left running", async (t) => {

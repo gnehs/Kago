@@ -1,6 +1,7 @@
 import { parentPort, workerData } from "node:worker_threads";
 import type { Env } from "../config/env.js";
 import { openDb } from "../db/db.js";
+import { watchRequests } from "../lib/give-way.js";
 import { logger } from "../lib/logger.js";
 import { SecretBox } from "../lib/secret-box.js";
 import { RcloneClient, rcloneSocketPath } from "../storage/rclone-client.js";
@@ -21,6 +22,7 @@ import type { EventPublisher, ServerEvent } from "../ws/events.js";
 type WorkerInput = {
   env: Env;
   lane: TaskLane;
+  requests: SharedArrayBuffer;
 };
 
 type WorkerToMainMessage =
@@ -36,6 +38,7 @@ if (!port) {
   throw new Error("task-worker must run inside a worker thread");
 }
 const workerPort = port;
+watchRequests(input.requests);
 
 const parentEvents: EventPublisher = {
   publish(event) {
@@ -62,6 +65,8 @@ let timer: NodeJS.Timeout | null = null;
 let failureCount = 0;
 
 port.on("message", (message: { type?: string }) => {
+  // A task has just been queued: without this it waits out the rest of the second the worker sleeps.
+  if (message.type === "wake" && !running && failureCount === 0) schedule(0);
   if (message.type !== "stop") return;
   stopped = true;
   if (timer) clearTimeout(timer);

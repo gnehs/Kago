@@ -1,3 +1,4 @@
+import "./config/threadpool.js";
 import { loadEnv } from "./config/env.js";
 import { buildApp } from "./app.js";
 import { logger } from "./lib/logger.js";

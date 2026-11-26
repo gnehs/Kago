@@ -3,8 +3,10 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import { onSpinningDisk } from "./disk-kind.js";
 import { AppError, errnoIs } from "./errors.js";
 import { readFileTags, writeFileTags, type FileTag } from "./file-tags.js";
+import { giveWay } from "./give-way.js";
 import { nfc, sameName } from "./filename.js";
 import { id } from "./ids.js";
 import { logger } from "./logger.js";
@@ -14,6 +16,11 @@ import type { RemoteEntry, RemoteStorage } from "../storage/remote-storage.js";
 
 /** How many entries of a tree are read or copied at a time. More than this gains nothing on a disk, and less is slow where each one is a round trip. */
 export const treeConcurrency = 8;
+/**
+ * And on a disk that spins: its one head gets through no more by being asked more at once, and whoever opens a
+ * folder meanwhile waits for everything already asked of it.
+ */
+const spinningConcurrency = 2;
 /** A file up to this size is copied in one piece; a larger one is streamed, so that it counts and can be stopped on the way. */
 const wholeFileBytes = 1024 * 1024 * 4;
 
@@ -102,6 +109,20 @@ export function limiter(max: number): <T>(work: () => Promise<T>) => Promise<T> 
   };
 }
 
+/**
+ * A walk's turns at the disk, none begun while a request is waiting on it: `treeConcurrency` at a time, and
+ * `spinningConcurrency` where any of the paths it goes between is on a disk that spins.
+ */
+async function treeLimiter(...paths: string[]): Promise<<T>(work: () => Promise<T>) => Promise<T>> {
+  const spinning = (await Promise.all(paths.map((target) => onSpinningDisk(target)))).some(Boolean);
+  const limit = limiter(spinning ? spinningConcurrency : treeConcurrency);
+  return (work) =>
+    limit(async () => {
+      await giveWay();
+      return work();
+    });
+}
+
 function assertFileOrFolder(entry: { isSymbolicLink(): boolean; isFile(): boolean; isDirectory(): boolean }): void {
   if (entry.isSymbolicLink()) {
     throw new AppError(403, "Symlink paths are not allowed", "SYMLINK_FORBIDDEN");
@@ -113,7 +134,7 @@ function assertFileOrFolder(entry: { isSymbolicLink(): boolean; isFile(): boolea
 
 /** Adds up a file or a whole folder, several entries at a time, and refuses one that holds a symlink or anything else that is neither. */
 export async function collectPathStats(targetPath: string, found?: Found): Promise<PathStats> {
-  const limit = limiter(treeConcurrency);
+  const limit = await treeLimiter(targetPath);
   const visit = async (current: string, known?: Dirent): Promise<PathStats> => {
     if (known) assertFileOrFolder(known);
     // A folder's listing has already said what each entry is; only a file is asked again, for its size.
@@ -164,7 +185,7 @@ export type TreeSize = {
  * part way means the sum is short, so the walk stops and gives null as well.
  */
 export async function measureTree(targetPath: string, found?: Found, options: { moving?: boolean } = {}): Promise<TreeSize | null> {
-  const limit = limiter(treeConcurrency);
+  const limit = await treeLimiter(targetPath);
   let vanished = false;
   const unseen = <T>(fallback: T) => (error: unknown): T => {
     if (options.moving && (errnoIs(error, "ENOENT") || errnoIs(error, "ENOTDIR"))) vanished = true;
@@ -203,7 +224,7 @@ export async function measureTree(targetPath: string, found?: Found, options: { 
 
 /** How many files and folders there are to remove, the one given among them, or none if it has gone. Only names are read, not what each one holds. */
 export async function countEntries(targetPath: string, found?: Found): Promise<number> {
-  const limit = limiter(treeConcurrency);
+  const limit = await treeLimiter(targetPath);
   const visit = async (current: string, directory: boolean): Promise<number> => {
     found?.(1, 0);
     if (!directory) return 1;
@@ -223,7 +244,7 @@ export async function countEntries(targetPath: string, found?: Found): Promise<n
  * throw to stop it. A symlink is removed, never followed. What has gone meanwhile is not missed.
  */
 export async function removeTree(targetPath: string, removed: (gone: string) => void): Promise<void> {
-  const limit = limiter(treeConcurrency);
+  const limit = await treeLimiter(targetPath);
   const gone = (error: unknown) => {
     if (!errnoIs(error, "ENOENT")) throw error;
   };
@@ -289,10 +310,12 @@ async function copyFileContent(sourcePath: string, targetPath: string, stat: Sta
         // onBytes is also the cancellation checkpoint; route its throw through the pipeline.
         try {
           onBytes(Buffer.byteLength(chunk));
-          callback(null, chunk);
         } catch (error) {
           callback(error as Error);
+          return;
         }
+        // A large file is hours of the disk's time: it stands aside between pieces, as a walk does between files.
+        void giveWay().then(() => callback(null, chunk));
       }
     });
     await pipeline(createReadStream(sourcePath), byteCounter, createWriteStream(targetPath, { flags: "wx", mode: Number(stat.mode) }), { signal });
@@ -309,7 +332,7 @@ type Copied = { path: string; stat: Stats };
  * Each file and folder carried is told to `copied`, for a move to take away only those.
  */
 export async function copyTree(sourcePath: string, targetPath: string, onBytes: (bytes: number) => void, onFile?: FileHooks, copied?: Copied[]): Promise<void> {
-  const limit = limiter(treeConcurrency);
+  const limit = await treeLimiter(sourcePath, targetPath);
   const stop = new AbortController();
   let failure: unknown;
   // A file copies itself or nothing; only a folder of the target can be left half made.
@@ -611,7 +634,7 @@ async function renameFree(from: string, to: string): Promise<void> {
  * left empty. A file that is new, or was changed while it was being copied, stays where it is, and so does its folder.
  */
 async function removeCopied(copied: Copied[]): Promise<void> {
-  const limit = limiter(treeConcurrency);
+  const limit = await treeLimiter(...copied.slice(0, 1).map((one) => one.path));
   const kept: string[] = [];
   await Promise.all(
     copied

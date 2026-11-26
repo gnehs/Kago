@@ -15,7 +15,7 @@
     "test:compatibility": "node --import tsx --test test/compatibility.mjs",
     "test:splat": "node --import tsx --test test/splat.mjs",
     "test:video": "node --import tsx --test test/panorama.mjs",
-    "test:tasks": "node --import tsx --test test/task-status.mjs test/task-kinds.mjs test/task-current-file.mjs",
+    "test:tasks": "node --import tsx --test test/task-status.mjs test/task-kinds.mjs test/task-current-file.mjs test/give-way.mjs test/disk-kind.mjs",
     "test:jobs": "node test/build.mjs && node --test test/job-runs.mjs test/run-failures.mjs",
     "start": "node dist/main.js",
     "recover": "node dist/recover.js"

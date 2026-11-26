@@ -6,10 +6,12 @@ import type { TaskService } from "./task.service.js";
 import type { Actor, FileRef, FileTask } from "./types.js";
 
 /**
- * Tasks wait in two lines, each with a worker of its own. Converting takes hours where copying takes minutes, so it
- * has a line to itself: `media` for conversions, `files` for everything else.
+ * Tasks wait in three lines, each with a worker of its own, so that a long task holds up only its own kind:
+ * `media` for conversions, which take hours, `removal` for what throws things away or brings them back, which is
+ * mostly renaming, and `files` for everything else, which is whatever carries bytes.
  */
-export type TaskLane = "files" | "media";
+export const taskLanes = ["files", "removal", "media"] as const;
+export type TaskLane = (typeof taskLanes)[number];
 
 /** A task's destination, read only as far as the kinds here need. */
 export type TaskDestination = Partial<FileRef> & {
@@ -44,22 +46,34 @@ export type TaskKind = {
   changes(announce: Announce): void;
   /** The saved job it is a run of, as its destination names it. */
   jobOf?(destination: TaskDestination): string | undefined;
+  /**
+   * What it reads and writes in the locations, as far as its row tells. Lines other than its own leave these alone
+   * until it is over, when they were asked for after it: see `nextToStart`. A conversion names none and holds nothing up.
+   */
+  claims?(task: Pick<Announce, "sources" | "destination" | "into">): FileRef[];
 };
 
 const asked: TaskKind["recheck"] = (tasks, task, actor) => tasks.assertInputTask(actor, task);
 const media: TaskKind["recheck"] = (tasks, task, actor) => tasks.assertMediaTask(actor, task);
 const nothing = () => undefined;
+const sourcesOnly: TaskKind["claims"] = ({ sources }) => sources;
+const sourcesAndTarget: TaskKind["claims"] = ({ sources, into }) => (into ? [...sources, into] : sources);
+/** Each source, and the place it gets in the folder it is carried into. */
+const carried: TaskKind["claims"] = ({ sources, into }) =>
+  into ? [...sources, ...sources.map((source) => ({ rootSlug: into.rootSlug, path: path.posix.join(into.path, path.posix.basename(source.path)) }))] : sources;
 
 /** What every type of task means, by type. */
 export const taskKinds: Record<TaskType, TaskKind> = {
   copy: {
     lane: "files",
+    claims: carried,
     run: (tasks, task, actor) => tasks.runCopyLike(task, actor, false),
     recheck: asked,
     changes: ({ into, folder }) => into && folder(into)
   },
   move: {
     lane: "files",
+    claims: carried,
     run: (tasks, task, actor) => tasks.runCopyLike(task, actor, true),
     recheck: asked,
     changes: ({ into, sources, folder, leaving }) => {
@@ -69,19 +83,21 @@ export const taskKinds: Record<TaskType, TaskKind> = {
     }
   },
   delete_to_trash: {
-    lane: "files",
+    lane: "removal",
+    claims: sourcesOnly,
     run: (tasks, task, actor) => tasks.runTrash(task, actor),
     recheck: asked,
     changes: ({ sources, leaving }) => sources.forEach(leaving)
   },
   delete: {
-    lane: "files",
+    lane: "removal",
+    claims: sourcesOnly,
     run: (tasks, task, actor) => tasks.runDelete(task, actor),
     recheck: asked,
     changes: ({ sources, leaving }) => sources.forEach(leaving)
   },
   restore_trash: {
-    lane: "files",
+    lane: "removal",
     run: (tasks, task, actor) => tasks.runRestore(task, actor),
     recheck: asked,
     changes: ({ db, sources, folder }) => {
@@ -92,23 +108,26 @@ export const taskKinds: Record<TaskType, TaskKind> = {
       }
     }
   },
-  empty_trash: { lane: "files", run: (tasks, task, actor) => tasks.runEmptyTrash(task, actor), recheck: asked, changes: nothing },
+  empty_trash: { lane: "removal", run: (tasks, task, actor) => tasks.runEmptyTrash(task, actor), recheck: asked, changes: nothing },
   compress: {
     lane: "files",
+    claims: sourcesAndTarget,
     run: (tasks, task, actor) => tasks.runCompress(task, actor),
     recheck: asked,
     changes: ({ into, folder }) => into && folder({ rootSlug: into.rootSlug, path: path.posix.dirname(into.path) })
   },
-  download_zip: { lane: "files", run: (tasks, task, actor) => tasks.runDownloadZip(task, actor), recheck: asked, changes: nothing },
+  download_zip: { lane: "files", claims: sourcesOnly, run: (tasks, task, actor) => tasks.runDownloadZip(task, actor), recheck: asked, changes: nothing },
   extract: {
     lane: "files",
+    claims: sourcesAndTarget,
     run: (tasks, task, actor) => tasks.runExtract(task, actor),
     recheck: asked,
     changes: ({ into, tree }) => into && tree(into)
   },
-  thumbnail: { lane: "files", run: (tasks, task, actor) => tasks.runThumbnail(task, actor), recheck: asked, changes: nothing },
+  thumbnail: { lane: "files", claims: sourcesOnly, run: (tasks, task, actor) => tasks.runThumbnail(task, actor), recheck: asked, changes: nothing },
   sync: {
     lane: "files",
+    claims: ({ sources, destination: { sync } }) => (sync?.destination ? [...sources, sync.destination] : sources),
     run: (tasks, task, actor) => tasks.runSync(task, actor),
     recheck: (tasks, task, actor) => tasks.assertSyncTask(actor, task),
     changes: ({ destination: { sync }, tree }) => sync?.destination && !sync.options?.dryRun && tree(sync.destination),
@@ -136,20 +155,52 @@ export const taskKinds: Record<TaskType, TaskKind> = {
   }
 };
 
-/** The types whose tasks wait in the `media` lane. */
-export const mediaTaskTypes = (Object.keys(taskKinds) as TaskType[]).filter((type) => taskKinds[type].lane === "media");
+/** The types whose tasks wait in the given lane. */
+export const laneTypes = (lane: TaskLane) => (Object.keys(taskKinds) as TaskType[]).filter((type) => taskKinds[type].lane === lane);
+
+type Parsed = { sources: FileRef[]; destination: TaskDestination; into?: FileRef };
+
+function parse(task: Pick<FileTask, "sources_json" | "destination">): Parsed {
+  const sources = JSON.parse(task.sources_json) as FileRef[];
+  const destination = JSON.parse(task.destination ?? "{}") as TaskDestination;
+  return { sources, destination, into: destination.rootSlug && destination.path ? { rootSlug: destination.rootSlug, path: destination.path } : undefined };
+}
+
+const covers = (outer: string, inner: string) => outer === "/" || inner === outer || inner.startsWith(`${outer}/`);
+const tidy = (ref: FileRef) => ({ rootSlug: ref.rootSlug, path: path.posix.join("/", ref.path, ".") });
+
+/**
+ * The next task of a lane that may start, given every task waiting or under way, oldest first. Lines run side by
+ * side, but what was asked for in an order is still done in it: a task waits for each older one that claims a path
+ * it claims itself, or one above or below it. So a folder thrown away after it was copied is whole in the copy,
+ * while one that has nothing to do with the copy goes at once.
+ */
+export function nextToStart<Task extends Pick<FileTask, "type" | "status" | "sources_json" | "destination">>(lane: TaskLane, active: Task[]): Task | null {
+  const ahead: FileRef[] = [];
+  for (const task of active) {
+    let claims: FileRef[] = [];
+    try {
+      claims = (taskKinds[task.type].claims?.(parse(task)) ?? []).map(tidy);
+    } catch {
+      // A row that cannot be read claims nothing; running it says what is wrong with it.
+    }
+    const free = !claims.some((mine) => ahead.some((theirs) => theirs.rootSlug === mine.rootSlug && (covers(theirs.path, mine.path) || covers(mine.path, theirs.path))));
+    if (free && task.status === "queued" && taskKinds[task.type].lane === lane) return task;
+    ahead.push(...claims);
+  }
+  return null;
+}
 
 /** What a finished task changed in the locations, by location, for whoever may see them to hear of it. */
 export function taskChanges(db: Db, task: FileTask): FsChanged[] {
-  const sources = JSON.parse(task.sources_json) as FileRef[];
-  const destination = JSON.parse(task.destination ?? "{}") as TaskDestination;
+  const { sources, destination, into } = parse(task);
   const changes = new Map<string, { paths: Set<string>; gone: Set<string>; trees: Set<string> }>();
   const at = (rootSlug: string) => changes.get(rootSlug) ?? changes.set(rootSlug, { paths: new Set(), gone: new Set(), trees: new Set() }).get(rootSlug)!;
   taskKinds[task.type].changes({
     db,
     sources,
     destination,
-    into: destination.rootSlug && destination.path ? { rootSlug: destination.rootSlug, path: destination.path } : undefined,
+    into,
     folder: (ref) => at(ref.rootSlug).paths.add(ref.path),
     leaving: (ref) => {
       at(ref.rootSlug).paths.add(path.posix.dirname(ref.path));

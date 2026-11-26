@@ -34,11 +34,13 @@ import { SyncService } from "./services/sync.service.js";
 import { ConvertJobService } from "./services/convert-job.service.js";
 import { TaskService } from "./services/task.service.js";
 import { WorkspaceService } from "./services/workspace.service.js";
+import { requestBegins } from "./lib/give-way.js";
+import { taskLanes } from "./services/task-kinds.js";
 import { WorkerManager } from "./workers/worker-manager.js";
 import { RcloneClient, rcloneSocketPath } from "./storage/rclone-client.js";
 import { RemoteManager } from "./storage/remote-manager.js";
 import { RemoteStorage } from "./storage/remote-storage.js";
-import { EventHub } from "./ws/events.js";
+import { EventHub, type EventPublisher } from "./ws/events.js";
 import { register as registerAdmin } from "./http/admin.js";
 import { register as registerApps } from "./http/apps.js";
 import { register as registerAuth } from "./http/auth.js";
@@ -78,7 +80,14 @@ export async function buildApp(env: Env) {
   const preferences = new PreferenceService(db, roots, paths, events);
   const fsService = new FsService(paths, permissions, audit, storage, env.appDataDir, preferences, images, events);
   const workspace = new WorkspaceService(db, roots, paths);
-  const tasks = new TaskService(db, paths, permissions, audit, events, env.appDataDir, fsService, storage, preferences);
+  // A task that has just been queued is told to the workers, who would otherwise find it up to a second later.
+  const taskEvents: EventPublisher = {
+    publish(event) {
+      events.publish(event);
+      if (event.type === "task.created" || (event.type === "task.progress" && event.patch.status === "queued")) for (const worker of workers) worker.wake();
+    }
+  };
+  const tasks = new TaskService(db, paths, permissions, audit, taskEvents, env.appDataDir, fsService, storage, preferences);
   const shelves = new ShelfService(db, paths, permissions, events, audit, storage);
   const shares = new ShareService(db, paths, permissions, audit, events, storage, fsService, env.sessionSecret, secrets);
   const sync = new SyncService(db, tasks, auth, audit, remotes);
@@ -90,9 +99,8 @@ export async function buildApp(env: Env) {
   const iconLibrary = new IconLibraryService(env.appDataDir);
   const apps = new ExternalAppService(db, env.appDataDir, iconLibrary, events, audit, secrets);
   const plugins = new PluginService([resolveBundledPlugins(), path.join(env.appDataDir, "plugins")]);
-  const workers = new WorkerManager(tasks, env, events);
-  // Conversions wait in a line of their own, so a long one holds up no copy or move.
-  const mediaWorkers = new WorkerManager(tasks, env, events, "media");
+  // One worker to a line of tasks, so a long copy holds up no deletion, and a long conversion neither.
+  const workers = taskLanes.map((lane) => new WorkerManager(tasks, env, events, lane));
 
   await app.register(cookie, { secret: env.sessionSecret });
   await app.register(multipart, {
@@ -154,6 +162,11 @@ export async function buildApp(env: Env) {
     }
   });
 
+  // What someone is looking at the screen for: while one of these is under way, the tasks leave the disk to it.
+  app.addHook("onRequest", async (request, reply) => {
+    if (awaitedRoutes.has(request.routeOptions.url ?? "")) reply.raw.once("close", requestBegins());
+  });
+
   await auth.ensureInitialAdminFromEnv();
   roots.syncFromDataDir();
   // Said once in the log as well, where whoever set the container up looks first.
@@ -194,7 +207,7 @@ export async function buildApp(env: Env) {
 
   app.addHook("onClose", async () => {
     events.close();
-    await Promise.all([workers.stop(), mediaWorkers.stop()]);
+    await Promise.all(workers.map((worker) => worker.stop()));
     sync.stop();
     convertJobs.stop();
     clearInterval(pruning);
@@ -205,8 +218,7 @@ export async function buildApp(env: Env) {
     db.close();
   });
 
-  workers.start();
-  mediaWorkers.start();
+  for (const worker of workers) worker.start();
   sync.start();
   convertJobs.start();
   const pruning = setInterval(() => void remote.pruneLocalCopies().catch(() => undefined), 60 * 60 * 1000);
@@ -288,3 +300,6 @@ function assertAllowedWebSocketOrigin(request: FastifyRequest): void {
   }
   throw new AppError(403, "WebSocket origin is not allowed", "WS_ORIGIN_DENIED");
 }
+
+/** The requests a folder window makes as it is opened and worked in, each answered in moments by a disk left alone. */
+const awaitedRoutes = new Set(["/api/fs/list", "/api/fs/search", "/api/fs/meta", "/api/fs/thumbnail", "/api/fs/mkdir", "/api/fs/rename", "/api/fs/rename-many", "/api/fs/tags", "/api/tasks/conflicts"]);

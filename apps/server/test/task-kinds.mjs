@@ -5,16 +5,16 @@ import path from "node:path";
 import test from "node:test";
 import { openDb } from "../src/db/db.ts";
 import { jobIdOf } from "../src/services/job-run.ts";
-import { taskChanges, taskKinds } from "../src/services/task-kinds.ts";
+import { nextToStart, taskChanges, taskKinds, taskLanes } from "../src/services/task-kinds.ts";
 import { TaskService } from "../src/services/task.service.ts";
 
 const lanes = {
   copy: "files",
   move: "files",
-  delete_to_trash: "files",
-  delete: "files",
-  restore_trash: "files",
-  empty_trash: "files",
+  delete_to_trash: "removal",
+  delete: "removal",
+  restore_trash: "removal",
+  empty_trash: "removal",
   compress: "files",
   download_zip: "files",
   extract: "files",
@@ -145,8 +145,7 @@ test("each type waits in the lane it did", async (t) => {
   const tasks = new TaskService(db, null, null, { write() {} }, { publish() {} }, appDataDir, null, null, null);
   for (const [type, lane] of Object.entries(lanes)) {
     db.prepare("INSERT INTO tasks (id, type, status, created_by, sources_json, created_at, updated_at) VALUES (?, ?, 'queued', 'user_admin', '[]', 1, 1)").run(`task_${type}`, type);
-    const other = lane === "media" ? "files" : "media";
-    assert.equal(tasks.claimNext(other), null, `the ${other} worker leaves a ${type}`);
+    for (const other of taskLanes.filter((name) => name !== lane)) assert.equal(tasks.claimNext(other), null, `the ${other} worker leaves a ${type}`);
     assert.equal(tasks.claimNext(lane)?.type, type, `the ${lane} worker takes a ${type}`);
   }
 });
@@ -154,4 +153,47 @@ test("each type waits in the lane it did", async (t) => {
 test("a destination that is not a job run names no job", () => {
   assert.equal(jobIdOf({ type: "sync", destination: "{" }), null);
   assert.equal(jobIdOf({ type: "convert", destination: "null" }), null);
+});
+
+test("the thread pool has room for every lane working flat out, and for requests beside them", async () => {
+  const { threadPoolSize } = await import("../src/config/threadpool.ts");
+  const { treeConcurrency } = await import("../src/lib/tree-ops.ts");
+  assert.ok(threadPoolSize >= taskLanes.length * treeConcurrency + treeConcurrency);
+});
+
+const waiting = (type, sources, destination, status = "queued") => ({ type, status, sources_json: JSON.stringify(sources.map((path) => ({ rootSlug: "media", path }))), destination: destination ? JSON.stringify({ rootSlug: "media", path: destination }) : null });
+
+test("a deletion does not wait for a copy it has nothing to do with", () => {
+  const copy = waiting("copy", ["/films"], "/backup", "running");
+  const unrelated = waiting("delete_to_trash", ["/old"]);
+  assert.equal(nextToStart("removal", [copy, unrelated]), unrelated);
+  // Something else in the folder copied into is no part of the copy either.
+  const beside = waiting("delete", ["/backup/notes.txt"]);
+  assert.equal(nextToStart("removal", [copy, beside]), beside);
+});
+
+test("what was asked for after a task that touches the same paths waits for it", () => {
+  const copy = waiting("copy", ["/films"], "/backup", "running");
+  for (const path of ["/films", "/films/one.mkv", "/", "/backup/films", "/backup/films/one.mkv"]) {
+    assert.equal(nextToStart("removal", [copy, waiting("delete_to_trash", [path])]), null, path);
+  }
+  // A copy still waiting its turn holds them back as much as one under way.
+  assert.equal(nextToStart("removal", [waiting("copy", ["/films"], "/backup"), waiting("delete", ["/films"])]), null);
+  // And the other way about: nothing is copied out of a folder that is still being thrown away.
+  assert.equal(nextToStart("files", [waiting("delete", ["/films"], null, "running"), waiting("copy", ["/films/one.mkv"], "/backup")]), null);
+});
+
+test("a task asked for before another never waits for it", () => {
+  const removal = waiting("delete", ["/films"]);
+  const copy = waiting("copy", ["/films"], "/backup");
+  assert.equal(nextToStart("removal", [removal, copy]), removal);
+  assert.equal(nextToStart("files", [removal, copy]), null);
+});
+
+test("one that has to wait lets the next of its lane by, unless that one waits for it in turn", () => {
+  const copy = waiting("copy", ["/films"], "/backup", "running");
+  const held = waiting("delete", ["/films"]);
+  const free = waiting("delete", ["/old"]);
+  assert.equal(nextToStart("removal", [copy, held, free]), free);
+  assert.equal(nextToStart("removal", [copy, held, waiting("delete", ["/films/one.mkv"])]), null);
 });

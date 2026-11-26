@@ -164,13 +164,16 @@ Kago container
   ├─ Task worker：files（worker thread）
   │   ├─ copy
   │   ├─ move
-  │   ├─ delete-to-trash
-  │   ├─ restore-trash
   │   ├─ compress
   │   ├─ download-zip
   │   ├─ extract
   │   ├─ sync
   │   └─ thumbnail
+  ├─ Task worker：removal（worker thread）
+  │   ├─ delete-to-trash
+  │   ├─ delete
+  │   ├─ restore-trash
+  │   └─ empty-trash
   ├─ Task worker：media（worker thread）
   │   ├─ convert
   │   └─ remux
@@ -2108,7 +2111,13 @@ container 啟動時，所有 `running` task 必須標成 `interrupted`。
 
 ## 37. Worker 行為
 
-任務排成兩條佇列，各由一個 task worker（worker thread）執行，一次一個：`media` 是 `convert` 與 `remux`，`files` 是其餘所有任務。轉檔動輒幾個小時，分開排才不會擋住幾分鐘就能做完的複製與搬移。縮圖另外有自己的 worker。都不佔用處理 HTTP 的主執行緒。
+任務排成三條佇列，各由一個 task worker（worker thread）執行，一次一個：`media` 是 `convert` 與 `remux`，`removal` 是丟進垃圾桶、永久刪除、還原與清空垃圾桶，`files` 是其餘所有任務。轉檔動輒幾個小時，複製大量檔案也可能要幾十分鐘，分開排才不會擋住幾秒就能做完的刪除。佇列之間仍維持使用者下指令的先後：`files` 與 `removal` 的任務若和更早排入、尚未結束的任務碰到同一個路徑（或其上層、下層），就等它結束才開始，所以「複製完再刪掉來源」不會變成邊複製邊刪；互不相干的路徑則立刻開始。
+
+所有檔案操作（包含 worker thread 裡的）共用同一個 libuv 執行緒池，預設只有 4 條，而一個複製任務就同時佔用 8 個檔案操作，會讓開資料夾的請求排不到執行緒。`config/threadpool.ts` 在啟動的第一行把池開到 32，三條佇列全速運作時仍留有餘裕給 HTTP 請求。磁碟本身一次只能回答一件事，傳統硬碟每件事還要等磁頭移過去。所以走訪整棵樹的工作（複製、計算大小、刪除，都在 `lib/tree-ops.ts`）在每個檔案之間、大檔案的每一塊之間會先看有沒有人正在等：`app.ts` 把開資料夾、搜尋、縮圖、重新命名這類「使用者正盯著畫面等」的請求數記在主執行緒與 worker 共用的記憶體裡（`lib/give-way.ts`），數字不是零時走訪就暫停送出新的磁碟操作，請求答完才繼續，最多等 2 秒就先做一件，免得請求不斷時任務完全停住。已經送出的操作收不回來，所以請求仍要等它們做完。
+
+因此走訪在傳統硬碟上一次只送 2 個操作，其他地方是 8 個：單一磁頭同時被問更多也不會更快，只會讓後來的請求等更久。`lib/disk-kind.ts` 從路徑的裝置編號查 Linux 的 `/sys/dev/block/<major>:<minor>/queue/rotational`（分割區往上找所屬的磁碟）來判斷，來源或目的地任一邊是就算。查不到的一律當作不是：非 Linux、網路掛載，以及 mergerfs、ZFS 這類不對應單一區塊裝置的檔案系統。由傳統硬碟組成的陣列（md、LVM）會被判定為傳統硬碟。
+
+`scripts/bench-load-hdd.sh` 在模擬的硬碟上量測這些事：`scripts/bench-disk.mjs` 是一個 NBD 伺服器，一次只服務一個請求，位置不相鄰就要付一次尋軌時間。縮圖另外有自己的 worker。都不佔用處理 HTTP 的主執行緒。
 
 worker 執行前必須：
 

@@ -1,5 +1,6 @@
 import { Worker } from "node:worker_threads";
 import type { Env } from "../config/env.js";
+import { requestsUnderWay } from "../lib/give-way.js";
 import { logger } from "../lib/logger.js";
 import type { TaskLane } from "../services/task-kinds.js";
 import type { TaskService } from "../services/task.service.js";
@@ -23,7 +24,7 @@ export class WorkerManager {
     private readonly env: Env,
     private readonly events: EventHub,
     /** Which line of tasks its worker takes from. */
-    private readonly lane: TaskLane = "files"
+    private readonly lane: TaskLane
   ) {}
 
   start(): void {
@@ -47,11 +48,16 @@ export class WorkerManager {
     await worker.terminate();
   }
 
+  /** Has the worker look for a task now rather than when it next would. */
+  wake(): void {
+    this.worker?.postMessage({ type: "wake" });
+  }
+
   private spawnWorker(): void {
     this.restartTimer = null;
     const worker = new Worker(workerEntryUrl(), {
       name: `kago-task-worker-${this.lane}`,
-      workerData: { env: this.env, lane: this.lane }
+      workerData: { env: this.env, lane: this.lane, requests: requestsUnderWay() }
     });
     this.worker = worker;
     this.currentTaskId = null;

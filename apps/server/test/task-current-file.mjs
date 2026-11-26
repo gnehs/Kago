@@ -14,6 +14,7 @@ import { PermissionService } from "../src/services/permission.service.ts";
 import { PreferenceService } from "../src/services/preference.service.ts";
 import { RootService } from "../src/services/root.service.ts";
 import { StorageService } from "../src/services/storage.service.ts";
+import { taskKinds } from "../src/services/task-kinds.ts";
 import { TaskService } from "../src/services/task.service.ts";
 import { RcloneClient, rcloneSocketPath } from "../src/storage/rclone-client.ts";
 import { RemoteStorage } from "../src/storage/remote-storage.ts";
@@ -62,7 +63,7 @@ async function harness(t) {
   });
   const run = async (type, sources, destination) => {
     const created = await tasks.create(actor, { type, sources, destination });
-    const claimed = tasks.claimNext("files");
+    const claimed = tasks.claimNext(taskKinds[type].lane);
     assert.equal(claimed.id, created.id);
     await tasks.runTask(claimed, actor);
     return tasks.get(created.id);
