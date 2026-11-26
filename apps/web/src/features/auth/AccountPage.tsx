@@ -10,7 +10,7 @@ import { KagoBadge } from "@/components/kago/badge";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/input";
 import { KagoPasswordInput } from "@/components/kago/password-input";
-import { roleLabels } from "@/features/admin/UsersPage";
+import { roleLabels } from "@/features/admin/roles";
 import { Card, Page, Row, RowList, SettingRow } from "@/components/kago/page";
 import { KagoStatusIcon } from "@/components/kago/status-icon";
 import { t } from "@/lib/i18n";

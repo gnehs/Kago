@@ -1,147 +1,117 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { keys } from "@/api/keys";
-import { Ellipsis, Pencil, Plus, Trash2, UsersRound, X } from "lucide-react";
+import { Plus, Search, UsersRound } from "lucide-react";
 import { api } from "@/api/client";
-import { useGroups, useUsers } from "@/api/hooks";
-import { avatarUrl, KagoAvatar } from "@/components/kago/avatar";
+import { keys } from "@/api/keys";
+import { useGroups, usePermissions, useRoots, useUsers } from "@/api/hooks";
 import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
-import { KagoIconButton } from "@/components/kago/icon-button";
-import { KagoDropdownMenu, KagoMenuItem } from "@/components/kago/menu";
+import { KagoSearchField } from "@/components/kago/search-field";
 import { KagoStatusIcon } from "@/components/kago/status-icon";
 import { useWindowScope } from "@/components/kago/window-scope";
 import { Button } from "@/components/ui/button";
-import { Field, Input, Select } from "@/components/ui/input";
-import { Card, Page } from "@/components/kago/page";
+import { accessOf, filterGroups, foundByMember, visibleMembers } from "@/lib/peopleModel";
 import { run } from "@/lib/run";
 import { confirmAction, promptText } from "@/stores/dialogs";
-import type { Group, UserAccount } from "@/types/kago";
+import type { Group } from "@/types/kago";
+import { AddMembersDialog } from "./AddMembersDialog";
+import { GroupCard, type GroupCardActions } from "./GroupCard";
 import { t } from "@/lib/i18n";
 
+/**
+ * Every group on one card, closed until it is opened: who is in it, and what the permission rules let it reach, since
+ * that is the only reason to have one. The header holds the search, by group or by member, and adding a group.
+ */
 export function GroupsPage() {
+  const scope = useWindowScope();
   const queryClient = useQueryClient();
   const groups = useGroups();
   const users = useUsers();
-  const [name, setName] = useState("");
-  const [creating, setCreating] = useState(false);
+  const roots = useRoots();
+  const rules = usePermissions();
+  const [query, setQuery] = useState("");
+  // The cards a person has opened or closed themselves; a search that found a group through a member opens it until then.
+  const [opened, setOpened] = useState<Record<string, boolean>>({});
+  const [adding, setAdding] = useState<string | null>(null);
+  const all = groups.data ?? [];
+  const found = filterGroups(all, query);
+  const disabled = new Set((users.data ?? []).filter((user) => user.disabled).map((user) => user.id));
+  const rootName = (rootId: string) => roots.data?.find((root) => root.id === rootId)?.name ?? null;
   const refresh = () => queryClient.invalidateQueries({ queryKey: keys.groups() });
 
-  async function createGroup(event: React.FormEvent) {
-    event.preventDefault();
-    if (!name.trim()) return;
+  async function create() {
+    const name = await promptText({ window: scope, title: t("Add group"), placeholder: t("Group name"), confirmLabel: t("Add group") });
+    if (name === null || !name.trim()) return;
     await run(async () => {
-      await api("/api/groups", { method: "POST", body: JSON.stringify({ name: name.trim() }) });
-      setName("");
-      setCreating(false);
+      const group = await api<Group>("/api/groups", { method: "POST", body: JSON.stringify({ name: name.trim() }) });
       await refresh();
+      // A new group has nobody in it, which is what it is made for next.
+      if (group?.id) setOpened((was) => ({ ...was, [group.id]: true }));
     }, t("Couldn’t add the group"));
   }
 
+  const actions: GroupCardActions = {
+    addMembers: (group) => setAdding(group.id),
+    removeMember: (group, memberId) =>
+      void run(async () => {
+        await api(`/api/groups/${group.id}/members/${memberId}`, { method: "DELETE" });
+        await refresh();
+      }, t("Couldn’t remove the member")),
+    async rename(group) {
+      const next = await promptText({ window: scope, title: t("Rename {name}", { name: group.name }), defaultValue: group.name, placeholder: t("Group name"), confirmLabel: t("Rename") });
+      if (next === null || !next.trim() || next.trim() === group.name) return;
+      await run(async () => {
+        await api(`/api/groups/${group.id}`, { method: "PATCH", body: JSON.stringify({ name: next.trim() }) });
+        await refresh();
+      }, t("Couldn’t rename the group"));
+    },
+    async remove(group) {
+      if (!(await confirmAction({ window: scope, title: t("Delete this group?"), subject: { icon: <KagoStatusIcon large><UsersRound /></KagoStatusIcon>, name: group.name, detail: t("{count} member | {count} members", { count: group.members.length }) }, description: t("Its members stay as users but lose the access this group gave them: the permission rules that name it are removed."), confirmLabel: t("Delete"), destructive: true }))) return;
+      await run(async () => {
+        await api(`/api/groups/${group.id}`, { method: "DELETE" });
+        await Promise.all([refresh(), queryClient.invalidateQueries({ queryKey: keys.permissions.all() })]);
+      }, t("Couldn’t delete the group"));
+    }
+  };
+
+  const add = <Button variant="default" onClick={() => void create()}><Plus />{t("Add group")}</Button>;
+
   return (
-    <Page
-      title={t("Groups")}
-      description={t("Put users into groups, then grant access to a whole group with one permission rule.")}
-      actions={creating || !groups.data?.length ? null : <Button variant="default" onClick={() => setCreating(true)}><Plus />{t("Add group")}</Button>}
-    >
-      {creating ? (
-      <Card title={t("Add group")} action={<KagoIconButton label={t("Cancel adding")} onClick={() => setCreating(false)}><X /></KagoIconButton>}>
-        <form className="flex items-end gap-3" onSubmit={createGroup}>
-          <Field label={t("Group name")} className="flex-1"><Input autoFocus value={name} onChange={(event) => setName(event.target.value)} /></Field>
-          <Button type="submit" variant="default" disabled={!name.trim()}>{t("Add group")}</Button>
-        </form>
-      </Card>
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      {all.length > 0 ? (
+        <header className="flex shrink-0 items-center gap-2 border-b border-line bg-elevated p-2.5">
+          <KagoSearchField label={t("Search groups or members")} value={query} onChange={setQuery} />
+          {add}
+        </header>
       ) : null}
+
       {groups.isLoading ? <KagoLoading /> : null}
-      {groups.data?.length === 0 && !creating ? (
-        <KagoEmptyState icon={<UsersRound />} title={t("No groups yet")} description={t("Groups let you grant access to several people at once.")}>
-          <Button variant="default" onClick={() => setCreating(true)}><Plus />{t("Add group")}</Button>
+      {groups.data && all.length === 0 ? (
+        <KagoEmptyState className="flex-1" icon={<UsersRound />} title={t("No groups yet")} description={t("Groups let you grant access to several people at once.")}>
+          {add}
         </KagoEmptyState>
       ) : null}
-      {groups.data?.map((group) => <GroupCard key={group.id} group={group} users={users.data ?? []} onChange={refresh} />)}
-    </Page>
-  );
-}
+      {all.length > 0 && found.length === 0 ? <KagoEmptyState className="flex-1" icon={<Search />} title={t("No groups match “{query}”", { query: query.trim() })} /> : null}
+      {found.length > 0 ? (
+        <div className="flex min-h-0 flex-1 scroll-fade flex-col gap-1 overflow-y-auto p-2.5">
+          <h2 className="m-0 px-1 pb-0.5 text-xs font-semibold text-muted">{t("{count} group | {count} groups", { count: found.length })}</h2>
+          <ul className="m-0 flex list-none flex-col gap-1 p-0">
+            {found.map((group) => (
+              <GroupCard
+                key={group.id}
+                group={group}
+                members={visibleMembers(group, query)}
+                access={rules.data ? accessOf(group.id, rules.data, rootName) : null}
+                disabled={disabled}
+                open={opened[group.id] ?? foundByMember(group, query)}
+                onToggle={() => setOpened((was) => ({ ...was, [group.id]: !(was[group.id] ?? foundByMember(group, query)) }))}
+                actions={actions}
+              />
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
-/** One group with its members; membership changes take effect on the server right away. */
-function GroupCard({ group, users, onChange }: { group: Group; users: UserAccount[]; onChange: () => Promise<void> }) {
-  const scope = useWindowScope();
-  const queryClient = useQueryClient();
-  const [userId, setUserId] = useState("");
-  const candidates = users.filter((user) => !group.members.some((member) => member.id === user.id));
-
-  async function add(event: React.FormEvent) {
-    event.preventDefault();
-    if (!userId) return;
-    await run(async () => {
-      await api(`/api/groups/${group.id}/members`, { method: "POST", body: JSON.stringify({ userId }) });
-      setUserId("");
-      await onChange();
-    }, t("Couldn’t add to the group"));
-  }
-
-  async function remove(memberId: string) {
-    await run(async () => {
-      await api(`/api/groups/${group.id}/members/${memberId}`, { method: "DELETE" });
-      await onChange();
-    }, t("Couldn’t remove the member"));
-  }
-
-  async function rename() {
-    const next = await promptText({ window: scope, title: t("Rename {name}", { name: group.name }), defaultValue: group.name, placeholder: t("Group name"), confirmLabel: t("Rename") });
-    if (next === null || !next.trim() || next.trim() === group.name) return;
-    await run(async () => {
-      await api(`/api/groups/${group.id}`, { method: "PATCH", body: JSON.stringify({ name: next.trim() }) });
-      await onChange();
-    }, t("Couldn’t rename the group"));
-  }
-
-  async function removeGroup() {
-    if (!(await confirmAction({ window: scope, title: t("Delete this group?"), subject: { icon: <KagoStatusIcon large><UsersRound /></KagoStatusIcon>, name: group.name, detail: t("{count} member | {count} members", { count: group.members.length }) }, description: t("Its members stay as users but lose the access this group gave them: the permission rules that name it are removed."), confirmLabel: t("Delete"), destructive: true }))) return;
-    await run(async () => {
-      await api(`/api/groups/${group.id}`, { method: "DELETE" });
-      await Promise.all([onChange(), queryClient.invalidateQueries({ queryKey: keys.permissions.all() })]);
-    }, t("Couldn’t delete the group"));
-  }
-
-  return (
-    <Card
-      title={group.name}
-      description={t("{count} member | {count} members", { count: group.members.length })}
-      action={
-        <KagoDropdownMenu
-          label={t("More actions")}
-          menu={
-            <>
-              <KagoMenuItem icon={<Pencil />} onClick={() => void rename()}>{t("Rename")}</KagoMenuItem>
-              <KagoMenuItem icon={<Trash2 />} destructive onClick={() => void removeGroup()}>{t("Delete")}</KagoMenuItem>
-            </>
-          }
-        >
-          <Ellipsis />
-        </KagoDropdownMenu>
-      }
-    >
-      {group.members.length > 0 ? (
-        <ul className="-mx-4 -mt-4 mb-4 flex list-none flex-col divide-y divide-line border-b border-line p-0">
-          {group.members.map((member) => (
-            <li key={member.id} className="flex h-11 items-center gap-2.5 pr-2 pl-4">
-              <KagoAvatar name={member.display_name || member.email} picture={avatarUrl(member.id, member.avatar_at)} className="size-6" />
-              <span className="truncate font-medium">{member.display_name}</span>
-              <span className="min-w-0 flex-1 truncate text-xs text-muted">{member.email}</span>
-              <KagoIconButton label={t("Remove {member} from {group}", { member: member.display_name, group: group.name })} onClick={() => void remove(member.id)}><X /></KagoIconButton>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="m-0 mb-3 text-faint">{t("This group has no members yet.")}</p>
-      )}
-      <form className="flex gap-2" onSubmit={add}>
-        <Select aria-label={t("User to add to {group}", { group: group.name })} value={userId} onChange={(event) => setUserId(event.target.value)} disabled={candidates.length === 0}>
-          <option value="">{candidates.length === 0 ? t("Every user is already a member") : t("Choose a user to add")}</option>
-          {candidates.map((user) => <option key={user.id} value={user.id}>{user.display_name}（{user.email}）</option>)}
-        </Select>
-        <Button type="submit" disabled={!userId}>{t("Add")}</Button>
-      </form>
-    </Card>
+      <AddMembersDialog group={all.find((group) => group.id === adding) ?? null} onClose={() => setAdding(null)} />
+    </div>
   );
 }
