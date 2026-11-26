@@ -12,7 +12,7 @@ import { AppError, errnoIs, fileSystemRefusal } from "../lib/errors.js";
 import { isSafeLogicalSegment, nfc, safeRelativeZipPath } from "../lib/filename.js";
 import { id, now } from "../lib/ids.js";
 import { logger } from "../lib/logger.js";
-import { bytesToCarry, collectPathStats, copyTree, countEntries, freeName, limiter, mergeTree, movePath, nearestFolder, recoverRemoteReplaced, recoverReplaced, removeTree, replacePath, StoredNames, swapIn, swapInRemote, treeConcurrency, assertTargetOutsideSource, type Clash, type Found, type FolderEntry, type PathStats } from "../lib/tree-ops.js";
+import { bytesToCarry, collectPathStats, copyTree, countEntries, freeName, limiter, mergeTree, movePath, nearestFolder, recoverRemoteReplaced, recoverReplaced, removeTree, replacePath, StoredNames, swapIn, swapInRemote, treeConcurrency, assertTargetOutsideSource, type Clash, type FileHooks, type Found, type FolderEntry, type PathStats } from "../lib/tree-ops.js";
 import { isZipDirectory, isZipSymlink, openZipArchive, zipEntryName } from "../lib/zip-archive.js";
 import { openEncryptedZipEntry, readZipCipherHead, zipCipherOf, zipPasswordFits, ZipPasswordError, type ZipCipher } from "../lib/zip-crypto.js";
 import { SecretBox } from "../lib/secret-box.js";
@@ -697,9 +697,12 @@ export class TaskService {
       let countedFiles = 0;
       let countedBytes = 0;
       const beforeCopy = () => addUpFrom(index);
-      const onFile = () => {
-        countedFiles += 1;
-        this.countFiles(task.id, 1);
+      const onFile: FileHooks = {
+        started: (from) => this.showWithin(task.id, safeSource, from),
+        done: () => {
+          countedFiles += 1;
+          this.countFiles(task.id, 1);
+        }
       };
       const onBytes = (processedBytes: number) => {
         countedBytes += processedBytes;
@@ -819,8 +822,13 @@ export class TaskService {
       const folder = path.posix.dirname(source.logicalPath);
       const onBytes = transferProgress(
         (bytes) => this.countBytes(task.id, bytes),
-        // rclone names what it is carrying from where its run starts: the folder the batch is out of.
-        batch.length > 1 ? (carried) => this.show(task.id, path.posix.join(folder, carried)) : undefined
+        // rclone names what it is carrying from where its run starts: the folder the batch is out of, or the folder
+        // that is itself carried. A single file is the one thing the task already shows.
+        batch.length > 1
+          ? (carried) => this.show(task.id, path.posix.join(folder, carried))
+          : directory
+            ? (carried) => this.show(task.id, path.posix.join(source.logicalPath, carried))
+            : undefined
       );
       let countedFiles = 0;
       const onStats = (stats: RcloneStats) => {
@@ -981,7 +989,9 @@ export class TaskService {
 
     for (const { safe, bytes, measured } of operations) {
       await this.progress(task.id, safe.logicalPath);
-      const streamed = await this.trash.place(actor, safe, task.id, measured, (processedBytes) => this.bumpProcessedBytes(task.id, processedBytes));
+      const streamed = await this.trash.place(actor, safe, task.id, measured, (processedBytes) => this.bumpProcessedBytes(task.id, processedBytes), {
+        started: (from) => this.showWithin(task.id, safe, from)
+      });
       await this.bumpProcessed(task.id);
       if (!streamed) this.bumpProcessedBytes(task.id, bytes);
     }
@@ -1097,8 +1107,9 @@ export class TaskService {
       let counted = 0;
       if (isRemote(safe.root)) await this.storage.remote.remove(safe.root, safe.logicalPath, (await this.storage.stat(safe)).isDirectory());
       else
-        await removeTree(safe.absolutePath, () => {
+        await removeTree(safe.absolutePath, (gone) => {
           this.assertNotCancelled(task.id);
+          this.showWithin(task.id, safe, gone);
           counted += 1;
           this.countFiles(task.id, 1);
         });
@@ -1770,12 +1781,27 @@ export class TaskService {
     this.assertNotCancelled(taskId);
     const buffer = this.progressBuffer(taskId);
     buffer.currentPath = currentPath;
+    buffer.absolute = undefined;
     this.flushProgress(taskId);
   }
 
   /** Names what the task is busy with, without asking whether it goes on. */
   private show(taskId: string, currentPath: string): void {
-    this.progressBuffer(taskId).currentPath = currentPath;
+    const buffer = this.progressBuffer(taskId);
+    buffer.currentPath = currentPath;
+    buffer.absolute = undefined;
+    this.flushProgress(taskId);
+  }
+
+  /**
+   * Names a file of a local tree being worked on, given where it is on disk. What the walk calls this for is every
+   * file, so only the disk path is kept; it becomes a path in the location when the progress is written, which is
+   * once in a while.
+   */
+  private showWithin(taskId: string, within: SafePath, absolute: string): void {
+    const buffer = this.progressBuffer(taskId);
+    buffer.within = within;
+    buffer.absolute = absolute;
     this.flushProgress(taskId);
   }
 
@@ -1862,6 +1888,11 @@ export class TaskService {
       ts - buffer.lastFlushAt >= progressFlushIntervalMs ||
       buffer.processedBytes >= progressFlushBytes;
     if (!shouldFlush) return;
+    if (buffer.absolute !== undefined && buffer.within) {
+      const logical = logicalWithin(buffer.within, buffer.absolute);
+      if (logical) buffer.currentPath = logical;
+      buffer.absolute = undefined;
+    }
     if (!buffer.currentPath && buffer.processedFiles === 0 && buffer.processedBytes === 0 && !buffer.pace) return;
 
     this.db
@@ -1949,9 +1980,20 @@ type ProgressBuffer = {
   processedFiles: number;
   processedBytes: number;
   currentPath?: string;
+  /** A file named by where it is on disk, within `within`; turned into `currentPath` as the buffer is written. */
+  absolute?: string;
+  within?: SafePath;
   pace?: Pace;
   lastFlushAt: number;
 };
+
+/** Where a path on disk under `within` is in its location, or null for one that is not under it. Never a host path. */
+function logicalWithin(within: SafePath, absolute: string): string | null {
+  const relative = path.relative(within.absolutePath, absolute);
+  if (relative === "") return within.logicalPath;
+  if (relative.startsWith("..") || path.isAbsolute(relative)) return null;
+  return path.posix.join(within.logicalPath, ...relative.split(path.sep).map(nfc));
+}
 
 function syncSpecOf(task: FileTask): SyncSpec {
   const spec = (JSON.parse(task.destination ?? "{}") as { sync?: SyncSpec }).sync;

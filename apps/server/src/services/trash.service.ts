@@ -5,7 +5,7 @@ import { row, rows } from "../db/db.js";
 import { AppError, errnoIs } from "../lib/errors.js";
 import { id, now } from "../lib/ids.js";
 import type { TrashItem, TrashKind } from "@kago/contract";
-import { bytesToCarry, limiter, measureTree, movePath, onAnotherDisk, removeTree, type Found } from "../lib/tree-ops.js";
+import { bytesToCarry, limiter, measureTree, movePath, onAnotherDisk, removeTree, type FileHooks, type Found } from "../lib/tree-ops.js";
 import { TRASH_FOLDER } from "../lib/system-files.js";
 import { isRemote } from "../storage/remote-storage.js";
 import type { EventPublisher } from "../ws/events.js";
@@ -131,7 +131,7 @@ export class TrashService {
    * what `measure` found of it, if it was asked already. Resolves to whether the bytes were streamed through
    * `onBytes`, as opposed to renamed.
    */
-  async place(actor: Actor, safe: SafePath, deletionId: string, measured?: Measured, onBytes: (bytes: number) => void = () => undefined): Promise<boolean> {
+  async place(actor: Actor, safe: SafePath, deletionId: string, measured?: Measured, onBytes: (bytes: number) => void = () => undefined, onFile?: FileHooks): Promise<boolean> {
     const known = measured ?? (await this.measure(safe));
     let streamed = false;
     if (isRemote(safe.root)) {
@@ -142,7 +142,7 @@ export class TrashService {
       this.record(actor, safe, trashPath, deletionId, known);
     } else {
       const trashPath = path.join(await this.localDir(safe.root), `${Date.now()}-${id("trash")}-${path.basename(safe.absolutePath)}`);
-      streamed = await this.moveLocal(actor, safe, trashPath, deletionId, known, onBytes);
+      streamed = await this.moveLocal(actor, safe, trashPath, deletionId, known, onBytes, onFile);
     }
     this.audit.write({ actorType: "user", actorId: actor.id, action: "delete_to_trash", rootId: safe.root.id, path: safe.logicalPath, result: "success" });
     return streamed;
@@ -286,10 +286,10 @@ export class TrashService {
    * is taken back only if nothing arrived: what was copied whole before the source could not all be removed is in
    * the trash, and stays restorable.
    */
-  private async moveLocal(actor: Actor, safe: SafePath, trashPath: string, deletionId: string, measured: Measured, onBytes: (bytes: number) => void): Promise<boolean> {
+  private async moveLocal(actor: Actor, safe: SafePath, trashPath: string, deletionId: string, measured: Measured, onBytes: (bytes: number) => void, onFile?: FileHooks): Promise<boolean> {
     const itemId = this.record(actor, safe, trashPath, deletionId, measured);
     try {
-      const streamed = await movePath(safe.absolutePath, trashPath, onBytes);
+      const streamed = await movePath(safe.absolutePath, trashPath, onBytes, onFile);
       if (measured.kind === "folder" && measured.size === null) this.measureLater(itemId, trashPath, actor.id);
       return streamed;
     } catch (error) {

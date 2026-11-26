@@ -26,6 +26,11 @@ export type Clash = "skip" | "replace" | "keep";
 /** Called when a move could not rename something and is about to copy it instead, which is when there is something to add up. */
 export type BeforeCopy = () => Promise<void>;
 
+/**
+ * What a walk tells of the files it carries: `started` as one is begun, with the path it is read from, and `done`
+ * once it is carried. Both are called for every file, so neither may do more than note the fact.
+ */
+export type FileHooks = { started?: (from: string) => void; done?: () => void };
 /** Hears of what a count comes upon as it goes: so many more files, and bytes. */
 export type Found = (files: number, bytes: number) => void;
 
@@ -217,7 +222,7 @@ export async function countEntries(targetPath: string, found?: Found): Promise<n
  * Removes a file or a whole folder, several entries at a time, saying so of each one as it goes: `removed` may
  * throw to stop it. A symlink is removed, never followed. What has gone meanwhile is not missed.
  */
-export async function removeTree(targetPath: string, removed: () => void): Promise<void> {
+export async function removeTree(targetPath: string, removed: (gone: string) => void): Promise<void> {
   const limit = limiter(treeConcurrency);
   const gone = (error: unknown) => {
     if (!errnoIs(error, "ENOENT")) throw error;
@@ -228,7 +233,7 @@ export async function removeTree(targetPath: string, removed: () => void): Promi
       await Promise.all(entries.map((entry) => visit(path.join(current, entry.name), entry.isDirectory())));
       await limit(() => fsp.rmdir(current).catch(gone));
     } else await limit(() => fsp.unlink(current).catch(gone));
-    removed();
+    removed(current);
   };
   const stat = await fsp.lstat(targetPath).catch((error: unknown) => (gone(error), null));
   if (stat) await visit(targetPath, stat.isDirectory());
@@ -303,7 +308,7 @@ type Copied = { path: string; stat: Stats };
  * removes what it made of the target, and never a target that was there before it, as one merged into is.
  * Each file and folder carried is told to `copied`, for a move to take away only those.
  */
-export async function copyTree(sourcePath: string, targetPath: string, onBytes: (bytes: number) => void, onFile?: () => void, copied?: Copied[]): Promise<void> {
+export async function copyTree(sourcePath: string, targetPath: string, onBytes: (bytes: number) => void, onFile?: FileHooks, copied?: Copied[]): Promise<void> {
   const limit = limiter(treeConcurrency);
   const stop = new AbortController();
   let failure: unknown;
@@ -319,9 +324,12 @@ export async function copyTree(sourcePath: string, targetPath: string, onBytes: 
       const stat = await turn(() => fsp.lstat(from));
       assertFileOrFolder(stat);
       if (stat.isFile()) {
-        await turn(() => copyFile(from, to, stat, tags, onBytes, stop.signal));
+        await turn(() => {
+          onFile?.started?.(from);
+          return copyFile(from, to, stat, tags, onBytes, stop.signal);
+        });
         copied?.push({ path: from, stat });
-        onFile?.();
+        onFile?.done?.();
         return;
       }
       const entries = await turn(async () => {
@@ -365,7 +373,7 @@ export async function replacePath(
   targetPath: string,
   move: boolean,
   onBytes: (bytes: number) => void,
-  onFile?: () => void,
+  onFile?: FileHooks,
   beforeCopy?: BeforeCopy
 ): Promise<void> {
   const staging = path.join(path.dirname(targetPath), `${REPLACE_PARTIAL}${Date.now()}-${id("temp")}`);
@@ -531,7 +539,7 @@ export async function mergeTree(
   move: boolean,
   names: StoredNames,
   onBytes: (bytes: number) => void,
-  onFile?: () => void,
+  onFile?: FileHooks,
   beforeCopy?: BeforeCopy
 ): Promise<void> {
   for (const entry of await fsp.readdir(sourcePath, { withFileTypes: true })) {
@@ -573,7 +581,7 @@ async function preservePathMetadata(targetPath: string, stat: Stats): Promise<vo
  * then only what was copied leaves the source. Whatever arrived in the source, or changed, while it was being
  * copied stays there, rather than going with the rest without ever having reached the target.
  */
-export async function movePath(sourcePath: string, targetPath: string, onBytes: (bytes: number) => void, onFile?: () => void, beforeCopy?: BeforeCopy): Promise<boolean> {
+export async function movePath(sourcePath: string, targetPath: string, onBytes: (bytes: number) => void, onFile?: FileHooks, beforeCopy?: BeforeCopy): Promise<boolean> {
   try {
     await renameFree(sourcePath, targetPath);
     return false;
