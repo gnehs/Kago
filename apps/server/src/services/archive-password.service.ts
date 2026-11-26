@@ -58,6 +58,6 @@ export class ArchivePasswordService {
   }
 
   private rows(userId: string): ArchivePasswordRow[] {
-    return rows<ArchivePasswordRow>(this.db.prepare("SELECT id, sealed, note, created_at FROM archive_passwords WHERE user_id = ? ORDER BY created_at ASC, id ASC").all(userId));
+    return rows<ArchivePasswordRow>(this.db.prepare("SELECT id, sealed, note, created_at FROM archive_passwords WHERE user_id = ? ORDER BY created_at ASC, rowid ASC").all(userId));
   }
 }
