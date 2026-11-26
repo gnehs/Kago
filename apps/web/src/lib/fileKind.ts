@@ -53,6 +53,14 @@ export function kindOfExtension(extension: string): FileKind {
   return extension === "pdf" ? "pdf" : "file";
 }
 
+/** Where a type is what tells a kind, the ending of a name stands in for one. */
+const STAND_INS: Partial<Record<FileKind, string>> = { image: "image/*", video: "video/*", audio: "audio/*", pdf: "application/pdf" };
+
+/** A thing of which only the name is known, and whether it is a folder, as something the icons can be drawn from. */
+export function namedItem(name: string, folder: boolean): KindItem {
+  return { kind: folder ? "folder" : "file", type: folder ? "" : (STAND_INS[kindOfExtension(extensionOf(name))] ?? ""), name };
+}
+
 /** Each broad kind has its own colour, so a mixed folder can be read by scanning the icons. */
 export const KIND_TONES: Record<FileKind, string> = {
   folder: "text-folder",

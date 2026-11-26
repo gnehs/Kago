@@ -1,6 +1,6 @@
 import type { ShareLink } from "@/types/kago";
 import { t } from "@/lib/i18n";
-import { kindOfExtension, extensionOf } from "@/lib/fileKind";
+import { namedItem } from "@/lib/fileKind";
 import { shareIsFolder, shareName, type ShareEnd, type ShareExpiry, type ShareFigure, type ShareMode, type Span } from "@/lib/shareModel";
 
 /** The three things a visitor can be let do, in the order they are offered. `visitor` is how a card in the list says it. */
@@ -28,15 +28,9 @@ export const figureText = (figure: ShareFigure) => (figure.kind === "limit" ? `$
 
 /**
  * What a share's icon is drawn from. The list is told no more than the name and the mode, but the server refuses any
- * pair but a file with download or view and a folder with upload, so the mode says which it is and the name's ending
- * says what kind of file. A kind has no registered type here, so one is made up that `fileKind` will take for it.
+ * pair but a file with download or view and a folder with upload, so the mode says which it is.
  */
-export function shareIconItem(share: ShareLink, rootName: string) {
-  const name = shareName(share, rootName);
-  if (shareIsFolder(share)) return { kind: "folder", type: "", name } as const;
-  const kind = kindOfExtension(extensionOf(name));
-  return { kind: "file", type: kind === "image" ? "image/x-share" : kind === "video" ? "video/x-share" : kind === "audio" ? "audio/x-share" : kind === "pdf" ? "application/pdf" : "", name } as const;
-}
+export const shareIconItem = (share: ShareLink, rootName: string) => namedItem(shareName(share, rootName), shareIsFolder(share));
 
 /** Puts the link on the clipboard, falling back to the old way when the browser turns the first down (it does once the page has waited on the network). */
 export async function copyShareLink(text: string): Promise<boolean> {

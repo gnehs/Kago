@@ -8,7 +8,7 @@ import { KagoIconButton } from "@/components/kago/icon-button";
 import { KagoDropdownMenu, KagoMenuItem, KagoMenuNote, KagoMenuSeparator } from "@/components/kago/menu";
 import { setDragDownload, setDragPreview } from "@/features/files/dragOut";
 import { FileTile } from "@/components/kago/file-icon";
-import { extensionOf, kindOfExtension, thumbnailKind, type FileKind } from "@/lib/fileKind";
+import { namedItem, thumbnailKind } from "@/lib/fileKind";
 import { KAGO_DRAG_TYPE, readDraggedFiles } from "@/features/files/useFileActions";
 import { baseName, displayPath, ensureZipName, joinLogicalPath } from "@/lib/paths";
 import { run } from "@/lib/run";
@@ -27,8 +27,6 @@ type ShelfItem = ShelfData["items"][number];
 const MARGIN = 12;
 /** A collapsed shelf is a pile of its newest items: the top one square, the ones under it turned a little either way. */
 const PILE = ["", "-translate-x-2.5 translate-y-0.5 -rotate-[8deg]", "translate-x-2.5 translate-y-1 rotate-[7deg]"];
-/** The shelf keeps the name of a file and not its type, so the ending of the name stands in for one where a type is what tells a kind. */
-const TYPES: Partial<Record<FileKind, string>> = { image: "image/*", video: "video/*", pdf: "application/pdf" };
 
 /**
  * Workspace-level holding area. It stores references only; nothing is copied until the
@@ -272,7 +270,7 @@ export function Shelf() {
  */
 function Preview({ item, icon }: { item: ShelfItem; icon: string }) {
   const [state, setState] = useState<"loading" | "loaded" | "failed">("loading");
-  const file = { kind: item.kind === "folder" ? ("folder" as const) : ("file" as const), type: TYPES[kindOfExtension(extensionOf(item.name))] ?? "", name: item.name, size: item.size };
+  const file = { ...namedItem(item.name, item.kind === "folder"), size: item.size };
   const shows = thumbnailKind(file);
   const pictured = shows !== null && shows !== "text" && state !== "failed";
   return (

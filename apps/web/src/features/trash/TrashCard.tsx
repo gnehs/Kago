@@ -3,6 +3,7 @@ import { ChevronDown, ChevronRight, Ellipsis, Trash2, Undo2 } from "lucide-react
 import { avatarUrl, KagoAvatar } from "@/components/kago/avatar";
 import { KagoSpinner } from "@/components/kago/empty-state";
 import { FileIcon, FileTile } from "@/components/kago/file-icon";
+import { namedItem } from "@/lib/fileKind";
 import { KagoIconButton } from "@/components/kago/icon-button";
 import { KagoDropdownMenu, KagoMenuItem } from "@/components/kago/menu";
 import { KagoTooltip } from "@/components/kago/tooltip";
@@ -28,7 +29,7 @@ export type TrashView = {
   destroy: (items: readonly TrashItem[]) => void;
 };
 
-const iconOf = (item: TrashItem) => ({ kind: item.kind ?? "file", type: "", name: trashName(item) }) as const;
+const iconOf = (item: TrashItem) => namedItem(trashName(item), item.kind === "folder");
 
 /** The day's time within today and yesterday, where the day itself is the heading; a date under "Earlier". */
 const whenText = (deletedAt: number, section: TrashSection, now: number) => (section === "earlier" ? formatUnixDay(deletedAt, now) : formatUnixTime(deletedAt));
