@@ -17,7 +17,8 @@ import { isZipDirectory, isZipSymlink, openZipArchive, zipEntryName } from "../l
 import { openEncryptedZipEntry, readZipCipherHead, zipCipherOf, zipPasswordFits, ZipPasswordError, type ZipCipher } from "../lib/zip-crypto.js";
 import { SecretBox } from "../lib/secret-box.js";
 import { zipStream, type ZipEntry, type ZipOptions } from "../lib/zip-stream.js";
-import { RcloneJobStopped, refusedForPermission, type RcloneItem, type RcloneStats } from "../storage/rclone-client.js";
+import { RcloneError, RcloneJobStopped, refusedForPermission, remoteFailure, type RcloneItem, type RcloneStats } from "../storage/rclone-client.js";
+import { classifyRclone, failureOf, RunFailure, trimDetail } from "../lib/failure.js";
 import { runRclone } from "../storage/rclone-daemon.js";
 import { isReservedName, REPLACE_PARTIAL, TRASH_FOLDER } from "../lib/system-files.js";
 import { isRemote, joinFs, transferProgress } from "../storage/remote-storage.js";
@@ -540,7 +541,15 @@ export class TaskService {
       for (const change of taskChanges(this.db, task)) this.events.publish(change);
     } catch (error) {
       if (error instanceof TaskCancelledError || error instanceof RcloneJobStopped || error instanceof ConvertStopped) return;
-      if (!this.transition(task.id, "fail", taskFailureMessage(error))) return;
+      // Before the task is told to have failed, so that whoever hears of it finds the reason there.
+      if ((task.type === "convert" || task.type === "sync") && !(error instanceof AppError && error.code === "CONVERT_PARTLY_FAILED")) {
+        const { code, detail } = failureOf(error);
+        this.db.prepare("INSERT OR REPLACE INTO task_failures (task_id, code, detail) VALUES (?, ?, ?)").run(task.id, code, detail);
+      }
+      if (!this.transition(task.id, "fail", taskFailureMessage(error))) {
+        this.db.prepare("DELETE FROM task_failures WHERE task_id = ?").run(task.id);
+        return;
+      }
       this.audit.write({
         actorType: "user",
         actorId: actor.id,
@@ -2006,9 +2015,14 @@ function transferFailure(error: unknown): unknown {
   if (error instanceof AppError || error instanceof TaskCancelledError) return error;
   const reason = error instanceof Error ? error.message : String(error);
   logger.warn("transfer failed", reason);
+  // What rclone says goes on in the last line it gives, as "Failed to sync with 2 errors: last error was: ..." ends with it.
+  const detail = trimDetail(reason.split(/\r?\n/).filter((line) => line.trim()).at(-1)?.replace(/^.*last error was:\s*/i, "") ?? "");
+  const kind = refusedForPermission(reason) ? "permission" : (classifyRclone(reason) ?? "unknown");
   // Either end may have refused, and rclone does not say which: the disk here, or the account of a remote location.
-  if (refusedForPermission(reason)) return new AppError(502, "The transfer was refused for lack of permission at one end. An administrator needs to check the account Kago runs as, or the one a remote location signs in with.", "TRANSFER_PERMISSION_DENIED");
-  return new AppError(502, "The transfer failed", "TRANSFER_FAILED");
+  if (kind === "permission") return new RunFailure(kind, detail, { statusCode: 502, message: "The transfer was refused for lack of permission at one end. An administrator needs to check the account Kago runs as, or the one a remote location signs in with.", code: "TRANSFER_PERMISSION_DENIED" });
+  if (kind === "no_space") return new RunFailure(kind, detail, { statusCode: 507, message: "There is no room left at the destination for this", code: "TRANSFER_NO_SPACE" });
+  if (kind === "not_found" || kind === "unreachable") return new RunFailure(kind, detail);
+  return new RunFailure("unknown", detail, { statusCode: 502, message: "The transfer failed", code: "TRANSFER_FAILED" });
 }
 
 /** Gives each source that is to be kept beside its namesake a name neither the folder nor another source has. */
@@ -2032,7 +2046,12 @@ function downloadFileName(sources: Array<{ path: string }>): string {
 function taskFailureMessage(error: unknown): string {
   const refusal = fileSystemRefusal(error);
   if (refusal) return refusal.message;
-  return error instanceof AppError ? error.message : "Task failed";
+  if (error instanceof AppError) return error.message;
+  if (error instanceof RcloneError) return remoteFailure(error).message;
+  if (errnoIs(error, "ENOENT") || errnoIs(error, "ENOTDIR")) return "Path not found";
+  // A task whose saved settings no longer parse, as a job's spec edited in the database or from an older version would be.
+  if (error instanceof Error && error.name === "ZodError") return "This task’s settings are not valid";
+  return "Task failed";
 }
 
 /** A task's input as the audit log may keep it. */

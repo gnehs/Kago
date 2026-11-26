@@ -14,10 +14,13 @@ import { Checkbox, Field, Input, Select } from "@/components/ui/input";
 import { statusGlyph } from "@/features/tasks/statusGlyph";
 import { isActiveTask, taskErrorLabel, taskStatus } from "@/features/tasks/taskUtils";
 import { Card, Page, Row, RowList } from "@/components/kago/page";
+import { KagoLineParts } from "@/components/kago/line-parts";
 import { KagoStatusIcon } from "@/components/kago/status-icon";
 import { formatUnixDate } from "@/lib/format";
 import { displayPath, normalizeLogicalPath } from "@/lib/paths";
 import { run } from "@/lib/run";
+import { lastRunTrouble } from "@/lib/runModel";
+import { troubleText } from "@/lib/runText";
 import { confirmAction } from "@/stores/dialogs";
 import { toast } from "@/stores/toast";
 import type { Actor, Root, SyncEndpoint, SyncJob, SyncSchedule } from "@/types/kago";
@@ -97,6 +100,7 @@ export function SyncPage({ roots, user }: { roots: Root[]; user: Actor }) {
           {jobs.data.map((job) => {
             const last = job.last_status ? taskStatus({ status: job.last_status }) : null;
             const running = job.last_status !== null && isActiveTask({ status: job.last_status });
+            const trouble = lastRunTrouble(job);
             return (
               <Row
                 key={job.id}
@@ -108,13 +112,18 @@ export function SyncPage({ roots, user }: { roots: Root[]; user: Actor }) {
                     {/* Where it goes and when it runs each get a line: on one they push each other out of sight. */}
                     <span className="block truncate">{`${describeEndpoint(job.source)} → ${describeEndpoint(job.destination)}`}</span>
                     <span className="block truncate">
-                      {[
-                        // A run that is under way, or waiting, is said in words too: the icon alone has to be pointed at.
-                        last && running ? last.label : null,
-                        job.enabled ? describeSchedule(job.schedule) : t("Schedule paused"),
-                        job.last_error ? taskErrorLabel(job.last_error) : job.last_run_at ? t("Last run {date}", { date: formatUnixDate(job.last_run_at) }) : null,
-                        job.created_by !== user.id ? t("Someone else’s") : null
-                      ].filter(Boolean).join(" · ")}
+                      <KagoLineParts
+                        parts={[
+                          // A run that is under way, or waiting, is said in words too: the icon alone has to be pointed at.
+                          last && running ? { text: last.label } : null,
+                          { text: job.enabled ? describeSchedule(job.schedule) : t("Schedule paused") },
+                          // One that did not end well says so in the danger colour, with why where the task said.
+                          trouble === "failed" || trouble === "interrupted"
+                            ? { text: troubleText(trouble, job.last_error ? taskErrorLabel(job.last_error) : null), danger: true }
+                            : job.last_error ? { text: taskErrorLabel(job.last_error) } : job.last_run_at ? { text: t("Last run {date}", { date: formatUnixDate(job.last_run_at) }) } : null,
+                          job.created_by !== user.id ? { text: t("Someone else’s") } : null
+                        ]}
+                      />
                     </span>
                     {/* What a trial run found is the whole point of it, so it has a line to itself. */}
                     {job.last_trial ? <span className="block truncate">{describeTrial(job.last_trial)}</span> : null}

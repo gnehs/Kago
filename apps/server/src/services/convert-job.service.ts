@@ -49,10 +49,12 @@ const KEPT_RUNS = 20;
 
 /** A run as it stands: what its task says for as long as the task is there, and what was kept of it after. */
 const RUNS = `SELECT r.task_id, r.started_at, COALESCE(t.finished_at, r.finished_at) AS finished_at, COALESCE(t.status, r.status) AS status,
-  CASE WHEN t.id IS NULL THEN r.error_message ELSE t.error_message END AS error_message, r.scheduled, COALESCE(t.processed_bytes, r.bytes) AS bytes, r.converted, r.copied, r.failed,
+  CASE WHEN t.id IS NULL THEN r.error_message ELSE t.error_message END AS error_message, r.scheduled, COALESCE(t.processed_bytes, r.bytes) AS bytes, r.converted, r.copied, r.failed, r.skipped,
+  COALESCE(t.started_at, r.began_at) AS began_at,
+  CASE WHEN t.id IS NULL THEN r.error_code ELSE tf.code END AS error_code, CASE WHEN t.id IS NULL THEN r.error_detail ELSE tf.detail END AS error_detail,
   (SELECT COALESCE(SUM(f.size_in), 0) FROM convert_run_files f WHERE f.task_id = r.task_id AND f.status = 'converted') AS size_in,
   (SELECT COALESCE(SUM(f.size_out), 0) FROM convert_run_files f WHERE f.task_id = r.task_id AND f.status = 'converted') AS size_out
-  FROM convert_runs r LEFT JOIN tasks t ON t.id = r.task_id`;
+  FROM convert_runs r LEFT JOIN tasks t ON t.id = r.task_id LEFT JOIN task_failures tf ON tf.task_id = r.task_id`;
 
 /** How often the watched input folders are looked at. A file counts once it measures the same two looks in a row. */
 const WATCH_INTERVAL_MS = 30_000;
@@ -139,7 +141,7 @@ export class ConvertJobService {
   runFiles(actor: Actor, jobId: string, taskId: string): ConvertRunFile[] {
     const job = this.getForActor(actor, jobId);
     return rows<ConvertRunFile>(
-      this.db.prepare("SELECT f.path, f.status, f.size_in, f.size_out FROM convert_run_files f JOIN convert_runs r ON r.task_id = f.task_id WHERE r.job_id = ? AND f.task_id = ? ORDER BY f.rowid LIMIT ?").all(job.id, taskId, MAX_RUN_FILES)
+      this.db.prepare("SELECT f.path, f.status, f.size_in, f.size_out, f.error_code, f.error_detail, f.skip_reason FROM convert_run_files f JOIN convert_runs r ON r.task_id = f.task_id WHERE r.job_id = ? AND f.task_id = ? ORDER BY f.rowid LIMIT ?").all(job.id, taskId, MAX_RUN_FILES)
     );
   }
 
@@ -200,7 +202,7 @@ export class ConvertJobService {
     // The task of the run before stays only for as long as the job points at it, so how it ended is written down now.
     if (job.last_task_id) {
       const last = row<ConvertRun>(this.db.prepare(`${RUNS} WHERE r.task_id = ?`).get(job.last_task_id));
-      if (last) this.db.prepare("UPDATE convert_runs SET finished_at = ?, status = ?, error_message = ?, bytes = ? WHERE task_id = ?").run(last.finished_at, last.status, last.error_message, last.bytes, last.task_id);
+      if (last) this.db.prepare("UPDATE convert_runs SET finished_at = ?, status = ?, error_message = ?, bytes = ?, began_at = ?, error_code = ?, error_detail = ? WHERE task_id = ?").run(last.finished_at, last.status, last.error_message, last.bytes, last.began_at, last.error_code, last.error_detail, last.task_id);
     }
     const ts = now();
     this.db.prepare("INSERT INTO convert_runs (task_id, job_id, started_at, status, scheduled) VALUES (?, ?, ?, ?, ?)").run(task.id, job.id, ts, task.status, scheduled ? 1 : 0);

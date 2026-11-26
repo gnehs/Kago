@@ -14,9 +14,8 @@ import { Card, FormSection, Page, Row, RowList } from "@/components/kago/page";
 import { KagoStatusIcon } from "@/components/kago/status-icon";
 import { Button } from "@/components/ui/button";
 import { Checkbox, Field, Input, Select } from "@/components/ui/input";
-import { isActiveTask, taskErrorLabel, taskStatus } from "@/features/tasks/taskUtils";
+import { isActiveTask, taskStatus } from "@/features/tasks/taskUtils";
 import { convertProblem, startingFolder, type ConvertProblem } from "@/lib/convertModel";
-import { formatUnixDate } from "@/lib/format";
 import { baseName, displayPath, normalizeLogicalPath } from "@/lib/paths";
 import { run } from "@/lib/run";
 import { confirmAction } from "@/stores/dialogs";
@@ -25,6 +24,7 @@ import { useWorkspaceStore } from "@/stores/workspace";
 import type { Actor, ConvertJob, ConvertJobOptions, ConvertSpec, Root } from "@/types/kago";
 import { ConvertFields, specIsValid } from "./ConvertFields";
 import { ConvertRunsDialog } from "./ConvertRunsDialog";
+import { LastRunLine } from "./LastRunLine";
 import { CONVERT_FORMATS, DEFAULT_EXTENSIONS, describeSpec, kindOfFormat, parseExtensions, specFor, supportedFormats } from "./convertSpec";
 import { t } from "@/lib/i18n";
 
@@ -152,11 +152,7 @@ export function AutoConvertPage({ roots, user }: { roots: Root[]; user: Actor })
                     </span>
                     {/* How it last went has a line to itself: on one with the rest it is the first thing pushed out of sight. */}
                     <span className="block truncate">
-                      {structuring ? t("Copying the folder structure…") : [
-                        last && running ? last.label : null,
-                        job.last_error ? taskErrorLabel(job.last_error) : job.last_run_at ? t("Last run {date}", { date: formatUnixDate(job.last_run_at) }) : null,
-                        job.failed > 0 ? t("{count} file failed | {count} files failed", { count: job.failed }) : null
-                      ].filter(Boolean).join(" · ") || t("No runs yet")}
+                      {structuring ? t("Copying the folder structure…") : <LastRunLine job={job} running={running} />}
                     </span>
                   </>
                 }

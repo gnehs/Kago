@@ -3,6 +3,7 @@ import { History } from "lucide-react";
 import { useSyncRuns } from "@/api/hooks";
 import { KagoDialog } from "@/components/kago/dialog";
 import { KagoEmptyState, KagoLoading } from "@/components/kago/empty-state";
+import { KagoFailureHelp } from "@/components/kago/run-failure";
 import { KagoStatusIcon } from "@/components/kago/status-icon";
 import { Button } from "@/components/ui/button";
 import { statusGlyph } from "@/features/tasks/statusGlyph";
@@ -10,6 +11,7 @@ import { taskErrorLabel, taskStatus } from "@/features/tasks/taskUtils";
 import { formatDuration, formatSize, formatUnixDate } from "@/lib/format";
 import { t } from "@/lib/i18n";
 import { runSeconds } from "@/lib/runModel";
+import { failureTextOf } from "@/lib/runText";
 import type { SyncJob, SyncRun, SyncTrialSummary } from "@/types/kago";
 import { describeTrial } from "./TrialDialog";
 
@@ -36,8 +38,9 @@ function describeChanges(summary: SyncTrialSummary) {
   return parts.length > 0 ? parts.join(" · ") : t("Nothing was copied or deleted");
 }
 
-/** What a run did, as its headline: what it changed, or where it left no count, how it ended. */
+/** What a run did, as its headline: why, for one that failed with a reason; what it changed; or where it left no count, how it ended. */
 function headlineOf(run: SyncRun) {
+  if (run.error_code) return failureTextOf(run.error_code).reason;
   if (run.summary) return run.dry_run ? describeTrial(run.summary) : describeChanges(run.summary);
   return taskStatus({ status: run.status }).label;
 }
@@ -64,11 +67,11 @@ export function RunsDialog({ job, onClose }: { job: SyncJob | null; onClose: () 
                   <KagoStatusIcon tone={status.tone} label={status.label}>{statusGlyph(run.status)}</KagoStatusIcon>
                   <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                     <span className="font-medium">
-                      {headlineOf(run)}
+                      <span className={run.error_code ? "text-danger" : undefined}>{headlineOf(run)}</span>
                       {seconds !== null ? <span className="font-normal text-muted"> · {formatDuration(seconds)}</span> : null}
                     </span>
                     <span className="text-xs text-muted tabular-nums">{describeRun(run)}</span>
-                    {run.error_message ? <span className="text-xs break-words text-danger">{taskErrorLabel(run.error_message)}</span> : null}
+                    {run.error_code ? <KagoFailureHelp code={run.error_code} detail={run.error_detail} /> : run.error_message ? <span className="text-xs break-words text-danger">{taskErrorLabel(run.error_message)}</span> : null}
                   </div>
                 </li>
               );

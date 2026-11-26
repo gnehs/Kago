@@ -419,14 +419,52 @@ export type SyncRun = {
   bytes: number;
   /** How much the run changed, or would have changed when it was a trial; known only of a run that ended well. */
   summary: SyncTrialSummary | null;
+  /** When the run left the queue and began; null while it waits, and for a run kept from before this was told. `finished_at - began_at` is how long it took. */
+  began_at: number | null;
+  /** The kind of failure of a run that failed; null for any other run, for a run that failed before the server told why, and for one cut short by a restart. */
+  error_code: RunFailureCode | null;
+  /** What rclone said, trimmed to a line with every path, address and host taken out; null where it said nothing a person could use. */
+  error_detail: string | null;
 };
+
+/**
+ * Why a conversion or a sync could not be done, as a short stable code for the kind of failure.
+ * unreadable: the file is damaged or is not media. unsupported: its codec or container cannot be converted here.
+ * no_space: the disk (or the remote) is full or over quota. permission: the server's account, or the one a remote signs in with, may not do it, including a read-only folder.
+ * exists: something is in the way at the destination. not_found: a folder the job names is gone. unreachable: a remote location did not answer.
+ * misconfigured: the job itself is wrong (the folders overlap, a path is not a folder, the settings no longer parse).
+ * changed: the source changed while it was converted, so it was left alone. busy: another task is writing it.
+ * timeout: reading the file took too long. encoder_missing: this server's ffmpeg cannot make the chosen format, or is not installed. unknown: none of these.
+ */
+export type RunFailureCode = "unreadable" | "unsupported" | "no_space" | "permission" | "exists" | "not_found" | "unreachable" | "misconfigured" | "changed" | "busy" | "timeout" | "encoder_missing" | "unknown";
+/** Why a run passed a file over: it changed within the last 20 seconds (a later run takes it), another task is writing it, or it failed before and has not changed since. */
+export type ConvertSkipReason = "too_new" | "busy" | "failed_earlier";
 
 /** What the server's ffmpeg can make; nothing at all without one. `videoCodecs` names the encoders that can be asked for, the GPU's among them. */
 export type ConvertSupport = { available: boolean; formats: string[]; videoCodecs: string[]; audioCodecs: string[]; /** The GPU conversions can use and the codecs it encodes; null without one. */ hardware: { device: string; codecs: string[] } | null };
 /** How a run of a job went: when, how it ended, and how many files it converted, brought across as they were, or gave up on. */
-export type ConvertRun = { task_id: string; started_at: number; finished_at: number | null; status: string; error_message: string | null; scheduled: boolean; bytes: number; converted: number; copied: number; failed: number; /** What the files it converted measured together, before and after. */ size_in: number; size_out: number };
+export type ConvertRun = { task_id: string; started_at: number; finished_at: number | null; status: string; error_message: string | null; scheduled: boolean; bytes: number; converted: number; copied: number; failed: number; /** What the files it converted measured together, before and after. */ size_in: number; size_out: number;
+  /** The files it passed over, as `ConvertRunFile`s with status "skipped" tell. Files already converted, or not of the kind the job takes, are not counted. */
+  skipped: number;
+  /** When the run left the queue and began; null while it waits, and for a run kept from before this was told. `finished_at - began_at` is how long it took. */
+  began_at: number | null;
+  /** Why a run failed as a whole (the job misconfigured, a folder missing, the destination read-only); null for a run that failed only in some of its files (see `failed`), for any other run, and for runs kept from before this was told. */
+  error_code: RunFailureCode | null;
+  /** A line more about it, safe to show; null where there is none. */
+  error_detail: string | null };
 /** What became of one file of a run. `size_out` is what reached the destination; a file that failed has none. */
-export type ConvertRunFile = { path: string; status: "converted" | "copied" | "failed"; size_in: number; size_out: number | null };
+export type ConvertRunFile = {
+  path: string;
+  status: "converted" | "copied" | "failed" | "skipped";
+  size_in: number;
+  size_out: number | null;
+  /** Of a file that failed: the kind of failure. Null for any other, and for files kept from before this was told. */
+  error_code: RunFailureCode | null;
+  /** Of a file that failed: the last meaningful line of what ffmpeg (or the step that failed) said, with every path, address and host taken out; null where there is none. */
+  error_detail: string | null;
+  /** Of a file that was skipped: why. Null for any other. */
+  skip_reason: ConvertSkipReason | null;
+};
 
 /** Whether a service lets itself be shown inside Kago, as the server found by asking it; `unknown` when it could not be asked. */
 export type FrameVerdict = "allowed" | "blocked" | "unknown";

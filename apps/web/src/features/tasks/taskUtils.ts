@@ -114,14 +114,30 @@ export function taskSpeedLabel(task: FileTask): string | undefined {
   return task.speed ? `${formatSize(task.speed)}/s` : undefined;
 }
 
-/** The server reports task failures in English; the ones a user can act on are worded for a task rather than a request. */
+/**
+ * The server reports task failures in English; the ones a user can act on are worded for a task rather than a request.
+ * Messages the server sends that a locale already words as they stand are listed too, so that this is the one place to see
+ * what a failed task can say, and the dictionaries keep what is sent. A message with a variable part would not match here;
+ * none of these has one.
+ */
 const errorLabels: Record<string, string> = {
   "Target already exists": t("The destination already has an item with that name"),
   "Multiple sources resolve to the same target": t("Some of the selected items share a name"),
   "Cannot copy or move a folder into itself": t("A folder can’t be put inside itself"),
   "Path not found": t("The source or destination no longer exists"),
   "Symlink paths are not allowed": t("Symbolic links aren’t supported"),
-  "Task failed": t("An unexpected error occurred")
+  "Task failed": t("An unexpected error occurred"),
+  "This task’s settings are not valid": t("This task’s settings are not valid"),
+  "The remote location could not be reached": t("The remote location could not be reached"),
+  "The remote location refused this: the account Kago signs in with has no permission there": t("The remote location refused this: the account Kago signs in with has no permission there"),
+  "The transfer was refused for lack of permission at one end. An administrator needs to check the account Kago runs as, or the one a remote location signs in with.": t("The transfer was refused for lack of permission at one end. An administrator needs to check the account Kago runs as, or the one a remote location signs in with."),
+  "The transfer failed": t("The transfer failed"),
+  "There is no room left at the destination for this": t("There is no room left at the destination for this"),
+  "This file can’t be read as media": t("This file can’t be read as media"),
+  "This file’s codec or format can’t be converted here": t("This file’s codec or format can’t be converted here"),
+  "This server’s ffmpeg can’t make the chosen format": t("This server’s ffmpeg can’t make the chosen format"),
+  "Reading this file took too long": t("Reading this file took too long"),
+  "ffmpeg is not installed on the server": t("ffmpeg is not installed on the server")
 };
 
 export const taskErrorLabel = (message: string) => errorLabels[message] ?? t(message);

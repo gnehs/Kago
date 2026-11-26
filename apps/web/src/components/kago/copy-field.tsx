@@ -16,11 +16,11 @@ export function KagoCopyButton({ text }: { text: string }) {
   );
 }
 
-/** Something to be carried elsewhere as it is (a key, an address), shown on one line with the button that copies it. */
-export function KagoCopyField({ value, className }: { value: string; className?: string }) {
+/** Something to be carried elsewhere as it is (a key, an address), shown on one line with the button that copies it. `wrap` lets a line of words run on to a second rather than lose its end. */
+export function KagoCopyField({ value, className, wrap }: { value: string; className?: string; wrap?: boolean }) {
   return (
     <div className={cn("flex items-center gap-2", className)}>
-      <code className="kago-well min-w-0 flex-1 truncate rounded-md px-2.5 py-1.5 text-xs">{value}</code>
+      <code className={cn("kago-well min-w-0 flex-1 rounded-md px-2.5 py-1.5 text-xs", wrap ? "break-words" : "truncate")}>{value}</code>
       <KagoCopyButton text={value} />
     </div>
   );

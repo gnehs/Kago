@@ -146,6 +146,14 @@ CREATE TABLE IF NOT EXISTS task_reports (
   FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
 );
 
+-- Why a convert or sync task failed as a whole: a kind of failure and a trimmed line more. Read for as long as the job points at the task, and copied to the run's own row after.
+CREATE TABLE IF NOT EXISTS task_failures (
+  task_id TEXT PRIMARY KEY,
+  code TEXT NOT NULL,
+  detail TEXT,
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS shelves (
   id TEXT PRIMARY KEY,
   owner_id TEXT NOT NULL,
@@ -301,6 +309,9 @@ CREATE TABLE IF NOT EXISTS sync_runs (
   scheduled INTEGER NOT NULL DEFAULT 0,
   bytes INTEGER NOT NULL DEFAULT 0,
   summary_json TEXT,
+  began_at INTEGER,
+  error_code TEXT,
+  error_detail TEXT,
   FOREIGN KEY (job_id) REFERENCES sync_jobs(id) ON DELETE CASCADE
 );
 
@@ -338,6 +349,10 @@ CREATE TABLE IF NOT EXISTS convert_runs (
   converted INTEGER NOT NULL DEFAULT 0,
   copied INTEGER NOT NULL DEFAULT 0,
   failed INTEGER NOT NULL DEFAULT 0,
+  skipped INTEGER NOT NULL DEFAULT 0,
+  began_at INTEGER,
+  error_code TEXT,
+  error_detail TEXT,
   FOREIGN KEY (job_id) REFERENCES convert_jobs(id) ON DELETE CASCADE
 );
 
@@ -351,6 +366,9 @@ CREATE TABLE IF NOT EXISTS convert_run_files (
   status TEXT NOT NULL,
   size_in INTEGER NOT NULL,
   size_out INTEGER,
+  error_code TEXT,
+  error_detail TEXT,
+  skip_reason TEXT,
   FOREIGN KEY (task_id) REFERENCES convert_runs(task_id) ON DELETE CASCADE
 );
 

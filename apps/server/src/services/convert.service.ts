@@ -2,11 +2,13 @@ import { createReadStream, createWriteStream } from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { pipeline } from "node:stream/promises";
+import type { ConvertSkipReason } from "@kago/contract";
 import { z } from "zod";
 import type { Db } from "../db/db.js";
 import { detectConvertAccel, type ConvertAccel } from "../lib/convert-accel.js";
 import { usesHardware, convertArgs, convertSpecSchema, ConvertStopped, convertSupport, type ConvertSupport, jobConverts, outputHeight, probeMedia, remuxArgs, runFfmpeg, SUBTITLE_FORMATS, type ConvertSpec, type RemuxInput, type RemuxTrack } from "../lib/convert.js";
 import { AppError, errnoIs } from "../lib/errors.js";
+import { failureOf, type Failure } from "../lib/failure.js";
 import { MEDIA_FORMATS } from "../lib/ffmpeg-input.js";
 import { nfc } from "../lib/filename.js";
 import { id, now } from "../lib/ids.js";
@@ -98,6 +100,12 @@ type Walked = { rel: string; size: number; mtimeMs: number; directory: boolean }
 const nameKey = (name: string) => nfc(name).toLowerCase();
 /** What a file is called once converted, before a number is put after it to keep it apart from another. */
 const outputName = (name: string, format: string) => `${name.slice(0, name.length - path.extname(name).length) || name}.${format}`;
+
+/** What the detail of a file says when the conversion was made and it was the step after that which failed. */
+function afterFailure(failure: Failure, after: ConvertJobOptions["after"]): string {
+  const step = after === "trash" ? "The conversion was made, but the original couldn’t be moved to the trash" : "The conversion was made, but the original couldn’t be deleted";
+  return failure.code === "changed" ? "The original changed while it was converted, so it was kept" : failure.detail ? `${step}: ${failure.detail}` : step;
+}
 
 /** The tasks that bring files into a folder, and so may have one there that is not whole yet. */
 const writerTypes = ["copy", "move", "extract", "compress", "sync"];
@@ -245,31 +253,44 @@ export class ConvertService {
 
   /** Goes through a job's input folder and brings what is new in it to the destination, keeping the folders it lies in. */
   private async runJob(taskId: string, actor: Actor, job: ConvertJobRun, destinationRef: FileRef, spec: ConvertSpec, handle: TaskHandle): Promise<void> {
-    const counts = { converted: 0, copied: 0, failed: 0 };
+    const counts = { converted: 0, copied: 0, failed: 0, skipped: 0 };
     try {
       await this.runJobFiles(taskId, actor, job, destinationRef, spec, handle, counts);
     } finally {
       // What the run got done is said in its record however it ended.
-      this.db.prepare("UPDATE convert_runs SET converted = ?, copied = ?, failed = ? WHERE task_id = ?").run(counts.converted, counts.copied, counts.failed, taskId);
+      this.db.prepare("UPDATE convert_runs SET converted = ?, copied = ?, failed = ?, skipped = ? WHERE task_id = ?").run(counts.converted, counts.copied, counts.failed, counts.skipped, taskId);
     }
     if (counts.failed > 0) throw new AppError(422, "Some files couldn’t be converted", "CONVERT_PARTLY_FAILED");
   }
 
-  private async runJobFiles(taskId: string, actor: Actor, job: ConvertJobRun, destinationRef: FileRef, spec: ConvertSpec, handle: TaskHandle, counts: { converted: number; copied: number; failed: number }): Promise<void> {
+  private async runJobFiles(taskId: string, actor: Actor, job: ConvertJobRun, destinationRef: FileRef, spec: ConvertSpec, handle: TaskHandle, counts: { converted: number; copied: number; failed: number; skipped: number }): Promise<void> {
     const { input, destination } = await this.assertJob(actor, { input: job.input, destination: destinationRef, options: job.options });
     const busy = this.busyPlaces();
-    const work = (await this.pendingFiles(job.id, input, destination, spec, job.options, job.retryFailed ?? false)).filter((file) => Date.now() - file.mtimeMs > SETTLE_MS && !this.isBusy(input.root.slug, path.posix.join(input.logicalPath, file.rel), busy));
+    const found = await this.pendingFiles(job.id, input, destination, spec, job.options, job.retryFailed ?? false);
+    // The run's own record of the file, with what it measured before and after, and for one that failed or was passed over, why.
+    const record = this.db.prepare("INSERT INTO convert_run_files (task_id, path, status, size_in, size_out, error_code, error_detail, skip_reason) SELECT ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM convert_runs WHERE task_id = ?)");
+    const skip = (file: Walked, reason: ConvertSkipReason) => {
+      counts.skipped += 1;
+      record.run(taskId, file.rel, "skipped", file.size, null, null, null, reason, taskId);
+    };
+    const work: Walked[] = [];
+    for (const file of found.pending) {
+      if (this.isBusy(input.root.slug, path.posix.join(input.logicalPath, file.rel), busy)) skip(file, "busy");
+      else if (Date.now() - file.mtimeMs <= SETTLE_MS) skip(file, "too_new");
+      else work.push(file);
+    }
+    for (const file of found.failedBefore) skip(file, "failed_earlier");
     await handle.totals(work.length, work.reduce((sum, file) => sum + file.size, 0));
     const folders = new Map<string, { folder: SafePath; taken: Set<string> }>();
-    // The run's own record of the file, with what it measured before and after.
-    const record = this.db.prepare("INSERT INTO convert_run_files (task_id, path, status, size_in, size_out) SELECT ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM convert_runs WHERE task_id = ?)");
     for (const file of work) {
       const logical = path.posix.join(input.logicalPath, file.rel);
       // Something began writing here since the run started; the next look brings it across once that is done.
       if (this.isBusy(input.root.slug, logical, this.busyPlaces())) {
+        skip(file, "busy");
         handle.files(1);
         continue;
       }
+      let stage: "file" | "original" = "file";
       handle.show(logical);
       try {
         const safe = await this.paths.resolveExisting(input.root.slug, logical);
@@ -287,6 +308,7 @@ export class ConvertService {
           : { name: await this.copyOriginal(safe, stat, target.folder, target.taken, handle), copied: true, size: stat.size };
         if (spec.copyTags) await this.storage.giveTags(target.folder, made.name, (await this.storage.tags([safe]))[0]!);
         this.audit.write({ actorType: "user", actorId: actor.id, action: "convert", rootId: safe.root.id, path: safe.logicalPath, target: { jobId: job.id, rootSlug: destination.root.slug, path: path.posix.join(target.folder.logicalPath, made.name), copied: made.copied }, result: "success" });
+        stage = "original";
         // A source that changed while it was read, as one still arriving does, is more than what was made of it.
         if (job.options.after === "trash" || job.options.after === "delete") {
           const now = await this.storage.stat({ ...safe, entry: undefined });
@@ -299,12 +321,13 @@ export class ConvertService {
         }
         if (made.copied) counts.copied += 1;
         else counts.converted += 1;
-        record.run(taskId, file.rel, made.copied ? "copied" : "converted", stat.size, made.size, taskId);
+        record.run(taskId, file.rel, made.copied ? "copied" : "converted", stat.size, made.size, null, null, null, taskId);
       } catch (error) {
         if (error instanceof ConvertStopped) throw error;
         counts.failed += 1;
+        const failure = failureOf(error);
         // The run's record is also what keeps a watched folder from trying it again at every look; see `failedFiles`.
-        record.run(taskId, file.rel, "failed", file.size, null, taskId);
+        record.run(taskId, file.rel, "failed", file.size, null, failure.code, stage === "original" ? afterFailure(failure, job.options.after) : failure.detail, null, taskId);
         logger.warn("auto-convert could not bring a file across", { jobId: job.id, path: logical, error: error instanceof Error ? error.message : String(error) });
       }
       handle.files(1);
@@ -314,7 +337,7 @@ export class ConvertService {
   /** How many files of a job's input folder are waiting, have stopped changing and are no task's to write. `seen` is what each measured at the last look. */
   async ready(job: { id: string; input: FileRef; destination: FileRef; spec: ConvertSpec; options: ConvertJobOptions }, seen: Map<string, number>): Promise<number> {
     const input = await this.folder(job.input);
-    const pending = await this.pendingFiles(job.id, input, await this.folder(job.destination), job.spec, job.options, false);
+    const { pending } = await this.pendingFiles(job.id, input, await this.folder(job.destination), job.spec, job.options, false);
     const busy = this.busyPlaces();
     const ready = pending.filter((file) => Date.now() - file.mtimeMs > SETTLE_MS && seen.get(file.rel) === file.size && !this.isBusy(input.root.slug, path.posix.join(input.logicalPath, file.rel), busy)).length;
     seen.clear();
@@ -325,8 +348,9 @@ export class ConvertService {
   /**
    * The files of a job's input folder it has still to bring across. What is done is told by the destination alone:
    * a file is, once the folder it mirrors into holds its conversion, or the file itself where that was kept or copied.
+   * `failedBefore` are the ones left out because this has tried them and they have not changed since.
    */
-  private async pendingFiles(jobId: string, input: SafePath, destination: SafePath, spec: ConvertSpec, options: ConvertJobOptions, retryFailed: boolean): Promise<Walked[]> {
+  private async pendingFiles(jobId: string, input: SafePath, destination: SafePath, spec: ConvertSpec, options: ConvertJobOptions, retryFailed: boolean): Promise<{ pending: Walked[]; failedBefore: Walked[] }> {
     const there = new Map<string, Promise<Set<string>>>();
     const namesThere = (dir: string) => {
       let names = there.get(dir);
@@ -341,15 +365,16 @@ export class ConvertService {
     };
     const failed = retryFailed ? new Map<string, number>() : this.failedFiles(jobId);
     const pending: Walked[] = [];
+    const failedBefore: Walked[] = [];
     for (const file of await this.walk(input)) {
       const name = path.posix.basename(file.rel);
       if (file.directory || !(options.copyOthers || jobConverts(name, spec.format, options.extensions))) continue;
-      if (failed.get(file.rel) === file.size) continue;
       const names = await namesThere(path.posix.dirname(file.rel) === "." ? "" : path.posix.dirname(file.rel));
       if (names.has(nameKey(name)) || names.has(nameKey(outputName(name, spec.format)))) continue;
-      pending.push(file);
+      if (failed.get(file.rel) === file.size) failedBefore.push(file);
+      else pending.push(file);
     }
-    return pending;
+    return { pending, failedBefore };
   }
 
   /**
@@ -358,7 +383,7 @@ export class ConvertService {
    */
   failedFiles(jobId: string): Map<string, number> {
     const records = this.db
-      .prepare("SELECT f.path, f.status, f.size_in FROM convert_run_files f JOIN convert_runs r ON r.task_id = f.task_id WHERE r.job_id = ? AND r.started_at >= ? ORDER BY r.started_at, r.rowid, f.rowid")
+      .prepare("SELECT f.path, f.status, f.size_in FROM convert_run_files f JOIN convert_runs r ON r.task_id = f.task_id WHERE r.job_id = ? AND r.started_at >= ? AND f.status <> 'skipped' ORDER BY r.started_at, r.rowid, f.rowid")
       .all(jobId, Math.floor(LOADED_AT / 1000)) as Array<{ path: string; status: string; size_in: number }>;
     const failed = new Map<string, number>();
     for (const record of records) {

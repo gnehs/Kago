@@ -48,6 +48,10 @@ export function openDb(env: Env, options: { interruptRunningTasks?: boolean } = 
   });
   addAuditIndexes(db);
   addMissingColumns(db, "tasks", { cleared: "INTEGER NOT NULL DEFAULT 0", pace_fps: "REAL", pace_height: "INTEGER", phase: "TEXT", job_id: "TEXT" });
+  // Runs kept from before these were told why they failed, or when they began, return null for each.
+  addMissingColumns(db, "convert_runs", { skipped: "INTEGER NOT NULL DEFAULT 0", began_at: "INTEGER", error_code: "TEXT", error_detail: "TEXT" });
+  addMissingColumns(db, "convert_run_files", { error_code: "TEXT", error_detail: "TEXT", skip_reason: "TEXT" });
+  addMissingColumns(db, "sync_runs", { began_at: "INTEGER", error_code: "TEXT", error_detail: "TEXT" });
   holdJobsToOneActiveRun(db);
   migratePermissionLevels(db);
   migratePermissionLocations(db);

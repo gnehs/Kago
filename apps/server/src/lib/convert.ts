@@ -5,6 +5,7 @@ import { z } from "zod";
 import { hardwareEncoder, type ConvertAccel, type HardwareCodec } from "./convert-accel.js";
 import { AppError, errnoIs } from "./errors.js";
 import { guardedInput, guardedProbe, MEDIA_FORMATS, PICTURE_FORMATS } from "./ffmpeg-input.js";
+import { classifyFfmpeg, ffmpegDetail, RunFailure } from "./failure.js";
 import { logger } from "./logger.js";
 import { TEXT_SUBTITLES } from "./subtitles.js";
 
@@ -120,8 +121,15 @@ export async function probeMedia(ffprobe: string, input: string, formats = CONVE
   let raw: string;
   try {
     raw = (await execFileAsync(ffprobe, ["-v", "error", "-print_format", "json", "-show_format", "-show_streams", ...guardedProbe(input, formats)], { timeout: 60_000, maxBuffer: 8 * 1024 * 1024 })).stdout;
-  } catch {
-    throw new AppError(422, "This file can’t be read as media", "MEDIA_UNREADABLE");
+  } catch (error) {
+    if (errnoIs(error, "ENOENT")) throw new AppError(501, "ffmpeg is not installed on the server", "FFMPEG_MISSING");
+    const { stderr, killed } = error as { stderr?: string; killed?: boolean };
+    if (killed) throw new RunFailure("timeout", null);
+    const complaint = String(stderr ?? "");
+    const kind = classifyFfmpeg(complaint);
+    logger.warn("ffprobe could not read a file", { complaint: complaint.trim().slice(-1000) });
+    // Whatever ffprobe could not make of a file, the file is what it could not make it of, unless its words say otherwise.
+    throw new RunFailure(kind && kind !== "exists" ? kind : "unreadable", ffmpegDetail(complaint));
   }
   const data = JSON.parse(raw) as { format?: Record<string, unknown>; streams?: Array<Record<string, any>> };
   const streams = (data.streams ?? []).map((stream): ProbedStream => {
@@ -370,8 +378,8 @@ export class ConvertStopped extends Error {}
 
 /**
  * Runs ffmpeg to its end. `onSeconds` hears how far into the output it has got, and `onFps` how many frames a second
- * it is making; `stopped` is asked now and then whether to go on, and ends it when not. What ffmpeg complained of
- * goes to the log, not to whoever asked.
+ * it is making; `stopped` is asked now and then whether to go on, and ends it when not. A failure is a `RunFailure`:
+ * what ffmpeg complained of goes to the log whole, and to whoever asked as a kind and one trimmed line.
  */
 export function runFfmpeg(ffmpeg: string, args: string[], onSeconds: (seconds: number) => void, stopped: () => boolean, onFps?: (fps: number) => void): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -407,7 +415,7 @@ export function runFfmpeg(ffmpeg: string, args: string[], onSeconds: (seconds: n
       if (cancelled) return reject(new ConvertStopped());
       if (code === 0) return resolve();
       logger.warn("ffmpeg could not convert a file", { code, complaint: complaint.trim() });
-      reject(new AppError(422, "This file couldn’t be converted", "CONVERT_FAILED"));
+      reject(new RunFailure(classifyFfmpeg(complaint) ?? "unknown", ffmpegDetail(complaint)));
     });
   });
 }

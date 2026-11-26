@@ -22,9 +22,9 @@ const multipartLimitErrors: Record<string, { error: string; code: string }> = {
 };
 
 // What the server's own disk refuses is not a fault of Kago's and not for the person to retry: it is for whoever runs the server to put right.
-const noPermission = { statusCode: 500, error: "Kago’s system account has no permission for this on the server’s disk. An administrator needs to check PUID / PGID and who owns the folder.", code: "FS_PERMISSION_DENIED" };
+export const noPermission = { statusCode: 500, error: "Kago’s system account has no permission for this on the server’s disk. An administrator needs to check PUID / PGID and who owns the folder.", code: "FS_PERMISSION_DENIED" };
 // A pool such as Unraid's cache fills up partway through a large file, and a FAT disk takes nothing past 4 GB.
-const noSpace = { statusCode: 507, error: "There is not enough free space on the server’s disk for this", code: "FS_NO_SPACE" };
+export const noSpace = { statusCode: 507, error: "There is not enough free space on the server’s disk for this", code: "FS_NO_SPACE" };
 const fileSystemRefusals: Record<string, { statusCode: number; error: string; code: string }> = {
   EACCES: noPermission,
   EPERM: noPermission,

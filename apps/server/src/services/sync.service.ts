@@ -189,7 +189,7 @@ export class SyncService {
     const last = this.lastRun(job);
     const earlier = rows<Omit<SyncRun, "dry_run" | "scheduled" | "summary"> & { dry_run: number; scheduled: number; summary_json: string | null }>(
       this.db
-        .prepare("SELECT task_id, started_at, finished_at, status, error_message, dry_run, scheduled, bytes, summary_json FROM sync_runs WHERE job_id = ? ORDER BY started_at DESC, rowid DESC")
+        .prepare("SELECT task_id, started_at, finished_at, status, error_message, dry_run, scheduled, bytes, summary_json, began_at, error_code, error_detail FROM sync_runs WHERE job_id = ? ORDER BY started_at DESC, rowid DESC")
         .all(job.id)
     ).map(({ summary_json, ...run }) => ({ ...run, dry_run: Boolean(run.dry_run), scheduled: Boolean(run.scheduled), summary: summary_json ? (JSON.parse(summary_json) as SyncRun["summary"]) : null }));
     return last ? [last, ...earlier] : earlier;
@@ -198,9 +198,10 @@ export class SyncService {
   /** The run the job's last task was, read from the task itself for as long as the job points at it. */
   private lastRun(job: SyncJobRow): SyncRun | null {
     if (!job.last_task_id) return null;
-    const task = row<{ status: string; error_message: string | null; finished_at: number | null; processed_bytes: number; destination: string | null; auth_snapshot_json: string | null; created_at: number }>(
-      this.db.prepare("SELECT status, error_message, finished_at, processed_bytes, destination, auth_snapshot_json, created_at FROM tasks WHERE id = ?").get(job.last_task_id)
+    const task = row<{ status: string; error_message: string | null; finished_at: number | null; started_at: number | null; processed_bytes: number; destination: string | null; auth_snapshot_json: string | null; created_at: number }>(
+      this.db.prepare("SELECT status, error_message, finished_at, started_at, processed_bytes, destination, auth_snapshot_json, created_at FROM tasks WHERE id = ?").get(job.last_task_id)
     );
+    const failure = row<{ code: SyncRun["error_code"]; detail: string | null }>(this.db.prepare("SELECT code, detail FROM task_failures WHERE task_id = ?").get(job.last_task_id));
     if (!task) return null;
     const report = row<{ summary_json: string }>(this.db.prepare("SELECT summary_json FROM task_reports WHERE task_id = ?").get(job.last_task_id));
     const spec = (task.destination ? (JSON.parse(task.destination) as { sync?: { options?: { dryRun?: boolean } } }) : {}).sync;
@@ -214,7 +215,10 @@ export class SyncService {
       dry_run: Boolean(spec?.options?.dryRun),
       scheduled: Boolean(snapshot.scheduled),
       bytes: task.processed_bytes ?? 0,
-      summary: report && task.status === "done" ? (JSON.parse(report.summary_json) as SyncRun["summary"]) : null
+      summary: report && task.status === "done" ? (JSON.parse(report.summary_json) as SyncRun["summary"]) : null,
+      began_at: task.started_at,
+      error_code: failure?.code ?? null,
+      error_detail: failure?.detail ?? null
     };
   }
 
@@ -225,10 +229,10 @@ export class SyncService {
     if (last) {
       this.db
         .prepare(
-          `INSERT OR REPLACE INTO sync_runs (task_id, job_id, started_at, finished_at, status, error_message, dry_run, scheduled, bytes, summary_json)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          `INSERT OR REPLACE INTO sync_runs (task_id, job_id, started_at, finished_at, status, error_message, dry_run, scheduled, bytes, summary_json, began_at, error_code, error_detail)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
-        .run(last.task_id, job.id, last.started_at, last.finished_at, last.status, last.error_message, last.dry_run ? 1 : 0, last.scheduled ? 1 : 0, last.bytes, last.summary ? JSON.stringify(last.summary) : null);
+        .run(last.task_id, job.id, last.started_at, last.finished_at, last.status, last.error_message, last.dry_run ? 1 : 0, last.scheduled ? 1 : 0, last.bytes, last.summary ? JSON.stringify(last.summary) : null, last.began_at, last.error_code, last.error_detail);
       this.db
         .prepare("DELETE FROM sync_runs WHERE job_id = ? AND task_id NOT IN (SELECT task_id FROM sync_runs WHERE job_id = ? ORDER BY started_at DESC, rowid DESC LIMIT ?)")
         .run(job.id, job.id, KEPT_RUNS - 1);

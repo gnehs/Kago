@@ -2467,6 +2467,8 @@ GET    /api/sync-jobs/:id/runs
 GET    /api/sync-jobs/:id/trial
 ```
 
+**失敗的原因。** 失敗的執行帶 `error_code` 與 `error_detail`（其餘為 null）：`error_code` 是失敗種類的代碼（見 §42-1 的 `RunFailureCode`，同步會用到 `permission`、`no_space`、`not_found`、`unreachable`、`misconfigured`、`unknown`），`error_detail` 是 rclone 最後一行有意義的話，已去掉路徑、位址與主機名稱。另有 `began_at`（離開佇列、開始執行的時間；`finished_at - began_at` 是花的時間）。原因寫在 `task_failures`，task 還在時從那裡讀，被下一次執行取代時複製到 `sync_runs`。同步沒有逐檔的結果，rclone 的錯誤只回報到整次執行。
+
 ## 42-1. 轉檔
 
 三件事共用同一套 ffmpeg 參數（`lib/convert.ts`）與同一個服務（`services/convert.service.ts`）：使用者挑檔案轉檔、存起來的自動轉檔，以及把軌道重新包成 MKV。它們都是 task（`convert`、`remux`），但不從 `POST /api/tasks` 建立。
@@ -2593,7 +2595,38 @@ PUT    /api/convert-jobs/:id
 DELETE /api/convert-jobs/:id
 POST   /api/convert-jobs/:id/run       手動執行，之前失敗的檔案會再試
 POST   /api/convert-jobs/:id/structure 複製資料夾結構
+GET    /api/convert-jobs/:id/runs
+GET    /api/convert-jobs/:id/runs/:taskId/files
 ```
+
+**執行紀錄。** `ConvertRun` 有 `converted`／`copied`／`failed`／`skipped` 的數量、`size_in`／`size_out`、`began_at`（開始執行的時間，與排入佇列的 `started_at` 分開）、`error_code`／`error_detail`。`error_code` 只在整次執行失敗時有值（工作設定有誤、資料夾不見、目的地唯讀）；只有部分檔案失敗時為 null，原因看各檔。`ConvertRunFile` 的 `status` 是 `converted`、`copied`、`failed` 或 `skipped`：
+
+```txt
+failed   error_code + error_detail  （ffmpeg 最後一行有意義的話，已去掉路徑、位址與主機名稱）
+skipped  skip_reason: too_new（20 秒內改過）、busy（另一個 task 正在寫）、failed_earlier（失敗過，之後沒改）
+```
+
+已轉過或不符合規則的檔案不記錄。舊資料庫升級時補欄位，舊的列回傳 null。
+
+`RunFailureCode`：
+
+```txt
+unreadable       檔案損毀或不是媒體
+unsupported      編碼或容器在這裡轉不了
+no_space         磁碟（或遠端）滿了、超過配額
+permission       伺服器帳號（或遠端的帳號）沒有權限，含唯讀資料夾
+exists           目的地有東西擋著
+not_found        工作指的資料夾不見了
+unreachable      遠端位置沒有回應
+misconfigured    工作本身有誤（資料夾互相包含、不是資料夾、設定無法解析）
+changed          來源在轉檔時被改動，原檔保留
+busy             另一個 task 正在寫這個檔案
+timeout          讀這個檔案花太久
+encoder_missing  這台伺服器的 ffmpeg 做不出所選格式，或沒有安裝
+unknown          其他
+```
+
+轉完之後搬到垃圾桶或刪除原檔那一步失敗，也算該檔失敗，`error_detail` 會說轉檔已經完成、是原檔沒處理掉。
 
 ## 43. API 規格
 
