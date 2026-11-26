@@ -30,6 +30,9 @@ export function openDb(env: Env, options: { interruptRunningTasks?: boolean } = 
   addMissingColumns(db, "group_members", { source: "TEXT" });
   // Links made before this have none, and are copied again only once they are given a new token.
   addMissingColumns(db, "share_links", { token_sealed: "TEXT" });
+  // Until folders could be looked through, a link to a folder was always one to upload into, and every other link was to a file.
+  addMissingColumns(db, "share_links", { kind: "TEXT NOT NULL DEFAULT 'file'" });
+  db.exec("UPDATE share_links SET kind = 'folder' WHERE kind <> 'folder' AND json_extract(permission_json, '$.mode') = 'upload_only'");
   // Items trashed before this have none, and are listed one by one with their size unknown.
   addMissingColumns(db, "trash_items", { kind: "TEXT", size: "INTEGER", item_count: "INTEGER", deletion_id: "TEXT" });
   // Rows from before these have no class and no run: they are placed below, once the indexes are there.

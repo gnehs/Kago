@@ -6,7 +6,7 @@ import { Detail, DetailList } from "@/components/kago/details";
 import { KagoSpinner } from "@/components/kago/empty-state";
 import { taskTypeName } from "@/features/tasks/taskUtils";
 import { actorOf, describe, factsOf, placeOf, timeSpan, type Actor, type FactLabel, type Names, type Tail } from "@/lib/auditModel";
-import { errorMessage, formatUnixClock, formatUnixDateTime, formatUnixTime24 } from "@/lib/format";
+import { errorMessage, formatSize, formatUnixClock, formatUnixDateTime, formatUnixTime24 } from "@/lib/format";
 import { startOfDay } from "@/lib/days";
 import { cn } from "@/lib/utils";
 import { toast } from "@/stores/toast";
@@ -45,7 +45,7 @@ const actorText = (actor: Actor) => {
   }
 };
 
-const tailText = (tail: Tail): string => (typeof tail === "string" ? tail : "taskType" in tail ? taskTypeName(tail.taskType) : tail.more ? t("{count}+ folders", { count: tail.folders }) : t("{count} folder | {count} folders", { count: tail.folders }));
+const tailText = (tail: Tail): string => (typeof tail === "string" ? tail : "taskType" in tail ? taskTypeName(tail.taskType) : "archive" in tail ? `${t("{count} file | {count} files", { count: tail.archive.files })} · ${formatSize(tail.archive.bytes)}` : tail.more ? t("{count}+ folders", { count: tail.folders }) : t("{count} folder | {count} folders", { count: tail.folders }));
 
 const factLabels: Record<FactLabel, () => string> = {
   email: () => t("Email"),

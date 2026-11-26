@@ -1652,6 +1652,7 @@ CREATE TABLE share_links (
   token_sealed TEXT,
   root_id TEXT NOT NULL,
   path TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'file',
   permission_json TEXT NOT NULL,
   expires_at INTEGER,
   max_downloads INTEGER,
@@ -1674,7 +1675,7 @@ CREATE TABLE share_visits (
 );
 ```
 
-`permission_json` 存分享模式。`token_sealed` 是以 storage.key 加密的 token，升級前建立的連結沒有。`share_visits` 記錄哪些訪客已經算過一次（見 §39）。
+`permission_json` 存分享模式。`kind` 是建立時分享的是 `file` 還是 `folder`，之後不再重新判斷；每次有人使用連結時，那個路徑必須仍是同一種東西。升級前的連結由模式補上：`upload_only` 是資料夾，其餘是檔案（當時伺服器只收這兩種組合）。`token_sealed` 是以 storage.key 加密的 token，升級前建立的連結沒有。`share_visits` 記錄哪些訪客已經算過一次（見 §39）。
 
 ### trash_items
 
@@ -2222,9 +2223,38 @@ upload_only   讓別人上傳檔案
 ```
 
 ```txt
-view_only 與 download 只能分享檔案
+view_only 與 download 可以分享檔案或資料夾
 upload_only 只能分享資料夾
 ```
+
+分享資料夾（`view_only` 或 `download`）時，對方看到的是那個資料夾：
+
+```txt
+列出資料夾裡的檔案與子資料夾，可以進入子資料夾（分頁，排序和檔案瀏覽器一樣：資料夾在前，再依名稱、大小、修改時間或種類）
+download：任何檔案都能下載與預覽，整個資料夾或其中一個子資料夾可以打包成一個 zip 下載
+view_only：每個檔案適用和分享單一檔案時同樣的規則，只有瀏覽器本身能顯示的類型可以預覽與有縮圖；不能下載，也不能打包
+```
+
+對方給的路徑一律是分享的資料夾底下的路徑：
+
+```txt
+以 / 開頭也是從分享的資料夾算起
+經過和其他路徑一樣的 resolveSafePath：禁止 ..、反斜線、null byte，symlink 不允許，NFC 與 NFD 視為同一個名稱
+檔案瀏覽器的清單不列出的名稱（系統檔、Kago 自己的檔案、垃圾桶）對訪客不存在，路徑也到不了
+只由點與空白組成的名稱（...、.. ）一律拒絕，有些磁碟會把它們讀成上一層
+被拒絕的路徑一律回答找不到，不透露那裡有什麼
+回應裡只有分享的資料夾自己的名稱與它底下的路徑，不寫它在位置裡的哪裡、上一層叫什麼
+```
+
+訪客的 zip 在送出第一個 byte 之前先整個走過一次，超過上限就直接拒絕，不會送到一半斷掉：
+
+```txt
+最多 20000 個項目、32 GB
+檔案原樣存入，不壓縮（分享的多半是照片與影片，壓縮不了，只會佔掉伺服器的 CPU）
+同一條連結同時最多 2 個、所有連結合計同時最多 4 個 zip
+```
+
+位置是遠端（rclone）時，資料夾分享的清單、下載、預覽、縮圖與 zip 都能用；遠端的資料夾是一次讀完整棵樹才知道有多少項目，所以上限是在讀完之後才判斷。
 
 `upload_only` 適合做收件箱：
 
@@ -2247,7 +2277,9 @@ upload_only 只能分享資料夾
 重新啟用一條停用的連結時也要重新檢查
 ```
 
-最大下載次數算的是訪客而不是請求：同一個位址與瀏覽器在 12 小時內檢視與下載同一個檔案，只算一次（`share_visits`）。
+最大下載次數算的是訪客而不是請求：同一個位址與瀏覽器在 12 小時內檢視與下載同一個檔案，只算一次（`share_visits`）。分享資料夾時，訪客第一次被送出資料夾裡的任何東西（清單、檔案、預覽、縮圖或 zip）就算一次，之後 12 小時內在資料夾裡做什麼都不再算。
+
+稽核紀錄寫下訪客下載的每個檔案（`download_via_share`，路徑是那個檔案）與每個 zip（`download_zip_via_share`，路徑是打包的資料夾，附帶檔案數與大小）；清單、預覽與縮圖不寫。
 
 連結的密碼猜錯太多次要等（見 §44）。
 
@@ -2777,8 +2809,11 @@ DELETE /api/shares/:id
 
 GET    /s/:token
 POST   /s/:token/auth
-GET    /s/:token/download
-GET    /s/:token/preview
+GET    /s/:token/list         ?path&offset&limit&sortBy&direction   資料夾分享
+GET    /s/:token/download     ?path                                 資料夾分享要 path
+GET    /s/:token/preview      ?path
+GET    /s/:token/thumbnail    ?path&size
+GET    /s/:token/zip          ?path                                 資料夾分享，download 模式
 POST   /s/:token/upload
 ```
 

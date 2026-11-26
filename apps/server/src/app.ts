@@ -80,7 +80,7 @@ export async function buildApp(env: Env) {
   const workspace = new WorkspaceService(db, roots, paths);
   const tasks = new TaskService(db, paths, permissions, audit, events, env.appDataDir, fsService, storage, preferences);
   const shelves = new ShelfService(db, paths, permissions, events, audit, storage);
-  const shares = new ShareService(db, paths, permissions, audit, events, storage, env.sessionSecret, secrets);
+  const shares = new ShareService(db, paths, permissions, audit, events, storage, fsService, env.sessionSecret, secrets);
   const sync = new SyncService(db, tasks, auth, audit, remotes);
   const convertJobs = new ConvertJobService(db, tasks, auth, audit);
   const groups = new GroupService(db);

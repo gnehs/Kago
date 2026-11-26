@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { groupShares, parseDownloadLimit, parseShareMode, resolveExpiry, shareEnd, shareEnds, shareExpiry, shareFix, shareFigure, shareName, shareProblem, shareState, spanOf } from '../src/lib/shareModel.ts';
+import { groupShares, parseDownloadLimit, parseShareMode, resolveExpiry, shareEnd, shareEnds, shareExpiry, shareFix, shareFigure, shareIsDropBox, shareIsFolder, shareName, shareProblem, shareState, spanOf } from '../src/lib/shareModel.ts';
 
 const NOW = 1_800_000_000;
 const HOUR = 3600;
 const DAY = 86400;
 let serial = 0;
 const share = (patch = {}) => ({
-  id: `s${++serial}`, root_id: 'r1', path: '/Docs/a.pdf', permission_json: '{"mode":"download"}', expires_at: null, max_downloads: null,
+  id: `s${++serial}`, root_id: 'r1', path: '/Docs/a.pdf', kind: 'file', permission_json: '{"mode":"download"}', expires_at: null, max_downloads: null,
   download_count: 0, has_password: false, created_by: 'u1', disabled: 0, created_at: NOW - serial, updated_at: NOW, token: 't', creator: { id: 'u1', email: 'a@b.c', display_name: '', avatar_at: null }, ...patch
 });
 
@@ -108,7 +108,8 @@ test('the form says what stops it, one thing at a time', () => {
   assert.equal(shareProblem(ok), null);
   assert.equal(shareProblem({ ...ok, item: null }), 'no-item');
   assert.equal(shareProblem({ ...ok, mode: 'upload_only' }), 'file-needs-folder');
-  assert.equal(shareProblem({ ...ok, item: { kind: 'folder' } }), 'folder-needs-file');
+  assert.equal(shareProblem({ ...ok, item: { kind: 'folder' } }), null);
+  assert.equal(shareProblem({ ...ok, item: { kind: 'folder' }, mode: 'view_only' }), null);
   assert.equal(shareProblem({ ...ok, item: { kind: 'folder' }, mode: 'upload_only' }), null);
   assert.equal(shareProblem({ ...ok, item: { kind: 'folder', readonly: true }, mode: 'upload_only' }), 'readonly-drop-box');
   assert.equal(shareProblem({ ...ok, item: { kind: 'file', readonly: true } }), null);
@@ -118,4 +119,11 @@ test('the form says what stops it, one thing at a time', () => {
   assert.equal(shareProblem({ ...ok, expiry: { problem: 'missing' } }), 'expiry-missing');
   assert.equal(shareProblem({ ...ok, expiry: { problem: 'past' } }), 'expiry-past');
   assert.equal(shareProblem({ ...ok, item: null, password: 'x' }), 'no-item');
+});
+
+test('a link is a folder by what it was made to, and a drop box by its mode, so a folder to look through is the first and not the second', () => {
+  assert.equal(shareIsFolder(share({ kind: 'folder', permission_json: '{"mode":"download"}' })), true);
+  assert.equal(shareIsDropBox(share({ kind: 'folder', permission_json: '{"mode":"download"}' })), false);
+  assert.equal(shareIsFolder(share({ kind: 'file' })), false);
+  assert.equal(shareIsDropBox(share({ kind: 'folder', permission_json: '{"mode":"upload_only"}' })), true);
 });

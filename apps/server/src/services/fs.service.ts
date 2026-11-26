@@ -489,30 +489,7 @@ export class FsService {
     });
 
     const storage = this.storage;
-    const paths = this.paths;
-    async function* walkRemote(safe: SafePath, name: string): AsyncGenerator<ZipEntry> {
-      const stat = await storage.stat(safe);
-      const open = (logicalPath: string) => () => storage.remote.open(safe.root, logicalPath);
-      yield { name, open: open(safe.logicalPath), directory: stat.isDirectory(), size: stat.size, mtime: stat.mtime };
-      if (!stat.isDirectory()) return;
-      for (const entry of await storage.remote.walk(safe.root, safe.logicalPath)) {
-        // A name another system reads a separator in would climb out of the folder it is unpacked into.
-        if (!safeRelativeZipPath(entry.path)) continue;
-        const logicalPath = path.posix.join(safe.logicalPath, entry.path);
-        yield { name: `${name}/${nfc(entry.path)}`, open: open(logicalPath), directory: entry.directory, size: entry.size, mtime: new Date(entry.mtimeMs) };
-      }
-    }
-    async function* walk(root: SafePath["root"], absolutePath: string, logicalPath: string, name: string): AsyncGenerator<ZipEntry> {
-      const stat = await fsp.lstat(absolutePath);
-      if (stat.isSymbolicLink() || (!stat.isFile() && !stat.isDirectory())) return;
-      yield { name, open: () => fs.createReadStream(absolutePath), directory: stat.isDirectory(), size: stat.size, mtime: stat.mtime };
-      if (!stat.isDirectory()) return;
-      for (const child of (await fsp.readdir(absolutePath)).sort()) {
-        const childPath = path.posix.join(logicalPath, child);
-        if (!isSafeLogicalSegment(child) || paths.isTrash(root, childPath)) continue;
-        yield* walk(root, path.join(absolutePath, child), childPath, `${name}/${nfc(child)}`);
-      }
-    }
+    const entriesOf = (safe: SafePath, name: string) => this.zipEntriesOf(safe, name);
     async function* entries(): AsyncGenerator<ZipEntry> {
       // Items picked from different folders can share a name; inside the archive each needs its own.
       const taken = new Set<string>();
@@ -521,11 +498,47 @@ export class FsService {
         let name = base;
         for (let copy = 2; taken.has(name); copy += 1) name = `${path.parse(base).name} ${copy}${path.parse(base).ext}`;
         taken.add(name);
-        if (storage.isRemote(safe)) yield* walkRemote(safe, name);
-        else yield* walk(safe.root, safe.absolutePath, safe.logicalPath, name);
+        yield* entriesOf(safe, name);
       }
     }
     return { fileName: sources.length === 1 ? `${nfc(storage.name(sources[0]!))}.zip` : "Kago.zip", entries: entries() };
+  }
+
+  /**
+   * A file or a folder and everything in it, as entries of an archive under `name`. Symlinks, and anything whose name
+   * would climb out of the folder it is unpacked into, are left out; `listedOnly` leaves out as well what a folder's
+   * listing does not show.
+   */
+  async *zipEntriesOf(safe: SafePath, name: string, listedOnly = false): AsyncGenerator<ZipEntry> {
+    const storage = this.storage;
+    const paths = this.paths;
+    const shown = (segment: string) => !listedOnly || !isSystemFile(nfc(segment));
+    async function* walkRemote(): AsyncGenerator<ZipEntry> {
+      const stat = await storage.stat(safe);
+      const open = (logicalPath: string) => () => storage.remote.open(safe.root, logicalPath);
+      yield { name, open: open(safe.logicalPath), directory: stat.isDirectory(), size: stat.size, mtime: stat.mtime };
+      if (!stat.isDirectory()) return;
+      for (const entry of await storage.remote.walk(safe.root, safe.logicalPath)) {
+        // A name another system reads a separator in would climb out of the folder it is unpacked into.
+        const segments = safeRelativeZipPath(entry.path);
+        if (!segments || !segments.every(shown)) continue;
+        const logicalPath = path.posix.join(safe.logicalPath, entry.path);
+        yield { name: `${name}/${nfc(entry.path)}`, open: open(logicalPath), directory: entry.directory, size: entry.size, mtime: new Date(entry.mtimeMs) };
+      }
+    }
+    async function* walk(absolutePath: string, logicalPath: string, name: string): AsyncGenerator<ZipEntry> {
+      const stat = await fsp.lstat(absolutePath);
+      if (stat.isSymbolicLink() || (!stat.isFile() && !stat.isDirectory())) return;
+      yield { name, open: () => fs.createReadStream(absolutePath), directory: stat.isDirectory(), size: stat.size, mtime: stat.mtime };
+      if (!stat.isDirectory()) return;
+      for (const child of (await fsp.readdir(absolutePath)).sort()) {
+        const childPath = path.posix.join(logicalPath, child);
+        if (!isSafeLogicalSegment(child) || !shown(child) || paths.isTrash(safe.root, childPath)) continue;
+        yield* walk(path.join(absolutePath, child), childPath, `${name}/${nfc(child)}`);
+      }
+    }
+    if (storage.isRemote(safe)) yield* walkRemote();
+    else yield* walk(safe.absolutePath, safe.logicalPath, name);
   }
 
   async preview(actor: Actor, rootSlug: string, logicalPath: string) {

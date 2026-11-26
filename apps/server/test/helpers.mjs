@@ -22,7 +22,8 @@ export function client(app) {
   return {
     get: (url, options = {}) => request("GET", url, undefined, options.accept),
     post: (url, body) => request("POST", url, body),
-    put: (url, body) => request("PUT", url, body)
+    put: (url, body) => request("PUT", url, body),
+    patch: (url, body) => request("PATCH", url, body)
   };
 }
 

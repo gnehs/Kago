@@ -58,9 +58,14 @@ test("share links stay within what their creator may currently do in the locatio
     const uploadWithoutEdit = await createShare("/shared", "upload_only");
     assert.equal(uploadWithoutEdit.statusCode, 403);
     assert.equal(uploadWithoutEdit.json.code, "FORBIDDEN");
+    // A folder to look through and download from is no more than viewing it.
     const folderDownload = await createShare("/shared", "download");
-    assert.equal(folderDownload.statusCode, 400);
-    assert.equal(folderDownload.json.code, "SHARE_TARGET_NOT_FILE");
+    assert.equal(folderDownload.statusCode, 200);
+    assert.equal(folderDownload.json.kind, "folder");
+    assert.equal(viewShare.json.kind, "file");
+    const fileUpload = await createShare("/shared/readable.txt", "upload_only");
+    assert.equal(fileUpload.statusCode, 400);
+    assert.equal(fileUpload.json.code, "SHARE_TARGET_NOT_FOLDER");
 
     await setLevel("edit");
     const folderUpload = await createShare("/shared", "upload_only");

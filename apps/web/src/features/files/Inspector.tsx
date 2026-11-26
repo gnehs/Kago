@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { Copy, Link2, X } from "lucide-react";
+import { thumbnailUrl } from "@/api/client";
 import { useFileMeta, useFolderSize, useImageMetadata, useMediaInfo, useRoots, useShares } from "@/api/hooks";
 import { KagoBadge } from "@/components/kago/badge";
 import { Detail, DetailList, DetailSection } from "@/components/kago/details";
@@ -18,7 +19,7 @@ import { cn } from "@/lib/utils";
 import { usePointerDrag } from "@/lib/usePointerDrag";
 import { folderTitle, useWorkspaceStore } from "@/stores/workspace";
 import type { FileItem, FilmRecipe, FileWindow, ImageMetadata } from "@/types/kago";
-import { FileThumbnail } from "./FileThumbnail";
+import { FileThumbnail } from "@/components/kago/file-thumbnail";
 import { videoInfoGroups } from "./videoInfo";
 import { t } from "@/lib/i18n";
 
@@ -77,7 +78,7 @@ export function Inspector({ window: activeWindow, selection }: { window: FileWin
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto">
           <div className="flex flex-col items-center gap-2 p-4 text-center">
-            <FileThumbnail rootSlug={rootSlug} item={meta.data} size={path === "/" || meta.data.kind === "folder" ? 64 : 144} />
+            <FileThumbnail url={thumbnailUrl(rootSlug, meta.data.path)} item={meta.data} size={path === "/" || meta.data.kind === "folder" ? 64 : 144} />
             <strong className="max-w-full text-sm font-semibold break-words">{path === "/" ? folderTitle(rootSlug, "/") : meta.data.name}</strong>
             <span className="-mt-1.5 text-muted">
               {kindLabel(meta.data)}
@@ -127,12 +128,13 @@ export function Inspector({ window: activeWindow, selection }: { window: FileWin
               <ul className="m-0 mb-3 flex list-none flex-col gap-1 p-0">
                 {pathShares.map((share) => {
                   const end = shareEnd(share, now);
+                  const folder = share.kind === "folder";
                   const expiry = shareExpiry(share, now);
                   return (
                     <li key={share.id} className="flex min-h-6 items-center gap-2">
                       {/* What the link is for and when it ends; one that has stopped says why instead, and in the warning colour. */}
                       <span className={cn("min-w-0 flex-1 truncate", end ? "text-warning" : "text-muted")}>
-                        {end ? endText(end) : `${visitorCan(parseShareMode(share.permission_json))} · ${expiryText(expiry)}`}
+                        {end ? endText(end, folder) : `${visitorCan(parseShareMode(share.permission_json), folder)} · ${expiryText(expiry)}`}
                       </span>
                       {!end && share.token ? <KagoIconButton label={t("Copy link")} size="sm" onClick={() => void copyShare(share)}><Copy /></KagoIconButton> : null}
                     </li>

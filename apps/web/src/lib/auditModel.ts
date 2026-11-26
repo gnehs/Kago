@@ -205,7 +205,7 @@ export function actorOf(row: Pick<AuditLog, "actor_type" | "actor_name" | "actor
 type Slot = "person" | "group" | "who" | "place" | "from" | "to" | "name" | "path" | "count";
 
 /** Something after the sentence in the muted colour: text as it is, or what only the component can word. */
-export type Tail = string | { folders: number; more: boolean } | { taskType: string };
+export type Tail = string | { folders: number; more: boolean } | { taskType: string } | { archive: { files: number; bytes: number } };
 
 /**
  * Every sentence there is. Each has one message in the component, written whole with its `{actor}` and the `Slot`s it
@@ -219,7 +219,7 @@ export type SentenceId =
   | "denied_view" | "denied_edit" | "denied_admin" | "denied_shelf" | "denied_share" | "denied_task" | "denied_shared_app" | "denied"
   | "upload" | "upload_many" | "mkdir" | "mkdir_many" | "rename" | "rename_many" | "edit" | "edit_many" | "copy" | "copy_many" | "move" | "move_many" | "delete" | "delete_many" | "delete_to_trash" | "delete_to_trash_many"
   | "restore_trash" | "restore_trash_many" | "trash_empty" | "trash_empty_one" | "trash_empty_many" | "compress" | "extract" | "download" | "download_many" | "download_zip" | "thumbnail" | "thumbnail_many" | "tag_update" | "tag_clear" | "convert" | "convert_many" | "remux" | "convert_structure"
-  | "create_share" | "create_share_many" | "update_share" | "disable_share" | "rotate_share" | "delete_share" | "share_auth_failed" | "download_via_share" | "download_via_share_many" | "upload_via_share" | "upload_via_share_many"
+  | "create_share" | "create_share_many" | "update_share" | "disable_share" | "rotate_share" | "delete_share" | "share_auth_failed" | "download_via_share" | "download_via_share_many" | "download_zip_via_share" | "upload_via_share" | "upload_via_share_many"
   | "create_task" | "task_start" | "task_failed" | "task_failed_system" | "task_cancel" | "task_pause" | "task_resume" | "task_retry" | "tasks_clear" | "sync" | "sync_test" | "sync_job_create" | "sync_job_update" | "sync_job_delete" | "sync_job_skipped" | "convert_job_create" | "convert_job_update" | "convert_job_delete" | "convert_job_skipped"
   | "sso_update" | "sso_update_off" | "root_create" | "root_update" | "root_delete" | "workspace_update" | "set_wallpaper" | "external_app_create" | "external_app_update" | "external_app_delete"
   | "request_failed" | "request_denied";
@@ -399,6 +399,7 @@ const sentenceFor: Record<AuditAction, Build> = {
   delete_share: at("delete_share"),
   share_auth_failed: at("share_auth_failed"),
   download_via_share: files("download_via_share", "download_via_share_many"),
+  download_zip_via_share: (row, names, target) => make("download_zip_via_share", {}, [placeOf(row, names), typeof target.files === "number" && typeof target.bytes === "number" ? { archive: { files: target.files, bytes: target.bytes } } : null]),
   upload_via_share: files("upload_via_share", "upload_via_share_many"),
 
   create_task: (_row, _names, target) => make("create_task", {}, [text(target, "type") ? { taskType: text(target, "type")! } : null]),

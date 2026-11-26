@@ -5,7 +5,7 @@ import { KagoDropdownMenu, KagoMenuItem, KagoMenuSeparator } from "@/components/
 import { KagoTooltip } from "@/components/kago/tooltip";
 import { Button } from "@/components/ui/button";
 import { displayPath } from "@/lib/paths";
-import { parseShareMode, shareEnds, shareExpiry, shareFix, shareFigure, shareIsFolder, shareName } from "@/lib/shareModel";
+import { parseShareMode, shareEnds, shareExpiry, shareFix, shareFigure, shareIsDropBox, shareIsFolder, shareName } from "@/lib/shareModel";
 import { cn } from "@/lib/utils";
 import type { ShareLink } from "@/types/kago";
 import { endText, expiryText, figureText, shareIconItem, visitorCan } from "./shareUtils";
@@ -34,7 +34,8 @@ export function ShareCard({ share, rootName, now, creator, actions }: { share: S
   const expiry = shareExpiry(share, now);
   const figure = shareFigure(share);
   const name = shareName(share, rootName);
-  const dropBox = shareIsFolder(share);
+  const dropBox = shareIsDropBox(share);
+  const folder = shareIsFolder(share);
   const who = share.creator.display_name || share.creator.email;
   // The one button: bring a stopped link back by what stopped it, copy a working one, or give one that cannot be copied a link that can.
   // A link that was switched off and has also run out is not brought back by switching it on: what it ran out of is given in the same save.
@@ -64,10 +65,10 @@ export function ShareCard({ share, rootName, now, creator, actions }: { share: S
         </KagoTooltip>
         <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted">
           {end ? (
-            <span className="truncate">{ends.map(endText).join(" · ")}</span>
+            <span className="truncate">{ends.map((one) => endText(one, folder)).join(" · ")}</span>
           ) : (
             <span className="truncate">
-              {visitorCan(parseShareMode(share.permission_json))} · <span className={cn(expiry.kind === "in" && expiry.soon && "text-warning")}>{expiryText(expiry)}</span>
+              {visitorCan(parseShareMode(share.permission_json), folder)} · <span className={cn(expiry.kind === "in" && expiry.soon && "text-warning")}>{expiryText(expiry)}</span>
             </span>
           )}
           {share.has_password ? (
@@ -78,8 +79,8 @@ export function ShareCard({ share, rootName, now, creator, actions }: { share: S
         </span>
       </div>
       {figure && !end ? (
-        <KagoTooltip label={figure.kind === "limit" ? t("{count} of {max} downloads", { count: figure.used, max: figure.max }) : t("{count} download | {count} downloads", { count: figure.count })}>
-          <span className="shrink-0 text-xs text-muted tabular-nums">{figureText(figure)}</span>
+        <KagoTooltip label={figure.kind === "limit" ? (folder ? t("{count} of {max} visitors", { count: figure.used, max: figure.max }) : t("{count} of {max} downloads", { count: figure.used, max: figure.max })) : figureText(figure, folder)}>
+          <span className="shrink-0 text-xs text-muted tabular-nums">{figureText(figure, folder)}</span>
         </KagoTooltip>
       ) : null}
       {creator ? (
@@ -96,7 +97,7 @@ export function ShareCard({ share, rootName, now, creator, actions }: { share: S
           <>
             {rotateMain ? null : <KagoMenuItem icon={<RefreshCw />} onClick={() => actions.rotate(share)}>{t("New link…")}</KagoMenuItem>}
             {fix?.open === "expiry" ? null : <KagoMenuItem icon={<CalendarClock />} onClick={() => actions.changeExpiry(share)}>{t("Change expiry…")}</KagoMenuItem>}
-            {dropBox || fix?.open === "limit" ? null : <KagoMenuItem icon={<Gauge />} onClick={() => actions.changeLimit(share)}>{t("Change download limit…")}</KagoMenuItem>}
+            {dropBox || fix?.open === "limit" ? null : <KagoMenuItem icon={<Gauge />} onClick={() => actions.changeLimit(share)}>{folder ? t("Change visitor limit…") : t("Change download limit…")}</KagoMenuItem>}
             {fix?.enable ? null : <KagoMenuItem icon={<Ban />} onClick={() => actions.setDisabled(share, true)}>{t("Disable")}</KagoMenuItem>}
             <KagoMenuSeparator />
             <KagoMenuItem icon={<Trash2 />} destructive onClick={() => actions.remove(share)}>{t("Delete")}</KagoMenuItem>

@@ -1,12 +1,13 @@
 import type { ShareLink } from "../types/kago";
+import type { ShareMode } from "@kago/contract";
+
+export type { ShareMode };
 
 /*
  * What the Shares window and the info panel know about a link without asking anyone: whether it works, why not,
  * when it ends, which list it belongs in. The words are chosen by the components, which hold the translations;
  * this file only says which of them apply and with what numbers, so that node can test it.
  */
-
-export type ShareMode = "download" | "view_only" | "upload_only";
 
 export function parseShareMode(permissionJson: string): ShareMode {
   try {
@@ -86,8 +87,11 @@ const lastSegment = (path: string) => path.split("/").filter(Boolean).at(-1) ?? 
 /** What the link is named in the list: the item's name, or the location's own where the whole location is shared. */
 export const shareName = (share: Pick<ShareLink, "path">, rootName: string) => (lastSegment(share.path) || rootName).normalize("NFC");
 
-/** Every link of a window with a share to a file is a file and every upload-only one a folder: the server refuses any other pair. */
-export const shareIsFolder = (share: Pick<ShareLink, "permission_json">) => parseShareMode(share.permission_json) === "upload_only";
+/** What the link was made to, as the server recorded it. A folder may be shared in any of the three modes. */
+export const shareIsFolder = (share: Pick<ShareLink, "kind">) => share.kind === "folder";
+
+/** An upload-only link is a drop box: nobody sees what is in it, and nothing counts against a limit. */
+export const shareIsDropBox = (share: Pick<ShareLink, "permission_json">) => parseShareMode(share.permission_json) === "upload_only";
 
 export const shareUrl = (origin: string, token: string) => `${origin}/s/${token}`;
 
@@ -122,12 +126,11 @@ export function parseDownloadLimit(text: string): number | null {
 export const MIN_SHARE_PASSWORD = 8;
 
 /** Why the form cannot be sent yet, in the order it is easiest to fix; null when it can. */
-export type ShareProblem = "no-item" | "file-needs-folder" | "folder-needs-file" | "readonly-drop-box" | "password-short" | "limit-invalid" | "expiry-missing" | "expiry-past";
+export type ShareProblem = "no-item" | "file-needs-folder" | "readonly-drop-box" | "password-short" | "limit-invalid" | "expiry-missing" | "expiry-past";
 
 export function shareProblem(draft: { item: { kind: "file" | "folder"; /** It lies in a location that cannot be written to. */ readonly?: boolean } | null; mode: ShareMode; /** Null when no password is asked for. */ password: string | null; /** Null when downloads are not limited. */ limit: string | null; expiry: ReturnType<typeof resolveExpiry> }): ShareProblem | null {
   if (!draft.item) return "no-item";
   if (draft.mode === "upload_only" && draft.item.kind === "file") return "file-needs-folder";
-  if (draft.mode !== "upload_only" && draft.item.kind === "folder") return "folder-needs-file";
   if (draft.mode === "upload_only" && draft.item.readonly) return "readonly-drop-box";
   if (draft.password !== null && draft.password.length < MIN_SHARE_PASSWORD) return "password-short";
   if (draft.limit !== null && parseDownloadLimit(draft.limit) === null) return "limit-invalid";

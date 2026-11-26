@@ -18,7 +18,7 @@
     "test:plugins": "node --test scripts/test-plugin-companions.mjs",
     "test:player": "node --test scripts/test-player-keys.mjs",
     "test:tasks": "node --test scripts/test-task-model.mjs scripts/test-task-layout.mjs",
-    "test:shares": "node --test scripts/test-share-model.mjs",
+    "test:shares": "node --test scripts/test-share-model.mjs scripts/test-share-folder-model.mjs",
     "test:trash": "node --test scripts/test-trash-model.mjs",
     "test:people": "node --test scripts/test-people-model.mjs",
     "test:audit": "node --test scripts/test-audit-model.mjs",

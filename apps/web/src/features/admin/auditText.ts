@@ -90,6 +90,7 @@ export const sentenceMessage: Record<SentenceId, (words: Record<string, string>)
   share_auth_failed: (words) => t("Wrong password for {actor}", words),
   download_via_share: (words) => t("{actor} was used to download a file", words),
   download_via_share_many: (words) => t("{actor} was used to download files", words),
+  download_zip_via_share: (words) => t("{actor} was used to download a folder as a zip", words),
   upload_via_share: (words) => t("{actor} was used to upload a file", words),
   upload_via_share_many: (words) => t("{actor} was used to upload files", words),
   create_task: (words) => t("{actor} created a task", words),

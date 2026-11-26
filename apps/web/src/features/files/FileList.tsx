@@ -1,5 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, ChevronRight } from "lucide-react";
+import { thumbnailUrl } from "@/api/client";
 import { KagoLoading } from "@/components/kago/empty-state";
 import { TagDots } from "@/features/tags/TagDots";
 import { formatDate, formatSize, kindLabel } from "@/lib/format";
@@ -11,7 +12,7 @@ import { folderTitle, useFocused, useWorkspaceStore } from "@/stores/workspace";
 import type { FileItem, FolderView, FolderWindow } from "@/types/kago";
 import { setDragDownload, setDragPreview } from "./dragOut";
 import { FileIcon } from "@/components/kago/file-icon";
-import { FileThumbnail } from "./FileThumbnail";
+import { FileThumbnail } from "@/components/kago/file-thumbnail";
 import { GRID_SIZES, LIST_HEADER_HEIGHT, revealIndex, useFileLayout, useVisibleRange, type FileLayout, type FileTree } from "./fileLayout";
 import { KAGO_DRAG_TYPE } from "./useFileActions";
 import { useTouchPress, type TouchPress } from "./useTouchPress";
@@ -252,7 +253,7 @@ function GridView(props: ViewProps) {
           // Every cell is the same height whatever the length of its name, so rows can be placed without measuring them.
           <div key={item.path} role="option" title={props.locateFrom !== undefined ? whereIn(props.locateFrom, item) || undefined : undefined} className={cn("flex flex-col items-center gap-1 overflow-hidden rounded-md p-1.5", stateClass(props, item))} style={{ height: layout.cellHeight }} {...itemProps(props, list, item, range.start + offset)}>
             <div className={cn("flex shrink-0 items-center justify-center rounded-md", selected && "bg-hover ring-1 ring-line ring-inset")} style={{ width: icon + 8, height: icon + 8 }}>
-              <FileThumbnail rootSlug={window.rootSlug} item={item} size={icon} />
+              <FileThumbnail url={thumbnailUrl(window.rootSlug, item.path)} item={item} size={icon} />
             </div>
             <span className={cn("line-clamp-2 max-w-full rounded-sm px-1.5 text-center leading-4 break-words", selectedClass(focused, selected))}>
               <TagDots tags={item.tags} className="mr-1 inline-flex align-[-1px]" />

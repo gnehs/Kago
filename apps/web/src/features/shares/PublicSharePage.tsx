@@ -8,25 +8,14 @@ import { Field } from "@/components/ui/input";
 import { AuthCard, FormError } from "@/components/kago/auth-card";
 import { FileTile } from "@/components/kago/file-icon";
 import { errorMessage, formatSize } from "@/lib/format";
+import { failureOfError, failureText } from "./shareFailures";
+import { PublicFolder } from "./PublicFolder";
 import { baseName, nfc } from "@/lib/paths";
+import { isFolderShare } from "@/lib/shareFolderModel";
+import type { PublicShareInfo } from "@/types/kago";
 import { cn } from "@/lib/utils";
 import { isUploadCancelled, uploadForm, uploadLabel, useUploadStore } from "@/stores/uploads";
 import { t } from "@/lib/i18n";
-
-type PublicShareInfo = {
-  id: string;
-  mode: "view_only" | "download" | "upload_only";
-  path?: string;
-  rootSlug?: string;
-  rootName?: string;
-  /** The file's media type and size; a folder to upload into has neither. */
-  type?: string;
-  size?: number;
-  /** Whether the browser can show the file itself; one it cannot would be downloaded instead of viewed. */
-  previewable?: boolean;
-  requiresPassword: boolean;
-  authenticated: boolean;
-};
 
 // Taller than the desktop buttons: this page is opened on phones by people who were only handed a link.
 const primaryLink = cn(buttonVariants({ variant: "default", size: "lg" }), "h-10");
@@ -35,6 +24,7 @@ export function PublicSharePage({ token }: { token: string }) {
   const [share, setShare] = useState<PublicShareInfo | null>(null);
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [ended, setEnded] = useState<Error | null>(null);
   const [busy, setBusy] = useState(false);
   const [uploaded, setUploaded] = useState<string[]>([]);
   const [failed, setFailed] = useState<File[]>([]);
@@ -53,6 +43,7 @@ export function PublicSharePage({ token }: { token: string }) {
       setShare(await api<PublicShareInfo>(`/s/${token}`, { headers: { Accept: "application/json" } }));
     } catch (err) {
       setError(errorMessage(err, t("This share link isn’t available")));
+      setEnded(err instanceof Error ? err : null);
     }
   }
 
@@ -107,10 +98,30 @@ export function PublicSharePage({ token }: { token: string }) {
   const needsPassword = Boolean(share?.requiresPassword && !share.authenticated);
   // A link that leads nowhere says so in place of a name, and has nothing to offer underneath.
   const gone = !share && Boolean(error);
-  const title = gone ? t("This share link isn’t available") : share?.path ? baseName(share.path) || share.rootName || share.rootSlug || t("Share link") : needsPassword ? t("Protected share") : t("Share link");
-  const subtitle = gone ? (error === title ? t("Ask whoever sent it for a new one.") : error) : share?.mode === "upload_only" ? t("Upload files to this location") : [typeof share?.size === "number" ? formatSize(share.size) : null, t("Shared with Kago")].filter(Boolean).join(" · ");
-  // What was shared is shown as itself: a share to upload into is a folder, any other is a file.
-  const icon = gone ? <span className="kago-badge flex size-14 items-center justify-center rounded-full text-faint"><Unlink className="size-6" /></span> : share?.path ? <FileTile item={{ kind: share.mode === "upload_only" ? "folder" : "file", type: share.type ?? "", name: baseName(share.path) }} className="size-16" /> : undefined;
+  const folder = share?.kind ? share.kind === "folder" : share?.mode === "upload_only";
+  const title = gone ? t("This share link isn’t available") : share?.name || (share?.path ? baseName(share.path) || share.rootName || share.rootSlug : "") || (needsPassword ? t("Protected share") : t("Share link"));
+  const why = ended ? failureOfError(ended) : "other";
+  // What happened to a link that has stopped gets its own words where the server's would not tell a visitor what to do.
+  const goneText = why === "revoked" || why === "changed" ? failureText(why, error) : error;
+  const subtitle = gone ? (error === title ? t("Ask whoever sent it for a new one.") : goneText) : share?.mode === "upload_only" ? t("Upload files to this location") : [typeof share?.size === "number" ? formatSize(share.size) : null, t("Shared with Kago")].filter(Boolean).join(" · ");
+  // What was shared is shown as itself: a folder to upload into is a folder, a file is the kind of file it is.
+  const icon = gone ? <span className="kago-badge flex size-14 items-center justify-center rounded-full text-faint"><Unlink className="size-6" /></span> : share?.name && !needsPassword ? <FileTile item={{ kind: folder ? "folder" : "file", type: share.type ?? "", name: share.name }} className="size-16" /> : undefined;
+
+  // A folder to look through is a page of its own, not a sheet under an icon.
+  if (share && !needsPassword && isFolderShare(share)) {
+    return (
+      <PublicFolder
+        token={token}
+        share={share}
+        onEnded={(err) => {
+          setShare(null);
+          setEnded(err);
+          setError(errorMessage(err, t("This share link isn’t available")));
+        }}
+        onLocked={() => void loadShare()}
+      />
+    );
+  }
 
   return (
     <AuthCard title={title} subtitle={subtitle} icon={icon} refused={refused}>

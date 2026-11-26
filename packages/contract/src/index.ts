@@ -169,12 +169,19 @@ export type ServerEvent =
 
 export type ServerEventType = ServerEvent["type"];
 
+/** What a visitor through a link may do: look, download, or only upload into a folder. */
+export type ShareMode = "view_only" | "download" | "upload_only";
+
+/** What a link was made to, as it was when it was made. `upload_only` is always a folder. */
+export type ShareKind = "file" | "folder";
+
 /** A share link as its creator, or an admin, is sent it. Who else may use it is decided again on every visit. */
 export type ShareLink = {
   id: string;
   root_id: string;
   path: string;
-  /** `{ "mode": "view_only" | "download" | "upload_only" }`. */
+  kind: ShareKind;
+  /** `{ "mode": ShareMode }`. */
   permission_json: string;
   expires_at: number | null;
   max_downloads: number | null;
@@ -189,6 +196,39 @@ export type ShareLink = {
   /** Whoever made the link, with what their avatar is drawn from. */
   creator: { id: string; email: string; display_name: string; avatar_at: number | null };
 };
+
+/**
+ * `GET /s/:token` as JSON. Until the password is given only the first four are sent. A folder to look through and
+ * download from says nothing of where it lies: it goes by `name` alone, and its entries by paths below it.
+ */
+export type PublicShareInfo = {
+  id: string;
+  mode: ShareMode;
+  requiresPassword: boolean;
+  authenticated: boolean;
+  kind?: ShareKind;
+  /** The file's or folder's name; a share of a whole location goes by the location's name. */
+  name?: string;
+  /** A file share and an upload-only folder only, as before. */
+  path?: string;
+  rootSlug?: string;
+  rootName?: string;
+  /** A file share only. */
+  type?: string;
+  size?: number;
+  previewable?: boolean;
+};
+
+/** One entry of a shared folder. `path` is below the shared folder, starting with `/`; `previewable` says `/s/:token/preview` will send it. */
+export type ShareItem = { name: string; path: string; kind: "folder" | "file"; size: number; mtime: number; type: string; previewable: boolean };
+
+export type ShareSortBy = "name" | "size" | "mtime" | "type";
+
+/**
+ * One page of a folder in a share, sorted as the file browser sorts: folders first, then by `sortBy`, ties by name.
+ * `path` is the folder's below the shared one (`/` for the shared folder itself), `total` how many entries it holds.
+ */
+export type ShareFolderPage = { path: string; name: string; items: ShareItem[]; offset: number; total: number; hasMore: boolean };
 
 export type PermissionLevel = "view" | "edit";
 
@@ -453,7 +493,7 @@ export type AuditAction =
   | "password_change" | "password_reset" | "user_create" | "user_update" | "user_disable" | "set_avatar" | "sso_link" | "sso_unlink"
   | "group_create" | "group_rename" | "group_delete" | "group_member_add" | "group_member_remove" | "permission_change" | "permission_denied"
   | "upload" | "mkdir" | "rename" | "edit" | "copy" | "move" | "delete" | "delete_to_trash" | "restore_trash" | "trash_empty" | "compress" | "extract" | "download" | "download_zip" | "thumbnail" | "tag_update" | "convert" | "remux" | "convert_structure"
-  | "create_share" | "update_share" | "disable_share" | "rotate_share" | "delete_share" | "share_auth_failed" | "download_via_share" | "upload_via_share"
+  | "create_share" | "update_share" | "disable_share" | "rotate_share" | "delete_share" | "share_auth_failed" | "download_via_share" | "download_zip_via_share" | "upload_via_share"
   | "create_task" | "task_start" | "task_failed" | "task_cancel" | "task_pause" | "task_resume" | "task_retry" | "tasks_clear" | "sync" | "sync_job_create" | "sync_job_update" | "sync_job_delete" | "sync_job_skipped" | "convert_job_create" | "convert_job_update" | "convert_job_delete" | "convert_job_skipped"
   | "sso_update" | "root_create" | "root_update" | "root_delete" | "workspace_update" | "set_wallpaper" | "external_app_create" | "external_app_update" | "external_app_delete"
   | "request_failed" | "request_denied";

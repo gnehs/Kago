@@ -20,7 +20,7 @@ const ENABLE_NOTE = () => t("This link is switched off too. Saving turns it on a
  */
 export function ShareEditDialog({ edit, onClose, save }: { edit: ShareEdit | null; onClose: () => void; save: (share: ShareLink, change: Change) => Promise<boolean> }) {
   return (
-    <KagoDialog open={Boolean(edit)} onClose={onClose} title={edit?.field === "limit" ? t("Change download limit") : t("Change expiry")} className="w-[min(420px,calc(100%-32px))]">
+    <KagoDialog open={Boolean(edit)} onClose={onClose} title={edit?.field === "limit" ? (edit.share.kind === "folder" ? t("Change visitor limit") : t("Change download limit")) : t("Change expiry")} className="w-[min(420px,calc(100%-32px))]">
       {edit ? edit.field === "limit" ? <LimitBody edit={edit} onClose={onClose} save={save} /> : <ExpiryBody edit={edit} onClose={onClose} save={save} /> : null}
     </KagoDialog>
   );
@@ -57,6 +57,7 @@ function ExpiryBody({ edit, onClose, save }: BodyProps) {
 
 function LimitBody({ edit, onClose, save }: BodyProps) {
   const used = edit.share.download_count;
+  const folder = edit.share.kind === "folder";
   // A link that stopped at its limit is given room for as many again; one that has none starts from what is used.
   const [text, setText] = useState(String(edit.share.max_downloads ? Math.max(edit.share.max_downloads, used) + 10 : used + 10));
   const [busy, setBusy] = useState(false);
@@ -76,11 +77,11 @@ function LimitBody({ edit, onClose, save }: BodyProps) {
       if (value !== null) void commit(value);
     }}>
       <p className="m-0 min-w-0 truncate text-muted">{edit.name}</p>
-      <FieldGroup label={t("Most downloads")} hint={t("{count} download so far | {count} downloads so far", { count: used })}>
-        <Input autoFocus type="number" min="1" step="1" aria-label={t("Most downloads")} value={text} onChange={(event) => setText(event.target.value)} />
+      <FieldGroup label={folder ? t("Most visitors") : t("Most downloads")} hint={folder ? t("{count} visitor so far | {count} visitors so far", { count: used }) : t("{count} download so far | {count} downloads so far", { count: used })}>
+        <Input autoFocus type="number" min="1" step="1" aria-label={folder ? t("Most visitors") : t("Most downloads")} value={text} onChange={(event) => setText(event.target.value)} />
       </FieldGroup>
       {edit.enable ? <p className="m-0 -mt-2 text-xs text-muted">{ENABLE_NOTE()}</p> : null}
-      {tooLow ? <p role="alert" className="m-0 -mt-2 text-xs text-warning">{t("That is not more than has been downloaded, so the link would stay shut.")}</p> : null}
+      {tooLow ? <p role="alert" className="m-0 -mt-2 text-xs text-warning">{folder ? t("That is not more than have visited, so the link would stay shut.") : t("That is not more than has been downloaded, so the link would stay shut.")}</p> : null}
       <KagoDialogActions>
         {edit.share.max_downloads ? <Button className="mr-auto" onClick={() => void commit(null)} disabled={busy}>{t("No limit")}</Button> : null}
         <Button onClick={onClose}>{t("Cancel")}</Button>

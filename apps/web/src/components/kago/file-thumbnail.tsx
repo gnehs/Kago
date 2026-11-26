@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { keys } from "@/api/keys";
-import { thumbnailUrl } from "@/api/client";
 import type { FileItem } from "@/types/kago";
 import { cn } from "@/lib/utils";
 import { FileTile } from "@/components/kago/file-icon";
@@ -12,13 +11,13 @@ import { extensionOf, fileKind, KIND_TONES, thumbnailKind } from "@/lib/fileKind
  * pictures, videos, the first page of documents and 3D scenes as a thumbnail, text as its opening lines on the sheet.
  * Everything else is its icon, as is anything whose thumbnail has not arrived or cannot be made.
  */
-export function FileThumbnail({ rootSlug, item, size }: { rootSlug: string; item: Pick<FileItem, "kind" | "type" | "name" | "size" | "path" | "mtime">; size: number }) {
+export function FileThumbnail({ url, item, size, excerpts = true }: { /** Where the file's thumbnail is, without its version. */ url: string; item: Pick<FileItem, "kind" | "type" | "name" | "size" | "mtime">; size: number; /** Whether text shows its opening lines; where they would cost a request for each file, they do not. */ excerpts?: boolean }) {
   const shows = thumbnailKind(item);
   // The address carries the mtime, so a file that changes is drawn again instead of coming from the browser's cache.
-  const source = `${thumbnailUrl(rootSlug, item.path)}&v=${Math.round(item.mtime)}`;
+  const source = `${url}${url.includes("?") ? "&" : "?"}v=${Math.round(item.mtime)}`;
   const excerpt = useQuery({
     queryKey: keys.thumbnailText(source),
-    enabled: shows === "text",
+    enabled: shows === "text" && excerpts,
     staleTime: Infinity,
     retry: false,
     queryFn: async () => {

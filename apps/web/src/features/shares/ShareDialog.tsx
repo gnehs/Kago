@@ -19,7 +19,7 @@ import { toast } from "@/stores/toast";
 import type { Root, ShareLink } from "@/types/kago";
 import { ExpiryField, resolveValidity, type Validity } from "./ExpiryField";
 import { copyShare } from "./useShareActions";
-import { shareModes } from "./shareUtils";
+import { modeDescription, shareModes } from "./shareUtils";
 import { t } from "@/lib/i18n";
 
 const modeIcons = { download: <Download />, view_only: <Eye />, upload_only: <Inbox /> };
@@ -28,7 +28,6 @@ const modeIcons = { download: <Download />, view_only: <Eye />, upload_only: <In
 const reasons: Record<ShareProblem, () => string> = {
   "no-item": () => t("Choose what to share first"),
   "file-needs-folder": () => t("Choose a folder to receive uploads"),
-  "folder-needs-file": () => t("Choose a file, or let them upload instead"),
   "readonly-drop-box": () => t("A read-only location can’t receive uploads"),
   "password-short": () => t("The password needs at least {count} characters", { count: MIN_SHARE_PASSWORD }),
   "limit-invalid": () => t("Enter a download limit of 1 or more"),
@@ -36,10 +35,9 @@ const reasons: Record<ShareProblem, () => string> = {
   "expiry-past": () => t("The last day has to be in the future")
 };
 
-/** Said under the choices when the item and what they can do do not go together: the server only takes a file to download or view, and a folder to upload into. */
+/** Said under the choices when the item and what they can do do not go together: a file can be downloaded or looked at, but only a folder can be uploaded into. */
 const mismatch: Partial<Record<ShareProblem, () => string>> = {
-  "file-needs-folder": () => t("Uploading needs a folder. Change what to share to a folder."),
-  "folder-needs-file": () => t("Only a file can be downloaded or viewed. Change what to share to a file.")
+  "file-needs-folder": () => t("Uploading needs a folder. Change what to share to a folder.")
 };
 
 /**
@@ -58,7 +56,7 @@ export function ShareDialog({ open, onClose, roots, item }: { open: boolean; onC
 function ShareDialogBody({ roots, initial, onClose }: { roots: Root[]; initial: PickedItem | null; onClose: () => void }) {
   const queryClient = useQueryClient();
   const [item, setItem] = useState<PickedItem | null>(initial);
-  const [mode, setMode] = useState<ShareMode>(initial?.kind === "folder" ? "upload_only" : "download");
+  const [mode, setMode] = useState<ShareMode>("download");
   const [validity, setValidity] = useState<Validity>({ choice: "7", custom: "" });
   const [passwordOn, setPasswordOn] = useState(false);
   const [password, setPassword] = useState("");
@@ -68,14 +66,9 @@ function ShareDialogBody({ roots, initial, onClose }: { roots: Root[]; initial: 
   const [busy, setBusy] = useState(false);
   const root = item ? roots.find((entry) => entry.slug === item.rootSlug) : undefined;
   const dropBox = mode === "upload_only";
+  // What the server counts against a limit: each file sent, and for a folder each person who is sent anything, once for a while. A drop box has no limit.
+  const folder = item?.kind === "folder";
   const problem = shareProblem({ item: item && { kind: item.kind, readonly: Boolean(root?.readonly) }, mode, password: passwordOn ? password : null, limit: limitOn && !dropBox ? limit : null, expiry: resolveValidity(validity) });
-
-  function choose(next: PickedItem) {
-    setItem(next);
-    // What is chosen decides what they can be let do: a folder can only be uploaded into, a file only fetched.
-    if (next.kind === "folder") setMode("upload_only");
-    else if (mode === "upload_only") setMode("download");
-  }
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -121,7 +114,7 @@ function ShareDialogBody({ roots, initial, onClose }: { roots: Root[]; initial: 
           )}
           <Button onClick={() => setPicking(true)}>{item ? t("Change…") : t("Choose…")}</Button>
         </div>
-        <ItemPickerDialog open={picking} onClose={() => setPicking(false)} title={t("What to share")} roots={roots} value={item ?? { rootSlug: (roots.find((entry) => !entry.readonly) ?? roots[0])?.slug ?? "", path: "/" }} onChoose={choose} />
+        <ItemPickerDialog open={picking} onClose={() => setPicking(false)} title={t("What to share")} roots={roots} value={item ?? { rootSlug: (roots.find((entry) => !entry.readonly) ?? roots[0])?.slug ?? "", path: "/" }} onChoose={setItem} />
       </FieldGroup>
 
       <FieldGroup label={t("They can")}>
@@ -129,7 +122,7 @@ function ShareDialogBody({ roots, initial, onClose }: { roots: Root[]; initial: 
           label={t("They can")}
           value={mode}
           onChange={setMode}
-          options={shareModes.map((entry) => ({ value: entry.value, label: entry.label, description: entry.description, icon: modeIcons[entry.value] }))}
+          options={shareModes.map((entry) => ({ value: entry.value, label: entry.label, description: modeDescription(entry.value, item?.kind ?? null), icon: modeIcons[entry.value] }))}
         />
         {problem && mismatch[problem] ? <p role="alert" className="m-0 mt-1 text-xs text-warning">{mismatch[problem]!()}</p> : null}
       </FieldGroup>
@@ -143,8 +136,8 @@ function ShareDialogBody({ roots, initial, onClose }: { roots: Root[]; initial: 
           <KagoPasswordInput aria-label={t("Password")} autoFocus autoComplete="new-password" className="w-44" value={password} onChange={(event) => setPassword(event.target.value)} />
         </KagoSwitch>
         {dropBox ? null : (
-          <KagoSwitch label={t("Limit downloads")} checked={limitOn} onChange={setLimitOn}>
-            <Input type="number" min="1" step="1" aria-label={t("Download limit")} className="w-24" value={limit} onChange={(event) => setLimit(event.target.value)} />
+          <KagoSwitch label={folder ? t("Limit visitors") : t("Limit downloads")} checked={limitOn} onChange={setLimitOn}>
+            <Input type="number" min="1" step="1" aria-label={folder ? t("Visitor limit") : t("Download limit")} className="w-24" value={limit} onChange={(event) => setLimit(event.target.value)} />
           </KagoSwitch>
         )}
       </div>

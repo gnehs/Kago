@@ -118,6 +118,12 @@ test('a file action reads as what happened with where after it, and a run as the
   assert.equal(placeOf(row({ path: null, root_id: null, root_name: null }), names()), null);
 });
 
+test('a folder a visitor downloaded as a zip says where it was and how much it held', () => {
+  const zip = describe(row({ action: 'download_zip_via_share', target_json: JSON.stringify({ files: 12, bytes: 3456 }) }), names());
+  assert.deepEqual([zip.id, zip.tail], ['download_zip_via_share', ['Documents/Contracts/NDA.docx', { archive: { files: 12, bytes: 3456 } }]]);
+  assert.deepEqual(describe(row({ action: 'download_zip_via_share', target_json: null }), names()).tail, ['Documents/Contracts/NDA.docx']);
+});
+
 test('people, groups and places are named from what is known now, and from the row where they are gone', () => {
   const added = describe(row({ action: 'group_member_add', root_id: null, path: null, target_json: target({ groupId: 'g1', userId: 'u2' }) }), names());
   assert.deepEqual([added.id, added.slots], ['group_member_add', { person: 'Kenji Watanabe', group: 'Media editors' }]);

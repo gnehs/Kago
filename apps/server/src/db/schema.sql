@@ -205,6 +205,7 @@ CREATE TABLE IF NOT EXISTS share_links (
   token_sealed TEXT,
   root_id TEXT NOT NULL,
   path TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'file',
   permission_json TEXT NOT NULL,
   expires_at INTEGER,
   max_downloads INTEGER,

@@ -62,6 +62,7 @@ export const auditActions = {
   delete_share: normal("share"),
   share_auth_failed: normal("share"),
   download_via_share: normal("share"),
+  download_zip_via_share: normal("share"),
   upload_via_share: normal("share"),
 
   create_task: low("task"),
